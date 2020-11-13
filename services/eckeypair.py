@@ -53,6 +53,10 @@ class ECKeyPair:
 
     @classmethod
     def from_public_key_string(cls, public_key_string):
+        if '-----BEGIN PUBLIC KEY-----' not in public_key_string:
+            public_key_string = '\n'.join(public_key_string[i:i+64] for i in range(0, len(public_key_string), 64))
+            public_key_string = "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----".format(public_key_string)
+
         public_key = serialization.load_pem_public_key(
             data=public_key_string.encode('utf-8'),
             backend=default_backend()
@@ -87,8 +91,12 @@ class ECKeyPair:
     def private_as_string(self, password):
         return self.private_as_bytes(password).decode('utf-8')
 
-    def public_as_string(self):
-        return self.public_as_bytes().decode('utf-8')
+    def public_as_string(self, truncate=False):
+        result = self.public_as_bytes().decode('utf-8')
+        if truncate:
+            result = result.replace('\n', '')
+            result = result[26:-24]
+        return result
 
     def write_private(self, path, password):
         with open(path, 'wb') as f:
