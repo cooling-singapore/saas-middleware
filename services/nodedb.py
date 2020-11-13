@@ -39,7 +39,8 @@ class NodeDB:
             "CREATE TABLE IF NOT EXISTS dor_permissions ("
             "   id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "   record_id INTEGER NOT NULL,"
-            "   public_key TEXT NOT NULL,"
+            "   user_id VARCHAR(64) NOT NULL,"
+            "   user_public_key TEXT NOT NULL,"
             "   FOREIGN KEY (record_id) REFERENCES records (id)"
             ")"
         )
@@ -153,6 +154,22 @@ class NodeDB:
             db.close()
 
         return record
+
+    def get_access_permissions(self, obj_id):
+        db = sqlite3.connect(self.db_path)
+
+        result = []
+        for record in db.execute(
+            "SELECT p.user_id, p.user_public_key "
+            "   FROM dor_permissions AS p "
+            "   INNER JOIN dor_records AS r ON r.id = p.record_id "
+            "   WHERE r.obj_id = '{}'".format(obj_id)
+        ):
+            result.append((record[0], record[1]))
+
+        db.close()
+        return result
+
 
     def show_all_records(self):
         # TODO: remove if not needed anymore

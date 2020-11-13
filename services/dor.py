@@ -24,7 +24,7 @@ from utilities import hash_bytes_object
 from utilities import dump_json_to_file
 
 from nodedb import NodeDB
-from node import Messenger
+from node import SecureMessenger
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -214,5 +214,5 @@ class DataObjectRepository:
     def remove_access(self, public_key, signed_token):
         pass
 
-    def get_permissions(self):
-        pass
+    def get_access_permissions(self, obj_id):
+        return self.node.db.get_access_permissions(obj_id)
