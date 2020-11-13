@@ -190,19 +190,20 @@ def delete(obj_id):
     return jsonify(header) if header else abort(404, description="data object with id '{}' not found.".format(obj_id))
 
 
-@blueprint.route('/<obj_id>/access', methods=['POST'])
-def grant_access(obj_id):
+@blueprint.route('/<obj_id>/access/<user_id>', methods=['POST'])
+def grant_access_permission(obj_id, user_id):
     pass
 
 
-@blueprint.route('/<obj_id>/access', methods=['DELETE'])
-def revoke_access(obj_id):
+@blueprint.route('/<obj_id>/access/<user_id>', methods=['DELETE'])
+def revoke_access_permission(obj_id, user_id):
     pass
 
 
-@blueprint.route('/<id>/access', methods=['GET'])
-def lookup_access():
-    pass
+@blueprint.route('/<obj_id>/access', methods=['GET'])
+def get_access_permissions(obj_id):
+    access = instance.get_access_permissions(obj_id)
+    return jsonify(access)
 
 
 @blueprint.route('/<id>/transfer', methods=['PUT'])
