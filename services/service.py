@@ -55,7 +55,7 @@ def create_node_instance(config):
     password = config['password']
 
     instance = Node(datastore_path)
-    instance.initialise_identity(password.encode('utf-8'))
+    instance.initialise_identity(password)
     instance.start_server(server_address)
     return instance
 
@@ -66,45 +66,6 @@ def create_dor_instance(node, config):
     # do we have configuration instructions for the service?
     if 'dor' not in config:
         raise Exception("no configuration found for DOR service.")
-
-    # # extract the DOR config and proceed with initialisation
-    # config = config['dor']
-    #
-    # # do we use encryption?
-    # if 'encryption_enabled' in config and config['encryption_enabled'] is True:
-    #     # do we have a custodian key name
-    #     if 'custodian_key' not in config:
-    #         raise Exception("'custodian_key' not defined in SaaS DOR config.")
-    #
-    #     # extract DOR custodian key id
-    #     custodian_key = config['custodian_key']
-    #     logger.info("SaaS DOR using custodian key '{}'.".format(custodian_key))
-    #
-    #     # check if we have the public key (needed for encryption and signature verification)
-    #     try:
-    #         result = subprocess.check_output(['gpg', '--list-keys', custodian_key])
-    #         result = result.decode('utf-8')
-    #         logger.info("SaaS DOR custodian public key info:\n{}".format(result))
-    #     except subprocess.CalledProcessError as e1:
-    #         raise Exception("error while checking custodian public key '{}': {}".format(custodian_key, e1))
-    #
-    #     # check if we have the private key (needed for decryption and signing)
-    #     try:
-    #         result = subprocess.check_output(['gpg', '--list-secret-keys', custodian_key])
-    #         result = result.decode('utf-8')
-    #         logger.info("SaaS DOR custodian private key info:\n{}".format(result))
-    #     except subprocess.CalledProcessError as e1:
-    #         raise Exception("error while checking private key '{}': {}".format(custodian_key, e1))
-    #
-    #     # create the DOR instance
-    #     instance = DataObjectRepository(datastore_path, custodian_key)
-    #     logger.info("SaaS DOR instance initialised using datastore '{}' and custodian key '{}'.".format(datastore_path,
-    #                                                                                                     custodian_key))
-    #
-    # else:
-    #     # create the DOR instance
-    #     instance = DataObjectRepository(datastore_path)
-    #     logger.info("SaaS DOR instance initialised WITHOUT encryption using datastore '{}'.".format(datastore_path))
 
     instance = DataObjectRepository(node, datastore_path)
     dor_blueprint.initialise(instance)
@@ -128,7 +89,6 @@ try:
 
                 # create the node instance
                 node = create_node_instance(configuration)
-                # node['dor'] = create_dor_instance(node, configuration)
                 dor = create_dor_instance(node, configuration)
 
                 # register the SaaS DOR service blueprint

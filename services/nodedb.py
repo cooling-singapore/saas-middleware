@@ -5,10 +5,9 @@ NodeDB is a convenience wrapper for the data object records db.
 import os
 import sqlite3
 import logging
+import utilities
 
-from utilities import get_timestamp_now
-
-from cryptography.hazmat.primitives import hashes
+from eckeypair import ECKeyPair
 
 logger = logging.getLogger('NodeDB')
 
@@ -28,8 +27,8 @@ class NodeDB:
             "   h_hash VARCHAR(64) NOT NULL,"
             "   c_hash VARCHAR(64) NOT NULL,"
             "   obj_id VARCHAR(64) NOT NULL,"
-            "   custodian_id VARCHAR(64) NOT NULL,"
-            "   owner TEXT NOT NULL,"
+            "   owner_iid VARCHAR(64) NOT NULL,"
+            "   custodian_iid VARCHAR(64) NOT NULL,"
             "   last_access UNSIGNED BIG INT NOT NULL,"
             "   expiration UNSIGNED BIG INT"
             ")"
@@ -39,8 +38,7 @@ class NodeDB:
             "CREATE TABLE IF NOT EXISTS dor_permissions ("
             "   id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "   record_id INTEGER NOT NULL,"
-            "   user_id VARCHAR(64) NOT NULL,"
-            "   user_public_key TEXT NOT NULL,"
+            "   user_iid VARCHAR(64) NOT NULL,"
             "   FOREIGN KEY (record_id) REFERENCES records (id)"
             ")"
         )
@@ -52,6 +50,14 @@ class NodeDB:
             "   key TEXT NOT NULL,"
             "   value TEXT,"
             "   FOREIGN KEY (record_id) REFERENCES records (id)"
+            ")"
+        )
+
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS public_keys ("
+            "   iid VARCHAR(64) PRIMARY KEY,"
+            "   public_key TEXT NOT NULL,"
+            "   UNIQUE(iid, public_key)"
             ")"
         )
 
@@ -101,7 +107,7 @@ class NodeDB:
         db = sqlite3.connect(self.db_path)
 
         for record in db.execute(
-            "SELECT id, h_hash, c_hash, obj_id, custodian_id, owner, last_access, expiration "
+            "SELECT id, h_hash, c_hash, obj_id, owner_iid, custodian_iid, last_access, expiration "
             "FROM dor_records WHERE ({})".format(condition)
         ):
             result.append({
@@ -109,8 +115,8 @@ class NodeDB:
                 'h_hash': str(record[1]),
                 'c_hash': str(record[2]),
                 'obj_id': str(record[3]),
-                'custodian_id': str(record[4]),
-                'owner': str(record[5]),
+                'owner_iid': str(record[4]),
+                'custodian_iid': str(record[5]),
                 'last_access': int(record[6]),
                 'expiration': None if record[7] is None else int(record[7])
             })
@@ -127,15 +133,25 @@ class NodeDB:
         # get the data objects that match the content hash
         return self.get_data_objects("c_hash == '{}'".format(c_hash))
 
-    def insert_data_object_record(self, h_hash, c_hash, obj_id, custodian_id, owner, expiration=None):
+    def get_public_key(self, iid):
+        db = sqlite3.connect(self.db_path)
+        record = db.execute("SELECT public_key WHERE iid = '{}".format(iid)).fetchone()
+        db.close()
+        return ECKeyPair.from_public_key_string(record[0]) if record else None
+
+    def insert_data_object_record(self, h_hash, c_hash, obj_id, owner, custodian, expiration=None):
         # determine timestamp and prepare expiration
-        last_access = get_timestamp_now()
+        last_access = utilities.get_timestamp_now()
         expiration = 'NULL' if expiration is None else expiration
 
         db = sqlite3.connect(self.db_path)
         db.execute(
-            "INSERT INTO dor_records (h_hash, c_hash, obj_id, custodian_id, owner, last_access, expiration) "
-            "VALUES ('{}', '{}', '{}', '{}', '{}', {}, {})".format(h_hash, c_hash, obj_id, custodian_id, owner, last_access, expiration)
+            "INSERT OR IGNORE INTO public_keys (iid, public_key) "
+            "VALUES ('{}', '{}')".format(owner.iid, owner.public_as_string(truncate=True))
+        )
+        db.execute(
+            "INSERT INTO dor_records (h_hash, c_hash, obj_id, owner_iid, custodian_iid, last_access, expiration) "
+            "VALUES ('{}', '{}', '{}', '{}', '{}', {}, {})".format(h_hash, c_hash, obj_id, owner.iid, custodian.iid, last_access, expiration)
         )
         db.commit()
         db.close()
@@ -160,12 +176,12 @@ class NodeDB:
 
         result = []
         for record in db.execute(
-            "SELECT p.user_id, p.user_public_key "
+            "SELECT p.user_iid "
             "   FROM dor_permissions AS p "
             "   INNER JOIN dor_records AS r ON r.id = p.record_id "
             "   WHERE r.obj_id = '{}'".format(obj_id)
         ):
-            result.append((record[0], record[1]))
+            result.append(record[0])
 
         db.close()
         return result
