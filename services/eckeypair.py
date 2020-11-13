@@ -52,16 +52,20 @@ class ECKeyPair:
         return ECKeyPair(None, public_key)
 
     @classmethod
+    def from_public_key_bytes(cls, public_key_bytes):
+        public_key = serialization.load_pem_public_key(
+            data=public_key_bytes,
+            backend=default_backend()
+        )
+        return ECKeyPair.from_public_key(public_key)
+
+    @classmethod
     def from_public_key_string(cls, public_key_string):
         if '-----BEGIN PUBLIC KEY-----' not in public_key_string:
             public_key_string = '\n'.join(public_key_string[i:i+64] for i in range(0, len(public_key_string), 64))
             public_key_string = "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----".format(public_key_string)
 
-        public_key = serialization.load_pem_public_key(
-            data=public_key_string.encode('utf-8'),
-            backend=default_backend()
-        )
-        return ECKeyPair.from_public_key(public_key)
+        return ECKeyPair.from_public_key_bytes(public_key_string.encode('utf-8'))
 
     @classmethod
     def from_public_key_file(cls, path):
