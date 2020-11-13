@@ -10,14 +10,8 @@ import threading
 import socket
 import base64
 
-from utilities import serialize_public_key
-from utilities import deserialize_public_key
-from utilities import serialize_private_key
-from utilities import deserialize_private_key
-from utilities import create_private_key
-from utilities import hash_bytes_object
-
 from nodedb import NodeDB
+from eckeypair import ECKeyPair
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -27,27 +21,22 @@ from cryptography.fernet import Fernet
 logger = logging.getLogger('Node')
 
 
-def generate_truncated_node_id(node_id):
-    return "{}...{}".format(node_id[:4], node_id[-4:])
-
-
 class SecureMessenger:
-    def __init__(self, peer):
-        self.peer = peer
-        self.peer_id = None
+    def __init__(self, peer_socket):
+        self.peer_socket = peer_socket
+        self.peer = None
         self.cipher = None
 
-    def handshake(self, node_id):
-        # generate keys for ourself
-        self_private_key = ec.generate_private_key(ec.SECP384R1())
-        self_public_key = self_private_key.public_key()
+    def handshake(self, node_key):
+        # generate an ephemeral key pair
+        key = ECKeyPair.create_new()
 
-        # send self and receive peer public key information
-        self.send_raw(serialize_public_key(self_public_key))
-        peer_public_key = deserialize_public_key(self.receive_raw())
+        # send and receive peer public key information
+        self.send_raw(key.public_as_bytes())
+        peer_key = ECKeyPair.from_public_key_bytes(self.receive_raw())
 
         # generate the shared key
-        shared_key = self_private_key.exchange(ec.ECDH(), peer_public_key)
+        shared_key = key.private_key.exchange(ec.ECDH(), peer_key.public_key)
         session_key = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
@@ -58,21 +47,23 @@ class SecureMessenger:
         # initialise the cipher
         self.cipher = Fernet(base64.urlsafe_b64encode(session_key))
 
-        # send self node id and receive peer node id
-        self.send({'node_id': node_id})
-        return self.receive()['node_id']
+        # exchange public keys
+        self.send({'public_key': node_key.public_as_string(truncate=True)})
+        self.peer = ECKeyPair.from_public_key_string(self.receive()['public_key'])
+
+        return self.peer
 
     def close(self):
-        self.peer.close()
+        self.peer_socket.close()
+        self.peer_socket = None
         self.peer = None
-        self.peer_id = None
         self.cipher = None
 
     def receive_raw(self):
         chunks = []
         received = 0
         while received < 4:
-            chunk = self.peer.recv(min(4 - received, 4))
+            chunk = self.peer_socket.recv(min(4 - received, 4))
             if chunk == b'':
                 raise Exception("socket connection broken")
 
@@ -85,7 +76,7 @@ class SecureMessenger:
         chunks = []
         received = 0
         while received < msg_length:
-            chunk = self.peer.recv(min(msg_length - received, 2048))
+            chunk = self.peer_socket.recv(min(msg_length - received, 2048))
             if chunk == b'':
                 raise Exception("socket connection broken")
 
@@ -103,7 +94,7 @@ class SecureMessenger:
         # send the length of the message
         total = 0
         while total < 4:
-            sent = self.peer.send(length_bytes[total:])
+            sent = self.peer_socket.send(length_bytes[total:])
             if sent == 0:
                 raise Exception("socket connection broken")
             total += sent
@@ -111,7 +102,7 @@ class SecureMessenger:
         # send the message itself
         total = 0
         while total < msg_length:
-            sent = self.peer.send(message[total:])
+            sent = self.peer_socket.send(message[total:])
             if sent == 0:
                 raise Exception("socket connection broken")
             total += sent
@@ -163,17 +154,8 @@ class SecureMessenger:
 
 class Node:
     def __init__(self, datastore_path, custodian_key=None):
-        # initialise some properties
         self.datastore_path = datastore_path
-        # self.dor = None
-        # self.rti = None
-        # self.custodian_key = custodian_key
-
-        # initialise identity properties
-        self.private_key = None
-        self.public_key = None
-        self.id = None
-        self.short_id = None
+        self.key = None
 
         # initialise server properties
         self.server_address = None
@@ -187,29 +169,14 @@ class Node:
         # do we already have an identity (i.e., a public/private key pair)
         private_key_path = os.path.join(self.datastore_path, 'identity.pem')
         if os.path.isfile(private_key_path):
-            # read the private key
-            with open(private_key_path, "rb") as f:
-                data = f.read()
-                logger.info("existing identity found:\n{}".format(data.decode('utf-8')))
-                self.private_key = deserialize_private_key(data, password)
+            self.key = ECKeyPair.from_private_key_file(private_key_path, password)
+            logger.info("existing identity found. using iid '{}' and public key:\n{}".format(self.key.iid, self.key.public_as_string()))
 
         else:
             # create a new private key
-            self.private_key = create_private_key()
-
-            # write the private key
-            with open(private_key_path, 'wb') as f:
-                data = serialize_private_key(self.private_key, password)
-                logger.info("created new identity:\n{}".format(data.decode('utf-8')))
-                f.write(data)
-
-        # obtain the public key and determine the node id
-        # TODO: id generation should probably follow existing P2P system. for example, have a look here:
-        # https://medium.com/textileio/how-ipfs-peer-nodes-identify-each-other-on-the-distributed-web-8b5b6476aa5e
-        self.public_key = self.private_key.public_key()
-        self.id = hash_bytes_object(serialize_public_key(self.public_key)).hex()
-        self.short_id = generate_truncated_node_id(self.id)
-        logger.info("using id '{}' and public key:\n{}".format(self.id, serialize_public_key(self.public_key).decode('utf-8')))
+            self.key = ECKeyPair.create_new()
+            self.key.write_private(private_key_path, password)
+            logger.info("created new identity with iid '{}' and public key:\n{}".format(self.key.iid, self.key.public_as_string()))
 
     def start_server(self, server_address, concurrency=5):
         self.server_address = server_address
@@ -237,9 +204,9 @@ class Node:
                 # accept incoming connection and create messenger
                 client, address = self.server_socket.accept()
                 messenger = SecureMessenger(client)
-                peer_id = messenger.handshake(self.id)
+                peer = messenger.handshake(self.key)
 
-                self.handle_client(peer_id, messenger)
+                self.handle_client(peer, messenger)
 
             except socket.timeout:
                 pass
@@ -250,9 +217,8 @@ class Node:
         logger.info("stop listening to incoming connections")
         self.server_socket.close()
 
-    def handle_client(self, peer_id, messenger):
-        short_peer_id = generate_truncated_node_id(peer_id)
-        logger.info("begin serving client '{}'".format(short_peer_id))
+    def handle_client(self, peer, messenger):
+        logger.info("begin serving client '{}'".format(peer.short_iid))
 
         # what does the client want?
         message = messenger.receive()
@@ -288,7 +254,7 @@ class Node:
             logger.error("unsupported request '{}': message={}".format(message['request'], message))
 
         messenger.close()
-        logger.info("done serving client '{}'".format(short_peer_id))
+        logger.info("done serving client '{}'".format(peer.short_iid))
 
     # def export_custodian_public_key(self):
     #     # do we have a custodian key in the first place?

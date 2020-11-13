@@ -6,33 +6,12 @@ import os
 import logging
 import subprocess
 import json
-import ssl
-import canonicaljson
-import threading
 import socket
-import base64
+import utilities
 
-from utilities import serialize_public_key
-from utilities import deserialize_public_key
-from utilities import serialize_private_key
-from utilities import deserialize_private_key
-from utilities import create_private_key
-from utilities import hash_file_content
-from utilities import hash_json_object
-from utilities import hash_string_object
-from utilities import hash_bytes_object
-from utilities import dump_json_to_file
-
-from nodedb import NodeDB
 from node import SecureMessenger
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.fernet import Fernet
-
-import cryptography.hazmat.primitives.serialization as serialization
 
 logger = logging.getLogger('DOR')
 
@@ -64,10 +43,10 @@ class DataObjectRepository:
             # do we have search tags?
             if search_tags is None:
                 # get the number of records
-                result['number_of_records'] = self.db.get_number_of_records()
+                result['number_of_records'] = self.node.db.get_number_of_records()
 
                 # get all distinct keys
-                result['distinct_tags'] = self.db.get_distinct_tag_keys()
+                result['distinct_tags'] = self.node.db.get_distinct_tag_keys()
 
             else:
                 # prepare the search tags for the SQL query
@@ -83,10 +62,10 @@ class DataObjectRepository:
 
         return result
 
-    def add(self, data_object_path, header):
+    def add(self, data_object_path, header, owner):
         # calculate hashes for the data object header and content
-        h_hash = hash_json_object(header)
-        c_hash = hash_file_content(data_object_path)
+        h_hash = utilities.hash_json_object(header)
+        c_hash = utilities.hash_file_content(data_object_path)
 
         # calculate the data object id as a hash of the hashed data object header and content
         digest = hashes.Hash(hashes.SHA256())
@@ -98,11 +77,6 @@ class DataObjectRepository:
         h_hash = h_hash.hex()
         c_hash = c_hash.hex()
         obj_id = obj_id.hex()
-
-        # logger.info("header: {}".format(header))
-        # logger.info("h_hash: {}".format(h_hash))
-        # logger.info("c_hash: {}".format(c_hash))
-        # logger.info("obj_id: {}".format(obj_id))
 
         # check if there is already a data object with the same id
         if self.node.db.get_data_object_by_id(obj_id) is not None:
@@ -130,11 +104,11 @@ class DataObjectRepository:
 
         # create header file
         destination_path = os.path.join(self.datastore_path, "{}.header".format(obj_id))
-        dump_json_to_file(header, destination_path)
+        utilities.dump_json_to_file(header, destination_path)
         logger.info("data object '{}' header stored at '{}'.".format(obj_id, destination_path))
 
         # insert record into db
-        self.node.db.insert_data_object_record(h_hash, c_hash, obj_id, self.node.id, header['created_by'])
+        self.node.db.insert_data_object_record(h_hash, c_hash, obj_id, owner, self.node.key)
         logger.info("data object '{}' record added to database.".format(obj_id))
 
         return obj_id
@@ -154,7 +128,7 @@ class DataObjectRepository:
             # we only count the ones for which we are custodian
             records = []
             for record in self.node.db.get_data_objects_by_content_hash(record['c_hash']):
-                if record['custodian_id'] == self.node.id:
+                if record['custodian_iid'] == self.node.iid:
                     records.append(record)
 
             # if there are no other records that refer to this data object content, then we can delete it
@@ -183,13 +157,13 @@ class DataObjectRepository:
         # TODO: remove - this is just fake right now until proper testing is in place.
         # get the last known address of the custodian
         custodian_address = ('127.0.0.1', 4000)
-        logger.info("custodian id={} address={}".format(record['custodian_id'], custodian_address))
+        logger.info("custodian id={} address={}".format(record['custodian_iid'], custodian_address))
 
         # create messenger
         peer = socket.create_connection(custodian_address)
-        messenger = Messenger(peer)
-        peer_id = messenger.handshake(self.node.id)
-        logger.info("connected to peer '{}'".format(peer_id))
+        messenger = SecureMessenger(peer)
+        peer = messenger.handshake(self.node.key)
+        logger.info("connected to peer '{}'".format(peer.iid))
 
         response = messenger.request({
             'request': 'fetch',
@@ -208,10 +182,16 @@ class DataObjectRepository:
     def transfer_ownership(self, public_key_a, public_key_b, signed_token):
         pass
 
-    def grant_access(self, public_key, signed_token):
+    def grant_access_permission(self, obj_id, user, auth_signature):
         pass
 
-    def remove_access(self, public_key, signed_token):
+
+        # verify the authentication signature
+        # message = "{}/access/{}".format(obj_id, user_iid).encode("utf-8")
+        # auth_signature =
+        # utilities.verify_authentication_signature(message, auth_signature, owner_public_key)
+
+    def remove_access_permission(self, obj_id, user_id, signed_token):
         pass
 
     def get_access_permissions(self, obj_id):

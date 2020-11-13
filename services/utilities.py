@@ -1,20 +1,11 @@
 import time
-import os
 import logging
-import subprocess
 import json
 import canonicaljson
-import threading
-import socket
-import base64
 
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.fernet import Fernet
 
-import cryptography.hazmat.primitives.serialization as serialization
+logger = logging.getLogger('utilities')
 
 
 def get_timestamp_now():
@@ -73,40 +64,3 @@ def hash_bytes_object(obj):
 def dump_json_to_file(json_input, destination_path):
     with open(destination_path, 'w') as f:
         json.dump(json_input, f, indent=4, sort_keys=True)
-
-
-def create_private_key():
-    return ec.generate_private_key(
-        curve=ec.SECP384R1(),
-        backend=default_backend()
-    )
-
-
-def deserialize_private_key(data, password):
-    return serialization.load_pem_private_key(
-        data=data,
-        password=password,
-        backend=default_backend()
-    )
-
-
-def serialize_private_key(private_key, password):
-    return private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.BestAvailableEncryption(password)
-    )
-
-
-def deserialize_public_key(data):
-    return serialization.load_pem_public_key(
-        data=data,
-        backend=default_backend()
-    )
-
-
-def serialize_public_key(public_key):
-    return public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )

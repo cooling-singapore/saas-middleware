@@ -7,6 +7,7 @@ import json
 import tempfile
 import logging
 
+from eckeypair import ECKeyPair
 from jsonschema import validate
 
 from flask import Blueprint, jsonify, abort, request, send_from_directory
@@ -153,7 +154,8 @@ def add():
             return response
 
         # add the data object to the DOR
-        obj_id = instance.add(path, header)
+        owner = ECKeyPair.from_public_key_string(parameters['owner_public_key'])
+        obj_id = instance.add(path, header, owner)
 
         reply = {
             "data-object-id": obj_id
@@ -164,7 +166,7 @@ def add():
         return response
 
     except Exception as e:
-        response = jsonify(reply)
+        response = jsonify(e)
         response.status_code = 500
         return response
 
@@ -190,13 +192,19 @@ def delete(obj_id):
     return jsonify(header) if header else abort(404, description="data object with id '{}' not found.".format(obj_id))
 
 
-@blueprint.route('/<obj_id>/access/<user_id>', methods=['POST'])
-def grant_access_permission(obj_id, user_id):
-    pass
+@blueprint.route('/<obj_id>/access', methods=['POST'])
+def grant_access_permission(obj_id):
+    # convert form to dict for convenience
+    form = request.form.to_dict()
+    user_public_key = form['user_public_key']
+
+    # grant access permissions to the user
+    user_key = ECKeyPair.from_public_key_string(user_public_key)
+    permission = instance.grant_access_permission(obj_id, user_key)
 
 
-@blueprint.route('/<obj_id>/access/<user_id>', methods=['DELETE'])
-def revoke_access_permission(obj_id, user_id):
+@blueprint.route('/<obj_id>/access/<user_iid>', methods=['DELETE'])
+def revoke_access_permission(obj_id, user_iid, auth_signature):
     pass
 
 
