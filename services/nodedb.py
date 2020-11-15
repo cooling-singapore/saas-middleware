@@ -5,9 +5,9 @@ NodeDB is a convenience wrapper for the data object records db.
 import os
 import sqlite3
 import logging
-import utilities
+import services.utilities as utilities
 
-from eckeypair import ECKeyPair
+from services.eckeypair import ECKeyPair
 
 logger = logging.getLogger('NodeDB')
 
@@ -35,21 +35,20 @@ class NodeDB:
         )
 
         db.execute(
-            "CREATE TABLE IF NOT EXISTS dor_permissions ("
-            "   id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "   record_id INTEGER NOT NULL,"
-            "   user_iid VARCHAR(64) NOT NULL,"
-            "   FOREIGN KEY (record_id) REFERENCES records (id)"
-            ")"
-        )
-
-        db.execute(
             "CREATE TABLE IF NOT EXISTS dor_tags ("
             "   id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "   record_id INTEGER NOT NULL,"
             "   key TEXT NOT NULL,"
             "   value TEXT,"
             "   FOREIGN KEY (record_id) REFERENCES records (id)"
+            ")"
+        )
+
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS dor_permissions ("
+            "   obj_id VARCHAR(64) NOT NULL,"
+            "   user_iid VARCHAR(64) NOT NULL,"
+            "   UNIQUE(obj_id, user_iid)"
             ")"
         )
 
@@ -135,7 +134,7 @@ class NodeDB:
 
     def get_public_key(self, iid):
         db = sqlite3.connect(self.db_path)
-        record = db.execute("SELECT public_key WHERE iid = '{}".format(iid)).fetchone()
+        record = db.execute("SELECT public_key FROM public_keys WHERE iid = '{}'".format(iid)).fetchone()
         db.close()
         return ECKeyPair.from_public_key_string(record[0]) if record else None
 
@@ -156,13 +155,23 @@ class NodeDB:
         db.commit()
         db.close()
 
+    def update_ownership(self, obj_id, new_owner):
+        db = sqlite3.connect(self.db_path)
+        db.execute(
+            "INSERT OR IGNORE INTO public_keys (iid, public_key) "
+            "VALUES ('{}', '{}')".format(new_owner.iid, new_owner.public_as_string(truncate=True))
+        )
+        db.execute("UPDATE dor_records SET owner_iid = '{}' WHERE obj_id='{}'".format(new_owner.iid, obj_id))
+        db.commit()
+        db.close()
+
     def delete_data_object_record(self, obj_id):
         record = self.get_data_object_by_id(obj_id)
         if record:
             db = sqlite3.connect(self.db_path)
 
             # delete permissions and tags for this records first, then the record itself
-            db.execute("DELETE FROM dor_permissions WHERE record_id = {}".format(record['record_id']))
+            db.execute("DELETE FROM dor_permissions WHERE obj_id = '{}'".format(obj_id))
             db.execute("DELETE FROM dor_tags WHERE record_id = {}".format(record['record_id']))
             db.execute("DELETE FROM dor_records WHERE id = {}".format(record['record_id']))
 
@@ -171,20 +180,47 @@ class NodeDB:
 
         return record
 
+    def get_owner_for_object(self, obj_id):
+        # get the public key for the owner iid
+        record = self.get_data_object_by_id(obj_id)
+        owner = self.get_public_key(record['owner_iid'])
+        return owner
+
+    def insert_access_permission(self, obj_id, user):
+        # record = self.get_data_object_by_id(obj_id)
+        db = sqlite3.connect(self.db_path)
+        db.execute(
+            "INSERT OR IGNORE INTO dor_permissions (obj_id, user_iid) "
+            "VALUES ('{}', '{}')".format(obj_id, user.iid)
+        )
+        db.commit()
+        db.close()
+
+    def delete_access_permission(self, obj_id, user):
+        # record = self.get_data_object_by_id(obj_id)
+        db = sqlite3.connect(self.db_path)
+        db.execute(
+            "DELETE FROM dor_permissions WHERE obj_id='{}' AND user_iid='{}'".format(obj_id, user.iid)
+        )
+        db.commit()
+        db.close()
+
     def get_access_permissions(self, obj_id):
         db = sqlite3.connect(self.db_path)
 
         result = []
-        for record in db.execute(
-            "SELECT p.user_iid "
-            "   FROM dor_permissions AS p "
-            "   INNER JOIN dor_records AS r ON r.id = p.record_id "
-            "   WHERE r.obj_id = '{}'".format(obj_id)
-        ):
+        for record in db.execute("SELECT user_iid FROM dor_permissions WHERE obj_id='{}'".format(obj_id)):
             result.append(record[0])
 
         db.close()
         return result
+
+    def has_access_permissions(self, obj_id, user):
+        db = sqlite3.connect(self.db_path)
+        record = db.execute("SELECT * FROM dor_permissions WHERE obj_id='{}' AND user_iid='{}'".format(obj_id, user.iid))
+        db.close()
+        return True if record else False
+
 
 
     def show_all_records(self):
@@ -195,3 +231,10 @@ class NodeDB:
             logger.info("record: {}".format(record))
         db.close()
 
+    def show_all_public_keys(self):
+        # TODO: remove if not needed anymore
+
+        db = sqlite3.connect(self.db_path)
+        for record in db.execute("SELECT * FROM public_keys"):
+            logger.info("record: {}".format(record))
+        db.close()
