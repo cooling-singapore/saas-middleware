@@ -3,10 +3,10 @@ import json
 import logging
 
 from flask import Flask
-from node import Node
-from dor import DataObjectRepository
+from services.node import Node
+# from services.dor import DataObjectRepository
 
-import dor_blueprint
+import services.dor_blueprint as dor_blueprint
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -60,22 +60,8 @@ def create_node_instance(config):
     return instance
 
 
-def create_dor_instance(node, config):
-    datastore_path = config['datastore']
-
-    # do we have configuration instructions for the service?
-    if 'dor' not in config:
-        raise Exception("no configuration found for DOR service.")
-
-    instance = DataObjectRepository(node, datastore_path)
-    dor_blueprint.initialise(instance)
-
-    return instance
-
-
 try:
     node = None
-    dor = None
 
     # read saas configuration and initialise the SaaS Middleware services
     if 'SAAS_CONFIG' in os.environ:
@@ -89,12 +75,11 @@ try:
 
                 # create the node instance
                 node = create_node_instance(configuration)
-                dor = create_dor_instance(node, configuration)
 
                 # register the SaaS DOR service blueprint
                 logger.info("register SaaS Data Object Repository service.")
                 app.register_blueprint(dor_blueprint.blueprint, url_prefix='/repository')
-                dor_blueprint.initialise(dor)
+                dor_blueprint.initialise(node)
 
         else:
             logger.error("configuration file '{}' not found or not a file.".format(config_path))
