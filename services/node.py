@@ -255,17 +255,3 @@ class Node:
 
         messenger.close()
         logger.info("done serving client '{}'".format(peer.short_iid))
-
-    # def export_custodian_public_key(self):
-    #     # do we have a custodian key in the first place?
-    #     if self.custodian_key is None:
-    #         return None
-    #
-    #     # try to export the custodian key
-    #     try:
-    #         result = subprocess.check_output(['gpg', '--armor', '--export', self.custodian_key])
-    #         result = result.decode('utf-8')
-    #         return result
-    #
-    #     except subprocess.CalledProcessError as e:
-    #         raise Exception("error while exporting custodian public key '{}': {}".format(self.custodian_key, e))
