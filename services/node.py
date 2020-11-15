@@ -10,8 +10,8 @@ import threading
 import socket
 import base64
 
-from nodedb import NodeDB
-from eckeypair import ECKeyPair
+from services.nodedb import NodeDB
+from services.eckeypair import ECKeyPair
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
