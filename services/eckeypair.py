@@ -1,6 +1,7 @@
 import logging
 import time
-import utilities
+import os
+import services.utilities as utilities
 
 import cryptography.hazmat.primitives.serialization as serialization
 
@@ -62,7 +63,7 @@ class ECKeyPair:
     @classmethod
     def from_public_key_string(cls, public_key_string):
         if '-----BEGIN PUBLIC KEY-----' not in public_key_string:
-            public_key_string = '\n'.join(public_key_string[i:i+64] for i in range(0, len(public_key_string), 64))
+            public_key_string = '\n'.join(public_key_string[i:i + 64] for i in range(0, len(public_key_string), 64))
             public_key_string = "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----".format(public_key_string)
 
         return ECKeyPair.from_public_key_bytes(public_key_string.encode('utf-8'))
@@ -111,43 +112,95 @@ class ECKeyPair:
             f.write(self.public_as_bytes())
 
     def sign(self, message):
-        return self.private_key.sign(message, ec.ECDSA(hashes.SHA256()))
+        return self.private_key.sign(message, ec.ECDSA(hashes.SHA256())).hex()
 
     def verify(self, message, signature):
         try:
-            self.public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+            self.public_key.verify(bytes.fromhex(signature), message, ec.ECDSA(hashes.SHA256()))
             return True
 
         except InvalidSignature:
             return False
 
-    def sign_authentication_message(self, message, timeslot_duration=5):
-        # determine time slot
-        timeslot = int(time.time() / timeslot_duration)
-        timeslot_bytes = bytes(timeslot)
+    def sign_authentication_token(self, url, body, files=[]):
+        file_hashes = []
+        for file in files:
+            file_hashes.append(utilities.hash_file_content(file))
+        file_hashes.sort()
+        # logger.info("file_hashes={}".format(file_hashes))
+        # logger.info("url={}".format(utilities.hash_string_object(url).hex()))
+        # logger.info("body={}".format(utilities.hash_json_object(body).hex()))
+        # logger.info("public_key={}".format(utilities.hash_string_object(self.public_as_string(truncate=True)).hex()))
 
-        # create the token as a combination of the message hash and the timeslot hash
-        h0 = utilities.hash_string_object(message).hex()
-        h1 = utilities.hash_bytes_object(timeslot_bytes).hex()
-        token = utilities.hash_string_object(h0 + h1)
+        token = utilities.hash_string_object(url).hex()
+        token += utilities.hash_json_object(body).hex()
+        token += utilities.hash_string_object(self.public_as_string(truncate=True)).hex()
+        for file_hash in file_hashes:
+            token += file_hash.hex()
+            # logger.info("file_hash={}".format(file_hash.hex()))
 
-        # create the signature using the private key
-        signature = self.sign(token)
-        return signature
+        token = utilities.hash_string_object(token)
+        # logger.info("token={}".format(token.hex()))
 
-    def verify_authentication_signature(self, message, signature, timeslot_duration=5):
+        return self.sign(token)
+
+    def verify_authentication_token(self, signature, url, body, files={}):
+        file_hashes = []
+        for label in files:
+            file_hashes.append(utilities.hash_file_content(files[label]))
+        file_hashes.sort()
+        # logger.info("file_hashes={}".format(file_hashes))
+        # logger.info("url={}".format(utilities.hash_string_object(url).hex()))
+        # logger.info("body={}".format(utilities.hash_json_object(body).hex()))
+        # logger.info("public_key={}".format(utilities.hash_string_object(self.public_as_string(truncate=True)).hex()))
+
+        token = utilities.hash_string_object(url).hex()
+        token += utilities.hash_json_object(body).hex()
+        token += utilities.hash_string_object(self.public_as_string(truncate=True)).hex()
+        for file_hash in file_hashes:
+            token += file_hash.hex()
+            # logger.info("file_hash={}".format(file_hash.hex()))
+
+        token = utilities.hash_string_object(token)
+        # logger.info("token={}".format(token.hex()))
+
+        return self.verify(token, signature)
+
+    def sign_authorisation_token(self, url, body, timeslot_length=5):
+        # determine current time slot
+        slot = int(time.time() / timeslot_length)
+
+        # logger.info("url={}".format(utilities.hash_string_object(url).hex()))
+        # logger.info("body={}".format(utilities.hash_json_object(body).hex()))
+        # logger.info("slot={}".format(utilities.hash_bytes_object(bytes(slot)).hex()))
+        # logger.info("public_key={}".format(utilities.hash_string_object(self.public_as_string(truncate=True)).hex()))
+
+        token = utilities.hash_string_object(url).hex()
+        token += utilities.hash_json_object(body).hex()
+        token += utilities.hash_bytes_object(bytes(slot)).hex()
+        token += utilities.hash_string_object(self.public_as_string(truncate=True)).hex()
+        token = utilities.hash_string_object(token)
+        # logger.info("token={}".format(token.hex()))
+
+        return self.sign(token)
+
+    def verify_authorisation_token(self, signature, url, body={}, timeslot_length=5):
         # determine time slots (we allow for some variation before and after)
-        t_ref = int(time.time() / timeslot_duration)
-        timeslots = [t_ref - 1, t_ref, t_ref + 1]
+        ref = int(time.time() / timeslot_length)
+        slots = [ref - 1, ref, ref + 1]
 
-        # see if the signed token is valid for any of the permitted timeslots
-        for timeslot in timeslots:
-            timeslot_bytes = bytes(timeslot)
+        for slot in slots:
+            # logger.info("url={}".format(utilities.hash_string_object(url).hex()))
+            # logger.info("body={}".format(utilities.hash_json_object(body).hex()))
+            # logger.info("slot={}".format(utilities.hash_bytes_object(bytes(slot)).hex()))
+            # logger.info("public_key={}".format(utilities.hash_string_object(self.public_as_string(truncate=True)).hex()))
 
-            # create the token as a combination of the content hash and the timeslot hash
-            h0 = utilities.hash_string_object(message).hex()
-            h1 = utilities.hash_bytes_object(timeslot_bytes).hex()
-            token = utilities.hash_string_object(h0 + h1)
+            token = utilities.hash_string_object(url).hex()
+            token += utilities.hash_json_object(body).hex()
+            token += utilities.hash_bytes_object(bytes(slot)).hex()
+            token += utilities.hash_string_object(self.public_as_string(truncate=True)).hex()
+            token = utilities.hash_string_object(token)
+            # logger.info("token={}".format(token.hex()))
 
             if self.verify(token, signature):
                 return True
