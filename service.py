@@ -3,10 +3,11 @@ import json
 import logging
 
 from flask import Flask
-from services.node import Node
-# from services.dor import DataObjectRepository
+from saas.node import Node
+# from saas.dor import DataObjectRepository
 
-import services.dor_blueprint as dor_blueprint
+import saas.dor.blueprint as dor_blueprint
+import saas.registry.blueprint as registry_blueprint
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -63,7 +64,7 @@ def create_node_instance(config):
 try:
     node = None
 
-    # read saas configuration and initialise the SaaS Middleware services
+    # read saas configuration and initialise the SaaS Middleware saas
     if 'SAAS_CONFIG' in os.environ:
         config_path = os.environ['SAAS_CONFIG']
         if os.path.isfile(config_path):
@@ -76,7 +77,12 @@ try:
                 # create the node instance
                 node = create_node_instance(configuration)
 
-                # register the SaaS DOR service blueprint
+                # register the registry blueprint
+                logger.info("register SaaS Node Registry service.")
+                app.register_blueprint(registry_blueprint.blueprint, url_prefix='/registry')
+                registry_blueprint.initialise(node)
+
+                # register the DOR blueprint
                 logger.info("register SaaS Data Object Repository service.")
                 app.register_blueprint(dor_blueprint.blueprint, url_prefix='/repository')
                 dor_blueprint.initialise(node)
