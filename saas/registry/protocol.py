@@ -21,9 +21,10 @@ class RegistryP2PProtocol(MessengerProtocol):
     and 'request_update'. It furthermore provides methods to send/broadcast messages. This class is IMPLICITLY
     thread-safe only.
     """
+    id = "registry"
 
     def __init__(self, node):
-        super().__init__(node, "registry", {
+        super().__init__(node, RegistryP2PProtocol.id, {
             'join': self.handle_join,
             'leave': self.handle_leave,
             'update': self.handle_update,
@@ -111,6 +112,8 @@ class RegistryP2PProtocol(MessengerProtocol):
         :param peer_address: the address (host, port) of the peer
         :return: None
         """
+        logger.debug("send 'join' message to {}".format(peer_address))
+
         # connect to boot node
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
         logger.info("connected to peer (boot node) '{}'".format(peer.iid))

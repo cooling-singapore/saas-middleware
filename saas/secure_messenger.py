@@ -108,6 +108,8 @@ class MessengerProtocol:
         :param exclude: an (optional) list of peer iids which are to be excluded from the broadcast
         :return: None
         """
+        logger.debug("broadcast message: {}".format(message))
+
         # we always exclude ourselves
         if exclude is None:
             exclude = []
