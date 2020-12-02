@@ -93,7 +93,7 @@ class Registry:
         """
         result = []
         for peer_iid, record in records.items():
-            if self.update(peer_iid, record['address'], record['processors'], record['last_seen']):
+            if self.update(peer_iid, record['name'], record['address'], record['processors'], record['last_seen']):
                 result.append(peer_iid)
 
         return result
