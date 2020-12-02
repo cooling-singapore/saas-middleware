@@ -53,11 +53,15 @@ def create_node_instance(config):
     temp = config['server_address']
     temp = temp.split(":")
     server_address = (temp[0], int(temp[1]))
-    password = config['password']
 
-    instance = Node(datastore_path)
-    instance.initialise_identity(password)
+    temp = config['boot_node_address']
+    temp = temp.split(":")
+    boot_node_address = (temp[0], int(temp[1]))
+
+    instance = Node(config['name'], datastore_path)
+    instance.initialise_identity(config['password'])
     instance.start_server(server_address)
+    instance.initialise_registry(boot_node_address)
     return instance
 
 

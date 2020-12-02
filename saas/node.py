@@ -38,8 +38,9 @@ class Node:
     thread-safe.
     """
 
-    def __init__(self, datastore_path):
+    def __init__(self, name, datastore_path):
         self.mutex = Lock()
+        self.name = name
         self.key = None
 
         # initialise datastore
@@ -92,6 +93,19 @@ class Node:
             ))
         self.mutex.release()
 
+    def initialise_registry(self, boot_node_address):
+        """
+        Initialise the registry, i.e., add ourself to the registry and send a 'join' message to the boot node in order
+        to join the domain.
+        :param boot_node_address: the address of the boot node (host: port)
+        :return:
+        """
+        # update the registry with information about ourself
+        self.registry.update(self.key.iid, self.name, self.server_address, [])
+
+        # send a 'join' message to the boot node
+        self.msg_protocols[RegistryP2PProtocol.id].send_join(boot_node_address)
+
     def start_server(self, server_address, concurrency=5):
         """
         Starts the TCP socket server at the specified address, allowing for some degree of concurrency. A separate
@@ -103,9 +117,6 @@ class Node:
         self.mutex.acquire()
         if not self.server_socket:
             self.server_address = server_address
-
-            # update the registry with information about ourself
-            self.registry.update(self.key.iid, self.server_address, [])
 
             # create server socket
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

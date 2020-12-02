@@ -52,11 +52,12 @@ class Registry:
         self.mutex.release()
         return result[node_iid] if node_iid else result
 
-    def update(self, node_iid, address, processors, last_seen=None):
+    def update(self, node_iid, name, address, processors, last_seen=None):
         """
         Updates the information of a node in the records. Adds a new record in case there isn't already one for
         that node iid.
         :param node_iid: the iid of the node
+        :param name: the name of the node
         :param address: the address (host, port) on which that node is listening
         :param processors: a list of strings, indicating the processor types supported by that node
         :param last_seen: a timestamp indicating when this node has been last seen (default: None - current time is
@@ -74,6 +75,7 @@ class Registry:
         # record OR (2) we don't have a a record for that node yet.
         if node_iid not in self.records or last_seen > self.records[node_iid]['last_seen']:
             self.records[node_iid] = {
+                'name': name,
                 'address': address,
                 'processors': processors,
                 'last_seen': last_seen
