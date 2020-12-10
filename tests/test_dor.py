@@ -1,11 +1,17 @@
 import unittest
-import os
 import logging
+import time
+import os
 import time
 import json
 import requests
 
-from saas.eckeypair import ECKeyPair
+
+from tests.testing_environment import TestingEnvironment
+from saas.eckeypair import hash_file_content
+from saas.utilities.general_helpers import object_to_ordered_list
+from saas.node import Node
+from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -13,76 +19,70 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
 logger = logging.getLogger(__name__)
-datastore_path = '/Users/heikoaydt/Desktop/saas_env/testing'
-test_file_path = os.path.join(datastore_path, 'data.zip')
-test_file_path2 = os.path.join(datastore_path, 'data2.zip')
-test_file_id = 'd53473e1328c325aae023bec037f2613b478375bf00f470a5b7f738a297cce98'
-
-def create_keys(password):
-    k1_path = os.path.join(datastore_path, "key1.pem")
-    k2_path = os.path.join(datastore_path, "key2.pem")
-    k3_path = os.path.join(datastore_path, "key3.pem")
-
-    if os.path.isfile(k1_path):
-        k1 = ECKeyPair.from_private_key_file(k1_path, password)
-    else:
-        k1 = ECKeyPair.create_new()
-        k1.write_private(k1_path, password)
-
-    if os.path.isfile(k2_path):
-        k2 = ECKeyPair.from_private_key_file(k2_path, password)
-    else:
-        k2 = ECKeyPair.create_new()
-        k2.write_private(k2_path, password)
-
-    if os.path.isfile(k3_path):
-        k3 = ECKeyPair.from_private_key_file(k3_path, password)
-    else:
-        k3= ECKeyPair.create_new()
-        k3.write_private(k3_path, password)
-
-    return k1, k2, k3
 
 
-def create_authentication(url, body, auth_key, attachment_path=None):
+# def create_authentication(url, body, auth_key, attachment_path=None):
+#     return {
+#         'public_key': auth_key.public_as_string(),
+#         'signature':
+#             auth_key.sign_authentication_token(url, body, [attachment_path]) if attachment_path else
+#             auth_key.sign_authentication_token(url, body)
+#     }
+
+
+def create_authentication2(url, auth_key, body=None, attachment_path=None):
     return {
         'public_key': auth_key.public_as_string(),
-        'signature': auth_key.sign_authentication_token(url, body, [attachment_path] if attachment_path else [])
+        'signature':
+            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
+            auth_key.sign_authentication_token(url, body=body)
     }
 
 
-def create_authorisation(url, body, auth_key):
+# def create_authorisation(url, body, auth_key):
+#     return {
+#         'public_key': auth_key.public_as_string(),
+#         'signature': auth_key.sign_authorisation_token(url, body)
+#     }
+
+
+def create_authorisation2(url, auth_key, body=None):
     return {
         'public_key': auth_key.public_as_string(),
         'signature': auth_key.sign_authorisation_token(url, body)
     }
 
 
-key1, key2, key3 = create_keys("test")
-logger.info("key1={} iid1={}".format(key1.public_as_string(), key1.iid))
-logger.info("key2={} iid1={}".format(key2.public_as_string(), key2.iid))
-logger.info("key3={} iid1={}".format(key3.public_as_string(), key3.iid))
-
-
-def add_data_object(sender, file_path, owner):
+def add_data_object(sender, owner):
     url = "http://127.0.0.1:5000/repository"
     body = {
-        'type': 'import',
-        'header': {
-            'type': 'map',
-            'format': 'json',
+        'type': 'data_object',
+        'owner_public_key': owner.public_as_string(),
+        'descriptor': {
+            'data_type': 'map',
+            'data_format': 'json',
             'created_t': 21342342,
             'created_by': 'heiko',
-            'provenance': {
-                'parents': ['p1', 'p2'],
-                'process': 'proc03423',
-                'parameters': {}
+            'recipe': {
+                'output_name': 'asdasd',
+                'job_descriptor': {
+                    'processor_id': '34532452345',
+                    'input': [
+
+                    ],
+                    'output': [
+
+                    ]
+                }
             }
-        },
-        'owner_public_key': owner.public_as_string()
+        }
     }
-    authentication = create_authentication('POST:/', body, sender, file_path)
+    test_file_path = env.generate_zero_file('test000.dat', 1024*1024)
+    test_obj_id = '0b4c2fdfb49f6ee3190b28ad5b615884e591e003398c8fd2468852b6a754353c'
+
+    authentication = create_authentication2('POST:/repository', sender, body, test_file_path)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -90,30 +90,42 @@ def add_data_object(sender, file_path, owner):
 
     with open(test_file_path, 'rb') as f:
         r = requests.post(url, data=content, files={'attachment': f.read()}).json()
-        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+        return test_obj_id, r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
 
 
 def delete_data_object(sender, obj_id, owner):
     url = "http://127.0.0.1:5000/repository/{}".format(obj_id)
-    body = {}
-    authentication = create_authentication("DELETE:/{}".format(obj_id), body, sender)
-    authorisation = create_authorisation("DELETE:/{}".format(obj_id), body, owner)
+    # body = {}
+    authentication = create_authentication2("DELETE:/repository/{}".format(obj_id), sender)
+    authorisation = create_authorisation2("DELETE:/repository/{}".format(obj_id), owner)
     content = {
-        'body': json.dumps(body),
+        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
     }
 
     r = requests.delete(url, data=content).json()
-    return r['reply']['header'] if 'header' in r['reply'] else None
+    return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
+
+
+def get_descriptor(sender, obj_id):
+    url = "http://127.0.0.1:5000/repository/{}/descriptor".format(obj_id)
+    authentication = create_authentication2("GET:/repository/{}/descriptor".format(obj_id), sender)
+    content = {
+        # 'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.get(url, data=content).json()
+    return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
 
 
 def get_access_permissions(sender, obj_id):
     url = "http://127.0.0.1:5000/repository/{}/access".format(obj_id)
-    body = {}
-    authentication = create_authentication("GET:/{}/access".format(obj_id), body, sender)
+    # body = {}
+    authentication = create_authentication2("GET:/repository/{}/access".format(obj_id), sender)
     content = {
-        'body': json.dumps(body),
+        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
@@ -126,8 +138,8 @@ def grant_access(sender, obj_id, user, owner):
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication("POST:/{}/access".format(obj_id), body, sender)
-    authorisation = create_authorisation("POST:/{}/access".format(obj_id), body, owner)
+    authentication = create_authentication2("POST:/repository/{}/access".format(obj_id), sender, body)
+    authorisation = create_authorisation2("POST:/repository/{}/access".format(obj_id), owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -143,8 +155,8 @@ def revoke_access(sender, obj_id, user, owner):
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication("DELETE:/{}/access".format(obj_id), body, sender)
-    authorisation = create_authorisation("DELETE:/{}/access".format(obj_id), body, owner)
+    authentication = create_authentication2("DELETE:/repository/{}/access".format(obj_id), sender, body)
+    authorisation = create_authorisation2("DELETE:/repository/{}/access".format(obj_id), owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -157,10 +169,10 @@ def revoke_access(sender, obj_id, user, owner):
 
 def get_ownership(sender, obj_id):
     url = "http://127.0.0.1:5000/repository/{}/owner".format(obj_id)
-    body = {}
-    authentication = create_authentication("GET:/{}/owner".format(obj_id), body, sender)
+    # body = {}
+    authentication = create_authentication2("GET:/repository/{}/owner".format(obj_id), sender)
     content = {
-        'body': json.dumps(body),
+        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
@@ -173,8 +185,8 @@ def transfer_ownership(sender, obj_id, current_owner, new_owner):
     body = {
         'new_owner_public_key': new_owner.public_as_string()
     }
-    authentication = create_authentication("PUT:/{}/owner".format(obj_id), body, sender)
-    authorisation = create_authorisation("PUT:/{}/owner".format(obj_id), body, current_owner)
+    authentication = create_authentication2("PUT:/repository/{}/owner".format(obj_id), sender, body)
+    authorisation = create_authorisation2("PUT:/repository/{}/owner".format(obj_id), current_owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -185,28 +197,12 @@ def transfer_ownership(sender, obj_id, current_owner, new_owner):
     return r['reply']
 
 
-def get_header(sender, obj_id):
-    url = "http://127.0.0.1:5000/repository/{}/header".format(obj_id)
-    body = {}
-    authentication = create_authentication("GET:/{}/header".format(obj_id), body, sender)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    r = requests.get(url, data=content).json()
-    return r['reply']
-
-
 def export_data_object_content(sender, obj_id, owner, destination):
     url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
-    body = {
-        'type': 'export'
-    }
-    authentication = create_authentication("GET:/{}/content".format(obj_id), body, sender)
-    authorisation = create_authorisation("GET:/{}/content".format(obj_id), body, owner)
+    authentication = create_authentication2("GET:/repository/{}/content".format(obj_id), sender)
+    authorisation = create_authorisation2("GET:/repository/{}/content".format(obj_id), owner)
     content = {
-        'body': json.dumps(body),
+        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
     }
@@ -222,155 +218,187 @@ def export_data_object_content(sender, obj_id, owner, destination):
         return r.status_code
 
 
-def fetch_data_object_content(sender, obj_id, owner):
-    url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
-    body = {
-        'type': 'internal'
-    }
-    authentication = create_authentication("GET:/{}/content".format(obj_id), body, sender)
-    authorisation = create_authorisation("GET:/{}/content".format(obj_id), body, owner)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication),
-        'authorisation': json.dumps(authorisation)
-    }
+# def fetch_data_object_content(sender, obj_id, owner):
+#     url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
+#     body = {
+#         'type': 'internal'
+#     }
+#     authentication = create_authentication2("GET:/{}/content".format(obj_id), sender, body)
+#     authorisation = create_authorisation2("GET:/{}/content".format(obj_id), owner, body)
+#     content = {
+#         'body': json.dumps(body),
+#         'authentication': json.dumps(authentication),
+#         'authorisation': json.dumps(authorisation)
+#     }
+#
+#     r = requests.get(url, data=content).json()
+#     return r['reply']['path'] if 'path' in r['reply'] else None
 
-    r = requests.get(url, data=content).json()
-    return r['reply']['path'] if 'path' in r['reply'] else None
 
+class DORBlueprintTestCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        env.start_flask_app()
 
-class DORRecordsTestCases(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        env.stop_flask_app()
+
     def setUp(self):
-        pass
+        env.prepare_working_directory()
+        self.keys = env.generate_keys(3)
 
     def tearDown(self):
         pass
 
-    # def test_authentication(self):
-    #     url = "/repository/345345345lk3j45345ef3f34r3984r"
-    #     params = {
-    #         'a': 'asdasdas',
-    #         'f': 2343
-    #     }
-    #     file_path = os.path.join(datastore_path, 'data.zip')
-    #     signature = key1.sign_authentication_token(url, params, [file_path])
-    #     assert key1.verify_authentication_token(signature, url, params, {'label': file_path})
-    #
-    # def test_authorisation(self):
-    #     url = "/repository/345345345lk3j45345ef3f34r3984r"
-    #     params = {
-    #         'a': 'asdasdas',
-    #         'f': 2343
-    #     }
-    #     signature = key1.sign_authorisation_token(url, params)
-    #     assert key1.verify_authorisation_token(signature, url, params)
-    #
-    #     time.sleep(7)
-    #     assert not key1.verify_authorisation_token(signature, url, params)
-
     def test_add_delete_data_object(self):
-        obj_id = add_data_object(key1, test_file_path, key2)
-        logger.info("obj_id={}".format(obj_id))
+        # create the data object
+        ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
+        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        assert ref_obj_id is not None
         assert obj_id is not None
-        assert obj_id == test_file_id
+        assert obj_id == ref_obj_id
 
-        header = delete_data_object(key1, obj_id, key2)
-        logger.info("header={}".format(header))
-        assert header is not None
+        # get the descriptor of the data object
+        descriptor1 = get_descriptor(self.keys[0], obj_id)
+        logger.info("descriptor1={}".format(descriptor1))
+        assert descriptor1 is not None
+
+        # delete the data object
+        descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
+        logger.info("descriptor2={}".format(descriptor2))
+        assert descriptor2 is not None
+        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_grant_revoke_access(self):
-        obj_id = add_data_object(key1, test_file_path, key2)
-        logger.info("obj_id={}".format(obj_id))
+        ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
+        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        assert ref_obj_id is not None
         assert obj_id is not None
-        assert obj_id == test_file_id
+        assert obj_id == ref_obj_id
 
-        permissions = get_access_permissions(key1, obj_id)
+        permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info("permissions={}".format(permissions))
         assert len(permissions) == 1
-        assert permissions[0]['user_iid'] == key2.iid
+        assert self.keys[1].iid in permissions
 
-        reply = grant_access(key1, obj_id, key3, key1)
-        assert reply == 'Authorisation failed. Action not allowed.'
+        reply = grant_access(self.keys[0], obj_id, self.keys[2], self.keys[0])
+        assert reply == 'Authorisation failed.'
 
-        permissions = get_access_permissions(key1, obj_id)
+        permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info("permissions={}".format(permissions))
         assert len(permissions) == 1
-        assert permissions[0]['user_iid'] == key2.iid
+        assert permissions[0] == self.keys[1].iid
 
-        reply = grant_access(key1, obj_id, key3, key2)
+        reply = grant_access(self.keys[0], obj_id, self.keys[2], self.keys[1])
         assert reply == 'Access granted.'
 
-        permissions = get_access_permissions(key1, obj_id)
+        permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info("permissions={}".format(permissions))
         assert len(permissions) == 2
-        assert permissions[0]['user_iid'] == key2.iid
-        assert permissions[1]['user_iid'] == key3.iid
+        assert self.keys[1].iid in permissions
+        assert self.keys[2].iid in permissions
 
-        reply = revoke_access(key1, obj_id, key3, key2)
+        reply = revoke_access(self.keys[0], obj_id, self.keys[2], self.keys[1])
         assert reply == 'Access revoked.'
 
-        permissions = get_access_permissions(key1, obj_id)
+        permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info("permissions={}".format(permissions))
         assert len(permissions) == 1
-        assert permissions[0]['user_iid'] == key2.iid
+        assert self.keys[1].iid in permissions
 
-        header = delete_data_object(key1, obj_id, key2)
-        logger.info("header={}".format(header))
-        assert header is not None
-
+        descriptor = delete_data_object(self.keys[0], obj_id, self.keys[1])
+        logger.info("descriptor={}".format(descriptor))
+        assert descriptor is not None
 
     def test_transfer_ownership(self):
-        obj_id = add_data_object(key1, test_file_path, key2)
-        logger.info("obj_id={}".format(obj_id))
+        ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
+        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        assert ref_obj_id is not None
         assert obj_id is not None
-        assert obj_id == test_file_id
+        assert obj_id == ref_obj_id
 
-        owner_info = get_ownership(key1, obj_id)
+        owner_info = get_ownership(self.keys[0], obj_id)
         logger.info("owner_info={}".format(owner_info))
-        assert owner_info['owner_iid'] == key2.iid
+        assert owner_info['owner_iid'] == self.keys[1].iid
 
-        reply = transfer_ownership(key1, obj_id, key1, key3)
-        assert reply == 'Authorisation failed. Action not allowed.'
+        reply = transfer_ownership(self.keys[0], obj_id, self.keys[0], self.keys[2])
+        assert reply == 'Authorisation failed.'
 
-        reply = transfer_ownership(key1, obj_id, key2, key3)
-        assert reply != 'Authorisation failed. Action not allowed.'
+        reply = transfer_ownership(self.keys[0], obj_id, self.keys[1], self.keys[2])
+        logger.info("reply={}".format(reply))
+        assert reply == "Ownership of data object '{}' transferred to '{}'.".format(obj_id, self.keys[2].iid)
 
-        owner_info = get_ownership(key1, obj_id)
+        owner_info = get_ownership(self.keys[0], obj_id)
         logger.info("owner_info={}".format(owner_info))
-        assert owner_info['owner_iid'] == key3.iid
+        assert owner_info['owner_iid'] == self.keys[2].iid
 
-        header = delete_data_object(key1, obj_id, key2)
-        logger.info("header={}".format(header))
-        assert header is None
+        descriptor = delete_data_object(self.keys[0], obj_id, self.keys[1])
+        logger.info("descriptor={}".format(descriptor))
+        assert descriptor is None
 
-        header = delete_data_object(key1, obj_id, key3)
-        logger.info("header={}".format(header))
-        assert header is not None
-
+        descriptor = delete_data_object(self.keys[0], obj_id, self.keys[2])
+        logger.info("descriptor={}".format(descriptor))
+        assert descriptor is not None
 
     def test_get_data_object(self):
-        obj_id = add_data_object(key1, test_file_path, key2)
-        logger.info("obj_id={}".format(obj_id))
+        ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
+        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        assert ref_obj_id is not None
         assert obj_id is not None
-        assert obj_id == test_file_id
+        assert obj_id == ref_obj_id
 
-        header = get_header(key1, obj_id)
-        logger.info("header={}".format(header))
-        assert header is not None
+        descriptor1 = get_descriptor(self.keys[0], obj_id)
+        logger.info("descriptor1={}".format(descriptor1))
+        assert descriptor1 is not None
 
-        reply = export_data_object_content(key1, obj_id, key1, test_file_path2)
+        destination = os.path.join(env.wd_path, 'test_copy.dat')
+        reply = export_data_object_content(self.keys[0], obj_id, self.keys[0], destination)
         assert reply == 401
+        assert not os.path.exists(destination)
 
-        reply = export_data_object_content(key1, obj_id, key2, test_file_path2)
+        reply = export_data_object_content(self.keys[0], obj_id, self.keys[1], destination)
         assert reply == 200
+        assert os.path.isfile(destination)
 
-        path = fetch_data_object_content(key1, obj_id, key1)
-        logger.info("path={}".format(path))
-        assert path is not None
+        # path = fetch_data_object_content(self.keys[0], obj_id, self.keys[0])
+        # logger.info("path={}".format(path))
+        # assert path is not None
 
-        header = delete_data_object(key1, obj_id, key2)
-        logger.info("header={}".format(header))
-        assert header is not None
+        descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
+        logger.info("descriptor2={}".format(descriptor2))
+        assert descriptor2 is not None
+        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+
+    def test_fetch_data_object(self):
+        ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
+        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        assert ref_obj_id is not None
+        assert obj_id is not None
+        assert obj_id == ref_obj_id
+
+        descriptor1 = get_descriptor(self.keys[0], obj_id)
+        logger.info("descriptor1={}".format(descriptor1))
+        assert descriptor1 is not None
+
+        # create the receiving node
+        node = Node('receiver', env.wd_path)
+        node.initialise_identity(env.wd_path)
+        node.start_server((env.p2p_host, env.p2p_port))
+
+        peer_address = (env.app_service_p2p_host, env.app_service_p2p_port)
+        destination = os.path.join(env.wd_path, 'test_copy.dat')
+
+        protocol = DataObjectRepositoryP2PProtocol(node)
+        protocol.send_fetch(peer_address, obj_id, destination)
+        assert os.path.isfile(destination)
+
+        node.stop_server()
+
+        descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
+        logger.info("descriptor2={}".format(descriptor2))
+        assert descriptor2 is not None
+        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
 
 if __name__ == '__main__':

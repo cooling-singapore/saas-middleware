@@ -1,17 +1,12 @@
 import unittest
-import logging
-import sqlite3
-import os
-import time
-import json
-import requests
 import os
 import logging
 import time
-import socket
 
 from saas.node import Node
 from saas.secure_messenger import SecureMessenger, MessengerRuntimeError, MessengerInvalidUseException
+
+from tests.testing_environment import TestingEnvironment
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -20,28 +15,18 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-datastore_path = '/Users/heikoaydt/Desktop/saas_env/testing'
-password = "test"
+env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
 
 
 class NodeTestCases(unittest.TestCase):
-    # def setUp(self, n_nodes=2):
-    #     port = 5010
-    #
-    #     self.nodes = []
-    #     for i in range(0, n_nodes):
-    #         address = ("127.0.0.1", port+i)
-    #         node = Node(os.path.join(datastore_path, "node_{}".format(i)))
-    #         node.initialise_identity(password)
-    #         node.start_server(address)
-    #         self.nodes.append(node)
-    #
-    # def tearDown(self):
-    #     for i in range(0, len(self.nodes)):
-    #         self.nodes[i].stop_server()
+    def setUp(self):
+        env.prepare_working_directory()
+
+    def tearDown(self):
+        pass
 
     def test_node_creation_and_initialisation(self):
-        node = Node('test_node', datastore_path)
+        node = Node('test_node', env.wd_path)
 
         # identity hasn't been initialised yet, so no key yet
         assert not node.key
@@ -50,13 +35,13 @@ class NodeTestCases(unittest.TestCase):
         assert not node.server_socket
 
         # initialise the identity, afterwards we should have a key, iid and short_iid
-        node.initialise_identity(password)
+        node.initialise_identity(env.wd_path)
         assert node.key
         assert node.key.iid
         assert node.key.short_iid
 
         # start the node server
-        node.start_server(('127.0.0.1', 5000))
+        node.start_server((env.p2p_host, env.p2p_port))
         assert node.server_socket
 
         time.sleep(5)
@@ -64,14 +49,14 @@ class NodeTestCases(unittest.TestCase):
         assert not node.server_socket
 
     def test_node_invalid_message(self):
-        node0 = Node('node0', os.path.join(datastore_path, 'node0'))
-        node0.initialise_identity(password)
+        node0 = Node('node0', os.path.join(env.wd_path, 'node0'))
+        node0.initialise_identity(env.password)
 
-        node1 = Node('node1', os.path.join(datastore_path, 'node1'))
-        node1.initialise_identity(password)
+        node1 = Node('node1', os.path.join(env.wd_path, 'node1'))
+        node1.initialise_identity(env.password)
 
         # start the node server
-        address0 = ('127.0.0.1', 5000)
+        address0 = (env.p2p_host, env.p2p_port)
         node0.start_server(address0)
         assert node0.server_socket
 
@@ -113,19 +98,19 @@ class NodeTestCases(unittest.TestCase):
         assert not node0.server_socket
 
     def test_node_unreachable(self):
-        node0 = Node('node0', os.path.join(datastore_path, 'node0'))
-        node0.initialise_identity(password)
+        node0 = Node('node0', os.path.join(env.wd_path, 'node0'))
+        node0.initialise_identity(env.password)
 
-        node1 = Node('node1', os.path.join(datastore_path, 'node1'))
-        node1.initialise_identity(password)
+        node1 = Node('node1', os.path.join(env.wd_path, 'node1'))
+        node1.initialise_identity(env.password)
 
         # start the node server
-        address0 = ('127.0.0.1', 5000)
+        address0 = (env.p2p_host, env.p2p_port)
         node0.start_server(address0)
         assert node0.server_socket
 
         # try to establish a connection to node0 but use the wrong port
-        peer, messenger = SecureMessenger.connect_to_peer(('127.0.0.1', 5001), node1)
+        peer, messenger = SecureMessenger.connect_to_peer((env.p2p_host, env.p2p_port+1), node1)
         assert not peer
         assert not messenger
 
