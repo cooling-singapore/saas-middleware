@@ -39,6 +39,7 @@ class RegistryP2PProtocol(MessengerProtocol):
         :param messenger: the messenger that facilitates communication between the node and the peer
         :return: None
         """
+        logger.debug("handle 'join' message: {}".format(message))
         if message['action'] == 'update':
             # update the node's records
             self.node.registry.update_all(message['content'])
@@ -102,7 +103,7 @@ class RegistryP2PProtocol(MessengerProtocol):
         """
         messenger.reply_ok(self.prepare_message('update', {
             'action': 'update',
-            'content': self.node.registry.get(),
+            'content': self.node.registry.get_by_object_id(),
         }))
 
     def send_join(self, peer_address):
