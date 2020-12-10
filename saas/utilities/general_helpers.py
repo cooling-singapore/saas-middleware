@@ -30,3 +30,24 @@ def dump_json_to_file(json_input, destination_path):
     """
     with open(destination_path, 'w') as f:
         json.dump(json_input, f, indent=4, sort_keys=True)
+
+
+def object_to_ordered_list(obj):
+    """
+    Recursively sort any lists (and convert dictionaries to lists of (key, value) pairs so that they can be sorted)
+    and return the result as a sorted list.
+    Source: https://stackoverflow.com/questions/25851183/how-to-compare-two-json-objects-with-the-same-elements-in-a-different-order-equa
+    :param obj: a dictionary
+    :return:
+    """
+    if isinstance(obj, dict):
+        return sorted((k, object_to_ordered_list(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(object_to_ordered_list(x) for x in obj)
+    else:
+        return obj
+
+
+def get_address_from_string(address_string):
+    temp = address_string.split(":")
+    return temp[0], int(temp[1])
