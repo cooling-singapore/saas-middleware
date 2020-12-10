@@ -21,6 +21,8 @@ from saas.registry.registry import Registry
 from saas.registry.protocol import RegistryP2PProtocol
 from saas.dor.dor import DataObjectRepository
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.nodedb.nodedb import NodeDB
+from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.eckeypair import ECKeyPair
 
 logger = logging.getLogger('Node')
@@ -57,13 +59,18 @@ class Node:
         self.registry = Registry()
         registry_protocol = RegistryP2PProtocol(self)
 
+        # initialise the node database
+        self.db = NodeDB(self)
+        db_protocol = NodeDBP2PProtocol(self)
+
         # initialise the data object repository
-        self.dor = DataObjectRepository(os.path.join(datastore_path, 'records.dor.db'))
+        self.dor = DataObjectRepository(self)
         dor_protocol = DataObjectRepositoryP2PProtocol(self)
 
         # initialise messenger protocols
         self.msg_protocols = {
             registry_protocol.protocol_name: registry_protocol,
+            db_protocol.protocol_name: db_protocol,
             dor_protocol.protocol_name: dor_protocol
         }
 
@@ -126,7 +133,9 @@ class Node:
             logger.info("server initialised at address '{}'".format(self.server_address))
 
             # start the server thread
-            threading.Thread(target=self.handle_incoming_connections).start()
+            thread = threading.Thread(target=self.handle_incoming_connections)
+            thread.setDaemon(True)
+            thread.start()
         self.mutex.release()
 
     def stop_server(self):
