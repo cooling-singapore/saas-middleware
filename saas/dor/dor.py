@@ -6,26 +6,28 @@ __author__ = "Heiko Aydt"
 __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
-import sqlite3
+import os
 import logging
+import subprocess
+import json
 
-from saas.eckeypair import ECKeyPair
-from saas.utilities.database_helpers import DBTable
-from saas.utilities.general_helpers import get_timestamp_now
+from cryptography.hazmat.primitives import hashes
+
+from saas.eckeypair import ECKeyPair, hash_json_object, hash_file_content
+from saas.utilities.general_helpers import get_timestamp_now, dump_json_to_file
+from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logger = logging.getLogger('DOR.Records')
 
 
-class DORRecordsTable(DBTable):
+class DORRecordsTable:
     """
     Convenient wrapper class for the 'dor_records' database table.
     """
-    def __init__(self, db_path):
-        super().__init__(db_path, "dor_records")
-
-        self.create({
+    def __init__(self, node_db):
+        self.table = node_db.create_table('dor_records', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
-            'h_hash': 'VARCHAR(64) NOT NULL',
+            'd_hash': 'VARCHAR(64) NOT NULL',
             'c_hash': 'VARCHAR(64) NOT NULL',
             'obj_id': 'VARCHAR(64) NOT NULL',
             'owner_iid': 'VARCHAR(64) NOT NULL',
@@ -34,10 +36,10 @@ class DORRecordsTable(DBTable):
             'expiration': 'UNSIGNED BIG INT'
         })
 
-    def add_data_object(self, h_hash, c_hash, obj_id, owner, custodian, expiration=None):
+    def add(self, d_hash, c_hash, obj_id, owner, custodian, expiration=None):
         """
         Adds a data object record to the table.
-        :param h_hash: header hash
+        :param d_hash: descriptor hash
         :param c_hash: content hash
         :param obj_id: object id
         :param owner: the identity (ECKeyPair) of the data object owner
@@ -49,8 +51,8 @@ class DORRecordsTable(DBTable):
         last_access = get_timestamp_now()
         expiration = 'NULL' if expiration is None else expiration
 
-        self.insert({
-            'h_hash': h_hash,
+        self.table.insert({
+            'd_hash': d_hash,
             'c_hash': c_hash,
             'obj_id': obj_id,
             'owner_iid': owner.iid,
@@ -58,24 +60,27 @@ class DORRecordsTable(DBTable):
             'last_access': last_access,
             'expiration': expiration
         })
-        # db.execute(
-        #     "INSERT OR IGNORE INTO public_keys (iid, public_key) "
-        #     "VALUES ('{}', '{}')".format(owner.iid, owner.public_as_string(truncate=True))
-        # )
 
-    def get_owner(self, obj_id):
+    def get_by_object_id(self, obj_id):
         """
-        Returns the owner identity associated with a given object id.
+        Returns the data object record with a given object id.
         :param obj_id: the object id
-        :return: ECKeyPair or None in case no object with the given id can be found
+        :return:
         """
-        records = self.select([
-            "owner_iid"
-        ], {
+        result = self.table.select(where_parameters={
             'obj_id': obj_id
         })
+        return result[0] if result else None
 
-        return str(records[0]['owner_iid']) if records else None
+    def get_by_content_hash(self, c_hash):
+        return self.table.select(where_parameters={
+            'c_hash': c_hash
+        })
+
+    def delete(self, obj_id):
+        self.table.delete({
+            'obj_id': obj_id
+        })
 
     def update_ownership(self, obj_id, new_owner):
         """
@@ -84,25 +89,31 @@ class DORRecordsTable(DBTable):
         :param new_owner: the identity of the new owner
         :return: None
         """
-        self.update({
+        self.table.update({
             'owner_iid': new_owner.iid
         }, {
             'obj_id': obj_id
         })
 
+    def get_number_of_rows(self):
+        return self.table.get_number_of_rows()
 
-class DORTagsTable(DBTable):
+
+class DORTagsTable:
     """
     Convenient wrapper class for the 'dor_tags' database table.
     """
-    def __init__(self, db_path):
-        super().__init__(db_path, "dor_tags")
-
-        self.create({
+    def __init__(self, node_db):
+        self.table = node_db.create_table('dor_tags', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
-            'record_id': 'INTEGER NOT NULL',
+            'obj_id': 'INTEGER NOT NULL',
             'key': 'TEXT NOT NULL',
             'value': 'TEXT'
+        })
+
+    def delete_all(self, obj_id):
+        self.table.delete({
+            'obj_id': obj_id
         })
 
     def get_distinct_tag_keys(self):
@@ -110,19 +121,17 @@ class DORTagsTable(DBTable):
         Returns the distinct tags found in the table.
         :return: list of distinct tags
         """
-        return self.select([
+        return self.table.select([
             'key'
         ], use_distinct=True)
 
 
-class DORPermissionsTable(DBTable):
+class DORPermissionsTable:
     """
     Convenient wrapper class for the 'dor_permissions' database table.
     """
-    def __init__(self, db_path):
-        super().__init__(db_path, "dor_permissions")
-
-        self.create({
+    def __init__(self, node_db):
+        self.table = node_db.create_table('dor_permissions', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
             'obj_id': 'VARCHAR(64) NOT NULL',
             'user_iid': 'VARCHAR(64) NOT NULL'
@@ -135,7 +144,7 @@ class DORPermissionsTable(DBTable):
         :param user: the identity of the user
         :return: None
         """
-        self.insert({
+        self.table.insert({
             'obj_id': obj_id,
             'user_iid': user.iid
         }, or_ignore=True)
@@ -147,9 +156,19 @@ class DORPermissionsTable(DBTable):
         :param user: the identity of the user
         :return: None
         """
-        self.delete({
+        self.table.delete({
             'obj_id': obj_id,
             'user_iid': user.iid
+        })
+
+    def revoke_all(self, obj_id):
+        """
+        Revoke the access for all users to a data object.
+        :param obj_id: the id of the data object
+        :return: None
+        """
+        self.table.delete({
+            'obj_id': obj_id
         })
 
     def get_access_permissions(self, obj_id):
@@ -158,14 +177,19 @@ class DORPermissionsTable(DBTable):
         :param obj_id: the id of the data object
         :return: a list of user iids
         """
-        return self.select(
+        result = []
+        for item in self.table.select(
             [
                 'user_iid'
             ],
             {
                 'obj_id': obj_id
             }
-        )
+        ):
+            result.append(item['user_iid'])
+
+        return result
+
 
     def has_access(self, obj_id, user):
         """
@@ -174,7 +198,7 @@ class DORPermissionsTable(DBTable):
         :param user: the identity of the user
         :return: True or False
         """
-        records = self.select(
+        records = self.table.select(
             [
                 'row_id'
             ],
@@ -186,14 +210,12 @@ class DORPermissionsTable(DBTable):
         return True if records else False
 
 
-class DORPublicKeysTable(DBTable):
+class DORPublicKeysTable:
     """
     Convenient wrapper class for the 'dor_public_keys' database table.
     """
-    def __init__(self, db_path):
-        super().__init__(db_path, "dor_public_keys")
-
-        self.create({
+    def __init__(self, node_db):
+        self.table = node_db.create_table('dor_public_keys', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
             'iid': 'VARCHAR(64) NOT NULL',
             'public_key': 'TEXT NOT NULL',
@@ -205,7 +227,7 @@ class DORPublicKeysTable(DBTable):
         :param key: the identity from which to take the public key and corresponding iid
         :return: None
         """
-        self.insert({
+        self.table.insert({
             'iid': key.iid,
             'public_key': key.public_as_string()
         }, or_ignore=True)
@@ -216,7 +238,7 @@ class DORPublicKeysTable(DBTable):
         :param iid: the iid of the entry that is to be removed.
         :return: None
         """
-        self.delete({
+        self.table.delete({
             "iid": iid
         })
 
@@ -226,7 +248,7 @@ class DORPublicKeysTable(DBTable):
         :param iid: the iid of interest
         :return: public key that matches the iid or None in case it cannot be found in the database
         """
-        result = self.select(['public_key'], {
+        result = self.table.select(['public_key'], {
             'iid': iid
         })
         return ECKeyPair.from_public_key_string(result[0]['public_key']) if result else None
@@ -237,83 +259,134 @@ class DataObjectRepository:
     DataObjectRepository is a facade that provides methods required for the Data Object Repository. Each of these
     methods typically performs operations on one or more database tables.
     """
-    def __init__(self, db_path):
+    def __init__(self, node):
         # initialise properties
-        self.db_path = db_path
-        logger.info("using database path '{}'.".format(self.db_path))
+        self.node = node
 
         # initialise the database table wrappers
-        self.records = DORRecordsTable(self.db_path)
-        self.tags = DORTagsTable(self.db_path)
-        self.permissions = DORPermissionsTable(self.db_path)
-        self.public_keys = DORPublicKeysTable(self.db_path)
+        self.records = DORRecordsTable(node.db)
+        self.tags = DORTagsTable(node.db)
+        self.permissions = DORPermissionsTable(node.db)
+        self.public_keys = DORPublicKeysTable(node.db)
 
         # fyi: how many records do we have?
         n = self.records.get_number_of_rows()
         logger.info("number of data object records in database: {}".format(n))
 
-    def get_number_of_records(self):
-        return self.records.get_number_of_rows()
+    def add(self, owner_public_key, descriptor, content_path, expiration=None):
+        # recreate ECKeyPair (public key only) of the data object owner
+        owner = ECKeyPair.from_public_key_string(owner_public_key)
 
-    def get_distinct_tag_keys(self):
-        return self.tags.get_distinct_tag_keys()
+        # calculate hashes for the data object descriptor and content
+        d_hash = hash_json_object(descriptor)
+        c_hash = hash_file_content(content_path)
 
-    def get_objects_with_tag_keys(self, keys):
-        db = sqlite3.connect(self.db_path)
+        # calculate the data object id as a hash of the hashed data object header and content
+        digest = hashes.Hash(hashes.SHA256())
+        digest.update(d_hash)
+        digest.update(c_hash)
+        obj_id = digest.finalize()
 
-        sql_result = db.execute(
-            "SELECT DISTINCT r.data_object_id, r.id "
-            "FROM {} AS r "
-            "   INNER JOIN {} AS t ON r.id = t.record_id "
-            "   WHERE t.key IN ({})".format(self.records.name, self.tags.name, keys)
-        )
+        # convert into strings
+        d_hash = d_hash.hex()
+        c_hash = c_hash.hex()
+        obj_id = obj_id.hex()
 
-        result = []
-        for record in sql_result:
-            result.append((record[0], record[1]))
+        # check if there is already a data object with the same id
+        if self.records.get_by_object_id(obj_id) is not None:
+            # the data object already exists, nothing to do here.
+            # TODO: decide if this is correct behaviour - in the meantime, just return the object id
+            # current behaviour makes it impossible for the caller to know if a data object already existed
+            # or not. question is whether this matters or not. the important point is that after calling
+            # 'add' the data object is in the DOR.
+            logger.warning("data object '{}' already exists. not adding to DOR.".format(obj_id))
+            return 200, {'data_object_id': obj_id}
 
-        db.close()
-        return result
-
-    def get_data_object_by_id(self, obj_id):
-        result = self.records.select(where_parameters={
-            'obj_id': obj_id
-        })
-        return result[0] if result else None
-
-    def get_data_objects_by_content_hash(self, c_hash):
-        return self.records.select(where_parameters={
-            'c_hash': c_hash
-        })
-
-    def add_data_object(self, h_hash, c_hash, obj_id, owner, custodian, expiration=None):
-        self.public_keys.put(owner)
-        self.records.add_data_object(h_hash, c_hash, obj_id, owner, custodian, expiration)
-        self.grant_access(obj_id, owner)
-
-    def delete_data_object(self, obj_id):
-        records = self.records.select(where_parameters={
-            'obj_id': obj_id
-        })
-        logger.info("records={}".format(records))
-
-        if records:
-            record = records[0]
-            record_id = str(record['row_id'])
-
-            # delete permissions and tags for this records first, then the record itself
-            self.permissions.delete({'obj_id': obj_id})
-            self.tags.delete({'record_id': record_id})
-            self.records.delete({'row_id': record_id})
-
-            return record
+        # check if there are already data objects with the same content
+        if self.records.get_by_content_hash(c_hash):
+            # it is possible for cases like this to happen. despite the exact same content, this may well be
+            # a legitimate different data object. for example, different provenance has led to the exact same
+            # outcome. we thus create a new data object
+            logger.info("data object content '{}' already exists. not adding to DOR.".format(c_hash))
 
         else:
-            return None
+            logger.info("data object content '{}' does not exist yet. adding to DOR.".format(c_hash))
 
-    def get_owner_for_object(self, obj_id):
-        owner_iid = self.records.get_owner(obj_id)
-        return self.public_keys.get_public_key(owner_iid) if owner_iid else None
+            # move the content to its destination
+            destination_path = os.path.join(self.node.datastore_path, "{}.content".format(c_hash))
+            subprocess.check_output(['mv', content_path, destination_path])
+
+        # create descriptor file
+        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        dump_json_to_file(descriptor, descriptor_path)
+        logger.info("data object '{}' descriptor stored at '{}'.".format(obj_id, descriptor_path))
+
+        # update DOR db: add public key of owner, add the data object record and grant access to the owner by default
+        self.public_keys.put(owner)
+        self.records.add(d_hash, c_hash, obj_id, owner, self.node.key, expiration)
+        self.grant_access(obj_id, owner)
+
+        return 201, {'data_object_id': obj_id}
+
+    def delete(self, obj_id):
+        # do we have a record for this data object?
+        record = self.records.get_by_object_id(obj_id)
+        if not record:
+            return 404, "Database record for data object '{}' not found.".format(obj_id)
+
+        # if we are not the custodian, we are not allowed to delete it
+        if not record['custodian_iid'] == self.node.key.iid:
+            return 403, "Node is not custodian for data object '{}'".format(obj_id)
+
+        # do we have a descriptor for this data object?
+        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        if not os.path.isfile(descriptor_path):
+            return 500, "Descriptor for data object '{}' not found.".format(obj_id)
+
+        # read the descriptor content before deleting it
+        with open(descriptor_path, 'r') as f:
+            descriptor = json.loads(f.read())
+            os.remove(descriptor_path)
+            logger.info("descriptor for data object '{}' deleted.".format(obj_id))
+
+        # we delete the database entries associated with this data object
+        self.permissions.revoke_all(obj_id)
+        self.tags.delete_all(obj_id)
+        self.records.delete(obj_id)
+        logger.info("database records for data object '{}' deleted.".format(obj_id))
+
+        # next we need to check if there are other data objects that point to the same content (very unlikely but
+        # not impossible). if not, then we can also safely delete the data object content.
+        if not self.records.get_by_content_hash(record['c_hash']):
+            content_path = os.path.join(self.node.datastore_path, "{}.content".format(record['c_hash']))
+            os.remove(content_path)
+            logger.info("data object content '{}' for data object '{}' deleted.".format(record['c_hash'], obj_id))
+
+        return 200, {'descriptor': descriptor}
+
+    def get_content_hash(self, obj_id):
+        record = self.records.get_by_object_id(obj_id)
+        return record['c_hash'] if record else None
+
+    def get(self, obj_id):
+        return self.records.get_by_object_id(obj_id)
+
+    def has_access(self, obj_id, user):
+        return self.permissions.has_access(obj_id, user)
+
+    def get_owner(self, obj_id):
+        record = self.records.get_by_object_id(obj_id)
+        return self.public_keys.get_public_key(record['owner_iid']) if record else None
+
+    def get_descriptor(self, obj_id):
+        # do we have a descriptor for this data object?
+        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        if not os.path.isfile(descriptor_path):
+            return 404, "Data object '{}' not found.".format(obj_id)
+
+        with open(descriptor_path, 'r') as f:
+            descriptor = json.loads(f.read())
+            return 200, {'descriptor': descriptor}
 
     def update_ownership(self, obj_id, new_owner):
         self.public_keys.put(new_owner)
@@ -329,5 +402,31 @@ class DataObjectRepository:
     def get_access_permissions(self, obj_id):
         return self.permissions.get_access_permissions(obj_id)
 
-    def has_access(self, obj_id, user):
-        return self.permissions.has_access(obj_id, user)
+    def fetch(self, obj_id, destination_path):
+        # get the object record for the data object
+        obj_record = self.records.get_by_object_id(obj_id)
+        if not obj_record:
+            return False
+
+        # are we the custodian?
+        if self.node.key.iid == obj_record['custodian_iid']:
+            # we should have the data object in our local DOR
+            c_hash = obj_record['c_hash']
+            obj_path = os.path.join(self.node.datastore_path, "{}.content".format(c_hash))
+            if not os.path.exists(obj_path):
+                logger.error("data object content {} of object {} expected but not found.".format(c_hash, obj_id))
+                return False
+
+            # simply make a local copy of the data object
+            subprocess.check_output(['cp', obj_path, destination_path])
+            return True
+
+        else:
+            # get the registry record for the custodian
+            reg_record = self.node.registry.get_by_object_id(obj_record['custodian_iid'])
+            if not reg_record:
+                return False
+
+            # use the DOR P2P protocol to fetch the data object from the custodian
+            protocol = DataObjectRepositoryP2PProtocol(self.node)
+            protocol.send_fetch(reg_record['address'], obj_id, destination_path)
