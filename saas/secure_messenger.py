@@ -155,7 +155,7 @@ class SecureMessenger:
             logger.info("connected to peer '{}'".format(peer.iid))
 
             # if we have an expected peer iid, do a comparison if it matches with what the peer is telling us
-            if not expected_peer_iid == peer.iid:
+            if expected_peer_iid and not expected_peer_iid == peer.iid:
                 logger.warning("unexpected iid for peer at address {}: expected={} idd_as_per_peer={}".format(
                     peer_address, expected_peer_iid, peer.iid
                 ))
@@ -217,10 +217,11 @@ class SecureMessenger:
         Closes the connection.
         :return: None
         """
-        self.peer_socket.close()
-        self.peer_socket = None
-        self.peer = None
-        self.cipher = None
+        if self.peer_socket:
+            self.peer_socket.close()
+            self.peer_socket = None
+            self.peer = None
+            self.cipher = None
 
     def receive_raw(self):
         """
