@@ -23,8 +23,9 @@ class Registry:
     timestamp indicating when this node has been 'seen' the last time. This class is thread-safe.
     """
 
-    def __init__(self):
+    def __init__(self, node):
         self.mutex = Lock()
+        self.node = node
         self.records = {}
 
     def size(self):
@@ -37,20 +38,25 @@ class Registry:
         self.mutex.release()
         return result
 
-    def get(self, node_iid=None):
+    def get(self, node_iid=None, exclude_self=False):
         """
-        Returns either a list of all records (may be empty in case the registry does not contain any records) OR a
-        single record for a given node iid (None in case there is no record for that node iid).
-        specified node_iid then the returned list is empty.
+        Returns either a dictionary of all records (may be empty in case the registry does not contain any records) OR
+        a single record for a given node iid (None in case there is no record for that node iid). If node_iid is not
+        specified then a copy of the entire registry is returned as dictionary.
         :param node_iid: the iid of the node
-        :return: a list of records (may be empty)
+        :param exclude_self: excludes the record of the node this registry belongs to (only relevant if node_iid=None)
+        :return: the record for a given node_iid (if provided) or a dictionary of records (which may be empty)
         """
         self.mutex.acquire()
 
         result = copy.deepcopy(self.records)
+        if node_iid:
+            result = result[node_iid] if node_iid else None
+        elif exclude_self:
+            result.pop(self.node.key.iid)
 
         self.mutex.release()
-        return result[node_iid] if node_iid else result
+        return result
 
     def update(self, node_iid, name, address, processors, last_seen=None):
         """
