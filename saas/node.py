@@ -21,6 +21,7 @@ from saas.registry.registry import Registry
 from saas.registry.protocol import RegistryP2PProtocol
 from saas.dor.dor import DataObjectRepository
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.rti.rti import RuntimeInfrastructure
 from saas.nodedb.nodedb import NodeDB
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.eckeypair import ECKeyPair
@@ -56,7 +57,7 @@ class Node:
         self.is_server_stopped = False
 
         # initialise the registry
-        self.registry = Registry()
+        self.registry = Registry(self)
         registry_protocol = RegistryP2PProtocol(self)
 
         # initialise the node database
@@ -66,6 +67,9 @@ class Node:
         # initialise the data object repository
         self.dor = DataObjectRepository(self)
         dor_protocol = DataObjectRepositoryP2PProtocol(self)
+
+        # initialise the runtime infrastructure
+        self.rti = RuntimeInfrastructure(self)
 
         # initialise messenger protocols
         self.msg_protocols = {
@@ -205,11 +209,11 @@ class Node:
 
                 else:
                     logger.warning("ignoring message for unsupported protocol: {}".format(message))
-                    messenger.reply_error("protocol not supported")
+                    messenger.reply_error(501, "protocol not supported")
 
             else:
                 logger.warning("ignoring malformed message: {}".format(message))
-                messenger.reply_error("malformed message")
+                messenger.reply_error(400, "malformed message")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
