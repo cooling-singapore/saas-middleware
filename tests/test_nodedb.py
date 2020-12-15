@@ -56,7 +56,7 @@ class NodeDBTestCase(unittest.TestCase):
                 'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
                 'col_a': 'VARCHAR(64) NOT NULL',
                 'col_b': 'VARCHAR(64) NOT NULL'
-            })
+            }, auto_sync=True)
             tables.append(table)
 
         for table in tables:

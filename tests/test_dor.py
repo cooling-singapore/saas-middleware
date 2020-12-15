@@ -7,7 +7,7 @@ import json
 import requests
 
 
-from tests.testing_environment import TestingEnvironment
+from tests.testing_environment import TestingEnvironment, create_authentication, create_authorisation
 from saas.eckeypair import hash_file_content
 from saas.utilities.general_helpers import object_to_ordered_list
 from saas.node import Node
@@ -21,38 +21,6 @@ logging.basicConfig(
 
 env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
 logger = logging.getLogger(__name__)
-
-
-# def create_authentication(url, body, auth_key, attachment_path=None):
-#     return {
-#         'public_key': auth_key.public_as_string(),
-#         'signature':
-#             auth_key.sign_authentication_token(url, body, [attachment_path]) if attachment_path else
-#             auth_key.sign_authentication_token(url, body)
-#     }
-
-
-def create_authentication2(url, auth_key, body=None, attachment_path=None):
-    return {
-        'public_key': auth_key.public_as_string(),
-        'signature':
-            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
-            auth_key.sign_authentication_token(url, body=body)
-    }
-
-
-# def create_authorisation(url, body, auth_key):
-#     return {
-#         'public_key': auth_key.public_as_string(),
-#         'signature': auth_key.sign_authorisation_token(url, body)
-#     }
-
-
-def create_authorisation2(url, auth_key, body=None):
-    return {
-        'public_key': auth_key.public_as_string(),
-        'signature': auth_key.sign_authorisation_token(url, body)
-    }
 
 
 def add_data_object(sender, owner):
@@ -82,7 +50,7 @@ def add_data_object(sender, owner):
     test_file_path = env.generate_zero_file('test000.dat', 1024*1024)
     test_obj_id = '0b4c2fdfb49f6ee3190b28ad5b615884e591e003398c8fd2468852b6a754353c'
 
-    authentication = create_authentication2('POST:/repository', sender, body, test_file_path)
+    authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -95,11 +63,9 @@ def add_data_object(sender, owner):
 
 def delete_data_object(sender, obj_id, owner):
     url = "http://127.0.0.1:5000/repository/{}".format(obj_id)
-    # body = {}
-    authentication = create_authentication2("DELETE:/repository/{}".format(obj_id), sender)
-    authorisation = create_authorisation2("DELETE:/repository/{}".format(obj_id), owner)
+    authentication = create_authentication("DELETE:/repository/{}".format(obj_id), sender)
+    authorisation = create_authorisation("DELETE:/repository/{}".format(obj_id), owner)
     content = {
-        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
     }
@@ -110,9 +76,8 @@ def delete_data_object(sender, obj_id, owner):
 
 def get_descriptor(sender, obj_id):
     url = "http://127.0.0.1:5000/repository/{}/descriptor".format(obj_id)
-    authentication = create_authentication2("GET:/repository/{}/descriptor".format(obj_id), sender)
+    authentication = create_authentication("GET:/repository/{}/descriptor".format(obj_id), sender)
     content = {
-        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
@@ -122,10 +87,8 @@ def get_descriptor(sender, obj_id):
 
 def get_access_permissions(sender, obj_id):
     url = "http://127.0.0.1:5000/repository/{}/access".format(obj_id)
-    # body = {}
-    authentication = create_authentication2("GET:/repository/{}/access".format(obj_id), sender)
+    authentication = create_authentication("GET:/repository/{}/access".format(obj_id), sender)
     content = {
-        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
@@ -138,8 +101,8 @@ def grant_access(sender, obj_id, user, owner):
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication2("POST:/repository/{}/access".format(obj_id), sender, body)
-    authorisation = create_authorisation2("POST:/repository/{}/access".format(obj_id), owner, body)
+    authentication = create_authentication("POST:/repository/{}/access".format(obj_id), sender, body)
+    authorisation = create_authorisation("POST:/repository/{}/access".format(obj_id), owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -155,8 +118,8 @@ def revoke_access(sender, obj_id, user, owner):
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication2("DELETE:/repository/{}/access".format(obj_id), sender, body)
-    authorisation = create_authorisation2("DELETE:/repository/{}/access".format(obj_id), owner, body)
+    authentication = create_authentication("DELETE:/repository/{}/access".format(obj_id), sender, body)
+    authorisation = create_authorisation("DELETE:/repository/{}/access".format(obj_id), owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -169,10 +132,8 @@ def revoke_access(sender, obj_id, user, owner):
 
 def get_ownership(sender, obj_id):
     url = "http://127.0.0.1:5000/repository/{}/owner".format(obj_id)
-    # body = {}
-    authentication = create_authentication2("GET:/repository/{}/owner".format(obj_id), sender)
+    authentication = create_authentication("GET:/repository/{}/owner".format(obj_id), sender)
     content = {
-        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
@@ -185,8 +146,8 @@ def transfer_ownership(sender, obj_id, current_owner, new_owner):
     body = {
         'new_owner_public_key': new_owner.public_as_string()
     }
-    authentication = create_authentication2("PUT:/repository/{}/owner".format(obj_id), sender, body)
-    authorisation = create_authorisation2("PUT:/repository/{}/owner".format(obj_id), current_owner, body)
+    authentication = create_authentication("PUT:/repository/{}/owner".format(obj_id), sender, body)
+    authorisation = create_authorisation("PUT:/repository/{}/owner".format(obj_id), current_owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -199,10 +160,9 @@ def transfer_ownership(sender, obj_id, current_owner, new_owner):
 
 def export_data_object_content(sender, obj_id, owner, destination):
     url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
-    authentication = create_authentication2("GET:/repository/{}/content".format(obj_id), sender)
-    authorisation = create_authorisation2("GET:/repository/{}/content".format(obj_id), owner)
+    authentication = create_authentication("GET:/repository/{}/content".format(obj_id), sender)
+    authorisation = create_authorisation("GET:/repository/{}/content".format(obj_id), owner)
     content = {
-        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
     }
@@ -216,23 +176,6 @@ def export_data_object_content(sender, obj_id, owner, destination):
                 f.write(chunk)
 
         return r.status_code
-
-
-# def fetch_data_object_content(sender, obj_id, owner):
-#     url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
-#     body = {
-#         'type': 'internal'
-#     }
-#     authentication = create_authentication2("GET:/{}/content".format(obj_id), sender, body)
-#     authorisation = create_authorisation2("GET:/{}/content".format(obj_id), owner, body)
-#     content = {
-#         'body': json.dumps(body),
-#         'authentication': json.dumps(authentication),
-#         'authorisation': json.dumps(authorisation)
-#     }
-#
-#     r = requests.get(url, data=content).json()
-#     return r['reply']['path'] if 'path' in r['reply'] else None
 
 
 class DORBlueprintTestCases(unittest.TestCase):
@@ -271,6 +214,10 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_grant_revoke_access(self):
+        logger.info("keys[0].iid={}".format(self.keys[0].iid))
+        logger.info("keys[1].iid={}".format(self.keys[1].iid))
+        logger.info("keys[2].iid={}".format(self.keys[2].iid))
+
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
         logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
         assert ref_obj_id is not None
@@ -361,10 +308,6 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert reply == 200
         assert os.path.isfile(destination)
 
-        # path = fetch_data_object_content(self.keys[0], obj_id, self.keys[0])
-        # logger.info("path={}".format(path))
-        # assert path is not None
-
         descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
         logger.info("descriptor2={}".format(descriptor2))
         assert descriptor2 is not None
@@ -382,15 +325,20 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert descriptor1 is not None
 
         # create the receiving node
-        node = Node('receiver', env.wd_path)
-        node.initialise_identity(env.wd_path)
+        receiver_wd_path = os.path.join(env.wd_path, 'receiver')
+        node = Node('receiver', receiver_wd_path)
+        node.initialise_identity(receiver_wd_path)
         node.start_server((env.p2p_host, env.p2p_port))
 
         peer_address = (env.app_service_p2p_host, env.app_service_p2p_port)
-        destination = os.path.join(env.wd_path, 'test_copy.dat')
+        destination = os.path.join(receiver_wd_path, node.dor.infix_cache_path, 'test_copy.dat')
 
         protocol = DataObjectRepositoryP2PProtocol(node)
-        protocol.send_fetch(peer_address, obj_id, destination)
+        success = protocol.send_fetch(peer_address, 'abcdef', destination)
+        assert not success
+
+        success = protocol.send_fetch(peer_address, obj_id, destination)
+        assert success
         assert os.path.isfile(destination)
 
         node.stop_server()

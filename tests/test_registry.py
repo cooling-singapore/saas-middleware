@@ -49,7 +49,7 @@ class RegistryTestCases(unittest.TestCase):
             node.stop_server()
 
     def test_update(self):
-        registry = Registry()
+        registry = Registry(None)
 
         # empty registry: adding a new records should be successful
         assert registry.update('123', 'name1', ('127.0.0.1', 5000), ['a', 'b'], 100)
@@ -71,7 +71,7 @@ class RegistryTestCases(unittest.TestCase):
         assert all(item in record['processors'] for item in ['a', 'b', 'c'])
 
     def test_update_all(self):
-        registry = Registry()
+        registry = Registry(None)
 
         records_a = {
             '123': {
@@ -110,7 +110,7 @@ class RegistryTestCases(unittest.TestCase):
         assert len(registry.update_all(records_b)) == 0
 
     def test_touch(self):
-        registry = Registry()
+        registry = Registry(None)
 
         # empty registry: adding a new records should be successful
         assert registry.update('123', ('127.0.0.1', 5000), ['a', 'b'], 100)
@@ -128,7 +128,7 @@ class RegistryTestCases(unittest.TestCase):
         assert t1 is None
 
     def test_remove(self):
-        registry = Registry()
+        registry = Registry(None)
 
         records_a = {
             '123': {
