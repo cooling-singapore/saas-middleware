@@ -8,8 +8,10 @@ __status__ = "development"
 
 import os
 import logging
+import json
 
-from saas.secure_messenger import SecureMessenger, MessengerProtocol
+from saas.secure_messenger import SecureMessenger, MessengerProtocol, MessengerRuntimeError
+from saas.utilities.general_helpers import dump_json_to_file
 
 logger = logging.getLogger('DOR.Protocol')
 
@@ -22,45 +24,65 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
             'fetch': self.handle_fetch
         })
 
-    def send_fetch(self, peer_address, obj_id, destination_path):
-        logger.debug("send 'fetch' message to {}".format(peer_address))
-
+    def send_fetch(self, peer_address, obj_id):
         # connect to boot node
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
         logger.info("connected to peer (boot node) '{}'".format(peer.iid))
 
-        # send 'fetch' message and receive the data object content from the peer
-        response = messenger.request(self.prepare_message("fetch", {
-            'object_id': obj_id
-        }))
+        # send 'fetch' message and receive the data object descriptor and content from the peer
+        try:
+            reply = messenger.request(self.prepare_message("fetch", {
+                'object_id': obj_id
+            }))
+            logger.debug("send_fetch: reply={}".format(reply))
+            c_hash = reply['c_hash']
 
-        if response == 'begin transfer':
-            messenger.receive_attachment(destination_path)
+            destination_descriptor_path = self.node.dor.obj_descriptor_path(obj_id, cache=True)
+            dump_json_to_file(reply['descriptor'], destination_descriptor_path)
 
-        messenger.close()
+            destination_content_path = self.node.dor.obj_content_path(c_hash, cache=True)
+            messenger.receive_attachment(destination_content_path)
+            messenger.close()
+            return reply['c_hash']
+
+        except MessengerRuntimeError as e:
+            if not e.status == 404:
+                logger.error("runtime error during send_fetch: {} {}".format(e.status, e.message))
+
+            messenger.close()
+            return None
 
     def handle_fetch(self, message, messenger):
-        logger.debug("handle 'fetch' message")
-
-        # get the object record for the data object
+        # check if we have that data object
         obj_id = message['object_id']
         obj_record = self.node.dor.get(obj_id)
         if not obj_record:
-            messenger.reply_error("no record found for {}".format(obj_id))
+            messenger.reply_error(404, "{} not found".format(obj_id))
+            messenger.close()
+            return
 
-        # are we not the custodian?
-        if not self.node.key.iid == obj_record['custodian_iid']:
-            messenger.reply_error("not the custodian for {}".format(obj_id))
+        # if we have it, then we send the descriptor in the reply and stream the contents of the data object
+        descriptor_path = self.node.dor.obj_descriptor_path(obj_id)
+        if not os.path.isfile(descriptor_path):
+            messenger.reply_error(500, "descriptor expected but not found for data object {}".format(obj_id))
+            messenger.close()
+            return
 
-        else:
-            # we should have the data object in our local DOR
-            c_hash = obj_record['c_hash']
-            obj_path = os.path.join(self.node.datastore_path, "{}.content".format(c_hash))
-            if not os.path.exists(obj_path):
-                messenger.reply_error("data object content {} of object {} expected but not found.".format(c_hash,
-                                                                                                           obj_id))
+        # load the descriptor
+        with open(descriptor_path) as f:
+            descriptor = json.load(f)
 
-            messenger.reply_ok("begin transfer")
-            messenger.send_attachment(obj_path)
+        # we should have the data object content in our local DOR
+        c_hash = obj_record['c_hash']
+        content_path = self.node.dor.obj_content_path(c_hash)
+        if not os.path.isfile(content_path):
+            messenger.reply_error(500, "content {} expected but not found for data object {}.".format(c_hash, obj_id))
+            messenger.close()
+            return
 
+        messenger.reply_ok({
+            'c_hash': c_hash,
+            'descriptor': descriptor
+        })
+        messenger.send_attachment(content_path)
         messenger.close()
