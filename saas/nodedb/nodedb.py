@@ -21,11 +21,12 @@ class DBTable:
     DBTable is a convenience base class that wraps a SQL table and provides simple access methods to perform common
     SQL commands: CREATE TABLE, DROP TABLE, SELECT, INSERT, UPDATE, DELETE. This class is not thread-safe.
     """
-    def __init__(self, node_db, name, columns):
+    def __init__(self, node_db, name, columns, auto_sync):
         self.mutex = Lock()
         self.node_db = node_db
         self.name = name
         self.columns = columns
+        self.auto_sync = auto_sync
 
     # TODO: where conditions should allow for more than just 'equals' comparisons (this applies to other statements too)
     def select(self, columns=None, where_parameters=None, use_distinct=False):
@@ -92,7 +93,7 @@ class DBTable:
         db.close()
 
         # queue the update for synchronisation purposes
-        if propagate:
+        if self.auto_sync and propagate:
             self.node_db.queue_insert(self.name, parameters, or_ignore)
         self.mutex.release()
 
@@ -119,7 +120,7 @@ class DBTable:
         db.close()
 
         # queue the update for synchronisation purposes
-        if propagate:
+        if self.auto_sync and propagate:
             self.node_db.queue_update(self.name, update_parameters, where_parameters)
         self.mutex.release()
 
@@ -150,7 +151,7 @@ class DBTable:
         db.close()
 
         # queue the update for synchronisation purposes
-        if propagate:
+        if self.auto_sync and propagate:
             self.node_db.queue_delete(self.name, where_parameters)
         self.mutex.release()
 
@@ -177,7 +178,7 @@ class NodeDB:
         self.immediate_updates = immediate_updates
         self.queue = []
 
-    def create_table(self, name, definitions, unique=None):
+    def create_table(self, name, definitions, unique=None, auto_sync=False):
         self.mutex.acquire()
         columns = [*definitions]
 
@@ -192,7 +193,7 @@ class NodeDB:
         db.close()
 
         self.mutex.release()
-        self.tables[name] = DBTable(self, name, columns)
+        self.tables[name] = DBTable(self, name, columns, auto_sync)
         return self.tables[name]
 
     def drop_table(self, name):
