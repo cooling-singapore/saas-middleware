@@ -24,6 +24,7 @@ class DORRecordsTable:
     """
     Convenient wrapper class for the 'dor_records' database table.
     """
+
     def __init__(self, node_db):
         self.table = node_db.create_table('dor_records', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -103,6 +104,7 @@ class DORTagsTable:
     """
     Convenient wrapper class for the 'dor_tags' database table.
     """
+
     def __init__(self, node_db):
         self.table = node_db.create_table('dor_tags', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -130,6 +132,7 @@ class DORPermissionsTable:
     """
     Convenient wrapper class for the 'dor_permissions' database table.
     """
+
     def __init__(self, node_db):
         self.table = node_db.create_table('dor_permissions', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -179,17 +182,16 @@ class DORPermissionsTable:
         """
         result = []
         for item in self.table.select(
-            [
-                'user_iid'
-            ],
-            {
-                'obj_id': obj_id
-            }
+                [
+                    'user_iid'
+                ],
+                {
+                    'obj_id': obj_id
+                }
         ):
             result.append(item['user_iid'])
 
         return result
-
 
     def has_access(self, obj_id, user):
         """
@@ -214,6 +216,7 @@ class DORPublicKeysTable:
     """
     Convenient wrapper class for the 'dor_public_keys' database table.
     """
+
     def __init__(self, node_db):
         self.table = node_db.create_table('dor_public_keys', {
             'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -255,13 +258,39 @@ class DORPublicKeysTable:
 
 
 class DataObjectRepository:
+    infix_master_path = 'dor-master'
+    infix_cache_path = 'dor-cache'
+
+    def obj_content_path(self, c_hash, cache=False):
+        if cache:
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path,
+                                "{}.content".format(c_hash))
+        else:
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path,
+                                "{}.content".format(c_hash))
+
+    def obj_descriptor_path(self, obj_id, cache=False):
+        if cache:
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path,
+                                "{}.descriptor".format(obj_id))
+        else:
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path,
+                                "{}.descriptor".format(obj_id))
+
     """
     DataObjectRepository is a facade that provides methods required for the Data Object Repository. Each of these
     methods typically performs operations on one or more database tables.
     """
+
     def __init__(self, node):
         # initialise properties
         self.node = node
+
+        # initialise directories
+        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore_path,
+                                                             DataObjectRepository.infix_master_path)])
+        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore_path,
+                                                             DataObjectRepository.infix_cache_path)])
 
         # initialise the database table wrappers
         self.records = DORRecordsTable(node.db)
@@ -312,12 +341,13 @@ class DataObjectRepository:
         else:
             logger.info("data object content '{}' does not exist yet. adding to DOR.".format(c_hash))
 
-            # move the content to its destination
-            destination_path = os.path.join(self.node.datastore_path, "{}.content".format(c_hash))
+            # move the content to its destination and make read-only
+            destination_path = self.obj_content_path(c_hash)
             subprocess.check_output(['mv', content_path, destination_path])
+            subprocess.check_output(['chmod', 'ugo-w', destination_path])
 
         # create descriptor file
-        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        descriptor_path = self.obj_descriptor_path(obj_id)
         dump_json_to_file(descriptor, descriptor_path)
         logger.info("data object '{}' descriptor stored at '{}'.".format(obj_id, descriptor_path))
 
@@ -339,7 +369,7 @@ class DataObjectRepository:
             return 403, "Node is not custodian for data object '{}'".format(obj_id)
 
         # do we have a descriptor for this data object?
-        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        descriptor_path = self.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
             return 500, "Descriptor for data object '{}' not found.".format(obj_id)
 
@@ -358,7 +388,7 @@ class DataObjectRepository:
         # next we need to check if there are other data objects that point to the same content (very unlikely but
         # not impossible). if not, then we can also safely delete the data object content.
         if not self.records.get_by_content_hash(record['c_hash']):
-            content_path = os.path.join(self.node.datastore_path, "{}.content".format(record['c_hash']))
+            content_path = self.obj_content_path(record['c_hash'])
             os.remove(content_path)
             logger.info("data object content '{}' for data object '{}' deleted.".format(record['c_hash'], obj_id))
 
@@ -380,7 +410,7 @@ class DataObjectRepository:
 
     def get_descriptor(self, obj_id):
         # do we have a descriptor for this data object?
-        descriptor_path = os.path.join(self.node.datastore_path, "{}.descriptor".format(obj_id))
+        descriptor_path = self.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
             return 404, "Data object '{}' not found.".format(obj_id)
 
@@ -402,31 +432,39 @@ class DataObjectRepository:
     def get_access_permissions(self, obj_id):
         return self.permissions.get_access_permissions(obj_id)
 
-    def fetch(self, obj_id, destination_path):
-        # get the object record for the data object
-        obj_record = self.records.get_by_object_id(obj_id)
-        if not obj_record:
-            return False
+    def fetch(self, obj_id, obj_content_path=None):
+        """
+        Attempts to fetch the descriptor and the content of the data object with the given object id. If successful,
+        the descriptor and content is stored in the DOR cache directory.
+        :param obj_id: the data object id
+        :return: content hash (c_hash) of the data object
+        """
+        # are we the custodian? in other words: do we have a record for this object?
+        record = self.records.get_by_object_id(obj_id)
+        if record:
+            # create a symbolic link to the content
+            source_descriptor_path = self.obj_descriptor_path(obj_id)
+            source_content_path = self.obj_content_path(record['c_hash'])
+            destination_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
+            destination_content_path = self.obj_content_path(record['c_hash'], cache=True)
+            subprocess.check_output(['ln', '-s', source_descriptor_path, destination_descriptor_path])
+            subprocess.check_output(['ln', '-s', source_content_path, destination_content_path])
 
-        # are we the custodian?
-        if self.node.key.iid == obj_record['custodian_iid']:
-            # we should have the data object in our local DOR
-            c_hash = obj_record['c_hash']
-            obj_path = os.path.join(self.node.datastore_path, "{}.content".format(c_hash))
-            if not os.path.exists(obj_path):
-                logger.error("data object content {} of object {} expected but not found.".format(c_hash, obj_id))
-                return False
+            if obj_content_path:
+                subprocess.check_output(['ln', '-s', source_content_path, obj_content_path])
 
-            # simply make a local copy of the data object
-            subprocess.check_output(['cp', obj_path, destination_path])
-            return True
+            return record['c_hash']
 
         else:
-            # get the registry record for the custodian
-            reg_record = self.node.registry.get_by_object_id(obj_record['custodian_iid'])
-            if not reg_record:
-                return False
-
-            # use the DOR P2P protocol to fetch the data object from the custodian
+            # use P2P protocol to attempt fetching from all other nodes
             protocol = DataObjectRepositoryP2PProtocol(self.node)
-            protocol.send_fetch(reg_record['address'], obj_id, destination_path)
+            for item in self.node.registry.get(exclude_self=True).items():
+                c_hash = protocol.send_fetch(item[1]['address'], obj_id)
+                if c_hash:
+                    if obj_content_path:
+                        source_content_path = self.obj_content_path(record['c_hash'], cache=True)
+                        subprocess.check_output(['ln', '-s', source_content_path, obj_content_path])
+
+                    return c_hash
+
+            return None
