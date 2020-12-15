@@ -51,3 +51,7 @@ def object_to_ordered_list(obj):
 def get_address_from_string(address_string):
     temp = address_string.split(":")
     return temp[0], int(temp[1])
+
+
+def all_in_dict(required, dictionary):
+    return all(r in dictionary for r in required)

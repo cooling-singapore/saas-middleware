@@ -7,6 +7,7 @@ from saas.node import Node
 from saas.utilities.general_helpers import get_address_from_string
 
 import saas.dor.blueprint as dor_blueprint
+import saas.rti.blueprint as rti_blueprint
 import saas.registry.blueprint as registry_blueprint
 
 logging.basicConfig(
@@ -63,5 +64,10 @@ def initialise_app(configuration):
     logger.info("register SaaS Data Object Repository service.")
     app.register_blueprint(dor_blueprint.blueprint, url_prefix='/repository')
     dor_blueprint.initialise(node)
+
+    # register the RTI blueprint
+    logger.info("register SaaS Runtime Infrastructure service.")
+    app.register_blueprint(rti_blueprint.blueprint, url_prefix='/processor')
+    rti_blueprint.initialise(node)
 
     return app

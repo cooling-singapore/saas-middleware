@@ -158,7 +158,7 @@ def verify_authorisation_by_user(request_content, obj_id, node, url, body=None):
     return user
 
 
-def create_signed_response(node, url, status_code, reply):
+def create_signed_response(node, url, status_code, reply=None):
     """
     Convenient function to create a response that is signed using the sending node's identity.
     :param node: the node that will send the response
@@ -169,9 +169,10 @@ def create_signed_response(node, url, status_code, reply):
     """
     signature = node.key.sign_authentication_token(url, reply)
     reply_body = {
-        'reply': reply,
         'signature': signature
     }
+    if reply:
+        reply_body['reply'] = reply
 
     response = flask.jsonify(reply_body)
     response.status_code = status_code
