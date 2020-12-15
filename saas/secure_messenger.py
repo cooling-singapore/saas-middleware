@@ -14,6 +14,7 @@ import base64
 import socket
 
 from saas.eckeypair import ECKeyPair
+from saas.utilities.general_helpers import all_in_dict
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -35,8 +36,9 @@ class MessengerRuntimeError(MessengerException):
     """
     MessengerRuntimeError indicates that there has been an error during runtime.
     """
-    def __init__(self, info, message=None):
+    def __init__(self, info, status=None, message=None):
         super().__init__(info)
+        self.status = status
         self.message = message
 
 
@@ -309,42 +311,48 @@ class SecureMessenger:
         encountered any errors while processing the request the reply contains an error. If that's the case a
         corresponding exception is triggered.
         :param request_message: the request message
-        :return: the reply from the peer
+        :return: the reply (status, content) from the peer
         """
         self.send(request_message)
-        reply_message = self.receive()
+        reply = self.receive()
 
-        if 'status' not in reply_message:
-            raise MessengerInvalidUseException("malformed reply message: {}".format(reply_message))
+        if not all_in_dict(['status', 'content'], reply):
+            raise MessengerInvalidUseException("malformed reply: {}".format(reply))
 
-        if reply_message['status'] == 'error':
-            if reply_message['content'] == "protocol not supported":
-                raise MessengerRuntimeError("error during request", request_message)
+        elif reply['status'] == 400:
+            raise MessengerInvalidUseException(reply['content'])
 
-            elif reply_message['content'] == "malformed message":
-                raise MessengerInvalidUseException("error during request: {}".format(request_message))
+        elif reply['status'] == 500:
+            raise MessengerInvalidUseException("error during request: {}".format(request_message))
 
-        return reply_message['content']
+        elif reply['status'] == 501:
+            raise MessengerRuntimeError(reply['status'], reply['content'])
 
-    def reply_ok(self, reply_message):
+        elif not reply['status'] == 200:
+            raise MessengerRuntimeError(reply['status'], reply['content'])
+
+        return reply['content']
+
+    def reply_ok(self, reply_content=None):
         """
         Send a reply message, indicating that no error has occurred.
-        :param reply_message: the reply message
+        :param reply_content: the reply content
         :return: None
         """
         self.send({
-            'status': 'ok',
-            'content': reply_message
+            'status': 200,
+            'content': reply_content
         })
 
-    def reply_error(self, reply_message):
+    def reply_error(self, status, reply_message):
         """
         Sends a reply message, indicating that an error has occurred.
+        :param status: the status (based on https://restfulapi.net/http-status-codes/)
         :param reply_message: the reply message
         :return:
         """
         self.send({
-            'status': 'error',
+            'status': status,
             'content': reply_message
         })
 
