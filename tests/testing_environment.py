@@ -20,6 +20,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def create_authentication(url, auth_key, body=None, attachment_path=None):
+    return {
+        'public_key': auth_key.public_as_string(),
+        'signature':
+            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
+            auth_key.sign_authentication_token(url, body=body)
+    }
+
+
+def create_authorisation(url, auth_key, body=None):
+    return {
+        'public_key': auth_key.public_as_string(),
+        'signature': auth_key.sign_authorisation_token(url, body)
+    }
+
+
 class FlaskServerThread(threading.Thread):
     def __init__(self, app, url, port):
         threading.Thread.__init__(self)
