@@ -75,7 +75,7 @@ data_object_descriptor_schema = {
             'required': ['task_descriptor', 'output_name']
         }
     },
-    'required': ['data_type', 'data_format', 'created_t', 'created_by', 'recipe']
+    'required': ['data_type', 'data_format', 'created_t', 'created_by']
 }
 
 io_variable_schema = {
