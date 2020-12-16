@@ -90,7 +90,33 @@ def undeploy(sender, proc_id):
     requests.delete(url, data=content).json()
 
 
-def submit_job(sender, owner, proc_id):
+def add_data_object_a(sender, owner):
+    url = "http://127.0.0.1:5000/repository"
+    body = {
+        'type': 'data_object',
+        'owner_public_key': owner.public_as_string(),
+        'descriptor': {
+            'data_type': 'value',
+            'data_format': 'json',
+            'created_t': 21342342,
+            'created_by': 'heiko'
+        }
+    }
+    test_file_path = env.create_file_with_content('a.dat', "\"1\"")
+    test_obj_id = 'af77fd2c053e333f1a1d32646bf7bdc871cd00bb4c1d554673ecad19a410677d'
+
+    authentication = create_authentication('POST:/repository', sender, body, test_file_path)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    with open(test_file_path, 'rb') as f:
+        r = requests.post(url, data=content, files={'attachment': f.read()}).json()
+        return test_obj_id, r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+
+
+def submit_job_value(sender, owner, proc_id):
     url = "http://127.0.0.1:5000/processor/{}/jobs".format(proc_id)
     body = {
         'type': 'task',
@@ -101,6 +127,44 @@ def submit_job(sender, owner, proc_id):
                     'name': 'a',
                     'type': 'value',
                     'value': '1'
+                },
+                {
+                    'name': 'b',
+                    'type': 'value',
+                    'value': '2'
+                }
+            ],
+            'output': [
+                {
+                    'name': 'c',
+                    'visibility': 'private',
+                    'owner_public_key': owner.public_as_string()
+                }
+            ]
+        }
+    }
+
+    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.post(url, data=content).json()
+    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
+
+
+def submit_job_reference(sender, owner, proc_id, a_obj_id):
+    url = "http://127.0.0.1:5000/processor/{}/jobs".format(proc_id)
+    body = {
+        'type': 'task',
+        'descriptor': {
+            'processor_id': proc_id,
+            'input': [
+                {
+                    'name': 'a',
+                    'type': 'reference',
+                    'value': a_obj_id
                 },
                 {
                     'name': 'b',
@@ -195,7 +259,7 @@ class RTITestCase(unittest.TestCase):
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
-    def test_processor_execution(self):
+    def test_processor_execution_value(self):
         deployed = get_deployed(self.keys[0])
         logger.info("deployed={}".format(deployed))
         assert deployed
@@ -220,9 +284,9 @@ class RTITestCase(unittest.TestCase):
         assert jobs is not None
         assert len(jobs) == 0
 
-        job_id = submit_job(self.keys[0], self.keys[1], proc_id)
+        job_id = submit_job_value(self.keys[0], self.keys[1], proc_id)
         logger.info("job_id={}".format(job_id))
-        assert job_id == 0
+        assert job_id >= 0
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info("jobs={}".format(jobs))
@@ -249,6 +313,66 @@ class RTITestCase(unittest.TestCase):
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
+
+    def test_processor_execution_reference(self):
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
+        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        logger.info("proc_id={}".format(proc_id))
+
+        descriptor = deploy(self.keys[0], proc_id)
+        logger.info("descriptor={}".format(descriptor))
+
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 2
+        assert 'workflow' in deployed
+        assert proc_id in deployed
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info("jobs={}".format(jobs))
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        a_obj_id_ref, a_obj_id = add_data_object_a(self.keys[0], self.keys[1])
+        logger.info("a_obj_id={}".format(a_obj_id))
+        assert a_obj_id == a_obj_id_ref
+
+        job_id = submit_job_reference(self.keys[0], self.keys[1], proc_id, a_obj_id)
+        logger.info("job_id={}".format(job_id))
+        assert job_id >= 0
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info("jobs={}".format(jobs))
+        assert jobs is not None
+        assert len(jobs) == 1
+
+        while True:
+            time.sleep(1)
+            descriptor, status = get_job(self.keys[0], proc_id, job_id)
+            logger.info("descriptor={}".format(descriptor))
+            logger.info("status={}".format(status))
+            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
+                break
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info("jobs={}".format(jobs))
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        undeploy(self.keys[0], proc_id)
+
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
 
 
 if __name__ == '__main__':

@@ -126,6 +126,12 @@ class TestingEnvironment:
             f.write(b"\0" * int(size))
         return path
 
+    def create_file_with_content(self, filename, content):
+        path = os.path.join(self.wd_path, filename)
+        with open(path, 'w') as f:
+            f.write(content)
+        return path
+
     def generate_keys(self, n):
         keys = []
         for i in range(0, n):
