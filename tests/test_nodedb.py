@@ -1,6 +1,7 @@
 import unittest
 import logging
 import os
+import time
 
 from tests.testing_environment import TestingEnvironment
 from saas.node import Node
@@ -32,6 +33,9 @@ class NodeDBTestCase(unittest.TestCase):
             node.start_server((env.p2p_host, env.p2p_port + i))
             node.initialise_registry((env.p2p_host, env.p2p_port))
             self.nodes.append(node)
+
+        # give it some time to settle
+        time.sleep(5)
 
     def tearDown(self):
         for node in self.nodes:
