@@ -6,9 +6,11 @@ __author__ = "Heiko Aydt"
 __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
+import os
 import time
 import logging
 import json
+import subprocess
 
 logger = logging.getLogger('Utilities.general_helpers')
 
@@ -55,3 +57,10 @@ def get_address_from_string(address_string):
 
 def all_in_dict(required, dictionary):
     return all(r in dictionary for r in required)
+
+
+def create_symbolic_link(source_path, destination_path):
+    if os.path.exists(destination_path):
+        subprocess.check_output(['rm', destination_path])
+    subprocess.check_output(['ln', '-s', source_path, destination_path])
+

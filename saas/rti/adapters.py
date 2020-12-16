@@ -7,7 +7,7 @@ import importlib
 
 from threading import Lock, Thread
 
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.utilities.general_helpers import dump_json_to_file, create_symbolic_link
 
 logger = logging.getLogger('RTI.adapters')
 
@@ -172,7 +172,7 @@ class RTIScriptProcessorAdapter(RTIProcessorAdapter):
 
         head_tail = os.path.split(content_path)
         script_path = os.path.join(head_tail[0], "{}.py".format(proc_id))
-        subprocess.check_output(['ln', '-s', content_path, script_path])
+        create_symbolic_link(content_path, script_path)
 
         self.module_path = head_tail[0]
         self.module_name = proc_id
