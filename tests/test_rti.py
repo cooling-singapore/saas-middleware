@@ -234,7 +234,7 @@ class RTITestCase(unittest.TestCase):
             descriptor, status = get_job(self.keys[0], proc_id, job_id)
             logger.info("descriptor={}".format(descriptor))
             logger.info("status={}".format(status))
-            if isinstance(status, dict) and 'status' in status and status['status'] is not 'running':
+            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
                 break
 
         jobs = get_jobs(self.keys[0], proc_id)
