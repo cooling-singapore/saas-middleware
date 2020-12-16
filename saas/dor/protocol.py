@@ -25,9 +25,9 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
         })
 
     def send_fetch(self, peer_address, obj_id):
-        # connect to boot node
+        # connect to peer
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
-        logger.info("connected to peer (boot node) '{}'".format(peer.iid))
+        logger.info("connected to peer '{}'".format(peer.iid))
 
         # send 'fetch' message and receive the data object descriptor and content from the peer
         try:

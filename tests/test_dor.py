@@ -35,7 +35,7 @@ def add_data_object(sender, owner):
             'created_by': 'heiko',
             'recipe': {
                 'output_name': 'asdasd',
-                'job_descriptor': {
+                'task_descriptor': {
                     'processor_id': '34532452345',
                     'input': [
 
@@ -48,7 +48,7 @@ def add_data_object(sender, owner):
         }
     }
     test_file_path = env.generate_zero_file('test000.dat', 1024*1024)
-    test_obj_id = '0b4c2fdfb49f6ee3190b28ad5b615884e591e003398c8fd2468852b6a754353c'
+    test_obj_id = 'e2804b3003b139fc99fe9c011a7cf7f24534f88d8fbb6a3731457d4efd1b64c3'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -331,15 +331,20 @@ class DORBlueprintTestCases(unittest.TestCase):
         node.start_server((env.p2p_host, env.p2p_port))
 
         peer_address = (env.app_service_p2p_host, env.app_service_p2p_port)
-        destination = os.path.join(receiver_wd_path, node.dor.infix_cache_path, 'test_copy.dat')
 
         protocol = DataObjectRepositoryP2PProtocol(node)
-        success = protocol.send_fetch(peer_address, 'abcdef', destination)
-        assert not success
+        c_hash = protocol.send_fetch(peer_address, 'abcdef')
+        assert not c_hash
 
-        success = protocol.send_fetch(peer_address, obj_id, destination)
-        assert success
-        assert os.path.isfile(destination)
+        c_hash = protocol.send_fetch(peer_address, obj_id)
+        assert c_hash
+
+        destination_descriptor_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path,
+                                                   "{}.descriptor".format(obj_id))
+        destination_content_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path,
+                                                "{}.content".format(c_hash))
+        assert os.path.isfile(destination_descriptor_path)
+        assert os.path.isfile(destination_content_path)
 
         node.stop_server()
 
