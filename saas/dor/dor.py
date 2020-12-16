@@ -14,7 +14,7 @@ import json
 from cryptography.hazmat.primitives import hashes
 
 from saas.eckeypair import ECKeyPair, hash_json_object, hash_file_content
-from saas.utilities.general_helpers import get_timestamp_now, dump_json_to_file
+from saas.utilities.general_helpers import get_timestamp_now, dump_json_to_file, create_symbolic_link
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logger = logging.getLogger('DOR.Records')
@@ -442,16 +442,16 @@ class DataObjectRepository:
         # are we the custodian? in other words: do we have a record for this object?
         record = self.records.get_by_object_id(obj_id)
         if record:
-            # create a symbolic link to the content
             source_descriptor_path = self.obj_descriptor_path(obj_id)
-            source_content_path = self.obj_content_path(record['c_hash'])
             destination_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
+            create_symbolic_link(source_descriptor_path, destination_descriptor_path)
+
+            source_content_path = self.obj_content_path(record['c_hash'])
             destination_content_path = self.obj_content_path(record['c_hash'], cache=True)
-            subprocess.check_output(['ln', '-s', source_descriptor_path, destination_descriptor_path])
-            subprocess.check_output(['ln', '-s', source_content_path, destination_content_path])
+            create_symbolic_link(source_content_path, destination_content_path)
 
             if obj_content_path:
-                subprocess.check_output(['ln', '-s', source_content_path, obj_content_path])
+                create_symbolic_link(source_content_path, obj_content_path)
 
             return record['c_hash']
 
@@ -463,7 +463,7 @@ class DataObjectRepository:
                 if c_hash:
                     if obj_content_path:
                         source_content_path = self.obj_content_path(record['c_hash'], cache=True)
-                        subprocess.check_output(['ln', '-s', source_content_path, obj_content_path])
+                        create_symbolic_link(source_content_path, obj_content_path)
 
                     return c_hash
 
