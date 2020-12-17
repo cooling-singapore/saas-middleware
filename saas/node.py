@@ -41,7 +41,7 @@ class Node:
     thread-safe.
     """
 
-    def __init__(self, name, datastore_path):
+    def __init__(self, name, datastore_path, rest_api_address):
         self.mutex = Lock()
         self.name = name
         self.key = None
@@ -51,6 +51,7 @@ class Node:
         Path(datastore_path).mkdir(parents=True, exist_ok=True)
 
         # initialise server properties
+        self.rest_api_address = rest_api_address
         self.server_address = None
         self.server_socket = None
         self.is_server_running = False
@@ -112,7 +113,7 @@ class Node:
         :return:
         """
         # update the registry with information about ourself
-        self.registry.update(self.key.iid, self.name, self.server_address, [])
+        self.registry.update(self.key.iid, self.name, self.server_address, self.rest_api_address, [])
 
         # send a 'join' message to the boot node
         self.msg_protocols[RegistryP2PProtocol.id].send_join(boot_node_address)

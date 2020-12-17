@@ -158,7 +158,7 @@ class RegistryP2PProtocol(MessengerProtocol):
             return
 
         # connect to peer
-        peer, messenger = SecureMessenger.connect_to_peer(record['address'], self.node)
+        peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node)
         logger.info("connected to peer '{}'".format(peer.iid))
         if not peer_iid == peer.iid:
             logger.warning("mismatching node iids for peer address {}: iid_on_record={} idd_as_per_peer={}".format(

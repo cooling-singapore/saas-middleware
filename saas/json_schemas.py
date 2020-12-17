@@ -5,21 +5,32 @@ input_interface_schema = {
         'properties': {
             'name': {'type': 'string'},
             'type': {'type': 'string', 'enum': ['reference', 'value']},
-            'value': {'type': 'string'}
-        }
+        },
+        'if': {
+            'properties': {'type': {'const': 'reference'}}
+        },
+        'then': {
+            'properties': {
+                'obj_id': {'type': 'string'}
+            }
+        },
+        'else': {
+            'properties': {
+                'value': {'type': 'string'},
+                'data_type': {'type': 'string'},
+                'data_format': {'type': 'string'},
+            }
+        },
     }
 }
 
 output_interface_schema = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'name': {'type': 'string'},
-            'visibility': {'type': 'string', 'enum': ['private', 'domain', 'public']},
-            'owner_public_key': {'type': 'string'}
-        }
-    }
+    'type': 'object',
+    'properties': {
+        'owner_public_key': {'type': 'string'}
+        # 'visibility': {'type': 'string', 'enum': ['private', 'domain', 'public']},
+    },
+    'required': ['owner_public_key']
 }
 
 task_descriptor_schema = {
@@ -30,6 +41,17 @@ task_descriptor_schema = {
         'output': output_interface_schema
     },
     'required': ['processor_id', 'input', 'output']
+}
+
+wf_task_descriptor_schema = {
+    'type': 'object',
+    'properties': {
+        'name': {'type': 'string'},
+        'processor_id': {'type': 'string'},
+        'input': input_interface_schema,
+        'output': output_interface_schema
+    },
+    'required': ['name', 'processor_id', 'input', 'output']
 }
 
 io_mapping_schema = {
@@ -45,18 +67,12 @@ workflow_descriptor_schema = {
     'type': 'object',
     'properties': {
         'name': {'type': 'string'},
-        'input': input_interface_schema,
-        'output': output_interface_schema,
         'tasks': {
             'type': 'array',
-            'items': task_descriptor_schema
-        },
-        'mapping': {
-            'type': 'array',
-            'items': io_mapping_schema
+            'items': wf_task_descriptor_schema
         }
     },
-    'required': ['input', 'output', 'tasks', 'mapping']
+    'required': ['name', 'tasks']
 }
 
 data_object_descriptor_schema = {

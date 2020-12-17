@@ -34,6 +34,11 @@ def dump_json_to_file(json_input, destination_path):
         json.dump(json_input, f, indent=4, sort_keys=True)
 
 
+def load_json_from_file(source_path):
+    with open(source_path, 'r') as f:
+        return json.load(f)
+
+
 def object_to_ordered_list(obj):
     """
     Recursively sort any lists (and convert dictionaries to lists of (key, value) pairs so that they can be sorted)

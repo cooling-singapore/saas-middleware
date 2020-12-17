@@ -7,10 +7,11 @@ import json
 import requests
 
 
-from tests.testing_environment import TestingEnvironment, create_authentication, create_authorisation
+from tests.testing_environment import TestingEnvironment
 from tests.dummy_script import descriptor as dummy_script_descriptor
 from saas.eckeypair import hash_file_content
 from saas.utilities.general_helpers import all_in_dict
+from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
 from saas.node import Node
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
@@ -96,14 +97,14 @@ def add_data_object_a(sender, owner):
         'type': 'data_object',
         'owner_public_key': owner.public_as_string(),
         'descriptor': {
-            'data_type': 'value',
+            'data_type': 'integer',
             'data_format': 'json',
             'created_t': 21342342,
             'created_by': 'heiko'
         }
     }
     test_file_path = env.create_file_with_content('a.dat', "\"1\"")
-    test_obj_id = 'af77fd2c053e333f1a1d32646bf7bdc871cd00bb4c1d554673ecad19a410677d'
+    test_obj_id = '26c4fa19e1fe35863d85f1b43c8ffd84b49f4b80683dba7762ab3e33af258c5f'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -126,21 +127,21 @@ def submit_job_value(sender, owner, proc_id):
                 {
                     'name': 'a',
                     'type': 'value',
+                    'data_type': 'integer',
+                    'data_format': 'json',
                     'value': '1'
                 },
                 {
                     'name': 'b',
                     'type': 'value',
+                    'data_type': 'integer',
+                    'data_format': 'json',
                     'value': '2'
                 }
             ],
-            'output': [
-                {
-                    'name': 'c',
-                    'visibility': 'private',
-                    'owner_public_key': owner.public_as_string()
-                }
-            ]
+            'output': {
+                'owner_public_key': owner.public_as_string()
+            }
         }
     }
 
@@ -164,25 +165,105 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
                 {
                     'name': 'a',
                     'type': 'reference',
-                    'value': a_obj_id
+                    'obj_id': a_obj_id
                 },
                 {
                     'name': 'b',
                     'type': 'value',
+                    'data_type': 'integer',
+                    'data_format': 'json',
                     'value': '2'
                 }
             ],
-            'output': [
+            'output': {
+                'owner_public_key': owner.public_as_string()
+            }
+        }
+    }
+
+    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.post(url, data=content).json()
+    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
+
+
+def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
+    url = "http://127.0.0.1:5000/processor/workflow/jobs"
+    body = {
+        'type': 'workflow',
+        'descriptor': {
+            'name': 'c = ((a+b) + (a+b))',
+            'tasks': [
                 {
-                    'name': 'c',
-                    'visibility': 'private',
-                    'owner_public_key': owner.public_as_string()
+                    'name': 'task0',
+                    'processor_id': proc_id,
+                    'input': [
+                        {
+                            'name': 'a',
+                            'type': 'reference',
+                            'obj_id': obj_id_a
+                        },
+                        {
+                            'name': 'b',
+                            'type': 'value',
+                            'data_type': 'integer',
+                            'data_format': 'json',
+                            'value': '2'
+                        }
+                    ],
+                    'output': {
+                        'owner_public_key': owner.public_as_string()
+                    }
+                },
+                {
+                    'name': 'task1',
+                    'processor_id': proc_id,
+                    'input': [
+                        {
+                            'name': 'a',
+                            'type': 'reference',
+                            'obj_id': obj_id_a
+                        },
+                        {
+                            'name': 'b',
+                            'type': 'value',
+                            'data_type': 'integer',
+                            'data_format': 'json',
+                            'value': '2'
+                        }
+                    ],
+                    'output': {
+                        'owner_public_key': owner.public_as_string()
+                    }
+                },
+                {
+                    'name': 'task2',
+                    'processor_id': proc_id,
+                    'input': [
+                        {
+                            'name': 'a',
+                            'type': 'reference',
+                            'obj_id': 'label:task0:c'
+                        },
+                        {
+                            'name': 'b',
+                            'type': 'reference',
+                            'obj_id': 'label:task1:c'
+                        }
+                    ],
+                    'output': {
+                        'owner_public_key': owner.public_as_string()
+                    }
                 }
             ]
         }
     }
 
-    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    authentication = create_authentication("POST:/processor/workflow/jobs".format(proc_id), sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -286,7 +367,7 @@ class RTITestCase(unittest.TestCase):
 
         job_id = submit_job_value(self.keys[0], self.keys[1], proc_id)
         logger.info("job_id={}".format(job_id))
-        assert job_id >= 0
+        assert job_id is not None
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info("jobs={}".format(jobs))
@@ -345,7 +426,7 @@ class RTITestCase(unittest.TestCase):
 
         job_id = submit_job_reference(self.keys[0], self.keys[1], proc_id, a_obj_id)
         logger.info("job_id={}".format(job_id))
-        assert job_id >= 0
+        assert job_id is not None
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info("jobs={}".format(jobs))
@@ -373,6 +454,64 @@ class RTITestCase(unittest.TestCase):
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
+    def test_processor_workflow(self):
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
+        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        logger.info("proc_id={}".format(proc_id))
+
+        descriptor = deploy(self.keys[0], proc_id)
+        logger.info("descriptor={}".format(descriptor))
+
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 2
+        assert 'workflow' in deployed
+        assert proc_id in deployed
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info("jobs={}".format(jobs))
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        a_obj_id_ref, obj_id_a = add_data_object_a(self.keys[0], self.keys[1])
+        logger.info("obj_id_a={}".format(obj_id_a))
+        assert obj_id_a == a_obj_id_ref
+
+        job_id = submit_job_wofklow(self.keys[0], self.keys[1], proc_id, obj_id_a)
+        logger.info("job_id={}".format(job_id))
+        assert job_id is not None
+
+        # jobs = get_jobs(self.keys[0], proc_id)
+        # logger.info("jobs={}".format(jobs))
+        # assert jobs is not None
+        # assert len(jobs) == 1
+
+        while True:
+            time.sleep(1)
+            descriptor, status = get_job(self.keys[0], proc_id, job_id)
+            logger.info("descriptor={}".format(descriptor))
+            logger.info("status={}".format(status))
+            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
+                break
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info("jobs={}".format(jobs))
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        undeploy(self.keys[0], proc_id)
+
+        deployed = get_deployed(self.keys[0])
+        logger.info("deployed={}".format(deployed))
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
 
 
 if __name__ == '__main__':

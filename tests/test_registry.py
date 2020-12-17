@@ -31,15 +31,15 @@ class RegistryTestCases(unittest.TestCase):
             datastore_path = os.path.join(env.wd_path, name)
 
             logger.info("creating node '{}'".format(name))
-            node = Node(name, datastore_path)
+            node = Node(name, datastore_path, env.rest_api_address)
             node.initialise_identity(env.password)
-            node.start_server((env.p2p_host, env.p2p_port + i))
+            node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
 
             # important note: in the following, we indicate the node we just created as the boot node. which means
             # the N nodes we create in this loop do not know of each other at this point. this is intentional here
             # for the purpose of testing the code. in a real application you would want to use the address of a real
             # boot node.
-            node.initialise_registry((env.p2p_host, env.p2p_port + i))
+            node.initialise_registry((env.p2p_server_address[0], env.p2p_server_address[1] + i))
 
             self.nodes.append(node)
 
@@ -52,18 +52,18 @@ class RegistryTestCases(unittest.TestCase):
         registry = Registry(None)
 
         # empty registry: adding a new records should be successful
-        assert registry.update('123', 'name1', ('127.0.0.1', 5000), ['a', 'b'], 100)
-        assert registry.update('234', 'name2', ('127.0.0.1', 5000), ['a', 'b'], 100)
+        assert registry.update('123', 'name1', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b'], 100)
+        assert registry.update('234', 'name2', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b'], 100)
 
         # there should be two records in the registry now
         assert registry.size() == 2
 
         # records already exists and timestamps are NOT more recent: updates should fail
-        assert not registry.update('123', 'name1', ('127.0.0.1', 5000), ['a', 'b'], 100)
-        assert not registry.update('123', 'name1', ('127.0.0.1', 5000), ['a', 'b'], 99)
+        assert not registry.update('123', 'name1', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b'], 100)
+        assert not registry.update('123', 'name1', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b'], 99)
 
         # records already exists and timestamps are more recent: update should succeed
-        assert registry.update('123', 'name1', ('127.0.0.1', 5000), ['a', 'b', 'c'], 101)
+        assert registry.update('123', 'name1', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b', 'c'], 101)
 
         # the information of record '123' should be updated now
         record = registry.get('123')
@@ -76,13 +76,15 @@ class RegistryTestCases(unittest.TestCase):
         records_a = {
             '123': {
                 'name': 'node1',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 100
             },
             '234': {
                 'name': 'node2',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 99
             }
@@ -91,13 +93,15 @@ class RegistryTestCases(unittest.TestCase):
         records_b = {
             '123': {
                 'name': 'node1',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 99
             },
             '234': {
                 'name': 'node2',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 98
             }
@@ -113,7 +117,7 @@ class RegistryTestCases(unittest.TestCase):
         registry = Registry(None)
 
         # empty registry: adding a new records should be successful
-        assert registry.update('123', ('127.0.0.1', 5000), ['a', 'b'], 100)
+        assert registry.update('123', ('127.0.0.1', 4000), ('127.0.0.1', 5000), ['a', 'b'], 100)
 
         # touching an existing record should yield a timestamp
         t0 = registry.touch('123')
@@ -133,13 +137,15 @@ class RegistryTestCases(unittest.TestCase):
         records_a = {
             '123': {
                 'name': 'node1',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 100
             },
             '234': {
                 'name': 'node2',
-                'address': ('127.0.0.1', 5000),
+                'p2p_address': ('127.0.0.1', 4000),
+                'rest_api_address': ('127.0.0.1', 5000),
                 'processors': ['a', 'b'],
                 'last_seen': 99
             }
