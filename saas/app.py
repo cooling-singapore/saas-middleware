@@ -39,8 +39,9 @@ def create_node_instance(configuration):
 
     p2p_server_address = get_address_from_string(configuration['p2p-server-address'])
     boot_node_address = get_address_from_string(configuration['boot-node-address'])
+    rest_api_address = get_address_from_string(configuration['rest-api-address'])
 
-    instance = Node(configuration['name'], datastore_path)
+    instance = Node(configuration['name'], datastore_path, rest_api_address)
     instance.initialise_identity(configuration['password'])
     instance.start_server(p2p_server_address)
     instance.initialise_registry(boot_node_address)

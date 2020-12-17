@@ -11,9 +11,12 @@ import logging
 import json
 import tempfile
 import flask
+import requests
 
 from jsonschema import validate, ValidationError
 from saas.eckeypair import ECKeyPair
+from saas.utilities.general_helpers import get_timestamp_now, all_in_dict
+
 
 logger = logging.getLogger('Utilities.blueprint_helpers')
 
@@ -82,7 +85,8 @@ def verify_request_body(body, body_specification):
         validate(instance=body, schema=body_specification)
 
     except ValidationError:
-        raise MalformedRequestError(400, "Malformed content:\ncontent={}\nschema={}".format(body, body_specification))
+        raise MalformedRequestError(400, "Malformed content:\ncontent={}\nschema={}".format(
+            json.dumps(body, indent=3), json.dumps(body_specification, indent=3)))
 
 
 def verify_request_files(files, required):
@@ -177,3 +181,82 @@ def create_signed_response(node, url, status_code, reply=None):
     response = flask.jsonify(reply_body)
     response.status_code = status_code
     return response
+
+
+def create_authentication(url, auth_key, body=None, attachment_path=None):
+    return {
+        'public_key': auth_key.public_as_string(),
+        'signature':
+            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
+            auth_key.sign_authentication_token(url, body=body)
+    }
+
+
+def create_authorisation(url, auth_key, body=None):
+    return {
+        'public_key': auth_key.public_as_string(),
+        'signature': auth_key.sign_authorisation_token(url, body)
+    }
+
+
+def request_dor_add(address, sender, owner, content_path, data_type, data_format='json', creator='unknown'):
+    url = "http://{}:{}/repository".format(address[0], address[1])
+    body = {
+        'type': 'data_object',
+        'owner_public_key': owner.public_as_string(),
+        'descriptor': {
+            'data_type': data_type,
+            'data_format': data_format,
+            'created_t': get_timestamp_now(),
+            'created_by': creator
+        }
+    }
+
+    authentication = create_authentication('POST:/repository', sender, body, content_path)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    with open(content_path, 'rb') as f:
+        r = requests.post(url, data=content, files={'attachment': f.read()}).json()
+        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+
+
+def request_rti_submit_task(address, sender, owner, proc_id, input_descriptor):
+    input_descriptor_array = []
+    for item in input_descriptor.items():
+        input_descriptor_array.append(item[1])
+
+    url = "http://{}:{}/processor/{}/jobs".format(address[0], address[1], proc_id)
+    body = {
+        'type': 'task',
+        'descriptor': {
+            'processor_id': proc_id,
+            'input': input_descriptor_array,
+            'output': {
+                'owner_public_key': owner.public_as_string()
+            }
+        }
+    }
+
+    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.post(url, data=content).json()
+    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
+
+
+def request_rti_job_status(address, sender, proc_id, job_id):
+    url = "http://{}:{}/processor/{}/jobs/{}".format(address[0], address[1], proc_id, job_id)
+    authentication = create_authentication("GET:/processor/{}/jobs/{}".format(proc_id, job_id), sender)
+    content = {
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.get(url, data=content).json()
+    return (r['reply']['job_descriptor'], r['reply']['status']) \
+        if all_in_dict(['job_descriptor', 'status'], r['reply']) else None

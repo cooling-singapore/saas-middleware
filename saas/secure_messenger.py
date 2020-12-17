@@ -124,7 +124,7 @@ class MessengerProtocol:
                 continue
 
             # connect to the peer, send message and close connection
-            peer, messenger = SecureMessenger.connect_to_peer(record['address'], self.node, peer_iid)
+            peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node, peer_iid)
             messenger.send(message)
             messenger.close()
 

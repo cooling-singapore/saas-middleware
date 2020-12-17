@@ -20,22 +20,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_authentication(url, auth_key, body=None, attachment_path=None):
-    return {
-        'public_key': auth_key.public_as_string(),
-        'signature':
-            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
-            auth_key.sign_authentication_token(url, body=body)
-    }
-
-
-def create_authorisation(url, auth_key, body=None):
-    return {
-        'public_key': auth_key.public_as_string(),
-        'signature': auth_key.sign_authorisation_token(url, body)
-    }
-
-
 class FlaskServerThread(threading.Thread):
     def __init__(self, app, url, port):
         threading.Thread.__init__(self)
@@ -83,9 +67,8 @@ class TestingEnvironment:
     def __init__(self, configuration):
         self.wd_path = configuration['working-directory']
         self.password = configuration['password']
-        self.p2p_host = configuration['p2p-host']
-        self.p2p_port = configuration['p2p-port']
-        self.rest_api_port = configuration['rest-port']
+        self.p2p_server_address = get_address_from_string(configuration['p2p-server-address'])
+        self.rest_api_address = get_address_from_string(configuration['rest-api-address'])
         self.test_node_config = configuration['test-node-config']
         self.app = None
         self.app_service = None
@@ -148,7 +131,7 @@ class TestingEnvironment:
     def start_flask_app(self):
         self.prepare_working_directory(self.test_node_config['datastore'])
 
-        rest_url, rest_port = get_address_from_string(self.test_node_config['rest-address'])
+        rest_url, rest_port = get_address_from_string(self.test_node_config['rest-api-address'])
         app = initialise_app(self.test_node_config)
 
         self.app_service_p2p_host, self.app_service_p2p_port = get_address_from_string(

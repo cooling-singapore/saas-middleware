@@ -26,7 +26,7 @@ class NodeTestCases(unittest.TestCase):
         pass
 
     def test_node_creation_and_initialisation(self):
-        node = Node('test_node', env.wd_path)
+        node = Node('test_node', env.wd_path, env.rest_api_address)
 
         # identity hasn't been initialised yet, so no key yet
         assert not node.key
@@ -41,7 +41,7 @@ class NodeTestCases(unittest.TestCase):
         assert node.key.short_iid
 
         # start the node server
-        node.start_server((env.p2p_host, env.p2p_port))
+        node.start_server(env.p2p_server_address)
         assert node.server_socket
 
         time.sleep(5)
@@ -49,19 +49,18 @@ class NodeTestCases(unittest.TestCase):
         assert not node.server_socket
 
     def test_node_invalid_message(self):
-        node0 = Node('node0', os.path.join(env.wd_path, 'node0'))
+        node0 = Node('node0', os.path.join(env.wd_path, 'node0'), env.rest_api_address)
         node0.initialise_identity(env.password)
 
-        node1 = Node('node1', os.path.join(env.wd_path, 'node1'))
+        node1 = Node('node1', os.path.join(env.wd_path, 'node1'), env.rest_api_address)
         node1.initialise_identity(env.password)
 
         # start the node server
-        address0 = (env.p2p_host, env.p2p_port)
-        node0.start_server(address0)
+        node0.start_server(env.p2p_server_address)
         assert node0.server_socket
 
         # establish a connection and send a malformed message
-        peer, messenger = SecureMessenger.connect_to_peer(address0, node1)
+        peer, messenger = SecureMessenger.connect_to_peer(env.p2p_server_address, node1)
         try:
             messenger.request({'asdasd': 'sdfds'})
 
@@ -78,7 +77,7 @@ class NodeTestCases(unittest.TestCase):
             messenger.close()
 
         # establish a connection and send a message indicating an unsupported protocol
-        peer, messenger = SecureMessenger.connect_to_peer(address0, node1)
+        peer, messenger = SecureMessenger.connect_to_peer(env.p2p_server_address, node1)
         try:
             messenger.request({'protocol': 'sdfds'})
 
@@ -98,19 +97,18 @@ class NodeTestCases(unittest.TestCase):
         assert not node0.server_socket
 
     def test_node_unreachable(self):
-        node0 = Node('node0', os.path.join(env.wd_path, 'node0'))
+        node0 = Node('node0', os.path.join(env.wd_path, 'node0'), env.rest_api_address)
         node0.initialise_identity(env.password)
 
-        node1 = Node('node1', os.path.join(env.wd_path, 'node1'))
+        node1 = Node('node1', os.path.join(env.wd_path, 'node1'), env.rest_api_address)
         node1.initialise_identity(env.password)
 
         # start the node server
-        address0 = (env.p2p_host, env.p2p_port)
-        node0.start_server(address0)
+        node0.start_server(env.p2p_server_address)
         assert node0.server_socket
 
         # try to establish a connection to node0 but use the wrong port
-        peer, messenger = SecureMessenger.connect_to_peer((env.p2p_host, env.p2p_port+1), node1)
+        peer, messenger = SecureMessenger.connect_to_peer((env.p2p_server_address[0], env.p2p_server_address[1]+1), node1)
         assert not peer
         assert not messenger
 

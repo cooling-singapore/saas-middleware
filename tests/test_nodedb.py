@@ -28,10 +28,10 @@ class NodeDBTestCase(unittest.TestCase):
             datastore_path = os.path.join(env.wd_path, name)
 
             logger.info("creating node '{}'".format(name))
-            node = Node(name, datastore_path)
+            node = Node(name, datastore_path, env.rest_api_address)
             node.initialise_identity(env.password)
-            node.start_server((env.p2p_host, env.p2p_port + i))
-            node.initialise_registry((env.p2p_host, env.p2p_port))
+            node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
+            node.initialise_registry(env.p2p_server_address)
             self.nodes.append(node)
 
         # give it some time to settle

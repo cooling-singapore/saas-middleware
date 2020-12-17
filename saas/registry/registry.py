@@ -58,13 +58,32 @@ class Registry:
         self.mutex.release()
         return result
 
-    def update(self, node_iid, name, address, processors, last_seen=None):
+    def add_processor(self, proc_id):
+        self.mutex.acquire()
+        node_iid = self.node.key.iid
+        record = self.records[node_iid]
+        if proc_id not in record['processors']:
+            record['processors'].append(proc_id)
+            record['last_seen'] = get_timestamp_now()
+        self.mutex.release()
+
+    def remove_processor(self, proc_id):
+        self.mutex.acquire()
+        node_iid = self.node.key.iid
+        record = self.records[node_iid]
+        if proc_id in record['processors']:
+            record['processors'].remove(proc_id)
+            record['last_seen'] = get_timestamp_now()
+        self.mutex.release()
+
+    def update(self, node_iid, name, p2p_address, rest_api_address, processors, last_seen=None):
         """
         Updates the information of a node in the records. Adds a new record in case there isn't already one for
         that node iid.
         :param node_iid: the iid of the node
         :param name: the name of the node
-        :param address: the address (host, port) on which that node is listening
+        :param p2p_address: the address (host, port) for the node's P2P interface
+        :param rest_api_address: the address (host, port) for the node's REST API interface
         :param processors: a list of strings, indicating the processor types supported by that node
         :param last_seen: a timestamp indicating when this node has been last seen (default: None - current time is
         used in case last_seen is not explicitly specified)
@@ -82,7 +101,8 @@ class Registry:
         if node_iid not in self.records or last_seen > self.records[node_iid]['last_seen']:
             self.records[node_iid] = {
                 'name': name,
-                'address': address,
+                'p2p_address': p2p_address,
+                'rest_api_address': rest_api_address,
                 'processors': processors,
                 'last_seen': last_seen
             }
@@ -99,7 +119,8 @@ class Registry:
         """
         result = []
         for peer_iid, record in records.items():
-            if self.update(peer_iid, record['name'], record['address'], record['processors'], record['last_seen']):
+            if self.update(peer_iid, record['name'], record['p2p_address'], record['rest_api_address'],
+                           record['processors'], record['last_seen']):
                 result.append(peer_iid)
 
         return result

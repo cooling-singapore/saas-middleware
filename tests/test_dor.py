@@ -7,9 +7,10 @@ import json
 import requests
 
 
-from tests.testing_environment import TestingEnvironment, create_authentication, create_authorisation
+from tests.testing_environment import TestingEnvironment
 from saas.eckeypair import hash_file_content
 from saas.utilities.general_helpers import object_to_ordered_list
+from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
 from saas.node import Node
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
@@ -32,23 +33,11 @@ def add_data_object(sender, owner):
             'data_type': 'map',
             'data_format': 'json',
             'created_t': 21342342,
-            'created_by': 'heiko',
-            'recipe': {
-                'output_name': 'asdasd',
-                'task_descriptor': {
-                    'processor_id': '34532452345',
-                    'input': [
-
-                    ],
-                    'output': [
-
-                    ]
-                }
-            }
+            'created_by': 'heiko'
         }
     }
     test_file_path = env.generate_zero_file('test000.dat', 1024*1024)
-    test_obj_id = 'e2804b3003b139fc99fe9c011a7cf7f24534f88d8fbb6a3731457d4efd1b64c3'
+    test_obj_id = '12edb4bcd29126086a30f3a1ee9220d02317684a6d41c181152fba752fe86ff0'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -326,9 +315,9 @@ class DORBlueprintTestCases(unittest.TestCase):
 
         # create the receiving node
         receiver_wd_path = os.path.join(env.wd_path, 'receiver')
-        node = Node('receiver', receiver_wd_path)
+        node = Node('receiver', receiver_wd_path, env.rest_api_address)
         node.initialise_identity(receiver_wd_path)
-        node.start_server((env.p2p_host, env.p2p_port))
+        node.start_server(env.p2p_server_address)
 
         peer_address = (env.app_service_p2p_host, env.app_service_p2p_port)
 

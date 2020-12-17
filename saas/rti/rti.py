@@ -3,18 +3,16 @@ __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
 import os
-import time
 import logging
-import threading
 import copy
 import subprocess
 import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter, RTIWorkflowProcessorAdapter
-from saas.rti.adapters import RTIScriptProcessorAdapter, RTIProcessorAdapter, StatusLogger
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter
+from saas.rti.workflow import RTIWorkflowProcessorAdapter
+from saas.rti.adapters import RTIScriptProcessorAdapter, RTIProcessorAdapter
 
 from jsonschema import validate, ValidationError
 
@@ -34,7 +32,7 @@ def validate_json(instance, schema):
 class RuntimeInfrastructure:
     workflow_proc_id = 'workflow'
 
-    def __init__(self, node, concurrency=1):
+    def __init__(self, node, support_workflows=True):
         self.mutex = Lock()
         self.node = node
         self.deployed_processors = {}
@@ -43,21 +41,16 @@ class RuntimeInfrastructure:
         self.jobs_path = os.path.join(self.node.datastore_path, 'jobs')
         subprocess.check_output(['mkdir', '-p', self.jobs_path])
 
-        # initialise job queue
-        # self.jobs_by_proc = {
-        #     RuntimeInfrastructure.workflow_proc_id: []
-        # }
-        # self.queued = []
-        # self.running = {}
-        # self.proc_by_job = {}
+        # initialise job id counter
         self.next_job_id = 0
 
-        # start the workflow adapter
-        adapter: RTIProcessorAdapter = RTIWorkflowProcessorAdapter(self)
-        self.deployed_processors = {
-            RuntimeInfrastructure.workflow_proc_id: adapter
-        }
-        adapter.start()
+        if support_workflows:
+            # start the workflow adapter
+            adapter: RTIProcessorAdapter = RTIWorkflowProcessorAdapter(self)
+            self.deployed_processors = {
+                RuntimeInfrastructure.workflow_proc_id: adapter
+            }
+            adapter.start()
 
     def deploy(self, proc_id):
         self.mutex.acquire()
@@ -101,6 +94,9 @@ class RuntimeInfrastructure:
 
         self.deployed_processors[proc_id].start()
 
+        # update registry
+        self.node.registry.add_processor(proc_id)
+
         self.mutex.release()
         return descriptor
 
@@ -111,6 +107,10 @@ class RuntimeInfrastructure:
             processor = self.deployed_processors[proc_id]
             processor.stop()
             self.deployed_processors.pop(proc_id)
+
+            # update registry
+            self.node.registry.remove_processor(proc_id)
+
             self.mutex.release()
             return processor
         else:
@@ -155,7 +155,6 @@ class RuntimeInfrastructure:
         }
 
         # add it to the processor and the queue
-        # self.proc_by_job[job_id] = job_descriptor
         if processor.add(job_descriptor):
             self.mutex.release()
             return job_id
@@ -176,7 +175,6 @@ class RuntimeInfrastructure:
 
     def get_job(self, job_id):
         self.mutex.acquire()
-        # job_descriptor = self.proc_by_job[job_id]
 
         descriptor_path = os.path.join(self.jobs_path, job_id, 'job_descriptor.json')
         status_path = os.path.join(self.jobs_path, job_id, 'job_status.json')

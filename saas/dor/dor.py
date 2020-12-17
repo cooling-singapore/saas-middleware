@@ -432,7 +432,7 @@ class DataObjectRepository:
     def get_access_permissions(self, obj_id):
         return self.permissions.get_access_permissions(obj_id)
 
-    def fetch(self, obj_id, obj_content_path=None):
+    def fetch(self, obj_id, job_input_obj_content_path=None):
         """
         Attempts to fetch the descriptor and the content of the data object with the given object id. If successful,
         the descriptor and content is stored in the DOR cache directory.
@@ -450,8 +450,9 @@ class DataObjectRepository:
             destination_content_path = self.obj_content_path(record['c_hash'], cache=True)
             create_symbolic_link(source_content_path, destination_content_path)
 
-            if obj_content_path:
-                create_symbolic_link(source_content_path, obj_content_path)
+            if job_input_obj_content_path:
+                create_symbolic_link(source_descriptor_path, "{}.descriptor".format(job_input_obj_content_path))
+                create_symbolic_link(source_content_path, job_input_obj_content_path)
 
             return record['c_hash']
 
@@ -461,9 +462,11 @@ class DataObjectRepository:
             for item in self.node.registry.get(exclude_self=True).items():
                 c_hash = protocol.send_fetch(item[1]['address'], obj_id)
                 if c_hash:
-                    if obj_content_path:
+                    if job_input_obj_content_path:
+                        source_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
                         source_content_path = self.obj_content_path(record['c_hash'], cache=True)
-                        create_symbolic_link(source_content_path, obj_content_path)
+                        create_symbolic_link(source_content_path, job_input_obj_content_path)
+                        create_symbolic_link(source_descriptor_path, "{}.descriptor".format(job_input_obj_content_path))
 
                     return c_hash
 

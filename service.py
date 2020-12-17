@@ -38,7 +38,7 @@ try:
                 configuration = json.load(json_file)
                 logger.debug("configuration: {}".format(configuration))
 
-                rest_url, rest_port = get_address_from_string(configuration['rest-address'])
+                rest_url, rest_port = get_address_from_string(configuration['rest-api-address'])
 
                 app = initialise_app(configuration)
                 app.run(rest_url, rest_port, debug=False)

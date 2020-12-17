@@ -158,7 +158,7 @@ def submit_job(proc_id):
         descriptor = body['descriptor']
         proc_id = descriptor['processor_id'] if body['type'] == 'task' else 'workflow'
         job_id = node.rti.submit(proc_id, descriptor)
-        if job_id >= 0:
+        if job_id is not None:
             return create_signed_response(node, url, 201, {
                 'job_id': job_id
             })

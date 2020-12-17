@@ -17,19 +17,19 @@ descriptor = {
     'input': [
         {
             'name': 'a',
-            'data_type': 'dummy-type',
+            'data_type': 'integer',
             'data_format': 'json'
         },
         {
             'name': 'b',
-            'data_type': 'dummy-type',
+            'data_type': 'integer',
             'data_format': 'json'
         }
     ],
     'output': [
         {
             'name': 'c',
-            'data_type': 'dummy-type',
+            'data_type': 'integer',
             'data_format': 'json'
         }
     ]
@@ -52,7 +52,7 @@ def function(task_descriptor, working_directory, status_logger):
 
         c_path = os.path.join(working_directory, 'c')
         with open(c_path, 'w') as f:
-            f.write(str(c))
+            f.write("\"{}\"".format(c))
 
         return True
 
