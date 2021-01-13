@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
+env = TestingEnvironment.get_instance('../config/testing-config.json')
 n_nodes = 5
 
 
