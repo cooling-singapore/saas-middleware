@@ -21,7 +21,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
+env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +33,7 @@ def add_dummy_processor(sender, owner):
         'descriptor': dummy_script_descriptor
     }
 
-    script_path = '/Users/heikoaydt/Desktop/repositories/saas-middleware/tests/dummy_script.py'
+    script_path = './dummy_script.py'
 
     authentication = create_authentication('POST:/repository', sender, body, script_path)
     content = {

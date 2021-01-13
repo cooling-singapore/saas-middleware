@@ -20,7 +20,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-env = TestingEnvironment.get_instance('/Users/heikoaydt/Desktop/saas_env/testing-config.json')
+env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
 
 
