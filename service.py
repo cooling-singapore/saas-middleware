@@ -34,9 +34,9 @@ try:
         if os.path.isfile(config_path):
             with open(config_path) as json_file:
                 # load configuration
-                logger.info("loading configuration from '{}'".format(config_path))
+                logger.info(f"loading configuration from '{config_path}'")
                 configuration = json.load(json_file)
-                logger.debug("configuration: {}".format(configuration))
+                logger.debug(f"configuration: {configuration}")
 
                 rest_url, rest_port = get_address_from_string(configuration['rest-api-address'])
 
@@ -44,7 +44,7 @@ try:
                 app.run(rest_url, rest_port, debug=False)
 
         else:
-            logger.error("configuration file '{}' not found or not a file.".format(config_path))
+            logger.error(f"configuration file '{config_path}' not found or not a file.")
 
     else:
         logger.error("environment variable 'SAAS_CONFIG' not found.")
