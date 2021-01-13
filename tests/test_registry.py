@@ -27,10 +27,10 @@ class RegistryTestCases(unittest.TestCase):
 
         self.nodes = []
         for i in range(0, n_nodes):
-            name = "node_{}".format(i)
+            name = f"node_{i}"
             datastore_path = os.path.join(env.wd_path, name)
 
-            logger.info("creating node '{}'".format(name))
+            logger.info(f"creating node '{name}'")
             node = Node(name, datastore_path, env.rest_api_address)
             node.initialise_identity(env.password)
             node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
@@ -45,7 +45,7 @@ class RegistryTestCases(unittest.TestCase):
 
     def tearDown(self):
         for node in self.nodes:
-            logger.info("stopping node '{}'".format(node.name))
+            logger.info(f"stopping node '{node.name}'")
             node.stop_server()
 
     def test_update(self):
@@ -192,12 +192,12 @@ class RegistryTestCases(unittest.TestCase):
         for i in range(0, len(self.nodes)):
             records = self.nodes[i].registry.get()
 
-            logger.info("node[{}] records: {}".format(i, records))
+            logger.info(f"node[{i}] records: {records}")
             assert(len(records) == 4)
 
             for node in self.nodes:
                 if node.key.iid not in records:
-                    logger.error("Node {} not found in records of node {}".format(node.key.iid, self.nodes[i].key.iid))
+                    logger.error(f"Node {node.key.iid} not found in records of node {self.nodes[i].key.iid}")
                     assert False
 
     def test_leave(self):

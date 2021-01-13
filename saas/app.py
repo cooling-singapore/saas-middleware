@@ -29,12 +29,12 @@ def create_node_instance(configuration):
     if os.path.exists(datastore_path):
         # is it a directory?
         if not os.path.isdir(datastore_path):
-            raise Exception("datastore path '{}' exists but is not a directory".format(datastore_path))
+            raise Exception(f"datastore path '{datastore_path}' exists but is not a directory")
 
-        logger.info("using existing datastore directory '{}'".format(datastore_path))
+        logger.info(f"using existing datastore directory '{datastore_path}'")
 
     else:
-        logger.info("creating datastore directory '{}'.".format(datastore_path))
+        logger.info(f"creating datastore directory '{datastore_path}'.")
         os.makedirs(datastore_path)
 
     p2p_server_address = get_address_from_string(configuration['p2p-server-address'])

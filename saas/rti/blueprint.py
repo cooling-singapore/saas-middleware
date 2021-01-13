@@ -51,7 +51,7 @@ def get_deployed():
 
 @blueprint.route('/<proc_id>', methods=['POST'])
 def deploy(proc_id):
-    url = "POST:/processor/{}".format(proc_id)
+    url = f"POST:/processor/{proc_id}"
     try:
         # verification of authentication: required
         verify_request_authentication(url, request)
@@ -67,7 +67,7 @@ def deploy(proc_id):
                 'descriptor': descriptor
             })
         else:
-            return create_signed_response(node, url, 404, "Processor {} not found.".format(proc_id))
+            return create_signed_response(node, url, 404, f"Processor {proc_id} not found.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -75,7 +75,7 @@ def deploy(proc_id):
 
 @blueprint.route('/<proc_id>', methods=['DELETE'])
 def undeploy(proc_id):
-    url = "DELETE:/processor/{}".format(proc_id)
+    url = f"DELETE:/processor/{proc_id}"
     try:
         # verification of authentication: required
         verify_request_authentication(url, request)
@@ -88,7 +88,7 @@ def undeploy(proc_id):
         if node.rti.undeploy(proc_id):
             return create_signed_response(node, url, 200)
         else:
-            return create_signed_response(node, url, 404, "Processor {} not deployed.".format(proc_id))
+            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -97,7 +97,7 @@ def undeploy(proc_id):
 @blueprint.route('/processor/<proc_id>', methods=['GET'])
 @blueprint.route('/processor/<proc_id>/descriptor', methods=['GET'])
 def get_descriptor(proc_id):
-    url = "GET:/processor/{}/descriptor".format(proc_id)
+    url = f"GET:/processor/{proc_id}/descriptor"
 
     try:
         # verification of authentication: required
@@ -113,7 +113,7 @@ def get_descriptor(proc_id):
                 'descriptor': descriptor
             })
         else:
-            return create_signed_response(node, url, 404, "Processor {} not deployed.".format(proc_id))
+            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -121,7 +121,7 @@ def get_descriptor(proc_id):
 
 @blueprint.route('/<proc_id>/jobs', methods=['POST'])
 def submit_job(proc_id):
-    url = "POST:/processor/{}/jobs".format(proc_id)
+    url = f"POST:/processor/{proc_id}/jobs"
     body_specification = {
         'type': 'object',
         'properties': {
@@ -148,8 +148,8 @@ def submit_job(proc_id):
         body, files = verify_request_authentication(url, request)
 
         # verification of contents: not required
-        logger.info("body: {}".format(body))
-        logger.info("body_specification: {}".format(body_specification))
+        logger.info(f"body: {body}")
+        logger.info(f"body_specification: {body_specification}")
         verify_request_body(body, body_specification)
 
         # verification of authorisation: not required
@@ -163,7 +163,7 @@ def submit_job(proc_id):
                 'job_id': job_id
             })
         else:
-            return create_signed_response(node, url, 404, "Processor {} not deployed.".format(proc_id))
+            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -171,7 +171,7 @@ def submit_job(proc_id):
 
 @blueprint.route('/<proc_id>/jobs', methods=['GET'])
 def get_jobs(proc_id):
-    url = "GET:/processor/{}/jobs".format(proc_id)
+    url = f"GET:/processor/{proc_id}/jobs"
 
     try:
         # verification of authentication: required
@@ -187,7 +187,7 @@ def get_jobs(proc_id):
                 'jobs': jobs
             })
         else:
-            return create_signed_response(node, url, 404, "Processor {} not deployed.".format(proc_id))
+            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -195,7 +195,7 @@ def get_jobs(proc_id):
 
 @blueprint.route('/<proc_id>/jobs/<job_id>', methods=['GET'])
 def get_job(proc_id, job_id):
-    url = "GET:/processor/{}/jobs/{}".format(proc_id, job_id)
+    url = f"GET:/processor/{proc_id}/jobs/{job_id}"
 
     try:
         # verification of authentication: required
@@ -212,7 +212,7 @@ def get_job(proc_id, job_id):
                 'status': status
             })
         else:
-            return create_signed_response(node, url, 404, "No job with id {}.".format(job_id))
+            return create_signed_response(node, url, 404, f"No job with id {job_id}.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)

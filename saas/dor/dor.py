@@ -263,19 +263,15 @@ class DataObjectRepository:
 
     def obj_content_path(self, c_hash, cache=False):
         if cache:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path,
-                                "{}.content".format(c_hash))
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path, f"{c_hash}.content")
         else:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path,
-                                "{}.content".format(c_hash))
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path, f"{c_hash}.content")
 
     def obj_descriptor_path(self, obj_id, cache=False):
         if cache:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path,
-                                "{}.descriptor".format(obj_id))
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path, f"{obj_id}.descriptor")
         else:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path,
-                                "{}.descriptor".format(obj_id))
+            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path, f"{obj_id}.descriptor")
 
     """
     DataObjectRepository is a facade that provides methods required for the Data Object Repository. Each of these
@@ -300,7 +296,7 @@ class DataObjectRepository:
 
         # fyi: how many records do we have?
         n = self.records.get_number_of_rows()
-        logger.info("number of data object records in database: {}".format(n))
+        logger.info(f"number of data object records in database: {n}")
 
     def add(self, owner_public_key, descriptor, content_path, expiration=None):
         # recreate ECKeyPair (public key only) of the data object owner
@@ -328,7 +324,7 @@ class DataObjectRepository:
             # current behaviour makes it impossible for the caller to know if a data object already existed
             # or not. question is whether this matters or not. the important point is that after calling
             # 'add' the data object is in the DOR.
-            logger.warning("data object '{}' already exists. not adding to DOR.".format(obj_id))
+            logger.warning(f"data object '{obj_id}' already exists. not adding to DOR.")
             return 200, {'data_object_id': obj_id}
 
         # check if there are already data objects with the same content
@@ -336,10 +332,10 @@ class DataObjectRepository:
             # it is possible for cases like this to happen. despite the exact same content, this may well be
             # a legitimate different data object. for example, different provenance has led to the exact same
             # outcome. we thus create a new data object
-            logger.info("data object content '{}' already exists. not adding to DOR.".format(c_hash))
+            logger.info(f"data object content '{c_hash}' already exists. not adding to DOR.")
 
         else:
-            logger.info("data object content '{}' does not exist yet. adding to DOR.".format(c_hash))
+            logger.info(f"data object content '{c_hash}' does not exist yet. adding to DOR.")
 
             # move the content to its destination and make read-only
             destination_path = self.obj_content_path(c_hash)
@@ -349,7 +345,7 @@ class DataObjectRepository:
         # create descriptor file
         descriptor_path = self.obj_descriptor_path(obj_id)
         dump_json_to_file(descriptor, descriptor_path)
-        logger.info("data object '{}' descriptor stored at '{}'.".format(obj_id, descriptor_path))
+        logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # update DOR db: add public key of owner, add the data object record and grant access to the owner by default
         self.public_keys.put(owner)
@@ -362,35 +358,35 @@ class DataObjectRepository:
         # do we have a record for this data object?
         record = self.records.get_by_object_id(obj_id)
         if not record:
-            return 404, "Database record for data object '{}' not found.".format(obj_id)
+            return 404, f"Database record for data object '{obj_id}' not found."
 
         # if we are not the custodian, we are not allowed to delete it
         if not record['custodian_iid'] == self.node.key.iid:
-            return 403, "Node is not custodian for data object '{}'".format(obj_id)
+            return 403, f"Node is not custodian for data object '{obj_id}'"
 
         # do we have a descriptor for this data object?
         descriptor_path = self.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
-            return 500, "Descriptor for data object '{}' not found.".format(obj_id)
+            return 500, f"Descriptor for data object '{obj_id}' not found."
 
         # read the descriptor content before deleting it
         with open(descriptor_path, 'r') as f:
             descriptor = json.loads(f.read())
             os.remove(descriptor_path)
-            logger.info("descriptor for data object '{}' deleted.".format(obj_id))
+            logger.info(f"descriptor for data object '{obj_id}' deleted.")
 
         # we delete the database entries associated with this data object
         self.permissions.revoke_all(obj_id)
         self.tags.delete_all(obj_id)
         self.records.delete(obj_id)
-        logger.info("database records for data object '{}' deleted.".format(obj_id))
+        logger.info(f"database records for data object '{obj_id}' deleted.")
 
         # next we need to check if there are other data objects that point to the same content (very unlikely but
         # not impossible). if not, then we can also safely delete the data object content.
         if not self.records.get_by_content_hash(record['c_hash']):
             content_path = self.obj_content_path(record['c_hash'])
             os.remove(content_path)
-            logger.info("data object content '{}' for data object '{}' deleted.".format(record['c_hash'], obj_id))
+            logger.info(f"data object content '{record['c_hash']}' for data object '{obj_id}' deleted.")
 
         return 200, {'descriptor': descriptor}
 
@@ -412,7 +408,7 @@ class DataObjectRepository:
         # do we have a descriptor for this data object?
         descriptor_path = self.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
-            return 404, "Data object '{}' not found.".format(obj_id)
+            return 404, f"Data object '{obj_id}' not found."
 
         with open(descriptor_path, 'r') as f:
             descriptor = json.loads(f.read())
@@ -451,7 +447,7 @@ class DataObjectRepository:
             create_symbolic_link(source_content_path, destination_content_path)
 
             if job_input_obj_content_path:
-                create_symbolic_link(source_descriptor_path, "{}.descriptor".format(job_input_obj_content_path))
+                create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
                 create_symbolic_link(source_content_path, job_input_obj_content_path)
 
             return record['c_hash']
@@ -466,7 +462,7 @@ class DataObjectRepository:
                         source_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
                         source_content_path = self.obj_content_path(record['c_hash'], cache=True)
                         create_symbolic_link(source_content_path, job_input_obj_content_path)
-                        create_symbolic_link(source_descriptor_path, "{}.descriptor".format(job_input_obj_content_path))
+                        create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
 
                     return c_hash
 

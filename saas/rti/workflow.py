@@ -34,7 +34,7 @@ class TaskWrapper(Thread):
                 obj_id = input_descriptor['obj_id']
                 if obj_id.startswith('label'):
                     temp = obj_id.split(":")
-                    label = "{}:{}".format(temp[1], temp[2])
+                    label = f"{temp[1]}:{temp[2]}"
                     self.unresolved[label] = key
                     self.dependencies[key] = None
                 else:
@@ -73,7 +73,7 @@ class TaskWrapper(Thread):
                     self.outputs[temp[1]] = item[1]
 
         except Exception as e:
-            logger.error("error while executing task wrapper: {}".format(e))
+            logger.error(f"error while executing task wrapper: {e}")
 
         self.is_done = True
 
@@ -122,7 +122,7 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
                     finished[name] = wrapper
 
                     for output_name in wrapper.outputs:
-                        label = "{}:{}".format(wrapper.name, output_name)
+                        label = f"{wrapper.name}:{output_name}"
                         resolved[label] = wrapper.outputs[output_name]
 
                     pacing = False
@@ -138,7 +138,7 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
         # collect the output data object ids
         status.update('stage', 'collecting outputs')
         for output_name in resolved:
-            status.update("output:{}".format(output_name), resolved[output_name])
+            status.update(f"output:{output_name}", resolved[output_name])
 
         status.remove_all(['stage'])
         status.update('status', 'successful')

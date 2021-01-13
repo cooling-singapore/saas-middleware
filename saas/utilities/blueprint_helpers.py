@@ -85,8 +85,8 @@ def verify_request_body(body, body_specification):
         validate(instance=body, schema=body_specification)
 
     except ValidationError:
-        raise MalformedRequestError(400, "Malformed content:\ncontent={}\nschema={}".format(
-            json.dumps(body, indent=3), json.dumps(body_specification, indent=3)))
+        raise MalformedRequestError(400, f"Malformed content:\ncontent={json.dumps(body, indent=3)}\n"
+                                         f"schema={json.dumps(body_specification, indent=3)}")
 
 
 def verify_request_files(files, required):
@@ -99,7 +99,7 @@ def verify_request_files(files, required):
     # check if all required files are available
     for key in required:
         if key not in files:
-            raise MalformedRequestError(400, "Missing content: file '{}' required but not found.".format(key))
+            raise MalformedRequestError(400, f"Missing content: file '{key}' required but not found.")
 
 
 def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None):
@@ -115,7 +115,7 @@ def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None)
     """
     owner = node.dor.get_owner(obj_id)
     if not owner:
-        raise AuthorisationFailedError(404, "Owner for data object '{}' not found.".format(obj_id))
+        raise AuthorisationFailedError(404, f"Owner for data object '{obj_id}' not found.")
 
     # check if authentication is available
     form = request_content.form.to_dict()
@@ -152,8 +152,7 @@ def verify_authorisation_by_user(request_content, obj_id, node, url, body=None):
 
     # does the user have access rights?
     if not node.dor.has_access(obj_id, user):
-        raise AuthorisationFailedError(401, "User '{}' has no permission to access data object '{}'.".format(user.iid,
-                                                                                                             obj_id))
+        raise AuthorisationFailedError(401, f"User '{user.iid}' has no permission to access data object '{obj_id}'.")
 
     # verify the the request using the user public key
     if not user.verify_authorisation_token(authorisation['signature'], url, body):
@@ -200,7 +199,7 @@ def create_authorisation(url, auth_key, body=None):
 
 
 def request_dor_add(address, sender, owner, content_path, data_type, data_format='json', creator='unknown'):
-    url = "http://{}:{}/repository".format(address[0], address[1])
+    url = f"http://{address[0]}:{address[1]}/repository"
     body = {
         'type': 'data_object',
         'owner_public_key': owner.public_as_string(),
@@ -228,7 +227,7 @@ def request_rti_submit_task(address, sender, owner, proc_id, input_descriptor):
     for item in input_descriptor.items():
         input_descriptor_array.append(item[1])
 
-    url = "http://{}:{}/processor/{}/jobs".format(address[0], address[1], proc_id)
+    url = f"http://{address[0]}:{address[1]}/processor/{proc_id}/jobs"
     body = {
         'type': 'task',
         'descriptor': {
@@ -240,7 +239,7 @@ def request_rti_submit_task(address, sender, owner, proc_id, input_descriptor):
         }
     }
 
-    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -251,8 +250,8 @@ def request_rti_submit_task(address, sender, owner, proc_id, input_descriptor):
 
 
 def request_rti_job_status(address, sender, proc_id, job_id):
-    url = "http://{}:{}/processor/{}/jobs/{}".format(address[0], address[1], proc_id, job_id)
-    authentication = create_authentication("GET:/processor/{}/jobs/{}".format(proc_id, job_id), sender)
+    url = f"http://{address[0]}:{address[1]}/processor/{proc_id}/jobs/{job_id}"
+    authentication = create_authentication(f"GET:/processor/{proc_id}/jobs/{job_id}", sender)
     content = {
         'authentication': json.dumps(authentication)
     }

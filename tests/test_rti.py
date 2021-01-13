@@ -47,9 +47,9 @@ def add_dummy_processor(sender, owner):
 
 
 def delete_data_object(sender, obj_id, owner):
-    url = "http://127.0.0.1:5000/repository/{}".format(obj_id)
-    authentication = create_authentication("DELETE:/repository/{}".format(obj_id), sender)
-    authorisation = create_authorisation("DELETE:/repository/{}".format(obj_id), owner)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}"
+    authentication = create_authentication(f"DELETE:/repository/{obj_id}", sender)
+    authorisation = create_authorisation(f"DELETE:/repository/{obj_id}", owner)
     content = {
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
@@ -71,8 +71,8 @@ def get_deployed(sender):
 
 
 def deploy(sender, proc_id):
-    url = "http://127.0.0.1:5000/processor/{}".format(proc_id)
-    authentication = create_authentication("POST:/processor/{}".format(proc_id), sender)
+    url = f"http://127.0.0.1:5000/processor/{proc_id}"
+    authentication = create_authentication(f"POST:/processor/{proc_id}", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -82,8 +82,8 @@ def deploy(sender, proc_id):
 
 
 def undeploy(sender, proc_id):
-    url = "http://127.0.0.1:5000/processor/{}".format(proc_id)
-    authentication = create_authentication("DELETE:/processor/{}".format(proc_id), sender)
+    url = f"http://127.0.0.1:5000/processor/{proc_id}"
+    authentication = create_authentication(f"DELETE:/processor/{proc_id}", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -118,7 +118,7 @@ def add_data_object_a(sender, owner):
 
 
 def submit_job_value(sender, owner, proc_id):
-    url = "http://127.0.0.1:5000/processor/{}/jobs".format(proc_id)
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
     body = {
         'type': 'task',
         'descriptor': {
@@ -145,7 +145,7 @@ def submit_job_value(sender, owner, proc_id):
         }
     }
 
-    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -156,7 +156,7 @@ def submit_job_value(sender, owner, proc_id):
 
 
 def submit_job_reference(sender, owner, proc_id, a_obj_id):
-    url = "http://127.0.0.1:5000/processor/{}/jobs".format(proc_id)
+    url = "http://127.0.0.1:5000/processor/{proc_id}/jobs"
     body = {
         'type': 'task',
         'descriptor': {
@@ -181,7 +181,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
         }
     }
 
-    authentication = create_authentication("POST:/processor/{}/jobs".format(proc_id), sender, body)
+    authentication = create_authentication("POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -263,7 +263,7 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
         }
     }
 
-    authentication = create_authentication("POST:/processor/workflow/jobs".format(proc_id), sender, body)
+    authentication = create_authentication("POST:/processor/workflow/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -274,8 +274,8 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
 
 
 def get_jobs(sender, proc_id):
-    url = "http://127.0.0.1:5000/processor/{}/jobs".format(proc_id)
-    authentication = create_authentication("GET:/processor/{}/jobs".format(proc_id), sender)
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
+    authentication = create_authentication(f"GET:/processor/{proc_id}/jobs", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -285,8 +285,8 @@ def get_jobs(sender, proc_id):
 
 
 def get_job(sender, proc_id, job_id):
-    url = "http://127.0.0.1:5000/processor/{}/jobs/{}".format(proc_id, job_id)
-    authentication = create_authentication("GET:/processor/{}/jobs/{}".format(proc_id, job_id), sender)
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs/{job_id}"
+    authentication = create_authentication(f"GET:/processor/{proc_id}/jobs/{job_id}", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -314,19 +314,19 @@ class RTITestCase(unittest.TestCase):
 
     def test_deployment_undeployment(self):
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
         proc_id = add_dummy_processor(self.keys[0], self.keys[1])
-        logger.info("proc_id={}".format(proc_id))
+        logger.info(f"proc_id={proc_id}")
 
         descriptor = deploy(self.keys[0], proc_id)
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 2
         assert 'workflow' in deployed
@@ -335,180 +335,180 @@ class RTITestCase(unittest.TestCase):
         undeploy(self.keys[0], proc_id)
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
     def test_processor_execution_value(self):
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
         proc_id = add_dummy_processor(self.keys[0], self.keys[1])
-        logger.info("proc_id={}".format(proc_id))
+        logger.info(f"proc_id={proc_id}")
 
         descriptor = deploy(self.keys[0], proc_id)
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 2
         assert 'workflow' in deployed
         assert proc_id in deployed
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         job_id = submit_job_value(self.keys[0], self.keys[1], proc_id)
-        logger.info("job_id={}".format(job_id))
+        logger.info(f"job_id={job_id}")
         assert job_id is not None
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 1
 
         while True:
             time.sleep(1)
             descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info("descriptor={}".format(descriptor))
-            logger.info("status={}".format(status))
+            logger.info(f"descriptor={descriptor}")
+            logger.info(f"status={status}")
             if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
                 break
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         undeploy(self.keys[0], proc_id)
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
     def test_processor_execution_reference(self):
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
         proc_id = add_dummy_processor(self.keys[0], self.keys[1])
-        logger.info("proc_id={}".format(proc_id))
+        logger.info(f"proc_id={proc_id}")
 
         descriptor = deploy(self.keys[0], proc_id)
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 2
         assert 'workflow' in deployed
         assert proc_id in deployed
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         a_obj_id_ref, a_obj_id = add_data_object_a(self.keys[0], self.keys[1])
-        logger.info("a_obj_id={}".format(a_obj_id))
+        logger.info(f"a_obj_id={a_obj_id}")
         assert a_obj_id == a_obj_id_ref
 
         job_id = submit_job_reference(self.keys[0], self.keys[1], proc_id, a_obj_id)
-        logger.info("job_id={}".format(job_id))
+        logger.info(f"job_id={job_id}")
         assert job_id is not None
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 1
 
         while True:
             time.sleep(1)
             descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info("descriptor={}".format(descriptor))
-            logger.info("status={}".format(status))
+            logger.info(f"descriptor={descriptor}")
+            logger.info(f"status={status}")
             if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
                 break
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         undeploy(self.keys[0], proc_id)
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
     def test_processor_workflow(self):
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
         proc_id = add_dummy_processor(self.keys[0], self.keys[1])
-        logger.info("proc_id={}".format(proc_id))
+        logger.info(f"proc_id={proc_id}")
 
         descriptor = deploy(self.keys[0], proc_id)
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 2
         assert 'workflow' in deployed
         assert proc_id in deployed
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         a_obj_id_ref, obj_id_a = add_data_object_a(self.keys[0], self.keys[1])
-        logger.info("obj_id_a={}".format(obj_id_a))
+        logger.info(f"obj_id_a={obj_id_a}")
         assert obj_id_a == a_obj_id_ref
 
         job_id = submit_job_wofklow(self.keys[0], self.keys[1], proc_id, obj_id_a)
-        logger.info("job_id={}".format(job_id))
+        logger.info(f"job_id={job_id}")
         assert job_id is not None
 
         # jobs = get_jobs(self.keys[0], proc_id)
-        # logger.info("jobs={}".format(jobs))
+        # logger.info(f"jobs={jobs}")
         # assert jobs is not None
         # assert len(jobs) == 1
 
         while True:
             time.sleep(1)
             descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info("descriptor={}".format(descriptor))
-            logger.info("status={}".format(status))
+            logger.info(f"descriptor={descriptor}")
+            logger.info(f"status={status}")
             if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
                 break
 
         jobs = get_jobs(self.keys[0], proc_id)
-        logger.info("jobs={}".format(jobs))
+        logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
 
         undeploy(self.keys[0], proc_id)
 
         deployed = get_deployed(self.keys[0])
-        logger.info("deployed={}".format(deployed))
+        logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed

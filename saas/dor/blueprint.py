@@ -81,7 +81,7 @@ def add():
 
 @blueprint.route('/<obj_id>', methods=['DELETE'])
 def delete(obj_id):
-    url = "DELETE:/repository/{}".format(obj_id)
+    url = f"DELETE:/repository/{obj_id}"
 
     try:
         # verification of authentication: required
@@ -102,8 +102,8 @@ def delete(obj_id):
 @blueprint.route('/<obj_id>', methods=['GET'])
 @blueprint.route('/<obj_id>/descriptor', methods=['GET'])
 def get_descriptor(obj_id):
-    url = "GET:/repository/{}/descriptor".format(obj_id)
-    logger.info("url={}".format(url))
+    url = f"GET:/repository/{obj_id}/descriptor"
+    logger.info(f"url={url}")
     try:
         # verification of authentication: required
         verify_request_authentication(url, request)
@@ -116,13 +116,13 @@ def get_descriptor(obj_id):
         return create_signed_response(node, url, status, result)
 
     except RequestError as e:
-        logger.info("exception: {}".format(e))
+        logger.info(f"exception: {e}")
         return create_signed_response(node, url, e.code, e.message)
 
 
 @blueprint.route('/<obj_id>/content', methods=['GET'])
 def get_content(obj_id):
-    url = "GET:/repository/{}/content".format(obj_id)
+    url = f"GET:/repository/{obj_id}/content"
 
     try:
         # verification of authentication: required
@@ -136,8 +136,7 @@ def get_content(obj_id):
         # get the content hash for the data object
         c_hash = node.dor.get_content_hash(obj_id)
         if not c_hash:
-            return create_signed_response(node, url, 500, "Content '{}' for data object '{}' not found.".format(c_hash,
-                                                                                                                obj_id))
+            return create_signed_response(node, url, 500, f"Content '{c_hash}' for data object '{obj_id}' not found.")
 
         # stream the file content
         head, tail = os.path.split(node.dor.obj_content_path(c_hash))
@@ -149,7 +148,7 @@ def get_content(obj_id):
 
 @blueprint.route('/<obj_id>/access', methods=['GET'])
 def get_access_permissions(obj_id):
-    url = "GET:/repository/{}/access".format(obj_id)
+    url = f"GET:/repository/{obj_id}/access"
 
     try:
         # verification of authentication: required
@@ -169,7 +168,7 @@ def get_access_permissions(obj_id):
 
 @blueprint.route('/<obj_id>/access', methods=['POST'])
 def grant_access(obj_id):
-    url = "POST:/repository/{}/access".format(obj_id)
+    url = f"POST:/repository/{obj_id}/access"
     body_specification = {
         'user_public_key': {
             'type': 'string'
@@ -198,7 +197,7 @@ def grant_access(obj_id):
 
 @blueprint.route('/<obj_id>/access', methods=['DELETE'])
 def revoke_access(obj_id):
-    url = "DELETE:/repository/{}/access".format(obj_id)
+    url = f"DELETE:/repository/{obj_id}/access"
     body_specification = {
         'user_public_key': {
             'type': 'string'
@@ -227,7 +226,7 @@ def revoke_access(obj_id):
 
 @blueprint.route('/<obj_id>/owner', methods=['GET'])
 def get_owner(obj_id):
-    url = "GET:/repository/{}/owner".format(obj_id)
+    url = f"GET:/repository/{obj_id}/owner"
 
     try:
         # verification of authentication: required
@@ -245,7 +244,7 @@ def get_owner(obj_id):
                 "owner_public_key": owner.public_as_string()
             })
         else:
-            return create_signed_response(node, url, 404, "Data object '{}' not found.".format(obj_id))
+            return create_signed_response(node, url, 404, f"Data object '{obj_id}' not found.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
@@ -253,7 +252,7 @@ def get_owner(obj_id):
 
 @blueprint.route('/<obj_id>/owner', methods=['PUT'])
 def transfer_ownership(obj_id):
-    url = "PUT:/repository/{}/owner".format(obj_id)
+    url = f"PUT:/repository/{obj_id}/owner"
     body_specification = {
         'new_owner_public_key': {
             'type': 'string'
@@ -274,8 +273,7 @@ def transfer_ownership(obj_id):
         new_owner = ECKeyPair.from_public_key_string(body['new_owner_public_key'])
         node.dor.update_ownership(obj_id, new_owner)
         return create_signed_response(node, url, 200,
-                                      "Ownership of data object '{}' transferred to '{}'.".format(obj_id,
-                                                                                                  new_owner.iid))
+                                      f"Ownership of data object '{obj_id}' transferred to '{new_owner.iid}'.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
