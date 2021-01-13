@@ -60,7 +60,7 @@ class TestingEnvironment:
                         configuration = json.load(json_file)
                         TestingEnvironment.__instance = TestingEnvironment(configuration)
                 else:
-                    raise RuntimeError("Config file '{}' not found/cannot be opened.".format(config_path))
+                    raise RuntimeError(f"Config file '{config_path}' not found/cannot be opened.")
 
         return TestingEnvironment.__instance
 
@@ -80,18 +80,18 @@ class TestingEnvironment:
         wd_path = wd_path if wd_path else self.wd_path
 
         # ensure that the testing path is in the users home directory
-        logger.info("home: {}".format(home))
-        logger.info("wd  : {}".format(self.wd_path))
+        logger.info(f"home: {home}")
+        logger.info(f"wd  : {self.wd_path}")
         if not self.wd_path.startswith(home):
-            raise RuntimeError("Working directory '{}' not part of users home '{}'.".format(wd_path, home))
+            raise RuntimeError(f"Working directory '{wd_path}' not part of users home '{home}'.")
 
         # ensure that the testing working directory is at least two levels down (to reduce the risk of unintentionally
         # deleting top-level / higher level user directories. NOT BULLET PROOF.
         n_home = home.count(os.path.sep)
         n_wd = wd_path.count(os.path.sep)
-        logger.info("directory levels: home={}, wd={}".format(n_home, n_wd))
+        logger.info(f"directory levels: home={n_home}, wd={n_wd}")
         if not n_wd > n_home + 2:
-            raise RuntimeError("Working directory '{}' too high up in the directory hierarchy of the users home '{}'".format(wd_path, home))
+            raise RuntimeError(f"Working directory '{wd_path}' too high up in the directory hierarchy of the users home '{home}'")
 
         # delete the whole testing working directory (if it exists) and recreate it
         subprocess.check_output(['rm', '-rf', wd_path])
@@ -118,7 +118,7 @@ class TestingEnvironment:
     def generate_keys(self, n):
         keys = []
         for i in range(0, n):
-            path = os.path.join(self.wd_path, "key_{}.pem".format(i))
+            path = os.path.join(self.wd_path, f"key_{i}.pem")
             if os.path.isfile(path):
                 key = ECKeyPair.from_private_key_file(path, self.password)
             else:

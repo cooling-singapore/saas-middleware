@@ -51,9 +51,9 @@ def add_data_object(sender, owner):
 
 
 def delete_data_object(sender, obj_id, owner):
-    url = "http://127.0.0.1:5000/repository/{}".format(obj_id)
-    authentication = create_authentication("DELETE:/repository/{}".format(obj_id), sender)
-    authorisation = create_authorisation("DELETE:/repository/{}".format(obj_id), owner)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}"
+    authentication = create_authentication(f"DELETE:/repository/{obj_id}", sender)
+    authorisation = create_authorisation(f"DELETE:/repository/{obj_id}", owner)
     content = {
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
@@ -64,8 +64,8 @@ def delete_data_object(sender, obj_id, owner):
 
 
 def get_descriptor(sender, obj_id):
-    url = "http://127.0.0.1:5000/repository/{}/descriptor".format(obj_id)
-    authentication = create_authentication("GET:/repository/{}/descriptor".format(obj_id), sender)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/descriptor"
+    authentication = create_authentication(f"GET:/repository/{obj_id}/descriptor", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -75,8 +75,8 @@ def get_descriptor(sender, obj_id):
 
 
 def get_access_permissions(sender, obj_id):
-    url = "http://127.0.0.1:5000/repository/{}/access".format(obj_id)
-    authentication = create_authentication("GET:/repository/{}/access".format(obj_id), sender)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/access"
+    authentication = create_authentication(f"GET:/repository/{obj_id}/access", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -86,12 +86,12 @@ def get_access_permissions(sender, obj_id):
 
 
 def grant_access(sender, obj_id, user, owner):
-    url = "http://127.0.0.1:5000/repository/{}/access".format(obj_id)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/access"
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication("POST:/repository/{}/access".format(obj_id), sender, body)
-    authorisation = create_authorisation("POST:/repository/{}/access".format(obj_id), owner, body)
+    authentication = create_authentication(f"POST:/repository/{obj_id}/access", sender, body)
+    authorisation = create_authorisation(f"POST:/repository/{obj_id}/access", owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -103,12 +103,12 @@ def grant_access(sender, obj_id, user, owner):
 
 
 def revoke_access(sender, obj_id, user, owner):
-    url = "http://127.0.0.1:5000/repository/{}/access".format(obj_id)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/access"
     body = {
         'user_public_key': user.public_as_string()
     }
-    authentication = create_authentication("DELETE:/repository/{}/access".format(obj_id), sender, body)
-    authorisation = create_authorisation("DELETE:/repository/{}/access".format(obj_id), owner, body)
+    authentication = create_authentication(f"DELETE:/repository/{obj_id}/access", sender, body)
+    authorisation = create_authorisation(f"DELETE:/repository/{obj_id}/access", owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -120,8 +120,8 @@ def revoke_access(sender, obj_id, user, owner):
 
 
 def get_ownership(sender, obj_id):
-    url = "http://127.0.0.1:5000/repository/{}/owner".format(obj_id)
-    authentication = create_authentication("GET:/repository/{}/owner".format(obj_id), sender)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/owner"
+    authentication = create_authentication(f"GET:/repository/{obj_id}/owner", sender)
     content = {
         'authentication': json.dumps(authentication)
     }
@@ -131,12 +131,12 @@ def get_ownership(sender, obj_id):
 
 
 def transfer_ownership(sender, obj_id, current_owner, new_owner):
-    url = "http://127.0.0.1:5000/repository/{}/owner".format(obj_id)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/owner"
     body = {
         'new_owner_public_key': new_owner.public_as_string()
     }
-    authentication = create_authentication("PUT:/repository/{}/owner".format(obj_id), sender, body)
-    authorisation = create_authorisation("PUT:/repository/{}/owner".format(obj_id), current_owner, body)
+    authentication = create_authentication(f"PUT:/repository/{obj_id}/owner", sender, body)
+    authorisation = create_authorisation(f"PUT:/repository/{obj_id}/owner", current_owner, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication),
@@ -148,9 +148,9 @@ def transfer_ownership(sender, obj_id, current_owner, new_owner):
 
 
 def export_data_object_content(sender, obj_id, owner, destination):
-    url = "http://127.0.0.1:5000/repository/{}/content".format(obj_id)
-    authentication = create_authentication("GET:/repository/{}/content".format(obj_id), sender)
-    authorisation = create_authorisation("GET:/repository/{}/content".format(obj_id), owner)
+    url = f"http://127.0.0.1:5000/repository/{obj_id}/content"
+    authentication = create_authentication(f"GET:/repository/{obj_id}/content", sender)
+    authorisation = create_authorisation(f"GET:/repository/{obj_id}/content", owner)
     content = {
         'authentication': json.dumps(authentication),
         'authorisation': json.dumps(authorisation)
@@ -186,35 +186,35 @@ class DORBlueprintTestCases(unittest.TestCase):
     def test_add_delete_data_object(self):
         # create the data object
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
-        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
         descriptor1 = get_descriptor(self.keys[0], obj_id)
-        logger.info("descriptor1={}".format(descriptor1))
+        logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
         # delete the data object
         descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
-        logger.info("descriptor2={}".format(descriptor2))
+        logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_grant_revoke_access(self):
-        logger.info("keys[0].iid={}".format(self.keys[0].iid))
-        logger.info("keys[1].iid={}".format(self.keys[1].iid))
-        logger.info("keys[2].iid={}".format(self.keys[2].iid))
+        logger.info(f"keys[0].iid={self.keys[0].iid}")
+        logger.info(f"keys[1].iid={self.keys[1].iid}")
+        logger.info(f"keys[2].iid={self.keys[2].iid}")
 
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
-        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
         permissions = get_access_permissions(self.keys[0], obj_id)
-        logger.info("permissions={}".format(permissions))
+        logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
         assert self.keys[1].iid in permissions
 
@@ -222,7 +222,7 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert reply == 'Authorisation failed.'
 
         permissions = get_access_permissions(self.keys[0], obj_id)
-        logger.info("permissions={}".format(permissions))
+        logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
         assert permissions[0] == self.keys[1].iid
 
@@ -230,7 +230,7 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert reply == 'Access granted.'
 
         permissions = get_access_permissions(self.keys[0], obj_id)
-        logger.info("permissions={}".format(permissions))
+        logger.info(f"permissions={permissions}")
         assert len(permissions) == 2
         assert self.keys[1].iid in permissions
         assert self.keys[2].iid in permissions
@@ -239,53 +239,53 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert reply == 'Access revoked.'
 
         permissions = get_access_permissions(self.keys[0], obj_id)
-        logger.info("permissions={}".format(permissions))
+        logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
         assert self.keys[1].iid in permissions
 
         descriptor = delete_data_object(self.keys[0], obj_id, self.keys[1])
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
     def test_transfer_ownership(self):
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
-        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
         owner_info = get_ownership(self.keys[0], obj_id)
-        logger.info("owner_info={}".format(owner_info))
+        logger.info(f"owner_info={owner_info}")
         assert owner_info['owner_iid'] == self.keys[1].iid
 
         reply = transfer_ownership(self.keys[0], obj_id, self.keys[0], self.keys[2])
         assert reply == 'Authorisation failed.'
 
         reply = transfer_ownership(self.keys[0], obj_id, self.keys[1], self.keys[2])
-        logger.info("reply={}".format(reply))
-        assert reply == "Ownership of data object '{}' transferred to '{}'.".format(obj_id, self.keys[2].iid)
+        logger.info(f"reply={reply}")
+        assert reply == f"Ownership of data object '{obj_id}' transferred to '{self.keys[2].iid}'."
 
         owner_info = get_ownership(self.keys[0], obj_id)
-        logger.info("owner_info={}".format(owner_info))
+        logger.info(f"owner_info={owner_info}")
         assert owner_info['owner_iid'] == self.keys[2].iid
 
         descriptor = delete_data_object(self.keys[0], obj_id, self.keys[1])
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
         assert descriptor is None
 
         descriptor = delete_data_object(self.keys[0], obj_id, self.keys[2])
-        logger.info("descriptor={}".format(descriptor))
+        logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
     def test_get_data_object(self):
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
-        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
         descriptor1 = get_descriptor(self.keys[0], obj_id)
-        logger.info("descriptor1={}".format(descriptor1))
+        logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
         destination = os.path.join(env.wd_path, 'test_copy.dat')
@@ -298,19 +298,19 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert os.path.isfile(destination)
 
         descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
-        logger.info("descriptor2={}".format(descriptor2))
+        logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_fetch_data_object(self):
         ref_obj_id, obj_id = add_data_object(self.keys[0], self.keys[1])
-        logger.info("obj_id: reference={} actual={}".format(ref_obj_id, obj_id))
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
         descriptor1 = get_descriptor(self.keys[0], obj_id)
-        logger.info("descriptor1={}".format(descriptor1))
+        logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
         # create the receiving node
@@ -328,17 +328,15 @@ class DORBlueprintTestCases(unittest.TestCase):
         c_hash = protocol.send_fetch(peer_address, obj_id)
         assert c_hash
 
-        destination_descriptor_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path,
-                                                   "{}.descriptor".format(obj_id))
-        destination_content_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path,
-                                                "{}.content".format(c_hash))
+        destination_descriptor_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path, f"{obj_id}.descriptor")
+        destination_content_path = os.path.join(receiver_wd_path, node.dor.infix_cache_path, f"{c_hash}.content")
         assert os.path.isfile(destination_descriptor_path)
         assert os.path.isfile(destination_content_path)
 
         node.stop_server()
 
         descriptor2 = delete_data_object(self.keys[0], obj_id, self.keys[1])
-        logger.info("descriptor2={}".format(descriptor2))
+        logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 

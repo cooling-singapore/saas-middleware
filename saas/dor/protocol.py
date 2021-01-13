@@ -27,14 +27,14 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
     def send_fetch(self, peer_address, obj_id):
         # connect to peer
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
-        logger.info("connected to peer '{}'".format(peer.iid))
+        logger.info(f"connected to peer '{peer.iid}'")
 
         # send 'fetch' message and receive the data object descriptor and content from the peer
         try:
             reply = messenger.request(self.prepare_message("fetch", {
                 'object_id': obj_id
             }))
-            logger.debug("send_fetch: reply={}".format(reply))
+            logger.debug(f"send_fetch: reply={reply}")
             c_hash = reply['c_hash']
 
             destination_descriptor_path = self.node.dor.obj_descriptor_path(obj_id, cache=True)
@@ -47,7 +47,7 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
 
         except MessengerRuntimeError as e:
             if not e.status == 404:
-                logger.error("runtime error during send_fetch: {} {}".format(e.status, e.message))
+                logger.error(f"runtime error during send_fetch: {e.status} {e.message}")
 
             messenger.close()
             return None
@@ -57,14 +57,14 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
         obj_id = message['object_id']
         obj_record = self.node.dor.get(obj_id)
         if not obj_record:
-            messenger.reply_error(404, "{} not found".format(obj_id))
+            messenger.reply_error(404, f"{obj_id} not found")
             messenger.close()
             return
 
         # if we have it, then we send the descriptor in the reply and stream the contents of the data object
         descriptor_path = self.node.dor.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
-            messenger.reply_error(500, "descriptor expected but not found for data object {}".format(obj_id))
+            messenger.reply_error(500, f"descriptor expected but not found for data object {obj_id}")
             messenger.close()
             return
 
@@ -76,7 +76,7 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
         c_hash = obj_record['c_hash']
         content_path = self.node.dor.obj_content_path(c_hash)
         if not os.path.isfile(content_path):
-            messenger.reply_error(500, "content {} expected but not found for data object {}.".format(c_hash, obj_id))
+            messenger.reply_error(500, f"content {c_hash} expected but not found for data object {obj_id}.")
             messenger.close()
             return
 

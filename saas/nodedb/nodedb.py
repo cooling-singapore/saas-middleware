@@ -115,7 +115,7 @@ class DBTable:
                                     for key, value in where_parameters.items())
 
         db = sqlite3.connect(self.node_db.db_path)
-        db.execute("UPDATE {} SET {} WHERE {}".format(self.name, update, where_clause))
+        db.execute(f"UPDATE {self.name} SET {update} WHERE {where_clause}")
         db.commit()
         db.close()
 
@@ -141,11 +141,11 @@ class DBTable:
             )
 
             db.execute(
-                "DELETE FROM {} WHERE {}".format(self.name, where_clause)
+                f"DELETE FROM {self.name} WHERE {where_clause}"
             )
         else:
             db.execute(
-                "DELETE FROM {}".format(self.name)
+                f"DELETE FROM {self.name}"
             )
         db.commit()
         db.close()
@@ -162,7 +162,7 @@ class DBTable:
         """
         self.mutex.acquire()
         db = sqlite3.connect(self.node_db.db_path)
-        sql_result = db.execute("SELECT COUNT(*) FROM {}".format(self.name)).fetchone()
+        sql_result = db.execute(f"SELECT COUNT(*) FROM {self.name}").fetchone()
         result = int(sql_result[0])
         db.close()
         self.mutex.release()
@@ -184,11 +184,11 @@ class NodeDB:
 
         col_string = ','.join("{} {}".format(col_name, col_type) for col_name, col_type in definitions.items())
         if unique:
-            col_string = "{}, UNIQUE({})".format(col_string, ','.join(unique))
+            col_string = f"{col_string}, UNIQUE({','.join(unique)})"
 
         db = sqlite3.connect(self.db_path)
         db.execute(
-            "CREATE TABLE IF NOT EXISTS {} ({})".format(name, col_string)
+            f"CREATE TABLE IF NOT EXISTS {name} ({col_string})"
         )
         db.close()
 
@@ -205,7 +205,7 @@ class NodeDB:
         if name in self.tables:
             db = sqlite3.connect(self.db_path)
             db.execute(
-                "DROP TABLE {}".format(name)
+                f"DROP TABLE {name}"
             )
             db.commit()
             db.close()

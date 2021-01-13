@@ -93,16 +93,14 @@ class Node:
         private_key_path = os.path.join(self.datastore_path, 'identity.pem')
         if os.path.isfile(private_key_path):
             self.key = ECKeyPair.from_private_key_file(private_key_path, password)
-            logger.info("existing identity found. using iid '{}' and public key:\n{}".format(
-                self.key.iid, self.key.public_as_string(truncate=False)
-            ))
+            logger.info(f"existing identity found. using iid '{self.key.iid}' and "
+                        f"public key:\n{self.key.public_as_string(truncate=False)}")
         # if not, create a new one and store the private key to disk
         else:
             self.key = ECKeyPair.create_new()
             self.key.write_private(private_key_path, password)
-            logger.info("created new identity with iid '{}' and public key:\n{}".format(
-                self.key.iid, self.key.public_as_string(truncate=False)
-            ))
+            logger.info(f"created new identity with iid '{self.key.iid}' and "
+                        f"public key:\n{self.key.public_as_string(truncate=False)}")
         self.mutex.release()
 
     def initialise_registry(self, boot_node_address):
@@ -135,7 +133,7 @@ class Node:
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind(self.server_address)
             self.server_socket.listen(concurrency)
-            logger.info("server initialised at address '{}'".format(self.server_address))
+            logger.info(f"server initialised at address '{self.server_address}'")
 
             # start the server thread
             thread = threading.Thread(target=self.handle_incoming_connections)
@@ -178,7 +176,7 @@ class Node:
                 pass
 
             except Exception as e:
-                logger.error("error in server loop: {}".format(e))
+                logger.error(f"error in server loop: {e}")
 
         logger.info("stop listening to incoming connections")
 
@@ -194,7 +192,7 @@ class Node:
         :param messenger: the messenger that facilitates communication between the node and the peer
         :return: None
         """
-        logger.info("begin serving client '{}'".format(peer.short_iid))
+        logger.info(f"begin serving client '{peer.short_iid}'")
 
         # based on the first message received, determine the protocol and let the protocol handle all
         # further message exchanges
@@ -209,16 +207,16 @@ class Node:
                     protocol.handle_message(message, messenger)
 
                 else:
-                    logger.warning("ignoring message for unsupported protocol: {}".format(message))
+                    logger.warning(f"ignoring message for unsupported protocol: {message}")
                     messenger.reply_error(501, "protocol not supported")
 
             else:
-                logger.warning("ignoring malformed message: {}".format(message))
+                logger.warning(f"ignoring malformed message: {message}")
                 messenger.reply_error(400, "malformed message")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.error("error while serving client '{}': {}\n{}".format(peer.short_iid, e, trace))
+            logger.error(f"error while serving client '{peer.short_iid}': {e}\n{trace}")
 
         messenger.close()
-        logger.info("done serving client '{}'".format(peer.short_iid))
+        logger.info(f"done serving client '{peer.short_iid}'")

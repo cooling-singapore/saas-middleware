@@ -24,10 +24,10 @@ class NodeDBTestCase(unittest.TestCase):
 
         self.nodes = []
         for i in range(0, n_nodes):
-            name = "node_{}".format(i)
+            name = f"node_{i}"
             datastore_path = os.path.join(env.wd_path, name)
 
-            logger.info("creating node '{}'".format(name))
+            logger.info(f"creating node '{name}'")
             node = Node(name, datastore_path, env.rest_api_address)
             node.initialise_identity(env.password)
             node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
@@ -39,14 +39,14 @@ class NodeDBTestCase(unittest.TestCase):
 
     def tearDown(self):
         for node in self.nodes:
-            logger.info("stopping node '{}'".format(node.name))
+            logger.info(f"stopping node '{node.name}'")
             node.stop_server()
 
     def test_registry(self):
         # nodes have already been created in the setup... here we just see if all nodes know of each other
         for node in self.nodes:
             content = node.registry.get()
-            logger.info("{} registry content: {}".format(node.name, content))
+            logger.info(f"{node.name} registry content: {content}")
             assert len(content) == len(self.nodes)
 
             for node2 in self.nodes:
@@ -65,7 +65,7 @@ class NodeDBTestCase(unittest.TestCase):
 
         for table in tables:
             records = table.select()
-            logger.info("{} records: {}".format(table.name, records))
+            logger.info(f"{table.name} records: {records}")
             assert len(records) == 0
 
         table: DBTable = tables[0]
@@ -76,7 +76,7 @@ class NodeDBTestCase(unittest.TestCase):
 
         for table in tables:
             records = table.select()
-            logger.info("{} records: {}".format(table.name, records))
+            logger.info(f"{table.name} records: {records}")
             assert len(records) == 1
             assert records[0]['col_a'] == 'abc'
             assert records[0]['col_b'] == 'def'
@@ -90,7 +90,7 @@ class NodeDBTestCase(unittest.TestCase):
 
         for table in tables:
             records = table.select()
-            logger.info("{} records: {}".format(table.name, records))
+            logger.info(f"{table.name} records: {records}")
             assert len(records) == 1
             assert records[0]['col_a'] == 'def'
             assert records[0]['col_b'] == 'def'
@@ -102,7 +102,7 @@ class NodeDBTestCase(unittest.TestCase):
 
         for table in tables:
             records = table.select()
-            logger.info("{} records: {}".format(table.name, records))
+            logger.info(f"{table.name} records: {records}")
             assert len(records) == 0
 
 

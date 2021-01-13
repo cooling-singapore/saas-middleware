@@ -74,14 +74,12 @@ class MessengerProtocol:
         # check if that message is meant for this protocol
         if not message['protocol'] == self.protocol_name:
             raise MessengerInvalidUseException(
-                "message routed to the wrong protocol: protocol_name='{}' message='{}'".format(self.protocol_name,
-                                                                                               message))
+                f"message routed to the wrong protocol: protocol_name='{self.protocol_name}' message='{message}'")
 
         # check if we have a mapping for that message type
         if message['type'] not in self.function_mapping:
             raise MessengerInvalidUseException(
-                "message protocol '{}' does not support message of this type: message='{}'".format(self.protocol_name,
-                                                                                                   message))
+                f"message protocol '{self.protocol_name}' does not support message of this type: message='{message}'")
 
         # forward the message to the appropriate handler function
         self.function_mapping[message['type']](message['payload'], messenger)
@@ -110,7 +108,7 @@ class MessengerProtocol:
         :param exclude: an (optional) list of peer iids which are to be excluded from the broadcast
         :return: None
         """
-        logger.debug("broadcast message: {}".format(message))
+        logger.debug(f"broadcast message: {message}")
 
         # we always exclude ourselves
         if exclude is None:
@@ -154,18 +152,17 @@ class SecureMessenger:
             peer_socket = socket.create_connection(peer_address)
             messenger = SecureMessenger(peer_socket)
             peer = messenger.handshake(self_node)
-            logger.info("connected to peer '{}'".format(peer.iid))
+            logger.info(f"connected to peer '{peer.iid}'")
 
             # if we have an expected peer iid, do a comparison if it matches with what the peer is telling us
             if expected_peer_iid and not expected_peer_iid == peer.iid:
-                logger.warning("unexpected iid for peer at address {}: expected={} idd_as_per_peer={}".format(
-                    peer_address, expected_peer_iid, peer.iid
-                ))
+                logger.warning(f"unexpected iid for peer at address {peer_address}: "
+                               f"expected={expected_peer_iid} idd_as_per_peer={peer.iid}")
 
             return peer, messenger
 
         except ConnectionRefusedError:
-            logger.warning("cannot connect to peer at address '{}'".format(peer_address))
+            logger.warning(f"cannot connect to peer at address '{peer_address}'")
             return None, None
 
     @classmethod
@@ -178,7 +175,7 @@ class SecureMessenger:
         client_socket, client_address = node.server_socket.accept()
         messenger = SecureMessenger(client_socket)
         peer = messenger.handshake(node)
-        logger.info("connected by peer '{}'".format(peer.iid))
+        logger.info(f"connected by peer '{peer.iid}'")
 
         return peer, messenger
 
@@ -317,13 +314,13 @@ class SecureMessenger:
         reply = self.receive()
 
         if not all_in_dict(['status', 'content'], reply):
-            raise MessengerInvalidUseException("malformed reply: {}".format(reply))
+            raise MessengerInvalidUseException(f"malformed reply: {reply}")
 
         elif reply['status'] == 400:
             raise MessengerInvalidUseException(reply['content'])
 
         elif reply['status'] == 500:
-            raise MessengerInvalidUseException("error during request: {}".format(request_message))
+            raise MessengerInvalidUseException(f"error during request: {request_message}")
 
         elif reply['status'] == 501:
             raise MessengerRuntimeError(reply['status'], reply['content'])

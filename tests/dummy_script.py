@@ -37,7 +37,7 @@ descriptor = {
 
 
 def function(task_descriptor, working_directory, status_logger):
-    logger.info("f({}, '{}')".format(task_descriptor, working_directory))
+    logger.info(f"f({task_descriptor}, '{working_directory}')")
 
     try:
         a_path = os.path.join(working_directory, 'a')
@@ -52,11 +52,11 @@ def function(task_descriptor, working_directory, status_logger):
 
         c_path = os.path.join(working_directory, 'c')
         with open(c_path, 'w') as f:
-            f.write("\"{}\"".format(c))
+            f.write(f"\"{c}\"")
 
         return True
 
     except Exception as e:
-        logger.error("exception in function: {}".format(e))
+        logger.error(f"exception in function: {e}")
         return False
 

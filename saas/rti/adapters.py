@@ -163,8 +163,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # determine output object owner
         owner = ECKeyPair.from_public_key_string(task_descriptor['output']['owner_public_key'])
         if not owner:
-            error = "worker[{}]: owner identity cannot be created from public key '{}'.".format(
-                self.name, task_descriptor['owner_public_key'])
+            error = f"worker[{self.name}]: owner identity cannot be created from " \
+                    f"public key '{task_descriptor['owner_public_key']}'"
             logger.error(error)
             status.update('error', error)
             return False
@@ -193,8 +193,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
                 c_hash = self.rti.node.dor.fetch(obj_id, input_content_path)
                 while not c_hash:
-                    logger.warning("worker[{}]: input data object '{}' not available. waiting...".format(self.name,
-                                                                                                         obj_id))
+                    logger.warning(f"worker[{self.name}]: input data object '{obj_id}' not available. waiting...")
                     time.sleep(10)
                     c_hash = self.rti.node.dor.fetch(obj_id, input_content_path)
 
@@ -205,18 +204,18 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 dump_json_to_file({
                     'data_type': input_descriptor['data_type'],
                     'data_format': input_descriptor['data_format']
-                }, "{}.descriptor".format(input_content_path))
+                }, f"{input_content_path}.descriptor")
                 status.update('input_status', 'value stored')
 
             # verify that the input data type and format matches the object data type and format
-            obj_descriptor = load_json_from_file("{}.descriptor".format(input_content_path))
+            obj_descriptor = load_json_from_file(f"{input_content_path}.descriptor")
             proc_in_descriptor = self.input_interface[input_descriptor['name']]
             if proc_in_descriptor['data_type'] != obj_descriptor['data_type'] or \
                     proc_in_descriptor['data_format'] != obj_descriptor['data_format']:
-                error = "worker[{}]: mismatching data type or format for input '{}': input={} object={}".format(
-                    proc_in_descriptor['name'], input_descriptor['name'],
-                    (proc_in_descriptor['data_type'], proc_in_descriptor['data_format']),
-                    (obj_descriptor['data_type'], obj_descriptor['data_format']))
+                error = f"worker[{proc_in_descriptor['name']}]: mismatching data type or format for " \
+                        f"input '{input_descriptor['name']}': " \
+                        f"input={(proc_in_descriptor['data_type'], proc_in_descriptor['data_format'])} " \
+                        f"object={(obj_descriptor['data_type'], obj_descriptor['data_format'])}"
                 logger.error(error)
                 status.update('error', error)
                 successful = False
@@ -239,8 +238,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             })
 
             if not os.path.isfile(output_content_path):
-                error = "worker[{}]: output data object '{}' not available.".format(
-                    self.name, output_descriptor['name'])
+                error = f"worker[{self.name}]: output data object '{output_descriptor['name']}' not available."
                 logger.error(error)
                 status.update('error', error)
                 successful = False
@@ -253,15 +251,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                                      data_type, data_format)
 
             if not obj_id:
-                error = "worker[{}]: failed to add data object '{}'to DOR.".format(
-                    self.name, output_descriptor['name'])
+                error = f"worker[{self.name}]: failed to add data object '{output_descriptor['name']}'to DOR."
                 logger.error(error)
                 status.update('error', error)
                 successful = False
                 break
 
             status.update_all({
-                "output:{}".format(output_descriptor['name']): obj_id,
+                f"output:{output_descriptor['name']}": obj_id,
                 'output_status': 'added'
             })
 
@@ -285,7 +282,7 @@ class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
         super().__init__(rti)
 
         head_tail = os.path.split(content_path)
-        script_path = os.path.join(head_tail[0], "{}.py".format(proc_id))
+        script_path = os.path.join(head_tail[0], f"{proc_id}.py")
         create_symbolic_link(content_path, script_path)
 
         self.module_path = head_tail[0]
@@ -295,7 +292,7 @@ class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
     def startup(self):
         sys.path.insert(1, self.module_path)
         self.module = importlib.import_module(self.module_name)
-        logger.info("[RTIScriptProcessorAdapter] startup: imported module '{}'".format(self.module_name))
+        logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{self.module_name}'")
         self.parse_io_interface(self.module.descriptor)
 
     def shutdown(self):

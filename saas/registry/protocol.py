@@ -39,7 +39,7 @@ class RegistryP2PProtocol(MessengerProtocol):
         :param messenger: the messenger that facilitates communication between the node and the peer
         :return: None
         """
-        logger.debug("handle 'join' message: {}".format(message))
+        logger.debug(f"handle 'join' message: {message}")
         if message['action'] == 'update':
             # update the node's records
             self.node.registry.update_all(message['content'])
@@ -51,12 +51,8 @@ class RegistryP2PProtocol(MessengerProtocol):
             }))
 
         else:
-            logger.warning("encountered unsupported message action '{}:join:{}'".format(
-                self.protocol_name, message['action']
-            ))
-            messenger.reply_error("action '{}' not supported by protocol '{}'".format(
-                message['action'], self.protocol_name)
-            )
+            logger.warning(f"encountered unsupported message action '{self.protocol_name}:join:{message['action']}'")
+            messenger.reply_error(f"action '{message['action']}' not supported by protocol '{self.protocol_name}'")
 
     def handle_leave(self, message, messenger):
         """
@@ -78,9 +74,7 @@ class RegistryP2PProtocol(MessengerProtocol):
             self.node.registry.update_all(message['content'])
 
         else:
-            logger.error("encountered unsupported message action '{}:update:{}'".format(
-                self.protocol_name, message['action']
-            ))
+            logger.error(f"encountered unsupported message action '{self.protocol_name}:update:{message['action']}'")
 
     def handle_ping(self, message, messenger):
         """
@@ -113,11 +107,11 @@ class RegistryP2PProtocol(MessengerProtocol):
         :param peer_address: the address (host, port) of the peer
         :return: None
         """
-        logger.debug("send 'join' message to {}".format(peer_address))
+        logger.debug(f"send 'join' message to {peer_address}")
 
         # connect to boot node
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
-        logger.info("connected to peer (boot node) '{}'".format(peer.iid))
+        logger.info(f"connected to peer (boot node) '{peer.iid}'")
 
         # send 'join' message an receive an update from the peer
         response = messenger.request(self.prepare_message("join", {
@@ -154,16 +148,15 @@ class RegistryP2PProtocol(MessengerProtocol):
         # get the record for that peer iid
         record = self.node.registry.get(peer_iid)
         if not record:
-            logger.warning("peer {} not found in registry".format(peer_iid))
+            logger.warning(f"peer {peer_iid} not found in registry")
             return
 
         # connect to peer
         peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node)
-        logger.info("connected to peer '{}'".format(peer.iid))
+        logger.info(f"connected to peer '{peer.iid}'")
         if not peer_iid == peer.iid:
-            logger.warning("mismatching node iids for peer address {}: iid_on_record={} idd_as_per_peer={}".format(
-                record['address'], peer_iid, peer.iid
-            ))
+            logger.warning(f"mismatching node iids for peer address {record['address']}: iid_on_record={peer_iid} "
+                           f"idd_as_per_peer={peer.iid}")
 
         # send ping message and receive response
         t0 = get_timestamp_now()
@@ -181,10 +174,8 @@ class RegistryP2PProtocol(MessengerProtocol):
             t1 = response['payload']['t_sent']
             dt0 = t1-t0
             dt1 = t2-t1
-            logger.info("response latency: dt('{}'->'{}')={} and dt('{}'->'{}')={}".format(
-                self.node.key.short_iid, peer.short_iid, dt0,
-                peer.short_iid, self.node.key.short_iid, dt1
-            ))
+            logger.info(f"response latency: dt('{self.node.key.short_iid}'->'{peer.short_iid}')={dt0} and "
+                        f"dt('{peer.short_iid}'->'{self.node.key.short_iid}')={dt1}")
 
             # response received, touch the record
             self.node.registry.touch(peer_iid)

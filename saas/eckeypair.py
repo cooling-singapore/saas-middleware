@@ -101,7 +101,7 @@ class ECKeyPair:
         self.private_key = private_key
         self.public_key = public_key
         self.iid = hash_bytes_object(self.public_as_bytes()).hex()
-        self.short_iid = "{}...{}".format(self.iid[:4], self.iid[-4:])
+        self.short_iid = f"{self.iid[:4]}...{self.iid[-4:]}"
 
     @classmethod
     def create_new(cls):
@@ -178,7 +178,7 @@ class ECKeyPair:
         """
         if '-----BEGIN PUBLIC KEY-----' not in public_key_string:
             public_key_string = '\n'.join(public_key_string[i:i + 64] for i in range(0, len(public_key_string), 64))
-            public_key_string = "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----".format(public_key_string)
+            public_key_string = f"-----BEGIN PUBLIC KEY-----\n{public_key_string}\n-----END PUBLIC KEY-----"
 
         return ECKeyPair.from_public_key_bytes(public_key_string.encode('utf-8'))
 
