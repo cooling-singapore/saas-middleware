@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 import docker
@@ -32,9 +33,18 @@ def package_docker(processor_path: str, verbose=False):
 
     image_hash = image.id.split(':')[1]
 
-    build_path = os.path.join(processor_path, 'builds')
+    build_path = os.path.join(processor_path, 'builds', 'docker')
     if not os.path.exists(build_path):
         os.makedirs(build_path)
+
+    with open(os.path.join(processor_path, 'descriptor.json')) as f:
+        descriptor = json.load(f)
+        descriptor['type'] = 'docker'
+
+    descriptor_output_path = os.path.join(build_path, 'docker_descriptor.json')
+    with open(descriptor_output_path, 'w') as f:
+        json.dump(descriptor, f)
+
     image_output_path = os.path.join(build_path, f'{image_hash}.tar')
     with open(image_output_path, 'wb') as f:
         for chunk in image.save():
@@ -58,8 +68,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.type == 'docker':
-        try:
-            package_docker(args.processor_path, args.verbose)
-        except Exception as e:
-            print(e)
+        package_docker(args.processor_path, args.verbose)
+
 
