@@ -6,6 +6,7 @@ import subprocess
 import importlib
 
 from threading import Lock, Thread
+import docker
 
 from saas.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, create_symbolic_link, get_timestamp_now
@@ -267,9 +268,75 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         return successful
 
 
+def find_open_port():
+    """
+    Use socket's built in ability to find an open port.
+    """
+    import socket
+    sock = socket.socket()
+    sock.bind(('', 0))
+
+    _, port = sock.getsockname()
+
+    return port
+
+
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, descriptor, content_path, rti):
         super().__init__(rti)
+        self.processor_name = descriptor['name']
+        self.processor_version = descriptor['version']
+        self.content_path = content_path
+
+        self.port = find_open_port()
+        self.uri = f'http://localhost:{self.port}'
+
+        self.docker_image_id = None
+        self.docker_container_id = None
+
+    def startup(self):
+        client = docker.from_env()
+
+        # Load image to docker
+        with open(self.content_path, 'rb') as docker_package:
+            image_list = client.images.load(docker_package)
+            docker_image = image_list[0]
+        self.docker_image_id = docker_image.id
+
+        # bind rti.jobs_path to jobs_path in Docker
+        jobs_path = os.path.realpath(self.rti.jobs_path)
+        container = client.containers.run(self.docker_image_id,
+                                          name=f'{self.processor_name}-{self.processor_version}',
+                                          ports={'5000/tcp': self.port},
+                                          volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
+                                          detach=True)
+
+        self.docker_container_id = container.id
+
+        logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
+
+    def shutdown(self):
+        client = docker.from_env()
+
+        # Kill and remove docker container
+        container_list = client.containers.list(filters={'id': self.docker_container_id})
+        if len(container_list):
+            container = container_list[0]
+            container.remove(force=True)
+
+        # Remove image from docker
+        client.images.remove(self.docker_image_id)
+
+        logger.info("[RTIDockerProcessorAdapter] startup: shutdown docker processor '{}'".format(self.processor_name))
+
+    def execute(self, task_descriptor, working_directory, status_logger):
+        import requests
+        try:
+            r = requests.post(f'{self.uri}/execute', json=task_descriptor)
+        except Exception as e:
+            return False
+        else:
+            return r.status_code == 200
 
 
 class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
