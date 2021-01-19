@@ -46,6 +46,31 @@ def add_dummy_processor(sender, owner):
         return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
 
 
+def add_docker_processor(sender, owner):
+    url = "http://127.0.0.1:5000/repository"
+    with open('./docker_processor/docker_descriptor.json') as f:
+        docker_descriptor = json.load(f)
+
+    body = {
+        'type': 'processor',
+        'owner_public_key': owner.public_as_string(),
+        'descriptor': docker_descriptor
+    }
+
+    docker_path = './docker_processor/docker_processor.tar.gz'
+    authentication = create_authentication('POST:/repository', sender, body, docker_path)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    with open(docker_path, 'rb') as f:
+        attachment = f.read()
+
+    r = requests.post(url, data=content, files={'attachment': attachment}).json()
+    return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+
+
 def delete_data_object(sender, obj_id, owner):
     url = f"http://127.0.0.1:5000/repository/{obj_id}"
     authentication = create_authentication(f"DELETE:/repository/{obj_id}", sender)
@@ -512,6 +537,66 @@ class RTITestCase(unittest.TestCase):
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
+
+
+class RTIDockerTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        env.start_flask_app()
+
+    @classmethod
+    def tearDownClass(cls):
+        env.stop_flask_app()
+
+    def setUp(self):
+        env.prepare_working_directory()
+        self.keys = env.generate_keys(3)
+
+    def tearDown(self):
+        pass
+
+    def test_processor_execution_value(self):
+        deployed = get_deployed(self.keys[0])
+        logger.info(f"deployed={deployed}")
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
+        proc_id = add_docker_processor(self.keys[0], self.keys[1])
+        logger.info(f"proc_id={proc_id}")
+
+        # descriptor = deploy(self.keys[0], proc_id)
+        # logger.info(f"descriptor={descriptor}")
+        #
+        # job_id = submit_job_value(self.keys[0], self.keys[1], proc_id)
+        # logger.info(f"job_id={job_id}")
+        # assert job_id is not None
+        #
+        # jobs = get_jobs(self.keys[0], proc_id)
+        # logger.info(f"jobs={jobs}")
+        # assert jobs is not None
+        # assert len(jobs) == 1
+        #
+        # while True:
+        #     time.sleep(1)
+        #     descriptor, status = get_job(self.keys[0], proc_id, job_id)
+        #     logger.info(f"descriptor={descriptor}")
+        #     logger.info(f"status={status}")
+        #     if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
+        #         break
+        #
+        # jobs = get_jobs(self.keys[0], proc_id)
+        # logger.info(f"jobs={jobs}")
+        # assert jobs is not None
+        # assert len(jobs) == 0
+        #
+        # undeploy(self.keys[0], proc_id)
+        #
+        # deployed = get_deployed(self.keys[0])
+        # logger.info(f"deployed={deployed}")
+        # assert deployed
+        # assert len(deployed) == 1
+        # assert 'workflow' in deployed
 
 
 if __name__ == '__main__':
