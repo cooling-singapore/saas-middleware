@@ -303,6 +303,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
         # bind rti.jobs_path to jobs_path in Docker
         jobs_path = os.path.realpath(self.rti.jobs_path)
+        # TODO: This should block until container has started successfully
         container = client.containers.run(self.docker_image_id,
                                           name=f'{self.processor_name}-{self.processor_version}',
                                           ports={'5000/tcp': self.port},
@@ -320,7 +321,9 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         container_list = client.containers.list(filters={'id': self.docker_container_id})
         if len(container_list):
             container = container_list[0]
-            container.remove(force=True)
+            container.stop()
+            container.wait()
+            container.remove()
 
         # Remove image from docker
         client.images.remove(self.docker_image_id)
