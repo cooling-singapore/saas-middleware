@@ -273,11 +273,9 @@ def find_open_port():
     Use socket's built in ability to find an open port.
     """
     import socket
-    sock = socket.socket()
-    sock.bind(('', 0))
-
-    _, port = sock.getsockname()
-
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        port = s.getsockname()[1]
     return port
 
 
