@@ -7,6 +7,8 @@ import importlib
 
 from threading import Lock, Thread
 import docker
+import docker.errors
+import requests
 
 from saas.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, create_symbolic_link, get_timestamp_now
@@ -282,8 +284,9 @@ def find_open_port():
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, descriptor, content_path, rti):
         super().__init__(rti)
-        self.processor_name = descriptor['name']
-        self.processor_version = descriptor['version']
+        self.descriptor = descriptor
+        self.processor_name = self.descriptor['name']
+        self.processor_version = self.descriptor['version']
         self.content_path = content_path
 
         self.port = find_open_port()
@@ -303,7 +306,6 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
         # bind rti.jobs_path to jobs_path in Docker
         jobs_path = os.path.realpath(self.rti.jobs_path)
-        # TODO: This should block until container has started successfully
         container = client.containers.run(self.docker_image_id,
                                           name=f'{self.processor_name}-{self.processor_version}',
                                           ports={'5000/tcp': self.port},
@@ -328,9 +330,11 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         client = docker.from_env()
 
         # Kill and remove docker container
-        container_list = client.containers.list(filters={'id': self.docker_container_id})
-        if len(container_list):
-            container = container_list[0]
+        try:
+            container = client.containers.get(self.docker_container_id)
+        except docker.errors.NotFound:
+            logger.warning(f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
+        else:
             container.stop()
             container.wait()
             container.remove()
@@ -338,7 +342,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         # Remove image from docker
         client.images.remove(self.docker_image_id)
 
-        logger.info("[RTIDockerProcessorAdapter] startup: shutdown docker processor '{}'".format(self.processor_name))
+        logger.info(f"[RTIDockerProcessorAdapter] shutdown: shutdown docker processor '{self.processor_name}'")
 
     def execute(self, task_descriptor, working_directory, status_logger):
         try:
