@@ -34,8 +34,7 @@ class DockerProcessor(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_docker_processor_execute(self):
-        test_task_descriptor = {"input": [{"name": "a", "data_type": "integer", "data_format": "json"}],
-                                "job_id": "test"}
+        test_task_descriptor = {"input": [{"name": "a", "data_type": "integer", "data_format": "json"}]}
 
         node = Node('test', self.data_dir, '127.0.0.1:5000')
         node.initialise_identity('test')
