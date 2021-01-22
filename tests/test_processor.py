@@ -45,9 +45,6 @@ class DockerProcessor(unittest.TestCase):
         processor = RTIDockerProcessorAdapter(self.docker_descriptor, self.image_path, rti)
 
         processor.startup()
-        import time
-        # wait for the container to start
-        time.sleep(7)
         processor.execute(test_task_descriptor, self.working_dir, None)
 
         b_data_path = os.path.join(self.working_dir, "b")
