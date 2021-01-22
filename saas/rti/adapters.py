@@ -331,9 +331,10 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         logger.info("[RTIDockerProcessorAdapter] startup: shutdown docker processor '{}'".format(self.processor_name))
 
     def execute(self, task_descriptor, working_directory, status_logger):
-        import requests
         try:
-            r = requests.post(f'{self.uri}/execute', json=task_descriptor)
+            job_id = os.path.basename(working_directory)
+            r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
+                                                           'task_descriptor': task_descriptor})
         except Exception as e:
             return False
         else:
