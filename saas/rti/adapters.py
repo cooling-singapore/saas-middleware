@@ -311,6 +311,16 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                                           detach=True)
 
         self.docker_container_id = container.id
+        self.parse_io_interface(self.descriptor)
+
+        while True:
+            if container.status != 'running':
+                time.sleep(1)
+                container.reload()  # refresh container attrs
+            else:  # check if server is responding to requests
+                r = requests.get(f'{self.uri}/descriptor')
+                if r.status_code == 200:
+                    break
 
         logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
 
