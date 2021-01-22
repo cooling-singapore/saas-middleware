@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import json
 import os
 import shutil
@@ -45,8 +46,8 @@ def package_docker(processor_path: str, verbose=False):
     with open(descriptor_output_path, 'w') as f:
         json.dump(descriptor, f)
 
-    image_output_path = os.path.join(build_path, f'{image_hash}.tar')
-    with open(image_output_path, 'wb') as f:
+    image_output_path = os.path.join(build_path, f'{image_hash}.tar.gz')
+    with gzip.GzipFile(image_output_path, "wb") as f:
         for chunk in image.save():
             f.write(chunk)
     print(f'Docker package exported to: {image_output_path}')
