@@ -46,7 +46,7 @@ class DBTable:
         db = sqlite3.connect(self.node_db.db_path)
         if where_parameters:
             where_clause = " AND ".join(
-                "{}={}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
+                "{} LIKE {}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
                 where_parameters.items()
             )
             rows = db.execute(
@@ -167,6 +167,23 @@ class DBTable:
         db.close()
         self.mutex.release()
         return result
+
+    def has(self, where_parameters):
+        self.mutex.acquire()
+
+        db = sqlite3.connect(self.node_db.db_path)
+        where_clause = " AND ".join(
+            "{}={}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
+            where_parameters.items()
+        )
+
+        sql_result = db.execute(f"SELECT COUNT(*) FROM {self.name} WHERE {where_clause}").fetchone()
+        result = int(sql_result[0])
+
+        self.mutex.release()
+
+        return result > 0
+
 
 
 class NodeDB:
