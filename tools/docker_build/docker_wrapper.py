@@ -2,7 +2,10 @@ import importlib
 import json
 import os
 import sys
+import traceback
+
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 
 def dump_json_to_file(json_input, destination_path):
@@ -73,8 +76,9 @@ def create_app():
 
     @app.route('/execute', methods=['POST'])
     def execute():
-        task_descriptor = request.json
-        job_id = task_descriptor['job_id']
+        data = request.json
+        job_id = data['job_id']
+        task_descriptor = data['task_descriptor']
 
         working_path = os.path.join('/jobs_path', job_id)
         status_path = os.path.join(working_path, 'job_status.json')
@@ -84,6 +88,15 @@ def create_app():
             return json.dumps({'success': True}), 200
         else:
             return json.dumps({'success': False}), 500
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        if isinstance(e, HTTPException):
+            return e
+
+        tb = traceback.format_exc()
+        print(tb)
+        return json.dumps({'success': False, 'stack_trace': tb}), 500
 
     return app
 
