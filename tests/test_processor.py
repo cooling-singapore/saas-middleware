@@ -41,8 +41,7 @@ class DockerProcessor(unittest.TestCase):
         node.start_server(('127.0.0.1', 5050))
         node.initialise_registry(('127.0.0.1', 5050))
 
-        rti = RuntimeInfrastructure(node)
-        processor = RTIDockerProcessorAdapter(self.docker_descriptor, self.image_path, rti)
+        processor = RTIDockerProcessorAdapter(self.docker_descriptor, self.image_path, node.rti)
 
         processor.startup()
         processor.execute(test_task_descriptor, self.working_dir, None)
