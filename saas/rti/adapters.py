@@ -289,11 +289,17 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         self.processor_version = self.descriptor['version']
         self.content_path = content_path
 
-        self.port = find_open_port()
-        self.uri = f'http://localhost:{self.port}'
-
+        self.port = None
         self.docker_image_id = None
         self.docker_container_id = None
+        self.docker_container_name = f'{self.processor_name}-{self.processor_version}'
+
+    @property
+    def uri(self):
+        if self.port is not None:
+            return f'http://localhost:{self.port}'
+        else:
+            raise ValueError('Port has not been initialised.')
 
     def startup(self):
         client = docker.from_env()
@@ -304,10 +310,22 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
             docker_image = image_list[0]
         self.docker_image_id = docker_image.id
 
+        # check if there are any containers running with the same name, from the same image, and remove it
+        containers = client.containers.list(filters={'name': self.docker_container_name})
+        if len(containers) == 1 and containers[0].image.id == self.docker_image_id:
+            logger.info(
+                "[RTIDockerProcessorAdapter] startup: removing docker processor container with the same name"
+                " '{}'".format(self.processor_name))
+            container = containers[0]
+            container.stop()
+            container.wait()
+            container.remove()
+
         # bind rti.jobs_path to jobs_path in Docker
         jobs_path = os.path.realpath(self.rti.jobs_path)
+        self.port = find_open_port()
         container = client.containers.run(self.docker_image_id,
-                                          name=f'{self.processor_name}-{self.processor_version}',
+                                          name=self.docker_container_name,
                                           ports={'5000/tcp': self.port},
                                           volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
                                           detach=True)
@@ -349,7 +367,9 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
             job_id = os.path.basename(working_directory)
             r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
                                                            'task_descriptor': task_descriptor})
+            status_code = r.status_code
         except Exception as e:
+            logger.warning(f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
             return False
         else:
             return r.status_code == 200
