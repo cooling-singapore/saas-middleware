@@ -300,6 +300,37 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
     return r['reply']['job_id'] if 'job_id' in r['reply'] else None
 
 
+def submit_job_value_docker(sender, owner, proc_id):
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
+    body = {
+        'type': 'task',
+        'descriptor': {
+            'processor_id': proc_id,
+            'input': [
+                {
+                    'name': 'a',
+                    'type': 'value',
+                    'data_type': 'integer',
+                    'data_format': 'json',
+                    'value': '5'
+                }
+            ],
+            'output': {
+                'owner_public_key': owner.public_as_string()
+            }
+        }
+    }
+
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.post(url, data=content).json()
+    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
+
+
 def get_jobs(sender, proc_id):
     url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
     authentication = create_authentication(f"GET:/processor/{proc_id}/jobs", sender)
@@ -540,24 +571,7 @@ class RTITestCase(unittest.TestCase):
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
-
-class RTIDockerTestCase(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        env.start_flask_app()
-
-    @classmethod
-    def tearDownClass(cls):
-        env.stop_flask_app()
-
-    def setUp(self):
-        env.prepare_working_directory()
-        self.keys = env.generate_keys(3)
-
-    def tearDown(self):
-        pass
-
-    def test_processor_execution_value(self):
+    def test_docker_processor_execution_value(self):
         deployed = get_deployed(self.keys[0])
         logger.info(f"deployed={deployed}")
         assert deployed
@@ -599,37 +613,6 @@ class RTIDockerTestCase(unittest.TestCase):
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
-
-
-def submit_job_value_docker(sender, owner, proc_id):
-    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
-    body = {
-        'type': 'task',
-        'descriptor': {
-            'processor_id': proc_id,
-            'input': [
-                {
-                    'name': 'a',
-                    'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '5'
-                }
-            ],
-            'output': {
-                'owner_public_key': owner.public_as_string()
-            }
-        }
-    }
-
-    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    r = requests.post(url, data=content).json()
-    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
 
 
 if __name__ == '__main__':
