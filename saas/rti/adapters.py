@@ -342,6 +342,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                 if r.status_code == 200:
                     break
 
+        client.close()
         logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
 
     def shutdown(self):
@@ -360,6 +361,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         # Remove image from docker
         client.images.remove(self.docker_image_id)
 
+        client.close()
         logger.info(f"[RTIDockerProcessorAdapter] shutdown: shutdown docker processor '{self.processor_name}'")
 
     def execute(self, task_descriptor, working_directory, status_logger):
