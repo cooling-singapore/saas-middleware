@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     # Add the arguments
     parser.add_argument('name', type=str, help='Name of Processor')
-    parser.add_argument('output', type=str, help='Output to output generated files')
+    parser.add_argument('output', type=str, help='Path to output generated files')
     args = parser.parse_args()
     create_template(args)
 
