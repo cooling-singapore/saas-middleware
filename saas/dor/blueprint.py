@@ -276,12 +276,13 @@ def transfer_ownership(obj_id):
 
 @blueprint.route('/', methods=['GET'])
 def search_by_tags():
-    url = f"GET:/repository/"
+    url = f"GET:/repository"
 
-    key_criterion = request.args['key_criterion']
-    value_criterion = request.args['value_criterion'] if 'value_criterion' in request.args else None
+    key_criterion = request.args.get('key_criterion')
+    if key_criterion:
+        url = f"{url}?key_criterion={key_criterion}"
 
-    url = f"{url}?key_criterion={key_criterion}"
+    value_criterion = request.args.get('value_criterion')
     if value_criterion:
         url = f"{url}&value_criterion={value_criterion}"
 
