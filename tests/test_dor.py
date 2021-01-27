@@ -248,21 +248,26 @@ def remove_data_object_tags(sender, obj_id, owner, tags):
     return r['reply']
 
 
-def search_data_objects(sender, key_criterion, value_criterion=None):
-    body = {
-        'key_criterion': key_criterion
-    }
+def search_data_objects(sender, key_criterion=None, value_criterion=None):
+    # body = {
+    #     'key_criterion': key_criterion
+    # }
 
-    url = f"http://127.0.0.1:5000/repository/?key_criterion={key_criterion}"
-    auth_url = f"GET:/repository/?key_criterion={key_criterion}"
+    url = f"http://127.0.0.1:5000/repository"
+    auth_url = f"GET:/repository"
+
+    if key_criterion:
+        url = f"{url}?key_criterion={key_criterion}"
+        auth_url = f"{auth_url}?key_criterion={key_criterion}"
+
     if value_criterion:
         url = f"{url}&value_criterion={value_criterion}"
         auth_url = f"{auth_url}&value_criterion={value_criterion}"
-        body['value_criterion'] = value_criterion
+        # body['value_criterion'] = value_criterion
 
-    authentication = create_authentication(auth_url, sender, body)
+    authentication = create_authentication(auth_url, sender)
     content = {
-        'body': json.dumps(body),
+        # 'body': json.dumps(body),
         'authentication': json.dumps(authentication),
     }
 
@@ -569,6 +574,11 @@ class DORBlueprintTestCases(unittest.TestCase):
         assert len(result) == 2
         assert obj_id0 in result
         assert obj_id1 in result
+
+        # test the case where no criteria are given
+        result = search_data_objects(self.keys[0])
+        logger.info(f"result={result}")
+        assert len(result) == 0
 
         # delete the data object 0
         descriptor0 = delete_data_object(self.keys[0], obj_id0, self.keys[1])

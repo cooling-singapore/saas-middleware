@@ -113,10 +113,18 @@ class DORTagsTable:
             'value': 'TEXT'
         })
 
-    def search(self, key_vriterion, value_criterion):
-        where_parameters = {
-            'key': key_vriterion
-        }
+    def search(self, key_criterion, value_criterion):
+        # if no criterion is specified, then simply return an empty list.
+        # another option could be to return *all* data object ids but that's a potential issue with size and
+        # confidentiality
+        if not key_criterion and not value_criterion:
+            return []
+
+        # construct the where parameters
+        where_parameters = {}
+        if key_criterion:
+            where_parameters['key'] = key_criterion
+
         if value_criterion:
             where_parameters['value'] = value_criterion
 
