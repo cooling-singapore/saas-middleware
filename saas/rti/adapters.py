@@ -17,7 +17,19 @@ from saas.utilities.blueprint_helpers import request_dor_add
 logger = logging.getLogger('RTI.adapters')
 
 
+def find_open_port():
+    """
+    Use socket's built in ability to find an open port.
+    """
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        port = s.getsockname()[1]
+    return port
+
+
 class StatusLogger:
+
     """
     StatusLogger keeps information (key-value pairs) for a job and syncs its contents to disk. This class is
     basically just a wrapper of a dictionary providing convenient functions.
@@ -50,7 +62,6 @@ class StatusLogger:
         Returns the value for a given key.
         """
         return self.content[key] if key else self.content
-
     def remove_all(self, keys):
         """
         Removes multiple entries (if they exists) using a list of key.
@@ -61,9 +72,11 @@ class StatusLogger:
 
 
 class RTIProcessorAdapter(Thread):
-    def __init__(self, rti):
+
+    def __init__(self, proc_id, rti):
         super().__init__(daemon=True)
 
+        self.proc_id = proc_id
         self.mutex = Lock()
         self.rti = rti
         self.pending = []
@@ -95,18 +108,28 @@ class RTIProcessorAdapter(Thread):
             return False
 
     def stop(self):
+        logger.info(f"adapter {self.proc_id} received stop signal.")
         self.is_active = False
 
     def run(self):
+        logger.info(f"adapter {self.proc_id} starting up...")
         self.startup()
 
+        logger.info(f"adapter {self.proc_id} started up.")
         while self.is_active:
             # get the next job
             self.mutex.acquire()
-            while not self.pending:
+            while self.is_active and not self.pending:
                 self.mutex.release()
                 time.sleep(5)
                 self.mutex.acquire()
+
+            # with or without job, is not is_active, then we quit
+            if not self.is_active:
+                self.mutex.release()
+                break
+
+            # there should be a job in the pending queue
             job_descriptor = self.pending.pop(0)
             self.mutex.release()
 
@@ -141,12 +164,16 @@ class RTIProcessorAdapter(Thread):
 
             status.update('status', 'successful')
 
+        logger.info(f"adapter {self.proc_id} shutting down...")
         self.shutdown()
+
+        logger.info(f"adapter {self.proc_id} shut down.")
 
 
 class RTITaskProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, rti):
-        super().__init__(rti)
+
+    def __init__(self, proc_id, rti):
+        super().__init__(proc_id, rti)
 
         self.input_interface = {}
         self.output_interface = {}
@@ -227,7 +254,6 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['input', 'input_content_path', 'input_status'])
         return successful
-
     def push_output_data_objects(self, owner, wd_path, status):
         status.update('stage', 'push output data objects')
 
@@ -270,20 +296,9 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         return successful
 
 
-def find_open_port():
-    """
-    Use socket's built in ability to find an open port.
-    """
-    import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        port = s.getsockname()[1]
-    return port
-
-
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, descriptor, content_path, rti):
-        super().__init__(rti)
+    def __init__(self, proc_id, descriptor, content_path, rti):
+        super().__init__(proc_id, rti)
         self.descriptor = descriptor
         self.processor_name = self.descriptor['name']
         self.processor_version = self.descriptor['version']
@@ -378,13 +393,13 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
 
 class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, descriptor, content_path, rti):
-        super().__init__(rti)
+    def __init__(self, proc_id, descriptor, content_path, rti):
+        super().__init__(proc_id, rti)
 
 
 class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, content_path, rti):
-        super().__init__(rti)
+        super().__init__(proc_id, rti)
 
         head_tail = os.path.split(content_path)
         script_path = os.path.join(head_tail[0], f"{proc_id}.py")
