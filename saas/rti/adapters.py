@@ -6,6 +6,9 @@ import subprocess
 import importlib
 
 from threading import Lock, Thread
+import docker
+import docker.errors
+import requests
 
 from saas.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, create_symbolic_link, get_timestamp_now
@@ -14,7 +17,19 @@ from saas.utilities.blueprint_helpers import request_dor_add
 logger = logging.getLogger('RTI.adapters')
 
 
+def find_open_port():
+    """
+    Use socket's built in ability to find an open port.
+    """
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        port = s.getsockname()[1]
+    return port
+
+
 class StatusLogger:
+
     """
     StatusLogger keeps information (key-value pairs) for a job and syncs its contents to disk. This class is
     basically just a wrapper of a dictionary providing convenient functions.
@@ -47,7 +62,6 @@ class StatusLogger:
         Returns the value for a given key.
         """
         return self.content[key] if key else self.content
-
     def remove_all(self, keys):
         """
         Removes multiple entries (if they exists) using a list of key.
@@ -58,9 +72,11 @@ class StatusLogger:
 
 
 class RTIProcessorAdapter(Thread):
-    def __init__(self, rti):
+
+    def __init__(self, proc_id, rti):
         super().__init__(daemon=True)
 
+        self.proc_id = proc_id
         self.mutex = Lock()
         self.rti = rti
         self.pending = []
@@ -92,18 +108,28 @@ class RTIProcessorAdapter(Thread):
             return False
 
     def stop(self):
+        logger.info(f"adapter {self.proc_id} received stop signal.")
         self.is_active = False
 
     def run(self):
+        logger.info(f"adapter {self.proc_id} starting up...")
         self.startup()
 
+        logger.info(f"adapter {self.proc_id} started up.")
         while self.is_active:
             # get the next job
             self.mutex.acquire()
-            while not self.pending:
+            while self.is_active and not self.pending:
                 self.mutex.release()
                 time.sleep(5)
                 self.mutex.acquire()
+
+            # with or without job, is not is_active, then we quit
+            if not self.is_active:
+                self.mutex.release()
+                break
+
+            # there should be a job in the pending queue
             job_descriptor = self.pending.pop(0)
             self.mutex.release()
 
@@ -138,12 +164,16 @@ class RTIProcessorAdapter(Thread):
 
             status.update('status', 'successful')
 
+        logger.info(f"adapter {self.proc_id} shutting down...")
         self.shutdown()
+
+        logger.info(f"adapter {self.proc_id} shut down.")
 
 
 class RTITaskProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, rti):
-        super().__init__(rti)
+
+    def __init__(self, proc_id, rti):
+        super().__init__(proc_id, rti)
 
         self.input_interface = {}
         self.output_interface = {}
@@ -224,7 +254,6 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['input', 'input_content_path', 'input_status'])
         return successful
-
     def push_output_data_objects(self, owner, wd_path, status):
         status.update('stage', 'push output data objects')
 
@@ -268,18 +297,109 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, descriptor, content_path, rti):
-        super().__init__(rti)
+    def __init__(self, proc_id, descriptor, content_path, rti):
+        super().__init__(proc_id, rti)
+        self.descriptor = descriptor
+        self.processor_name = self.descriptor['name']
+        self.processor_version = self.descriptor['version']
+        self.content_path = content_path
+
+        self.port = None
+        self.docker_image_id = None
+        self.docker_container_id = None
+        self.docker_container_name = f'{self.processor_name}-{self.processor_version}'
+
+    @property
+    def uri(self):
+        if self.port is not None:
+            return f'http://localhost:{self.port}'
+        else:
+            raise ValueError('Port has not been initialised.')
+
+    def startup(self):
+        client = docker.from_env()
+
+        # Load image to docker
+        with open(self.content_path, 'rb') as docker_package:
+            image_list = client.images.load(docker_package)
+            docker_image = image_list[0]
+        self.docker_image_id = docker_image.id
+
+        # check if there are any containers running with the same name, from the same image, and remove it
+        containers = client.containers.list(filters={'name': self.docker_container_name})
+        if len(containers) == 1 and containers[0].image.id == self.docker_image_id:
+            logger.info(
+                "[RTIDockerProcessorAdapter] startup: removing docker processor container with the same name"
+                " '{}'".format(self.processor_name))
+            container = containers[0]
+            container.stop()
+            container.wait()
+            container.remove()
+
+        # bind rti.jobs_path to jobs_path in Docker
+        jobs_path = os.path.realpath(self.rti.jobs_path)
+        self.port = find_open_port()
+        container = client.containers.run(self.docker_image_id,
+                                          name=self.docker_container_name,
+                                          ports={'5000/tcp': self.port},
+                                          volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
+                                          detach=True)
+
+        self.docker_container_id = container.id
+        self.parse_io_interface(self.descriptor)
+
+        while True:
+            if container.status != 'running':
+                time.sleep(1)
+                container.reload()  # refresh container attrs
+            else:  # check if server is responding to requests
+                r = requests.get(f'{self.uri}/descriptor')
+                if r.status_code == 200:
+                    break
+
+        client.close()
+        logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
+
+    def shutdown(self):
+        client = docker.from_env()
+
+        # Kill and remove docker container
+        try:
+            container = client.containers.get(self.docker_container_id)
+        except docker.errors.NotFound:
+            logger.warning(f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
+        else:
+            container.stop()
+            container.wait()
+            container.remove()
+
+        # Remove image from docker
+        client.images.remove(self.docker_image_id)
+
+        client.close()
+        logger.info(f"[RTIDockerProcessorAdapter] shutdown: shutdown docker processor '{self.processor_name}'")
+
+    def execute(self, task_descriptor, working_directory, status_logger):
+        try:
+            job_id = os.path.basename(working_directory)
+            r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
+                                                           'task_descriptor': task_descriptor})
+            status_code = r.status_code
+        except Exception as e:
+            logger.warning(f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
+            return False
+        else:
+            return r.status_code == 200
 
 
 class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, descriptor, content_path, rti):
-        super().__init__(rti)
+    def __init__(self, proc_id, descriptor, content_path, rti):
+        super().__init__(proc_id, rti)
 
 
 class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, content_path, rti):
-        super().__init__(rti)
+        super().__init__(proc_id, rti)
 
         head_tail = os.path.split(content_path)
         script_path = os.path.join(head_tail[0], f"{proc_id}.py")
