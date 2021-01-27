@@ -113,7 +113,76 @@ class DORTagsTable:
             'value': 'TEXT'
         })
 
-    def delete_all(self, obj_id):
+    def search(self, key_criterion, value_criterion):
+        # if no criterion is specified, then simply return an empty list.
+        # another option could be to return *all* data object ids but that's a potential issue with size and
+        # confidentiality
+        if not key_criterion and not value_criterion:
+            return []
+
+        # construct the where parameters
+        where_parameters = {}
+        if key_criterion:
+            where_parameters['key'] = key_criterion
+
+        if value_criterion:
+            where_parameters['value'] = value_criterion
+
+        sql_result = self.table.select(['obj_id'], where_parameters)
+
+        result = []
+        for kv in sql_result:
+            result.append(kv['obj_id'])
+
+        return result
+
+    def get_by_object_id(self, obj_id):
+        """
+        Returns the tags for a data object with a given object id.
+        :param obj_id: the object id
+        :return:
+        """
+        tags = self.table.select(
+            ['key', 'value'],
+            where_parameters={
+                'obj_id': obj_id
+            }
+        )
+
+        result = {}
+        for tag in tags:
+            result[tag['key']] = tag['value']
+
+        return result
+
+    def update(self, obj_id, tags):
+        for tag in tags:
+            key = tag['key']
+            value = tag['value']
+
+            # is the key already in the table? then update
+            where_parameters = {'obj_id': obj_id, 'key': key}
+            if self.table.has(where_parameters):
+                self.table.update({
+                    'value': value
+                }, where_parameters)
+
+            # otherwise insert
+            else:
+                self.table.insert({
+                    'obj_id': obj_id,
+                    'key': key,
+                    'value': value
+                })
+
+    def remove(self, obj_id, tags):
+        for tag in tags:
+            self.table.delete({
+                'obj_id': obj_id,
+                'key': tag
+            })
+
+    def remove_all(self, obj_id):
         self.table.delete({
             'obj_id': obj_id
         })
@@ -377,7 +446,7 @@ class DataObjectRepository:
 
         # we delete the database entries associated with this data object
         self.permissions.revoke_all(obj_id)
-        self.tags.delete_all(obj_id)
+        self.tags.remove_all(obj_id)
         self.records.delete(obj_id)
         logger.info(f"database records for data object '{obj_id}' deleted.")
 
@@ -467,3 +536,15 @@ class DataObjectRepository:
                     return c_hash
 
             return None
+
+    def search_by_tags(self, key_criterion, value_criterion):
+        return self.tags.search(key_criterion, value_criterion)
+
+    def get_tags(self, obj_id):
+        return self.tags.get_by_object_id(obj_id)
+
+    def update_tags(self, obj_id, tags):
+        self.tags.update(obj_id, tags)
+
+    def remove_tags(self, obj_id, tags):
+        self.tags.remove(obj_id, tags)
