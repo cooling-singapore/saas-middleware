@@ -12,7 +12,7 @@ def package_docker(processor_path: str, verbose=False):
     """
     client = docker.from_env()
 
-    dockerfile_directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'docker_build')
+    dockerfile_directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'docker_build_files')
 
     # copy docker build files to a temp folder
     temp_folder = os.path.join(processor_path, '__tmp__')
