@@ -32,11 +32,6 @@ def initialise(node_instance):
     node = node_instance
 
 
-@blueprint.route('/', methods=['GET'])
-def search():
-    return create_signed_response(node, '/', 501, "Search is not yet implemented.")
-
-
 @blueprint.route('/', methods=['POST'])
 def add():
     url = "POST:/repository"
@@ -274,6 +269,125 @@ def transfer_ownership(obj_id):
         node.dor.update_ownership(obj_id, new_owner)
         return create_signed_response(node, url, 200,
                                       f"Ownership of data object '{obj_id}' transferred to '{new_owner.iid}'.")
+
+    except RequestError as e:
+        return create_signed_response(node, url, e.code, e.message)
+
+
+@blueprint.route('/', methods=['GET'])
+def search_by_tags():
+    url = f"GET:/repository"
+
+    key_criterion = request.args.get('key_criterion')
+    if key_criterion:
+        url = f"{url}?key_criterion={key_criterion}"
+
+    value_criterion = request.args.get('value_criterion')
+    if value_criterion:
+        url = f"{url}&value_criterion={value_criterion}"
+
+    try:
+        # verification of authentication: required
+        body, files = verify_request_authentication(url, request)
+
+        # verification of contents: not required
+
+        # verification of authorisation: not required
+
+        return create_signed_response(node, url, 200, {
+            "objects": node.dor.search_by_tags(key_criterion, value_criterion)
+        })
+
+    except RequestError as e:
+        return create_signed_response(node, url, e.code, e.message)
+
+
+@blueprint.route('/<obj_id>/tags', methods=['GET'])
+def get_tags(obj_id):
+    url = f"GET:/repository/{obj_id}/tags"
+
+    try:
+        # verification of authentication: required
+        body, files = verify_request_authentication(url, request)
+
+        # verification of contents: not required
+
+        # verification of authorisation: not required
+
+        return create_signed_response(node, url, 200, {
+            "tags": node.dor.get_tags(obj_id)
+        })
+
+    except RequestError as e:
+        return create_signed_response(node, url, e.code, e.message)
+
+
+@blueprint.route('/<obj_id>/tags', methods=['PUT'])
+def update_tags(obj_id):
+    url = f"PUT:/repository/{obj_id}/tags"
+    body_specification = {
+        'tags': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'key': {'type': 'string'},
+                    'value': {'type': 'string'}
+                },
+                'required': ['key', 'value']
+            }
+        }
+    }
+
+    try:
+        # verification of authentication: required
+        body, files = verify_request_authentication(url, request)
+
+        # verification of contents: body only
+        verify_request_body(body, body_specification)
+
+        # verification of authorisation: required from owner of data object
+        verify_authorisation_by_owner(request, obj_id, node, url, body)
+
+        # grant access permissions to the user
+        node.dor.update_tags(obj_id, body['tags'])
+
+        return create_signed_response(node, url, 200, "Tags updated.")
+
+    except RequestError as e:
+        return create_signed_response(node, url, e.code, e.message)
+
+
+@blueprint.route('/<obj_id>/tags', methods=['DELETE'])
+def remove_tags(obj_id):
+    url = f"DELETE:/repository/{obj_id}/tags"
+    body_specification = {
+        'tags': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'key': {'type': 'string'}
+                },
+                'required': ['key']
+            }
+        }
+    }
+
+    try:
+        # verification of authentication: required
+        body, files = verify_request_authentication(url, request)
+
+        # verification of contents: body only
+        verify_request_body(body, body_specification)
+
+        # verification of authorisation: required from owner of data object
+        verify_authorisation_by_owner(request, obj_id, node, url, body)
+
+        # grant access permissions to the user
+        node.dor.remove_tags(obj_id, body['tags'])
+
+        return create_signed_response(node, url, 200, "Tags updated.")
 
     except RequestError as e:
         return create_signed_response(node, url, e.code, e.message)
