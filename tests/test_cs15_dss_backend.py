@@ -214,7 +214,6 @@ def export_data_object_content(dor_address, sender, obj_id, owner, destination_p
         return r.status_code
 
 
-
 class CS15DSSBackendTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
