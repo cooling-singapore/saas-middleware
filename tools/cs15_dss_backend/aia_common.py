@@ -66,6 +66,11 @@ class DamageFunctionStep:
 
 
 def create_damage_function(parameters):
+    """
+    Creates an instance of a damage function based on the parameters given
+    :param parameters: the parameters
+    :return: a new instance of a damage function
+    """
     validate(instance=parameters, schema=damage_function_parameter_schema)
 
     if parameters['name'] == 'identity':
@@ -89,56 +94,68 @@ def create_damage_function(parameters):
         return DamageFunctionStep(limit_0, limit_1, limit_2, value_0, value_1, value_2, value_3)
 
 
-def determine_spatial_weights_map(exposure_map, weights: dict):
+def determine_weights_map(exposure_map, weights: dict):
     """
-    Determines a map of weights with the same shape as a given exposure map. The weights are
-    selected based on which exposure mask is selected and its corresponding weight.
-    For example: weights={"1":0.9,"2":1.0} means exposure masks '1' and '2' have weight of 0.9
-    and 1.0, respectively. If mask "1" is selected, then a weight of 0.9 is chosen.
+    Determines a map of weights with the same shape as a given exposure map and given weights for
+    each exposure mask. For example: weights={"1":0.9,"2":0.3} means exposure masks '1' and '2'
+    have weight of 0.9 and 0.3, respectively. For an exposure map [1, 1, 1, 2, 2, 2], the resulting
+    spatial weights map would thus be: [0.9, 0.9, 0.9, 0.3, 0.3, 0.3].
+    :param exposure_map: a two-dimensional array whereby each cell indicates the mask id.
+    :param weights: a simple mapping between mask id and weight.
+    :return: an array with the same dimensions as the exposure map whereby each cell represents
+    a weight.
     """
 
-    spatial_weights_map = np.zeros(exposure_map.shape, dtype=float)
-    height = spatial_weights_map.shape[0]
-    width = spatial_weights_map.shape[1]
-    for y in range(0, height):
-        for x in range(0, width):
-            exp_mask_id = str(exposure_map[y, x])
-            spatial_weights_map[y, x] = weights[exp_mask_id] if exp_mask_id in weights else 0
+    exposure_map = np.array(exposure_map, dtype=int)
 
-    return spatial_weights_map
+    m_values = []
+    w_values = []
+    for mask_id in weights:
+        m_values.append(int(mask_id))
+        w_values.append(weights[mask_id])
+
+    # source: https://stackoverflow.com/questions/62183295/update-values-in-numpy-array-with-other-values-in-python
+    N = max(exposure_map.max(), max(m_values))+1
+    weights_map = np.empty(N, dtype=float)
+    weights_map[exposure_map] = exposure_map
+    weights_map[m_values] = w_values
+    weights_map = weights_map[exposure_map]
+
+    return weights_map
 
 
 def convert_exposure_map(input_path, output_path):
+    """
+    Convert the exposure map input (a CSV file) into hdf5. The output file will also contain some attributes
+    with meta information about the data: dimensions, description and mask_ids.
+    :param input_path: path to CSV input file
+    :param output_path: path to hdf5 output file
+    :return:
+    """
     reader = csv.reader(open(input_path, "r"), delimiter=",")
-    temp = np.array(list(reader)).astype(np.int8)
-
-    # determine width and height
-    width = temp.shape[1]
-    height = temp.shape[0]
-    # if height * n_time_steps != temp.shape[0]:
-    #     raise Exception(
-    #         f"CSV file '{input_path}' has {temp.shape[0]} lines, "
-    #         f"assuming {n_time_steps} timesteps, "
-    #         f"the expected number of lines is {(height * n_time_steps)}"
-    #     )
-    # print(f"before reshaping: shape(temp)={temp.shape} height={height} width={width}")
-
-    # do reshaping
-    # temp = temp.reshape((n_time_steps, height, width))
-    # print(f"after reshaping: shape(temp)={temp.shape} height={height} width={width}")
-
-    mask_ids = np.unique(temp)
+    data = np.array(list(reader)).astype(np.int8)
 
     # store as HDF5
     f = h5py.File(output_path, "w")
-    dset = f.create_dataset("exposure_map", data=temp)
+    dset = f.create_dataset("exposure_map", data=data)
     dset.attrs['dimensions'] = ['y', 'x']
     dset.attrs['description'] = "CS1.5 DSS-demo Exposure Map"
-    dset.attrs['mask_ids'] = mask_ids
+    dset.attrs['mask_ids'] = np.unique(data)
     f.close()
 
 
 def convert_climate_data(input_path, output_path, climate_variable, weather_type, n_time_steps=24, nan_value=-999):
+    """
+    Convert the climate data input (a CSV file) into hdf5. The output file will also contain some attributes
+    with meta information about the data: dimensions, description, climate_variable, weather_type and unit.
+    :param input_path: path to CSV input file
+    :param output_path: path to hdf5 output file
+    :param climate_variable: string indicating the climate variable (e.g., 'pet', 'at') used for meta information
+    :param weather_type: string indicating the weather tpye (e.g., 'w0', 'w1') used for meta information
+    :param n_time_steps: number of time steps (default: 24), i.e., the size of the time dimension
+    :param nan_value: the NaN value (default: -999) used to be replaced with np.nan for correct calculations
+    :return:
+    """
     reader = csv.reader(open(input_path, "r"), delimiter=",")
     temp = np.array(list(reader)).astype(np.float32)
 
@@ -154,11 +171,11 @@ def convert_climate_data(input_path, output_path, climate_variable, weather_type
             f"assuming {n_time_steps} timesteps, "
             f"the expected number of lines is {(height * n_time_steps)}"
         )
-    print(f"before reshaping: shape(temp)={temp.shape} height={height} width={width}")
+    # print(f"before reshaping: shape(temp)={temp.shape} height={height} width={width}")
 
     # do reshaping
     temp = temp.reshape((n_time_steps, height, width))
-    print(f"after reshaping: shape(temp)={temp.shape} height={height} width={width}")
+    # print(f"after reshaping: shape(temp)={temp.shape} height={height} width={width}")
 
     # store as HDF5
     f = h5py.File(output_path, "w")
