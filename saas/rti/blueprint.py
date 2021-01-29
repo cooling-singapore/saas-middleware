@@ -205,11 +205,11 @@ def get_job(proc_id, job_id):
 
         # verification of authorisation: not required
 
-        job_descriptor, status = node.rti.get_job(job_id)
-        if job_descriptor:
+        job_info = node.rti.get_job(job_id)
+        if job_info:
             return create_signed_response(node, url, 200, {
-                'job_descriptor': job_descriptor,
-                'status': status
+                'job_descriptor': job_info['job_descriptor'],
+                'status': job_info['status']
             })
         else:
             return create_signed_response(node, url, 404, f"No job with id {job_id}.")

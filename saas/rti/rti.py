@@ -181,7 +181,7 @@ class RuntimeInfrastructure:
 
         if not os.path.exists(descriptor_path) or not os.path.exists(status_path):
             self.mutex.release()
-            return 'unavailable', 'unavailable'
+            return None
 
         with open(descriptor_path, 'r') as f:
             descriptor = json.load(f)
@@ -190,5 +190,8 @@ class RuntimeInfrastructure:
             status = json.load(f)
 
         self.mutex.release()
-        return descriptor, status
+        return {
+            'job_descriptor': descriptor,
+            'status': status
+        }
 
