@@ -1,6 +1,5 @@
 import unittest
 import logging
-import time
 import os
 import time
 import json
@@ -9,11 +8,8 @@ import requests
 
 from tests.testing_environment import TestingEnvironment
 from tests.dummy_script import descriptor as dummy_script_descriptor
-from saas.eckeypair import hash_file_content
 from saas.utilities.general_helpers import all_in_dict
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
-from saas.node import Node
-from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -97,14 +93,14 @@ def add_data_object_a(sender, owner):
         'type': 'data_object',
         'owner_public_key': owner.public_as_string(),
         'descriptor': {
-            'data_type': 'integer',
+            'data_type': 'JSONObject',
             'data_format': 'json',
             'created_t': 21342342,
             'created_by': 'heiko'
         }
     }
-    test_file_path = env.create_file_with_content('a.dat', "\"1\"")
-    test_obj_id = '26c4fa19e1fe35863d85f1b43c8ffd84b49f4b80683dba7762ab3e33af258c5f'
+    test_file_path = env.create_file_with_content('a.dat', json.dumps({'a': 1}))
+    test_obj_id = 'f3f6943f9e11ab8272b92fcd1ef67c4c0ffffcca52ae666662dd9d2a4062c566'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -127,16 +123,16 @@ def submit_job_value(sender, owner, proc_id):
                 {
                     'name': 'a',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '1'
+                    'value': {
+                        'a': 1
+                    }
                 },
                 {
                     'name': 'b',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '2'
+                    'value': {
+                        'b': 2
+                    }
                 }
             ],
             'output': {
@@ -156,7 +152,7 @@ def submit_job_value(sender, owner, proc_id):
 
 
 def submit_job_reference(sender, owner, proc_id, a_obj_id):
-    url = "http://127.0.0.1:5000/processor/{proc_id}/jobs"
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
     body = {
         'type': 'task',
         'descriptor': {
@@ -170,9 +166,9 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
                 {
                     'name': 'b',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '2'
+                    'value': {
+                        'b': 2
+                    }
                 }
             ],
             'output': {
@@ -181,7 +177,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
         }
     }
 
-    authentication = create_authentication("POST:/processor/{proc_id}/jobs", sender, body)
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -191,7 +187,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
     return r['reply']['job_id'] if 'job_id' in r['reply'] else None
 
 
-def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
+def submit_job_workflow(sender, owner, proc_id, obj_id_a):
     url = "http://127.0.0.1:5000/processor/workflow/jobs"
     body = {
         'type': 'workflow',
@@ -210,9 +206,9 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
                         {
                             'name': 'b',
                             'type': 'value',
-                            'data_type': 'integer',
-                            'data_format': 'json',
-                            'value': '2'
+                            'value': {
+                                'b': 2
+                            }
                         }
                     ],
                     'output': {
@@ -231,9 +227,9 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
                         {
                             'name': 'b',
                             'type': 'value',
-                            'data_type': 'integer',
-                            'data_format': 'json',
-                            'value': '2'
+                            'value': {
+                                'b': 2
+                            }
                         }
                     ],
                     'output': {
@@ -292,8 +288,7 @@ def get_job(sender, proc_id, job_id):
     }
 
     r = requests.get(url, data=content).json()
-    return (r['reply']['job_descriptor'], r['reply']['status']) \
-        if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
+    return r['reply'] if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
 
 
 class RTITestCase(unittest.TestCase):
@@ -376,16 +371,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 
@@ -435,16 +435,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 
@@ -483,7 +488,7 @@ class RTITestCase(unittest.TestCase):
         logger.info(f"obj_id_a={obj_id_a}")
         assert obj_id_a == a_obj_id_ref
 
-        job_id = submit_job_wofklow(self.keys[0], self.keys[1], proc_id, obj_id_a)
+        job_id = submit_job_workflow(self.keys[0], self.keys[1], proc_id, obj_id_a)
         logger.info(f"job_id={job_id}")
         assert job_id is not None
 
@@ -494,11 +499,13 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
