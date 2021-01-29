@@ -51,6 +51,13 @@ parameters_schema = {
 
 
 def function(task_descriptor, working_directory, status_logger):
+    """
+    Processes input data and input parameters to calculate a 'spatial map' as defined by the CS 1.5 DSS framework.
+    :param task_descriptor:
+    :param working_directory:
+    :param status_logger:
+    :return:
+    """
     logger.info(f"f({task_descriptor}, '{working_directory}')")
 
     try:
@@ -71,7 +78,7 @@ def function(task_descriptor, working_directory, status_logger):
         exposure_weights = {}
         for item in temp:
             exposure_weights[item['mask_id']] = item['weight']
-        spatial_weights_map = aia.determine_spatial_weights_map(exposure_map, exposure_weights)
+        spatial_weights_map = aia.determine_weights_map(exposure_map, exposure_weights)
 
         # step 3: determine damage function
         d_function = None

@@ -51,6 +51,14 @@ parameters_schema = {
 
 
 def function(task_descriptor, working_directory, status_logger):
+    """
+    Processes input data and input parameters to calculate the 'mean variance score' as defined by the
+    CS 1.5 DSS framework.
+    :param task_descriptor:
+    :param working_directory:
+    :param status_logger:
+    :return:
+    """
     logger.info(f"f({task_descriptor}, '{working_directory}')")
 
     try:
@@ -69,7 +77,7 @@ def function(task_descriptor, working_directory, status_logger):
         exposure_weights = {}
         for item in temp:
             exposure_weights[item['mask_id']] = item['weight']
-        spatial_weights_map = aia.determine_spatial_weights_map(exposure_map, exposure_weights)
+        spatial_weights_map = aia.determine_weights_map(exposure_map, exposure_weights)
 
         # step 3: determine damage function
         d_function = None
@@ -86,19 +94,9 @@ def function(task_descriptor, working_directory, status_logger):
             raise Exception(f'mismatching shapes: climate_data.shape={climate_data.shape} '
                             f'spatial_weights_map.shape={spatial_weights_map.shape}')
 
-        climate_variable = climate_data.attrs['climate_variable']
-
-        mean_variance_score = np.zeros((25, 6), dtype=np.float)
-        # {
-        #     'mean': [0 for t in range(24)],
-        #     'var': [0 for t in range(24)],
-        #     'min': [0 for t in range(24)],
-        #     'max': [0 for t in range(24)],
-        #     'upper_var': [0 for t in range(24)],
-        #     'lower_var': [0 for t in range(24)]
-        # }
-
         # for each hour (t=0...24) calculate the statistics
+        climate_variable = climate_data.attrs['climate_variable']
+        mean_variance_score = np.zeros((25, 6), dtype=np.float)
         z_values_day = None
         for t in range(0, 24):
             # get the Z values at time t
