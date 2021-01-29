@@ -70,10 +70,12 @@ class TestingEnvironment:
         self.p2p_server_address = get_address_from_string(configuration['p2p-server-address'])
         self.rest_api_address = get_address_from_string(configuration['rest-api-address'])
         self.test_node_config = configuration['test-node-config']
+
         self.app = None
         self.app_service = None
         self.app_service_p2p_host = None
         self.app_service_p2p_port = None
+        self.app_wd_path = None
 
     def prepare_working_directory(self, wd_path=None):
         home = str(Path.home())
@@ -91,7 +93,8 @@ class TestingEnvironment:
         n_wd = wd_path.count(os.path.sep)
         logger.info(f"directory levels: home={n_home}, wd={n_wd}")
         if not n_wd > n_home + 2:
-            raise RuntimeError(f"Working directory '{wd_path}' too high up in the directory hierarchy of the users home '{home}'")
+            raise RuntimeError(f"Working directory '{wd_path}' too high up in the "
+                               f"directory hierarchy of the users home '{home}'")
 
         # delete the whole testing working directory (if it exists) and recreate it
         subprocess.check_output(['rm', '-rf', wd_path])
@@ -129,7 +132,8 @@ class TestingEnvironment:
         return keys
 
     def start_flask_app(self):
-        self.prepare_working_directory(self.test_node_config['datastore'])
+        self.app_wd_path = self.test_node_config['datastore']
+        self.prepare_working_directory(self.app_wd_path)
 
         rest_url, rest_port = get_address_from_string(self.test_node_config['rest-api-address'])
         app = initialise_app(self.test_node_config)
