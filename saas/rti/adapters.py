@@ -4,6 +4,7 @@ import time
 import logging
 import subprocess
 import importlib
+import json
 
 from threading import Lock, Thread
 
@@ -202,8 +203,10 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 status.update('input_status', 'storing value')
                 dump_json_to_file(input_descriptor['value'], input_content_path)
                 dump_json_to_file({
-                    'data_type': input_descriptor['data_type'],
-                    'data_format': input_descriptor['data_format']
+                    # 'data_type': input_descriptor['data_type'],
+                    # 'data_format': input_descriptor['data_format']
+                    'data_type': 'JSONObject',
+                    'data_format': 'json'
                 }, f"{input_content_path}.descriptor")
                 status.update('input_status', 'value stored')
 
