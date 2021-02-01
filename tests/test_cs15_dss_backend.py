@@ -28,6 +28,7 @@ logging.basicConfig(
 
 env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
+nextcloud_path = "/Users/heikoaydt/Nextcloud/cs/CS2.0/Pillar DUCT R&D/Unit Test Data/CS15_AIA_processor"
 
 
 def update_tags(dor_address, owner, sender, obj_id, tags):
@@ -234,13 +235,13 @@ class CS15DSSBackendTestCases(unittest.TestCase):
         sender = self.keys[0]
         owner = self.keys[1]
 
-        climate_data_source_path = "/Users/heikoaydt/Desktop/attachment/climate_data/pet_w0.csv"
+        climate_data_source_path = os.path.join(nextcloud_path, "climate_data", "pet_w0.csv")
         climate_data_destination_path = os.path.join(env.wd_path, 'pet_w0.hdf5')
         aia.convert_climate_data(climate_data_source_path, climate_data_destination_path, "pet", "w0")
         assert os.path.isfile(climate_data_destination_path)
 
         obj_id = upload_data_object(env.rest_api_address, climate_data_destination_path,
-                                    owner, "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                    owner, "RegularRasterDataObject", "hdf5", sender, 'test_user')
         logger.info(f"climate data object id: {obj_id}")
         assert obj_id
 
@@ -257,13 +258,13 @@ class CS15DSSBackendTestCases(unittest.TestCase):
         assert tags['climatic_variable'] == 'pet'
         assert tags['weather_type'] == 'w0'
 
-        exposure_map_source_path = "/Users/heikoaydt/Desktop/attachment/exposure_map"
+        exposure_map_source_path = os.path.join(nextcloud_path, "exposure_map")
         exposure_map_destination_path = os.path.join(env.wd_path, 'exposure_map.hdf5')
         aia.convert_exposure_map(exposure_map_source_path, exposure_map_destination_path)
         assert os.path.isfile(exposure_map_destination_path)
 
         obj_id = upload_data_object(env.rest_api_address, exposure_map_destination_path, owner,
-                                    "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                    "RegularRasterDataObject", "hdf5", sender, 'test_user')
         logger.info(f"exposure map data object id: {obj_id}")
         assert obj_id
 
@@ -299,12 +300,12 @@ class CS15DSSBackendTestCases(unittest.TestCase):
         assert proc_id1 in deployed
 
     def test_execute_aia_spatial_map(self):
-        climate_data_source_path = "/Users/heikoaydt/Desktop/attachment/climate_data/pet_w0.csv"
+        climate_data_source_path = os.path.join(nextcloud_path, "climate_data", "pet_w0.csv")
         climate_data_destination_path = os.path.join(env.wd_path, 'climate_data')
         aia.convert_climate_data(climate_data_source_path, climate_data_destination_path, "pet", "w0")
         assert os.path.isfile(climate_data_destination_path)
 
-        exposure_map_source_path = "/Users/heikoaydt/Desktop/attachment/exposure_map"
+        exposure_map_source_path = os.path.join(nextcloud_path, "exposure_map")
         exposure_map_destination_path = os.path.join(env.wd_path, 'exposure_map')
         aia.convert_exposure_map(exposure_map_source_path, exposure_map_destination_path)
         assert os.path.isfile(exposure_map_destination_path)
@@ -358,12 +359,12 @@ class CS15DSSBackendTestCases(unittest.TestCase):
         assert result
 
     def test_execute_aia_mean_variance_score(self):
-        climate_data_source_path = "/Users/heikoaydt/Desktop/attachment/climate_data/pet_w0.csv"
+        climate_data_source_path = os.path.join(nextcloud_path, "climate_data", "pet_w0.csv")
         climate_data_destination_path = os.path.join(env.wd_path, 'climate_data')
         aia.convert_climate_data(climate_data_source_path, climate_data_destination_path, "pet", "w0")
         assert os.path.isfile(climate_data_destination_path)
 
-        exposure_map_source_path = "/Users/heikoaydt/Desktop/attachment/exposure_map"
+        exposure_map_source_path = os.path.join(nextcloud_path, "exposure_map")
         exposure_map_destination_path = os.path.join(env.wd_path, 'exposure_map')
         aia.convert_exposure_map(exposure_map_source_path, exposure_map_destination_path)
         assert os.path.isfile(exposure_map_destination_path)
@@ -422,23 +423,23 @@ class CS15DSSBackendTestCases(unittest.TestCase):
 
         # upload data objects
 
-        climate_data_source_path = "/Users/heikoaydt/Desktop/attachment/climate_data/pet_w0.csv"
+        climate_data_source_path = os.path.join(nextcloud_path, "climate_data", "pet_w0.csv")
         climate_data_destination_path = os.path.join(env.wd_path, 'pet_w0.hdf5')
         aia.convert_climate_data(climate_data_source_path, climate_data_destination_path, "pet", "w0")
         assert os.path.isfile(climate_data_destination_path)
 
         climate_data_obj_id = upload_data_object(env.rest_api_address, climate_data_destination_path, owner,
-                                                 "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                                 "RegularRasterDataObject", "hdf5", sender, 'test_user')
         logger.info(f"data object id: {climate_data_obj_id}")
         assert climate_data_obj_id
 
-        exposure_map_source_path = "/Users/heikoaydt/Desktop/attachment/exposure_map"
+        exposure_map_source_path = os.path.join(nextcloud_path, "exposure_map")
         exposure_map_destination_path = os.path.join(env.wd_path, 'exposure_map.hdf5')
         aia.convert_exposure_map(exposure_map_source_path, exposure_map_destination_path)
         assert os.path.isfile(exposure_map_destination_path)
 
         exposure_map_obj_id = upload_data_object(env.rest_api_address, exposure_map_destination_path, owner,
-                                                 "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                                 "RegularRasterDataObject", "hdf5", sender, 'test_user')
         logger.info(f"data object id: {exposure_map_obj_id}")
         assert exposure_map_obj_id
 
@@ -555,24 +556,24 @@ class CS15DSSBackendTestCases(unittest.TestCase):
         # upload climate data objects
         obj_id = {}
         for wt in wt_selection:
-            climate_data_source_path = f"/Users/heikoaydt/Desktop/attachment/climate_data/pet_{wt}.csv"
+            climate_data_source_path = os.path.join(nextcloud_path, "climate_data", f"pet_{wt}.csv")
             climate_data_destination_path = os.path.join(env.wd_path, 'pet_w0.hdf5')
             aia.convert_climate_data(climate_data_source_path, climate_data_destination_path, climate_variable, wt)
             assert os.path.isfile(climate_data_destination_path)
 
             obj_id[wt] = upload_data_object(env.rest_api_address, climate_data_destination_path, owner,
-                                            "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                            "RegularRasterDataObject", "hdf5", sender, 'test_user')
             logger.info(f"obj_id[{wt}]: {obj_id[wt]}")
             assert obj_id[wt]
 
         # upload exposure map data object
-        exposure_map_source_path = "/Users/heikoaydt/Desktop/attachment/exposure_map"
+        exposure_map_source_path = os.path.join(nextcloud_path, "exposure_map")
         exposure_map_destination_path = os.path.join(env.wd_path, 'exposure_map.hdf5')
         aia.convert_exposure_map(exposure_map_source_path, exposure_map_destination_path)
         assert os.path.isfile(exposure_map_destination_path)
 
         exposure_map_obj_id = upload_data_object(env.rest_api_address, exposure_map_destination_path, owner,
-                                                 "RegularRasterDataObject", "hdf5", sender, 'heiko')
+                                                 "RegularRasterDataObject", "hdf5", sender, 'test_user')
         logger.info(f"exposure_map_obj_id: {exposure_map_obj_id}")
         assert exposure_map_obj_id
 
