@@ -5,11 +5,11 @@ import '@atlaskit/css-reset';
 import Dashboard from './dashboard/dashboard.js'
 
 class App extends React.Component {
-  render() {
-    return (
-    <Dashboard />
-    )
-  }  
+    render() {
+        return (
+            <Dashboard />
+        )
+    }
 };
 
 ReactDOM.render(<App />, document.getElementById('root'));
