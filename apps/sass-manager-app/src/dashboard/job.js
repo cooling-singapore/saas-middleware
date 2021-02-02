@@ -21,7 +21,7 @@ export default function Job(props) {
     const handleDetailClick = () => {
         console.log("handle detail");
     };
-    return (
+    return ( 
         <div>
             <Grid container
             spacing={2}

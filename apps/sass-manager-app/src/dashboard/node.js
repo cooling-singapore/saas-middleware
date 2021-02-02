@@ -1,8 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
 import { Droppable } from 'react-beautiful-dnd';
-import { 
-    Divider, 
+import {
+    Divider,
     Grid
 } from '@material-ui/core';
 
@@ -21,54 +21,53 @@ const Container = styled(Grid)`
 
 const List = styled.div`
     flex-grow: 1;
-    background-color: ${props => (props.isDraggingOver? 'skyblue': '#F4F4F4')};
+    background-color: ${props => (props.isDraggingOver ? 'skyblue' : '#F4F4F4')};
     min-height: 135px;
 `;
 
 
 export default function Node(props) {
-        const onDeleteProcessor = (processorId) =>
-        {
-            props.onDeleteProcessor(processorId, props.node.id);
-        }
+    const onDeleteProcessor = (processorId) => {
+        props.onDeleteProcessor(processorId, props.node.id);
+    }
 
-        return (
-            // TODO: background color should be changed in the styled setting, however it was not working.
-            <Container item style={{backgroundColor: '#F4F4F4'}}>
-                <Title>{props.node.title}</Title>
-                <Divider />
-                <Droppable droppableId={props.node.id+"processor"} 
+    return (
+        // TODO: background color should be changed in the styled setting, however it was not working.
+        <Container item style={{ backgroundColor: '#F4F4F4' }}>
+            <Title>{props.node.title}</Title>
+            <Divider />
+            <Droppable droppableId={props.node.id + "processor"}
                 type={'processor'}
                 isDropDisabled={false}
-                >
-                    {(provided, snapshot) => (
-                        <List 
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            isDraggingOver={snapshot.isDraggingOver}                            
-                        >
-                            {props.processors.map((processor, index) => <Processor key={processor.id} item={processor} onDeleteProcessor={onDeleteProcessor} index={index} />)} 
-                            {provided.placeholder}
-                        </List>                       
-                    )}
-                </Droppable>
-                <Divider />
-                <Droppable droppableId={props.node.id+"dataObject"} 
+            >
+                {(provided, snapshot) => (
+                    <List
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        isDraggingOver={snapshot.isDraggingOver}
+                    >
+                        {props.processors.map((processor, index) => <Processor key={processor.id} item={processor} onDeleteProcessor={onDeleteProcessor} index={index} />)}
+                        {provided.placeholder}
+                    </List>
+                )}
+            </Droppable>
+            <Divider />
+            <Droppable droppableId={props.node.id + "dataObject"}
                 type={'dataObject'}
                 isDropDisabled={false}
-                >
-                    {(provided, snapshot) => (
-                        <List 
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            isDraggingOver={snapshot.isDraggingOver}                            
-                        >
-                            {props.dataObjects.map((dataObject, index) => <DataObject key={dataObject.id} item={dataObject} index={index} />)}
-                            {provided.placeholder}
-                        </List>                       
-                    )}
-                </Droppable>
-            </Container>
-        );
+            >
+                {(provided, snapshot) => (
+                    <List
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        isDraggingOver={snapshot.isDraggingOver}
+                    >
+                        {props.dataObjects.map((dataObject, index) => <DataObject key={dataObject.id} item={dataObject} index={index} />)}
+                        {provided.placeholder}
+                    </List>
+                )}
+            </Droppable>
+        </Container>
+    );
 
 }
