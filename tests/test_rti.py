@@ -3,6 +3,8 @@ import logging
 import os
 import time
 import json
+
+import docker
 import requests
 
 
@@ -40,6 +42,31 @@ def add_dummy_processor(sender, owner):
     with open(script_path, 'rb') as f:
         r = requests.post(url, data=content, files={'attachment': f.read()}).json()
         return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+
+
+def add_docker_processor(sender, owner):
+    url = "http://127.0.0.1:5000/repository"
+    with open('./docker_processor/docker_descriptor.json') as f:
+        docker_descriptor = json.load(f)
+
+    body = {
+        'type': 'processor',
+        'owner_public_key': owner.public_as_string(),
+        'descriptor': docker_descriptor
+    }
+
+    docker_path = './docker_processor/docker_processor.tar.gz'
+    authentication = create_authentication('POST:/repository', sender, body, docker_path)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    with open(docker_path, 'rb') as f:
+        attachment = f.read()
+
+    r = requests.post(url, data=content, files={'attachment': attachment}).json()
+    return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
 
 
 def delete_data_object(sender, obj_id, owner):
@@ -260,6 +287,37 @@ def submit_job_workflow(sender, owner, proc_id, obj_id_a):
     }
 
     authentication = create_authentication("POST:/processor/workflow/jobs", sender, body)
+    content = {
+        'body': json.dumps(body),
+        'authentication': json.dumps(authentication)
+    }
+
+    r = requests.post(url, data=content).json()
+    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
+
+
+def submit_job_value_docker(sender, owner, proc_id):
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
+    body = {
+        'type': 'task',
+        'descriptor': {
+            'processor_id': proc_id,
+            'input': [
+                {
+                    'name': 'a',
+                    'type': 'value',
+                    'data_type': 'integer',
+                    'data_format': 'json',
+                    'value': '5'
+                }
+            ],
+            'output': {
+                'owner_public_key': owner.public_as_string()
+            }
+        }
+    }
+
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -506,6 +564,49 @@ class RTITestCase(unittest.TestCase):
                 logger.info(f"status={status}")
                 if 'status' in status and status['status'] != 'running':
                     break
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info(f"jobs={jobs}")
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        undeploy(self.keys[0], proc_id)
+
+        deployed = get_deployed(self.keys[0])
+        logger.info(f"deployed={deployed}")
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
+    def test_docker_processor_execution_value(self):
+        deployed = get_deployed(self.keys[0])
+        logger.info(f"deployed={deployed}")
+        assert deployed
+        assert len(deployed) == 1
+        assert 'workflow' in deployed
+
+        proc_id = add_docker_processor(self.keys[0], self.keys[1])
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = deploy(self.keys[0], proc_id)
+        logger.info(f"descriptor={descriptor}")
+
+        job_id = submit_job_value_docker(self.keys[0], self.keys[1], proc_id)
+        logger.info(f"job_id={job_id}")
+        assert job_id is not None
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info(f"jobs={jobs}")
+        assert jobs is not None
+        assert len(jobs) == 1
+
+        while True:
+            time.sleep(1)
+            descriptor, status = get_job(self.keys[0], proc_id, job_id)
+            logger.info(f"descriptor={descriptor}")
+            logger.info(f"status={status}")
+            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
+                break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")

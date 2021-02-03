@@ -97,7 +97,7 @@ class TaskWrapper(Thread):
 
 class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
     def __init__(self, rti):
-        super().__init__(rti)
+        super().__init__('workflow', rti)
 
     def execute(self, workflow_descriptor, working_directory, status):
         pending = {}
