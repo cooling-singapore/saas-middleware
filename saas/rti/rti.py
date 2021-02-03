@@ -78,12 +78,14 @@ class RuntimeInfrastructure:
         # create an RTI adapter
         content_path = self.node.dor.obj_content_path(c_hash, cache=True)
         if descriptor['type'] == 'docker':
-            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(descriptor,
+            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(proc_id,
+                                                                                               descriptor,
                                                                                                content_path,
                                                                                                self)
 
         elif descriptor['type'] == 'package':
-            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIPackageProcessorAdapter(descriptor,
+            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIPackageProcessorAdapter(proc_id,
+                                                                                                descriptor,
                                                                                                 content_path,
                                                                                                 self)
 
@@ -104,8 +106,13 @@ class RuntimeInfrastructure:
         self.mutex.acquire()
         if proc_id in self.deployed_processors:
             # TODO: what happens with pending jobs???
+
+            # stop the processor and wait for shutdown to complete
             processor = self.deployed_processors[proc_id]
             processor.stop()
+            processor.join()
+
+            # remove the processor
             self.deployed_processors.pop(proc_id)
 
             # update registry
