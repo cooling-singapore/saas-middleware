@@ -1,17 +1,15 @@
-import unittest
+import json
 import logging
 import os
 import time
-import json
+import unittest
 
-import docker
 import requests
 
-
-from tests.testing_environment import TestingEnvironment
-from tests.dummy_script import descriptor as dummy_script_descriptor
-from saas.utilities.general_helpers import all_in_dict
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
+from saas.utilities.general_helpers import all_in_dict
+from tests.dummy_script import descriptor as dummy_script_descriptor
+from tests.testing_environment import TestingEnvironment
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -306,9 +304,9 @@ def submit_job_value_docker(sender, owner, proc_id):
                 {
                     'name': 'a',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '5'
+                    'value': {
+                        'a': 1
+                    }
                 }
             ],
             'output': {
@@ -591,6 +589,18 @@ class RTITestCase(unittest.TestCase):
         descriptor = deploy(self.keys[0], proc_id)
         logger.info(f"descriptor={descriptor}")
 
+        deployed = get_deployed(self.keys[0])
+        logger.info(f"deployed={deployed}")
+        assert deployed
+        assert len(deployed) == 2
+        assert 'workflow' in deployed
+        assert proc_id in deployed
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info(f"jobs={jobs}")
+        assert jobs is not None
+        assert len(jobs) == 0
+
         job_id = submit_job_value_docker(self.keys[0], self.keys[1], proc_id)
         logger.info(f"job_id={job_id}")
         assert job_id is not None
@@ -602,16 +612,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 
