@@ -572,7 +572,7 @@ class RTITestCase(unittest.TestCase):
         assert 'workflow' in deployed
 
     def test_docker_processor_execution_value(self):
-        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor(r'dummy_script.py')
+        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('dummy_script.py')
 
         deployed = get_deployed(self.keys[0])
         logger.info(f"deployed={deployed}")
