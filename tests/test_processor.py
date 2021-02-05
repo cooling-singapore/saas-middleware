@@ -1,55 +1,63 @@
 import json
 import os
-import unittest
 import tempfile
-import shutil
+import unittest
 
 from saas.node import Node
 from saas.rti.adapters import RTIDockerProcessorAdapter
-from saas.rti.rti import RuntimeInfrastructure
+from tests.test_rti import create_dummy_docker_processor
 
 
 class DockerProcessor(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.descriptor_path = os.path.realpath('./docker_processor/docker_descriptor.json')
-        cls.image_path = os.path.realpath('./docker_processor/docker_processor.tar.gz')
+        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('dummy_script.py')
+        cls.image_path = image_path
+        cls.descriptor_path = descriptor_path
+        cls.cleanup_docker_files = cleanup_func
 
         with open(cls.descriptor_path) as f:
             cls.docker_descriptor = json.load(f)
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.cleanup_docker_files()
+
     def setUp(self):
         # Create a temporary directory
-        self.test_dir = tempfile.mkdtemp()
-        self.data_dir = os.path.join(self.test_dir, 'data')
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.data_dir = os.path.join(self.temp_dir.name, 'data')
         self.working_dir = os.path.join(self.data_dir, 'jobs', 'test')
 
         os.makedirs(self.working_dir)
         self.a_data_path = os.path.join(self.working_dir, "a")
         with open(self.a_data_path, 'w') as f:
-            json.dump(2, f)
+            json.dump({'a': 1}, f)
+
+        self.b_data_path = os.path.join(self.working_dir, "b")
+        with open(self.b_data_path, 'w') as f:
+            json.dump({'b': 2}, f)
 
     def tearDown(self):
         # Remove the directory after the test
-        shutil.rmtree(self.test_dir)
+        self.temp_dir.cleanup()
 
     def test_docker_processor_execute(self):
-        test_task_descriptor = {"input": [{"name": "a", "data_type": "integer", "data_format": "json"}]}
-
         node = Node('test', self.data_dir, '127.0.0.1:5000')
         node.initialise_identity('test')
         node.start_server(('127.0.0.1', 5050))
         node.initialise_registry(('127.0.0.1', 5050))
 
-        processor = RTIDockerProcessorAdapter(self.docker_descriptor, self.image_path, node.rti)
+        processor = RTIDockerProcessorAdapter('test', self.docker_descriptor, self.image_path, node.rti)
 
         processor.startup()
-        processor.execute(test_task_descriptor, self.working_dir, None)
+        processor.execute(None, self.working_dir, None)
 
-        b_data_path = os.path.join(self.working_dir, "b")
-        with open(b_data_path, 'r') as f:
-            b_result = json.load(f)
-        self.assertEqual('4', b_result)
+        c_data_path = os.path.join(self.working_dir, "c")
+        with open(c_data_path, 'r') as f:
+            c = json.load(f)
+            c_result = c.get('c')
+        self.assertEqual(3, c_result)
 
         processor.shutdown()
         node.stop_server()
