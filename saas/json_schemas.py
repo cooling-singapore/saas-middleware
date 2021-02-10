@@ -16,9 +16,7 @@ input_interface_schema = {
         },
         'else': {
             'properties': {
-                'value': {'type': 'string'},
-                'data_type': {'type': 'string'},
-                'data_format': {'type': 'string'},
+                'value': {'type': 'object'}
             }
         },
     }
@@ -99,7 +97,7 @@ io_variable_schema = {
     'properties': {
         'name': {'type': 'string'},
         'data_type': {'type': 'string'},
-        'data_format': {'type': 'string', 'enum': ['json']}
+        'data_format': {'type': 'string', 'enum': ['json', 'hdf5']}
     },
     'required': ['name', 'data_type', 'data_format']
 }

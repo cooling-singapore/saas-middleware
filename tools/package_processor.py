@@ -6,7 +6,7 @@ import shutil
 import docker
 
 
-def package_docker(processor_path: str, verbose=False):
+def package_docker(processor_path: str, verbose=False, build_path=None, image_output_name=None):
     """
     Takes in a Processor directory and builds a docker image. The docker image is exported as a .tar
     """
@@ -34,7 +34,8 @@ def package_docker(processor_path: str, verbose=False):
 
     image_hash = image.id.split(':')[1]
 
-    build_path = os.path.join(processor_path, 'builds', 'docker')
+    if build_path is None:
+        build_path = os.path.join(processor_path, 'builds', 'docker')
     if not os.path.exists(build_path):
         os.makedirs(build_path)
 
@@ -46,7 +47,9 @@ def package_docker(processor_path: str, verbose=False):
     with open(descriptor_output_path, 'w') as f:
         json.dump(descriptor, f)
 
-    image_output_path = os.path.join(build_path, f'{image_hash}.tar.gz')
+    if image_output_name is None:
+        image_output_name = image_hash
+    image_output_path = os.path.join(build_path, f'{image_output_name}.tar.gz')
     with gzip.GzipFile(image_output_path, "wb") as f:
         for chunk in image.save():
             f.write(chunk)
