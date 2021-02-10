@@ -1,21 +1,20 @@
-import unittest
-import logging
-import time
-import os
-import time
+import copy
 import json
+import logging
+import os
+import shutil
+import tempfile
+import time
+import unittest
 
-import docker
 import requests
 
-
-from tests.testing_environment import TestingEnvironment
-from tests.dummy_script import descriptor as dummy_script_descriptor
-from saas.eckeypair import hash_file_content
-from saas.utilities.general_helpers import all_in_dict
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
-from saas.node import Node
-from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.utilities.general_helpers import all_in_dict
+from tests.dummy_script import descriptor as dummy_script_descriptor
+from tests.testing_environment import TestingEnvironment
+from tools.create_template import create_folder_structure
+from tools.package_processor import package_docker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -48,9 +47,9 @@ def add_dummy_processor(sender, owner):
         return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
 
 
-def add_docker_processor(sender, owner):
+def add_docker_processor(sender, owner, image_path, descriptor_path):
     url = "http://127.0.0.1:5000/repository"
-    with open('./docker_processor/docker_descriptor.json') as f:
+    with open(descriptor_path) as f:
         docker_descriptor = json.load(f)
 
     body = {
@@ -59,14 +58,13 @@ def add_docker_processor(sender, owner):
         'descriptor': docker_descriptor
     }
 
-    docker_path = './docker_processor/docker_processor.tar.gz'
-    authentication = create_authentication('POST:/repository', sender, body, docker_path)
+    authentication = create_authentication('POST:/repository', sender, body, image_path)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
     }
 
-    with open(docker_path, 'rb') as f:
+    with open(image_path, 'rb') as f:
         attachment = f.read()
 
     r = requests.post(url, data=content, files={'attachment': attachment}).json()
@@ -124,14 +122,14 @@ def add_data_object_a(sender, owner):
         'type': 'data_object',
         'owner_public_key': owner.public_as_string(),
         'descriptor': {
-            'data_type': 'integer',
+            'data_type': 'JSONObject',
             'data_format': 'json',
             'created_t': 21342342,
             'created_by': 'heiko'
         }
     }
-    test_file_path = env.create_file_with_content('a.dat', "\"1\"")
-    test_obj_id = '26c4fa19e1fe35863d85f1b43c8ffd84b49f4b80683dba7762ab3e33af258c5f'
+    test_file_path = env.create_file_with_content('a.dat', json.dumps({'a': 1}))
+    test_obj_id = 'f3f6943f9e11ab8272b92fcd1ef67c4c0ffffcca52ae666662dd9d2a4062c566'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -154,16 +152,16 @@ def submit_job_value(sender, owner, proc_id):
                 {
                     'name': 'a',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '1'
+                    'value': {
+                        'a': 1
+                    }
                 },
                 {
                     'name': 'b',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '2'
+                    'value': {
+                        'b': 2
+                    }
                 }
             ],
             'output': {
@@ -183,7 +181,7 @@ def submit_job_value(sender, owner, proc_id):
 
 
 def submit_job_reference(sender, owner, proc_id, a_obj_id):
-    url = "http://127.0.0.1:5000/processor/{proc_id}/jobs"
+    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
     body = {
         'type': 'task',
         'descriptor': {
@@ -197,9 +195,9 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
                 {
                     'name': 'b',
                     'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '2'
+                    'value': {
+                        'b': 2
+                    }
                 }
             ],
             'output': {
@@ -208,7 +206,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
         }
     }
 
-    authentication = create_authentication("POST:/processor/{proc_id}/jobs", sender, body)
+    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
     content = {
         'body': json.dumps(body),
         'authentication': json.dumps(authentication)
@@ -218,7 +216,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
     return r['reply']['job_id'] if 'job_id' in r['reply'] else None
 
 
-def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
+def submit_job_workflow(sender, owner, proc_id, obj_id_a):
     url = "http://127.0.0.1:5000/processor/workflow/jobs"
     body = {
         'type': 'workflow',
@@ -237,9 +235,9 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
                         {
                             'name': 'b',
                             'type': 'value',
-                            'data_type': 'integer',
-                            'data_format': 'json',
-                            'value': '2'
+                            'value': {
+                                'b': 2
+                            }
                         }
                     ],
                     'output': {
@@ -258,9 +256,9 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
                         {
                             'name': 'b',
                             'type': 'value',
-                            'data_type': 'integer',
-                            'data_format': 'json',
-                            'value': '2'
+                            'value': {
+                                'b': 2
+                            }
                         }
                     ],
                     'output': {
@@ -300,37 +298,6 @@ def submit_job_wofklow(sender, owner, proc_id, obj_id_a):
     return r['reply']['job_id'] if 'job_id' in r['reply'] else None
 
 
-def submit_job_value_docker(sender, owner, proc_id):
-    url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
-    body = {
-        'type': 'task',
-        'descriptor': {
-            'processor_id': proc_id,
-            'input': [
-                {
-                    'name': 'a',
-                    'type': 'value',
-                    'data_type': 'integer',
-                    'data_format': 'json',
-                    'value': '5'
-                }
-            ],
-            'output': {
-                'owner_public_key': owner.public_as_string()
-            }
-        }
-    }
-
-    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    r = requests.post(url, data=content).json()
-    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
-
-
 def get_jobs(sender, proc_id):
     url = f"http://127.0.0.1:5000/processor/{proc_id}/jobs"
     authentication = create_authentication(f"GET:/processor/{proc_id}/jobs", sender)
@@ -350,8 +317,29 @@ def get_job(sender, proc_id, job_id):
     }
 
     r = requests.get(url, data=content).json()
-    return (r['reply']['job_descriptor'], r['reply']['status']) \
-        if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
+    return r['reply'] if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
+
+
+def create_dummy_docker_processor(dummy_processor_path):
+    temp_dir = tempfile.TemporaryDirectory()
+    output_path = os.path.join(temp_dir.name, 'dummy_processor')
+    processor_path = os.path.join(output_path, 'processor.py')
+    descriptor_path = os.path.join(output_path, 'descriptor.json')
+    image_path = os.path.join(output_path, 'builds', 'docker', 'dummy_image.tar.gz')
+
+    create_folder_structure(output_path)
+    shutil.copy(dummy_processor_path, processor_path)
+
+    _dummy_script_descriptor = copy.deepcopy(dummy_script_descriptor)
+    _dummy_script_descriptor['type'] = 'docker'
+    with open(descriptor_path, 'w') as f:
+        json.dump(_dummy_script_descriptor, f)
+
+    package_docker(output_path, image_output_name='dummy_image')
+
+    logger.info(f"image_path: {image_path}, descriptor_path: {descriptor_path}")
+
+    return image_path, descriptor_path, temp_dir.cleanup
 
 
 class RTITestCase(unittest.TestCase):
@@ -434,16 +422,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 
@@ -493,16 +486,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 
@@ -541,7 +539,7 @@ class RTITestCase(unittest.TestCase):
         logger.info(f"obj_id_a={obj_id_a}")
         assert obj_id_a == a_obj_id_ref
 
-        job_id = submit_job_wofklow(self.keys[0], self.keys[1], proc_id, obj_id_a)
+        job_id = submit_job_workflow(self.keys[0], self.keys[1], proc_id, obj_id_a)
         logger.info(f"job_id={job_id}")
         assert job_id is not None
 
@@ -552,11 +550,13 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
@@ -572,19 +572,34 @@ class RTITestCase(unittest.TestCase):
         assert 'workflow' in deployed
 
     def test_docker_processor_execution_value(self):
+        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('dummy_script.py')
+
         deployed = get_deployed(self.keys[0])
         logger.info(f"deployed={deployed}")
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
 
-        proc_id = add_docker_processor(self.keys[0], self.keys[1])
+        proc_id = add_docker_processor(self.keys[0], self.keys[1], image_path, descriptor_path)
         logger.info(f"proc_id={proc_id}")
+        cleanup_func()
 
         descriptor = deploy(self.keys[0], proc_id)
         logger.info(f"descriptor={descriptor}")
 
-        job_id = submit_job_value_docker(self.keys[0], self.keys[1], proc_id)
+        deployed = get_deployed(self.keys[0])
+        logger.info(f"deployed={deployed}")
+        assert deployed
+        assert len(deployed) == 2
+        assert 'workflow' in deployed
+        assert proc_id in deployed
+
+        jobs = get_jobs(self.keys[0], proc_id)
+        logger.info(f"jobs={jobs}")
+        assert jobs is not None
+        assert len(jobs) == 0
+
+        job_id = submit_job_value(self.keys[0], self.keys[1], proc_id)
         logger.info(f"job_id={job_id}")
         assert job_id is not None
 
@@ -595,16 +610,21 @@ class RTITestCase(unittest.TestCase):
 
         while True:
             time.sleep(1)
-            descriptor, status = get_job(self.keys[0], proc_id, job_id)
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
-            if isinstance(status, dict) and 'status' in status and status['status'] != 'running':
-                break
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+                if 'status' in status and status['status'] != 'running':
+                    break
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
         assert jobs is not None
         assert len(jobs) == 0
+
+        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
         undeploy(self.keys[0], proc_id)
 

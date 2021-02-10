@@ -31,7 +31,7 @@ class RegistryTestCases(unittest.TestCase):
             datastore_path = os.path.join(env.wd_path, name)
 
             logger.info(f"creating node '{name}'")
-            node = Node(name, datastore_path, env.rest_api_address)
+            node = Node(name, datastore_path, (env.rest_api_address[0], env.rest_api_address[1] + i))
             node.initialise_identity(env.password)
             node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
 
