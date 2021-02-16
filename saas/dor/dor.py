@@ -12,6 +12,7 @@ import subprocess
 import json
 
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
 
 from saas.eckeypair import ECKeyPair, hash_json_object, hash_file_content
 from saas.utilities.general_helpers import get_timestamp_now, dump_json_to_file, create_symbolic_link
@@ -376,7 +377,7 @@ class DataObjectRepository:
         c_hash = hash_file_content(content_path)
 
         # calculate the data object id as a hash of the hashed data object header and content
-        digest = hashes.Hash(hashes.SHA256())
+        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
         digest.update(d_hash)
         digest.update(c_hash)
         obj_id = digest.finalize()
