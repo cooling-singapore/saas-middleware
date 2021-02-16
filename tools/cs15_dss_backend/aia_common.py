@@ -1,8 +1,11 @@
 import csv
 import h5py
+import logging
 import numpy as np
 
 from jsonschema import validate
+
+logger = logging.getLogger(__name__)
 
 damage_function_parameter_schema = {
     'type': 'object',
@@ -132,16 +135,23 @@ def convert_exposure_map(input_path, output_path):
     :param output_path: path to hdf5 output file
     :return:
     """
-    reader = csv.reader(open(input_path, "r"), delimiter=",")
-    data = np.array(list(reader)).astype(np.int8)
+    try:
+        reader = csv.reader(open(input_path, "r"), delimiter=",")
+        # TODO: fix issue with --> ValueError: invalid literal for int() with base 10: '\ufeff0'
+        data = np.array(list(reader)).astype(np.int8)
 
-    # store as HDF5
-    f = h5py.File(output_path, "w")
-    dset = f.create_dataset("exposure_map", data=data)
-    dset.attrs['dimensions'] = ['y', 'x']
-    dset.attrs['description'] = "CS1.5 DSS-demo Exposure Map"
-    dset.attrs['mask_ids'] = np.unique(data)
-    f.close()
+        # store as HDF5
+        f = h5py.File(output_path, "w")
+        dset = f.create_dataset("exposure_map", data=data)
+        dset.attrs['dimensions'] = ['y', 'x']
+        dset.attrs['description'] = "CS1.5 DSS-demo Exposure Map"
+        dset.attrs['mask_ids'] = np.unique(data)
+        f.close()
+        return True
+
+    except Exception as e:
+        logger.error(f"input_path={input_path} output_path={output_path} e={e}")
+        return False
 
 
 def convert_climate_data(input_path, output_path, climate_variable, weather_type, n_time_steps=24, nan_value=-999):
@@ -156,33 +166,42 @@ def convert_climate_data(input_path, output_path, climate_variable, weather_type
     :param nan_value: the NaN value (default: -999) used to be replaced with np.nan for correct calculations
     :return:
     """
-    reader = csv.reader(open(input_path, "r"), delimiter=",")
-    temp = np.array(list(reader)).astype(np.float32)
+    try:
+        reader = csv.reader(open(input_path, "r"), delimiter=",")
+        temp = np.array(list(reader)).astype(np.float32)
 
-    # replace buildings (-999) with nan
-    temp = np.where(temp == nan_value, np.nan, temp)
+        # replace buildings (-999) with nan
+        temp = np.where(temp == nan_value, np.nan, temp)
 
-    # determine width and height
-    width = temp.shape[1]
-    height = int(temp.shape[0] / n_time_steps)
-    if height * n_time_steps != temp.shape[0]:
-        raise Exception(
-            f"CSV file '{input_path}' has {temp.shape[0]} lines, "
-            f"assuming {n_time_steps} timesteps, "
-            f"the expected number of lines is {(height * n_time_steps)}"
-        )
-    # print(f"before reshaping: shape(temp)={temp.shape} height={height} width={width}")
+        # determine width and height
+        width = temp.shape[1]
+        height = int(temp.shape[0] / n_time_steps)
+        if height * n_time_steps != temp.shape[0]:
+            raise Exception(
+                f"CSV file '{input_path}' has {temp.shape[0]} lines, "
+                f"assuming {n_time_steps} timesteps, "
+                f"the expected number of lines is {(height * n_time_steps)}"
+            )
+        # print(f"before reshaping: shape(temp)={temp.shape} height={height} width={width}")
 
-    # do reshaping
-    temp = temp.reshape((n_time_steps, height, width))
-    # print(f"after reshaping: shape(temp)={temp.shape} height={height} width={width}")
+        # do reshaping
+        temp = temp.reshape((n_time_steps, height, width))
+        # print(f"after reshaping: shape(temp)={temp.shape} height={height} width={width}")
 
-    # store as HDF5
-    f = h5py.File(output_path, "w")
-    dset = f.create_dataset("climate_data", data=temp)
-    dset.attrs['dimensions'] = ['time', 'y', 'x']
-    dset.attrs['description'] = "CS1.5 DSS-demo Climate Data"
-    dset.attrs['climate_variable'] = climate_variable
-    dset.attrs['weather_type'] = weather_type
-    dset.attrs['unit'] = "Celsius (˚C)"
-    f.close()
+        # store as HDF5
+        f = h5py.File(output_path, "w")
+        dset = f.create_dataset("climate_data", data=temp)
+        dset.attrs['dimensions'] = ['time', 'y', 'x']
+        dset.attrs['description'] = "CS1.5 DSS-demo Climate Data"
+        dset.attrs['climate_variable'] = climate_variable
+        dset.attrs['weather_type'] = weather_type
+        dset.attrs['unit'] = "Celsius (˚C)"
+        f.close()
+
+        return True
+
+    except Exception as e:
+        logger.error(f"input_path={input_path} output_path={output_path} climate_variable={climate_variable} "
+                     f"weather_type={weather_type} e={e}")
+        return False
+
