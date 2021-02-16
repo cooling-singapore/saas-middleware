@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import traceback
 
 from saas.app import initialise_app
 from saas.utilities.general_helpers import get_address_from_string
@@ -51,4 +52,5 @@ try:
 
 
 except Exception as e:
-    logger.error(e)
+    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+    logger.error(f"error while executing service: {e}\n{trace}")

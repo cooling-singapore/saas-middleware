@@ -28,7 +28,7 @@ def hash_file_content(path):
     :return: hash
     """
     # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256())
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
     # read the file in chunks of 64 bytes and update the digest
     with open(path, 'rb') as f:
@@ -49,7 +49,7 @@ def hash_json_object(obj):
     :return: hash
     """
     # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256())
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
     # encode the json input as RFC 7159 JSON as update the digest
     json_input = canonicaljson.encode_canonical_json(obj)
@@ -67,7 +67,7 @@ def hash_string_object(obj):
     :return: hash
     """
     # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256())
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
     digest.update(obj.encode('utf-8'))
 
     # calculate the hash and return
@@ -82,7 +82,7 @@ def hash_bytes_object(obj):
     :return: hash
     """
     # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256())
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
     digest.update(obj)
 
     # calculate the hash and return
@@ -230,7 +230,6 @@ class ECKeyPair:
         """
         return self.private_as_bytes(password).decode('utf-8') if self.private_key else None
 
-    # def public_as_string(self, truncate=False):
     def public_as_string(self, truncate=True):
         """
         Serialises the public key and returns it as string. If truncate=True, the PEM prefix and suffix is removed
