@@ -11,6 +11,8 @@ import time
 import logging
 import json
 import subprocess
+import random
+import string
 
 logger = logging.getLogger('Utilities.general_helpers')
 
@@ -32,6 +34,10 @@ def dump_json_to_file(json_input, destination_path):
     """
     with open(destination_path, 'w') as f:
         json.dump(json_input, f, indent=4, sort_keys=True)
+
+
+def generate_random_string(length, characters=string.ascii_letters+string.digits):
+    return ''.join(random.choice(characters) for c in range(length))
 
 
 def load_json_from_file(source_path):
