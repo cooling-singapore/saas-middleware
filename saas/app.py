@@ -1,5 +1,6 @@
 import os
 import logging
+import getpass
 
 from flask import Flask
 
@@ -37,12 +38,21 @@ def create_node_instance(configuration):
         logger.info(f"creating datastore directory '{datastore_path}'.")
         os.makedirs(datastore_path)
 
+    # check if there was a password provided in the config file
+    if 'password' in configuration:
+        logger.info(f"using password provided in config file")
+        password = configuration['password']
+
+    else:
+        logger.info(f"no password provided for node identity")
+        password = getpass.getpass("enter password: ")
+
     p2p_server_address = get_address_from_string(configuration['p2p-server-address'])
     boot_node_address = get_address_from_string(configuration['boot-node-address'])
     rest_api_address = get_address_from_string(configuration['rest-api-address'])
 
     instance = Node(configuration['name'], datastore_path, rest_api_address)
-    instance.initialise_identity(configuration['password'])
+    instance.initialise_identity(password)
     instance.start_server(p2p_server_address)
     instance.initialise_registry(boot_node_address)
 
