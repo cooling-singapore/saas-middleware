@@ -19,6 +19,7 @@ from saas.utilities.general_helpers import all_in_dict
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
 
 logger = logging.getLogger('SecureMessenger')
@@ -198,7 +199,8 @@ class SecureMessenger:
             algorithm=hashes.SHA256(),
             length=32,
             salt=None,
-            info=None
+            info=None,
+            backend=default_backend()
         ).derive(shared_key)
 
         # initialise the cipher used to encrypt/decrypt messages
