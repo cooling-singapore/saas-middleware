@@ -185,7 +185,6 @@ class DBTable:
         return result > 0
 
 
-
 class NodeDB:
     def __init__(self, node, immediate_updates=True):
         self.mutex = Lock()
