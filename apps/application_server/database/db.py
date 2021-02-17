@@ -25,13 +25,13 @@ class AppDB:
     def _create_superuser(self, username='admin', password='password'):
         if self.users.get_user(username) is None:
             self.users.create_user(username, password)
-            user = self.users.get_user(username)
+        user = self.users.get_user(username)
 
-        if self.user_groups.get_group('admin'):
+        if self.user_groups.get_group('admin') is None:
             self.user_groups.create_group('admin')
-            group = self.user_groups.get_group('admin')
+        group = self.user_groups.get_group('admin')
 
-            self.group_membership.assign_user(user['user_id'], group['group_id'])
+        self.group_membership.assign_user(user['user_id'], group['group_id'])
 
 
 class DBTable:
