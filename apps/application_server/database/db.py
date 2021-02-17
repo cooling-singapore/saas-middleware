@@ -106,7 +106,7 @@ class UserGroupTable(DBTable):
                          f"name TEXT NOT NULL UNIQUE,"
                          f"description TEXT,"
                          f"key_id TEXT NOT NULL,"
-                         f"FOREIGN KEY (key_id) REFERENCES {KEY_TABLE_NAME} (key_id));")
+                         f"FOREIGN KEY (key_id) REFERENCES {self.app_db.keys.name} (key_id));")
 
     def create_group(self, group_name, description=None):
         key_id = self.app_db.keys.create_key('group_name', 'password')
@@ -172,8 +172,8 @@ class GroupMembershipTable(DBTable):
                          f"group_id INTEGER NOT NULL,"
                          f"user_id INTEGER NOT NULL,"
                          f"PRIMARY KEY (group_id, user_id),"
-                         f"FOREIGN KEY (group_id) REFERENCES {GROUP_MEMBERSHIP_TABLE_NAME} (group_id),"
-                         f"FOREIGN KEY (user_id) REFERENCES {USER_TABLE_NAME} (user_id));")
+                         f"FOREIGN KEY (group_id) REFERENCES {self.app_db.group_membership.name} (group_id),"
+                         f"FOREIGN KEY (user_id) REFERENCES {self.app_db.users.name} (user_id));")
 
     def assign_user(self, user_id, group_id):
         with sqlite3.connect(self.app_db.db_path) as conn:
