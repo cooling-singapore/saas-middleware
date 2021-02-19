@@ -386,6 +386,7 @@ class DataObjectRepository:
         d_hash = d_hash.hex()
         c_hash = c_hash.hex()
         obj_id = obj_id.hex()
+        logger.info(f"attempt to add object with id={obj_id} (d_hash={d_hash} and c_hash={c_hash})")
 
         # check if there is already a data object with the same id
         if self.records.get_by_object_id(obj_id) is not None:
@@ -394,7 +395,7 @@ class DataObjectRepository:
             # current behaviour makes it impossible for the caller to know if a data object already existed
             # or not. question is whether this matters or not. the important point is that after calling
             # 'add' the data object is in the DOR.
-            logger.warning(f"data object '{obj_id}' already exists. not adding to DOR.")
+            logger.info(f"data object '{obj_id}' already exists. not adding to DOR.")
             return 200, {'data_object_id': obj_id}
 
         # check if there are already data objects with the same content
