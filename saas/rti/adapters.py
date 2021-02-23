@@ -98,10 +98,10 @@ class RTIProcessorAdapter(Thread):
     def execute(self, job_descriptor, working_directory, status):
         pass
 
-    def add(self, job_descriptor):
+    def add(self, job_descriptor, status):
         self.mutex.acquire()
         if self.is_active:
-            self.pending.append(job_descriptor)
+            self.pending.append((job_descriptor, status))
             self.mutex.release()
             return True
         else:
@@ -131,20 +131,20 @@ class RTIProcessorAdapter(Thread):
                 break
 
             # there should be a job in the pending queue
-            job_descriptor = self.pending.pop(0)
+            job_descriptor, status = self.pending.pop(0)
             self.mutex.release()
 
-            # create working directory
+            # # create working directory
             wd_path = os.path.join(self.rti.jobs_path, str(job_descriptor['id']))
-            subprocess.check_output(['mkdir', '-p', wd_path])
-
-            # dump the job descriptor
-            job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
-            dump_json_to_file(job_descriptor, job_descriptor_path)
-
-            # create status logger
-            status_path = os.path.join(wd_path, 'job_status.json')
-            status = StatusLogger(status_path)
+            # subprocess.check_output(['mkdir', '-p', wd_path])
+            #
+            # # dump the job descriptor
+            # job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
+            # dump_json_to_file(job_descriptor, job_descriptor_path)
+            #
+            # # create status logger
+            # status_path = os.path.join(wd_path, 'job_status.json')
+            # status = StatusLogger(status_path)
 
             task_or_wf_descriptor = job_descriptor['descriptor']
 
@@ -400,23 +400,55 @@ class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
         super().__init__(proc_id, rti)
 
 
+# class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
+#     def __init__(self, proc_id, content_path, rti):
+#         super().__init__(proc_id, rti)
+#
+#         head_tail = os.path.split(content_path)
+#         script_path = os.path.join(head_tail[0], f"{proc_id}.py")
+#         create_symbolic_link(content_path, script_path)
+#
+#         logger.info(f"[RTIScriptProcessorAdapter] init: content_path={content_path} script_path={script_path}")
+#
+#         self.module_path = head_tail[0]
+#         self.module_name = proc_id
+#         self.module = None
+#
+#     def startup(self):
+#         logger.info(f"[RTIScriptProcessorAdapter] startup: module path '{self.module_path}'")
+#         sys.path.insert(1, self.module_path)
+#         self.module = importlib.import_module(self.module_name)
+#         logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{self.module_name}'")
+#         self.parse_io_interface(self.module.descriptor)
+#
+#     def shutdown(self):
+#         pass
+#
+#     def execute(self, task_descriptor, working_directory, status_logger):
+#         return self.module.function(task_descriptor, working_directory, status_logger)
+
+
 class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, content_path, rti):
         super().__init__(proc_id, rti)
 
-        head_tail = os.path.split(content_path)
-        script_path = os.path.join(head_tail[0], f"{proc_id}.py")
-        create_symbolic_link(content_path, script_path)
-
-        self.module_path = head_tail[0]
-        self.module_name = proc_id
+        logger.info(f"[RTIScriptProcessorAdapter] init: content_path={content_path}")
+        self.script = load_json_from_file(content_path)
         self.module = None
 
     def startup(self):
-        sys.path.insert(1, self.module_path)
-        self.module = importlib.import_module(self.module_name)
-        logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{self.module_name}'")
-        self.parse_io_interface(self.module.descriptor)
+        package_path = self.script['package_path']
+        descriptor_path = self.script['descriptor_path']
+        module_name = self.script['module_name']
+
+        logger.info(f"[RTIScriptProcessorAdapter] startup: package_path={package_path} module_name={module_name}")
+        sys.path.insert(1, package_path)
+
+        self.module = importlib.import_module(module_name)
+        logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{module_name}'")
+
+        descriptor = load_json_from_file(descriptor_path)
+        self.parse_io_interface(descriptor)
 
     def shutdown(self):
         pass

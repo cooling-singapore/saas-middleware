@@ -38,12 +38,13 @@ class FlaskServerThread(threading.Thread):
 
 
 class TestingEnvironment:
-    __instance = None
+    _instance = None
+    _lock: threading.Lock = threading.Lock()
 
     @staticmethod
     def get_instance(alternative_config_path=None):
-        with threading.Lock():
-            if TestingEnvironment.__instance is None:
+        with TestingEnvironment._lock:
+            if TestingEnvironment._instance is None:
                 if 'SAAS_TEST_CONFIG' not in os.environ:
                     logger.warning("No config file specified in environment variable SAAS_TEST_CONFIG.")
                     if not alternative_config_path:
@@ -58,11 +59,11 @@ class TestingEnvironment:
                 if os.path.isfile(config_path):
                     with open(config_path) as json_file:
                         configuration = json.load(json_file)
-                        TestingEnvironment.__instance = TestingEnvironment(configuration)
+                        TestingEnvironment._instance = TestingEnvironment(configuration)
                 else:
                     raise RuntimeError(f"Config file '{config_path}' not found/cannot be opened.")
 
-        return TestingEnvironment.__instance
+        return TestingEnvironment._instance
 
     def __init__(self, configuration):
         self.wd_path = configuration['working-directory']
