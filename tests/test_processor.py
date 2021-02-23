@@ -11,7 +11,7 @@ from tests.test_rti import create_dummy_docker_processor
 class DockerProcessor(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('dummy_script.py')
+        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
         cls.image_path = image_path
         cls.descriptor_path = descriptor_path
         cls.cleanup_docker_files = cleanup_func
