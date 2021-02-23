@@ -188,7 +188,9 @@ class RuntimeInfrastructure:
         self.mutex.acquire()
         processor = self.deployed_processors[proc_id]
         if processor:
-            result = copy.deepcopy(processor.pending)
+            result = []
+            for job_descriptor, status in processor.pending:
+                result.append(job_descriptor)
         else:
             result = None
         self.mutex.release()

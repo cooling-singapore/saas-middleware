@@ -2,9 +2,8 @@ import os
 import sys
 import time
 import logging
-import subprocess
 import importlib
-import json
+import socket
 
 from threading import Lock, Thread
 import docker
@@ -12,7 +11,7 @@ import docker.errors
 import requests
 
 from saas.eckeypair import ECKeyPair
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, create_symbolic_link, get_timestamp_now
+from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
 from saas.utilities.blueprint_helpers import request_dor_add
 
 logger = logging.getLogger('RTI.adapters')
@@ -22,7 +21,6 @@ def find_open_port():
     """
     Use socket's built in ability to find an open port.
     """
-    import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         port = s.getsockname()[1]
@@ -30,7 +28,6 @@ def find_open_port():
 
 
 class StatusLogger:
-
     """
     StatusLogger keeps information (key-value pairs) for a job and syncs its contents to disk. This class is
     basically just a wrapper of a dictionary providing convenient functions.
@@ -63,6 +60,7 @@ class StatusLogger:
         Returns the value for a given key.
         """
         return self.content[key] if key else self.content
+
     def remove_all(self, keys):
         """
         Removes multiple entries (if they exists) using a list of key.
@@ -257,6 +255,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['input', 'input_content_path', 'input_status'])
         return successful
+
     def push_output_data_objects(self, owner, wd_path, status):
         status.update('stage', 'push output data objects')
 
