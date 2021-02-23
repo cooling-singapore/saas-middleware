@@ -1,0 +1,24 @@
+{
+    "name": "dummy",
+    "version": "20201014",
+    "type": "script",
+    "input": [
+        {
+            "name": "a",
+            "data_type": "JSONObject",
+            "data_format": "json"
+        },
+        {
+            "name": "b",
+            "data_type": "JSONObject",
+            "data_format": "json"
+        }
+    ],
+    "output": [
+        {
+            "name": "c",
+            "data_type": "JSONObject",
+            "data_format": "json"
+        }
+    ]
+}

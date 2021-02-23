@@ -4,31 +4,6 @@ import os
 
 logger = logging.getLogger('testing.dummy_adapter')
 
-descriptor = {
-    'name': 'dummy',
-    'version': '20201014',
-    'type': 'script',
-    'input': [
-        {
-            'name': 'a',
-            'data_type': 'JSONObject',
-            'data_format': 'json'
-        },
-        {
-            'name': 'b',
-            'data_type': 'JSONObject',
-            'data_format': 'json'
-        }
-    ],
-    'output': [
-        {
-            'name': 'c',
-            'data_type': 'JSONObject',
-            'data_format': 'json'
-        }
-    ]
-}
-
 
 def function(task_descriptor, working_directory, status_logger):
     logger.info(f"f({task_descriptor}, '{working_directory}')")
