@@ -1,8 +1,8 @@
 import functools
 import logging
 
-from flask import Blueprint, request, Flask, jsonify
-from flask_jwt_extended import create_access_token, jwt_required, get_raw_jwt, get_jwt_identity
+from flask import Blueprint, request, jsonify
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.security import check_password_hash
 
 from apps.application_server.database.db import AppDB
@@ -45,7 +45,7 @@ def init_login(db: AppDB):
             return jsonify({'message': 'Wrong credentials'})
 
     @blueprint.route("/admin")
-    @jwt_required
+    @jwt_required()
     @admin_required
     def admin():
         return jsonify(status="successful"), 200
