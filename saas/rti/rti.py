@@ -10,12 +10,13 @@ import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter
+from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter, StatusLogger
 from saas.rti.workflow import RTIWorkflowProcessorAdapter
 from saas.rti.adapters import RTIScriptProcessorAdapter, RTIProcessorAdapter
 
 from jsonschema import validate, ValidationError
 
+from saas.utilities.general_helpers import dump_json_to_file
 
 logger = logging.getLogger('RTI')
 
@@ -161,8 +162,21 @@ class RuntimeInfrastructure:
             'descriptor': descriptor
         }
 
+        # create working directory
+        wd_path = os.path.join(self.jobs_path, str(job_descriptor['id']))
+        subprocess.check_output(['mkdir', '-p', wd_path])
+
+        # dump the job descriptor
+        job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
+        dump_json_to_file(job_descriptor, job_descriptor_path)
+
+        # create status logger
+        status_path = os.path.join(wd_path, 'job_status.json')
+        status = StatusLogger(status_path)
+        status.update('status', 'initialised')
+
         # add it to the processor and the queue
-        if processor.add(job_descriptor):
+        if processor.add(job_descriptor, status):
             self.mutex.release()
             return job_id
 
@@ -201,4 +215,3 @@ class RuntimeInfrastructure:
             'job_descriptor': descriptor,
             'status': status
         }
-
