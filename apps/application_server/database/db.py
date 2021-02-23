@@ -172,7 +172,7 @@ class GroupMembershipTable(DBTable):
                          f"group_id INTEGER NOT NULL,"
                          f"user_id INTEGER NOT NULL,"
                          f"PRIMARY KEY (group_id, user_id),"
-                         f"FOREIGN KEY (group_id) REFERENCES {self.app_db.group_membership.name} (group_id),"
+                         f"FOREIGN KEY (group_id) REFERENCES {self.app_db.user_groups.name} (group_id),"
                          f"FOREIGN KEY (user_id) REFERENCES {self.app_db.users.name} (user_id));")
 
     def assign_user(self, user_id, group_id):
