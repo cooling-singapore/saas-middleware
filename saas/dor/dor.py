@@ -372,9 +372,12 @@ class DataObjectRepository:
         # recreate ECKeyPair (public key only) of the data object owner
         owner = ECKeyPair.from_public_key_string(owner_public_key)
 
-        # calculate hashes for the data object descriptor and content
-        d_hash = hash_json_object(descriptor)
+        # calculate hashes for the data object content
         c_hash = hash_file_content(content_path)
+
+        # add the c_hash to the descriptor and calculate the hash for the descriptor
+        descriptor['c_hash'] = c_hash.hex()
+        d_hash = hash_json_object(descriptor)
 
         # calculate the data object id as a hash of the hashed data object header and content
         digest = hashes.Hash(hashes.SHA256(), backend=default_backend())

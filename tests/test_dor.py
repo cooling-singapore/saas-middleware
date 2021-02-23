@@ -37,7 +37,7 @@ def add_data_object(sender, owner):
         }
     }
     test_file_path = env.generate_zero_file('test000.dat', 1024*1024)
-    test_obj_id = '12edb4bcd29126086a30f3a1ee9220d02317684a6d41c181152fba752fe86ff0'
+    test_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {

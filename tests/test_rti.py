@@ -10,8 +10,7 @@ import unittest
 import requests
 
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
-from saas.utilities.general_helpers import all_in_dict
-from tests.dummy_script import descriptor as dummy_script_descriptor
+from saas.utilities.general_helpers import all_in_dict, dump_json_to_file, load_json_from_file
 from tests.testing_environment import TestingEnvironment
 from tools.create_template import create_folder_structure
 from tools.package_processor import package_docker
@@ -27,14 +26,22 @@ logger = logging.getLogger(__name__)
 
 
 def add_dummy_processor(sender, owner):
+    descriptor_path = "./descriptor_dummy_script.json"
+    descriptor = load_json_from_file(descriptor_path)
+
     url = "http://127.0.0.1:5000/repository"
     body = {
         'type': 'processor',
         'owner_public_key': owner.public_as_string(),
-        'descriptor': dummy_script_descriptor
+        'descriptor': descriptor
     }
 
-    script_path = './dummy_script.py'
+    script_path = os.path.join(env.wd_path, f"script_dummy_script.json")
+    dump_json_to_file({
+        'package_path': ".",
+        'descriptor_path': descriptor_path,
+        'module_name': 'proc_dummy_script'
+    }, script_path)
 
     authentication = create_authentication('POST:/repository', sender, body, script_path)
     content = {
@@ -572,7 +579,7 @@ class RTITestCase(unittest.TestCase):
         assert 'workflow' in deployed
 
     def test_docker_processor_execution_value(self):
-        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('dummy_script.py')
+        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
 
         deployed = get_deployed(self.keys[0])
         logger.info(f"deployed={deployed}")
