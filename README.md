@@ -8,7 +8,14 @@ pip3 install flask flask_cors requests jsonschema canonicaljson cryptography doc
 ```
 
 
-## Build and Install Package
+## Install Package
+For now, we are only creating local builds that are *not* uploaded to PyPi. The package can be installed from its local source as follows:
+```
+pip3 install /path/to/saas-middleware
+```
+
+Alternatively, the package can be manually built and installed as follows.
+
 Install `build`:
 ```
 pip3 install --upgrade build
@@ -19,7 +26,7 @@ From the root directory of the repository, initiate the build:
 python3 -m build
 ```
 
-Important: for now, we are only creating local builds that are *not* uploaded to PyPi. The package can be installed from its local source as follows:
+Install the package:
 ```
-pip3 install /path/to/saas-middleware/dist/saas-middleware_cooling-singapore-0.0.1.tar.gz
+pip3 install /path/to/saas-middleware/dist/saas-middleware-0.0.1.tar.gz
 ```
