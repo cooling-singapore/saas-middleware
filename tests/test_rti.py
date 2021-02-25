@@ -6,13 +6,16 @@ import shutil
 import tempfile
 import time
 import unittest
+import pip
 
 import requests
 
+from saas.rti.adapters import import_with_auto_install
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
 from saas.utilities.general_helpers import all_in_dict, dump_json_to_file, load_json_from_file
 from tests.testing_environment import TestingEnvironment
 from tools.create_template import create_folder_structure
+
 from tools.package_processor import package_docker
 
 logging.basicConfig(
@@ -136,7 +139,7 @@ def add_data_object_a(sender, owner):
         }
     }
     test_file_path = env.create_file_with_content('a.dat', json.dumps({'a': 1}))
-    test_obj_id = 'f3f6943f9e11ab8272b92fcd1ef67c4c0ffffcca52ae666662dd9d2a4062c566'
+    test_obj_id = '2a0a01beaffbfd8bb757f4da783f3fd505a95e06306108b1b0325a4ead5b6ddb'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -433,8 +436,12 @@ class RTITestCase(unittest.TestCase):
             if job_info:
                 status = job_info['status']
                 logger.info(f"descriptor={job_info['job_descriptor']}")
+                assert 'status' in status
+
                 logger.info(f"status={status}")
-                if 'status' in status and status['status'] != 'running':
+                assert status['status'] != 'failed'
+
+                if status['status'] == 'successful':
                     break
 
         jobs = get_jobs(self.keys[0], proc_id)
@@ -498,7 +505,11 @@ class RTITestCase(unittest.TestCase):
                 status = job_info['status']
                 logger.info(f"descriptor={job_info['job_descriptor']}")
                 logger.info(f"status={status}")
-                if 'status' in status and status['status'] != 'running':
+                assert 'status' in status
+
+                assert status['status'] != 'failed'
+
+                if status['status'] == 'successful':
                     break
 
         jobs = get_jobs(self.keys[0], proc_id)
@@ -562,7 +573,13 @@ class RTITestCase(unittest.TestCase):
                 status = job_info['status']
                 logger.info(f"descriptor={job_info['job_descriptor']}")
                 logger.info(f"status={status}")
-                if 'status' in status and status['status'] != 'running':
+
+                assert 'status' in status
+                if status['status'] == 'failed':
+                    assert False
+                # assert status['status'] != 'failed'
+
+                if status['status'] == 'successful':
                     break
 
         jobs = get_jobs(self.keys[0], proc_id)
@@ -640,6 +657,22 @@ class RTITestCase(unittest.TestCase):
         assert deployed
         assert len(deployed) == 1
         assert 'workflow' in deployed
+
+    def test_import_dependency(self):
+        try:
+            package = 'h5py'
+            pip.main(['uninstall', '-y', package])
+
+            import_with_auto_install(package)
+            import h5py
+
+            output_path = os.path.join(env.wd_path, 'test.hdf5')
+            f = h5py.File(output_path, "w")
+            f.close()
+
+        except Exception as e:
+            logger.error(e)
+            assert False
 
 
 if __name__ == '__main__':

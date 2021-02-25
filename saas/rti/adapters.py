@@ -2,27 +2,38 @@ import os
 import sys
 import time
 import logging
-import subprocess
 import importlib
-import json
+import socket
 
 from threading import Lock, Thread
 import docker
 import docker.errors
 import requests
+import subprocess
 
 from saas.eckeypair import ECKeyPair
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, create_symbolic_link, get_timestamp_now
+from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
 from saas.utilities.blueprint_helpers import request_dor_add
 
 logger = logging.getLogger('RTI.adapters')
+
+
+def import_with_auto_install(package):
+    try:
+        return importlib.import_module(package)
+
+    except ImportError:
+        # pip.main doesn't seem to work on a GCE instance, call python3 directly instead
+        # pip.main(['install', package])
+        subprocess.check_output(['python3', '-m', 'pip', 'install', package])
+
+    return importlib.import_module(package)
 
 
 def find_open_port():
     """
     Use socket's built in ability to find an open port.
     """
-    import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         port = s.getsockname()[1]
@@ -30,7 +41,6 @@ def find_open_port():
 
 
 class StatusLogger:
-
     """
     StatusLogger keeps information (key-value pairs) for a job and syncs its contents to disk. This class is
     basically just a wrapper of a dictionary providing convenient functions.
@@ -63,6 +73,7 @@ class StatusLogger:
         Returns the value for a given key.
         """
         return self.content[key] if key else self.content
+
     def remove_all(self, keys):
         """
         Removes multiple entries (if they exists) using a list of key.
@@ -257,6 +268,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['input', 'input_content_path', 'input_status'])
         return successful
+
     def push_output_data_objects(self, owner, wd_path, status):
         status.update('stage', 'push output data objects')
 
@@ -400,34 +412,6 @@ class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
         super().__init__(proc_id, rti)
 
 
-# class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
-#     def __init__(self, proc_id, content_path, rti):
-#         super().__init__(proc_id, rti)
-#
-#         head_tail = os.path.split(content_path)
-#         script_path = os.path.join(head_tail[0], f"{proc_id}.py")
-#         create_symbolic_link(content_path, script_path)
-#
-#         logger.info(f"[RTIScriptProcessorAdapter] init: content_path={content_path} script_path={script_path}")
-#
-#         self.module_path = head_tail[0]
-#         self.module_name = proc_id
-#         self.module = None
-#
-#     def startup(self):
-#         logger.info(f"[RTIScriptProcessorAdapter] startup: module path '{self.module_path}'")
-#         sys.path.insert(1, self.module_path)
-#         self.module = importlib.import_module(self.module_name)
-#         logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{self.module_name}'")
-#         self.parse_io_interface(self.module.descriptor)
-#
-#     def shutdown(self):
-#         pass
-#
-#     def execute(self, task_descriptor, working_directory, status_logger):
-#         return self.module.function(task_descriptor, working_directory, status_logger)
-
-
 class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, content_path, rti):
         super().__init__(proc_id, rti)
@@ -440,6 +424,11 @@ class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
         package_path = self.script['package_path']
         descriptor_path = self.script['descriptor_path']
         module_name = self.script['module_name']
+        dependencies = self.script['dependencies']
+
+        for package in dependencies:
+            logger.info(f"[RTIScriptProcessorAdapter] importing dependency '{package}'")
+            import_with_auto_install(package)
 
         logger.info(f"[RTIScriptProcessorAdapter] startup: package_path={package_path} module_name={module_name}")
         sys.path.insert(1, package_path)
