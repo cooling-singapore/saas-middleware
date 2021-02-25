@@ -4,8 +4,8 @@ import unittest
 
 from flask_jwt_extended import create_access_token
 
-from apps.application_server.app import create_app
-from apps.application_server.config import TestConfig
+from apps.dashboard.server.app import create_app
+from apps.dashboard.server.config import TestConfig
 
 
 class TokenLoginTest(unittest.TestCase):
