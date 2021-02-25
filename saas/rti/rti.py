@@ -4,7 +4,6 @@ __status__ = "development"
 
 import os
 import logging
-import copy
 import subprocess
 import json
 

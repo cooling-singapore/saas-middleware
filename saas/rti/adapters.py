@@ -145,21 +145,9 @@ class RTIProcessorAdapter(Thread):
             job_descriptor, status = self.pending.pop(0)
             self.mutex.release()
 
-            # # create working directory
-            wd_path = os.path.join(self.rti.jobs_path, str(job_descriptor['id']))
-            # subprocess.check_output(['mkdir', '-p', wd_path])
-            #
-            # # dump the job descriptor
-            # job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
-            # dump_json_to_file(job_descriptor, job_descriptor_path)
-            #
-            # # create status logger
-            # status_path = os.path.join(wd_path, 'job_status.json')
-            # status = StatusLogger(status_path)
-
-            task_or_wf_descriptor = job_descriptor['descriptor']
-
             # perform pre-execute routine
+            task_or_wf_descriptor = job_descriptor['descriptor']
+            wd_path = os.path.join(self.rti.jobs_path, str(job_descriptor['id']))
             if not self.pre_execute(task_or_wf_descriptor, wd_path, status):
                 status.update('status', 'failed')
                 continue
