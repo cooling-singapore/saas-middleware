@@ -4,12 +4,12 @@ import time
 import logging
 import importlib
 import socket
-import pip
 
 from threading import Lock, Thread
 import docker
 import docker.errors
 import requests
+import subprocess
 
 from saas.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
@@ -23,7 +23,9 @@ def import_with_auto_install(package):
         return importlib.import_module(package)
 
     except ImportError:
-        pip.main(['install', package])
+        # pip.main doesn't seem to work on a GCE instance, call python3 directly instead
+        # pip.main(['install', package])
+        subprocess.check_output(['python3', '-m', 'pip', 'install', package])
 
     return importlib.import_module(package)
 
