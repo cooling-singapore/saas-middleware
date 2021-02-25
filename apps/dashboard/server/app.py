@@ -5,9 +5,9 @@ import logging
 
 from flask_jwt_extended import JWTManager
 
-from apps.application_server.config import UserConfig, DefaultConfig
-from apps.application_server.database.db import AppDB
-from apps.application_server.login.blueprint import init_login
+from apps.dashboard.server.config import UserConfig, DefaultConfig
+from apps.dashboard.server.database.db import AppDB
+from apps.dashboard.server.login.blueprint import init_login
 
 logging.basicConfig(
     level=logging.DEBUG,
