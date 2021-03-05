@@ -340,7 +340,9 @@ def create_dummy_docker_processor(dummy_processor_path):
     create_folder_structure(output_path)
     shutil.copy(dummy_processor_path, processor_path)
 
-    _dummy_script_descriptor = copy.deepcopy(dummy_script_descriptor)
+    with open('descriptor_dummy_script.json') as f:
+        _dummy_script_descriptor = json.load(f)
+
     _dummy_script_descriptor['type'] = 'docker'
     with open(descriptor_path, 'w') as f:
         json.dump(_dummy_script_descriptor, f)
