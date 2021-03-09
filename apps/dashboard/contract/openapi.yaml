@@ -1,0 +1,272 @@
+openapi: 3.0.0
+info:
+  description: This is a SaaS Middleware Api
+  version: 0.0.1
+  title: OpenAPI SaaS Middleware
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+paths:
+  /nodes:
+    get:
+      summary: Get information of all nodes 
+      tags:
+        - Node
+      responses:
+        '201': 
+          description: Successfully get nodes information
+          content:
+            application/json:
+              schema: 
+                type: array
+                items: 
+                  $ref: '#/components/schemas/node'
+            
+        '400':
+          description: Bad request
+  /nodes/{nodeId}:
+    parameters:
+      - in: path
+        name: nodeId
+        schema:
+          type: string
+        required: true
+        description: string ID of node
+    get:
+      summary: Get information of a specific node
+      tags:
+        - Node
+      responses:
+        '201':
+          description: Successfully get node information for nodeId
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/node'
+        '400':
+          description: Bad request
+    post:
+      summary: Deploy a processor to a target node
+      tags:
+        - Processor
+      security:
+        - OAuth2: [admin]
+      requestBody:
+        description: Processor Type information
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                processorType:
+                  $ref: '#/components/schemas/processorType'
+      responses:
+        '201':
+          description: Successfully deployed processor to node
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/processor'
+        '400':
+          description: Bad request
+  /nodes/{nodeId}/processors/{processorId}:
+    delete:
+      summary: Undeploy a processor from a target node
+      tags:
+        - Processor
+      security:
+        - OAuth2: [admin]
+      parameters:
+        - in: path
+          name: nodeId
+          description: Id of the node contains the data object
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: processorId
+          description: Id of the target processor
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Successfully undeployed processor from node
+        '400':
+          description: Bad request
+  /nodes/{nodeId}/dataobjects/{dataObjectId}:
+    parameters:
+      - in: path
+        name: nodeId
+        description: Id of the node contains the target data object
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: dataObjectId
+        description: Id of the target data object
+        required: true
+        schema:
+          type: string
+    put:
+      summary: transfer target data object from current node to a specific node
+      tags:
+        - Data Object
+      security:
+        - OAuth2: [write]
+      requestBody:
+        description: Targetted node information
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                processorType:
+                  $ref: '#/components/schemas/node'
+      responses:
+        '201':
+          description: Successfully transfer data object
+        '400':
+          description: Bad request
+    delete:
+      summary: delete target data object from current node
+      tags:
+        - Data Object
+      security:
+        - OAuth2: [write]
+      responses:
+        '201':
+          description: Successfully deleted data object
+        '400':
+          description: Bad request
+    get:
+      summary: get target data object for visualization
+      tags:
+        - Data Object
+      security: []
+      responses:
+        '201':
+          description: Successfully get data object
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/dataObject'
+        '400':
+          description: Bad request
+components:
+  schemas:
+    job:
+      title: Job
+      description: Job in a processor
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          description: Type of the job
+        status:
+          type: integer
+          description: Status of the job
+          example: Finished, Queued, In progress
+    processor:
+      title: Processor
+      description: Deployed processor instance
+      required:
+        - id
+        - name
+        - type
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          description: Type of the processor instance
+          example: AIA, SingV, IEM
+        status:
+          type: integer
+          description: Status of the processor
+          example: Idle, Busy, Work
+        jobs:
+          type: array
+          description: Jobs in the processor
+          items:
+            $ref: '#/components/schemas/job'
+    dataObject:
+      title: Data Object
+      description: Data object for input or stage results
+      required:
+        - id
+        - type
+        - owner
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          description: Type of the data object
+          example: 3d model, Heapmap
+        owner:
+          type: string
+          description: Owner of the data object
+        url:
+          type: string
+          description: Url link to the raw data
+          example: https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/heatmap_data.csv
+    node:
+      title: Node
+      description: Node holds instance of processors and data objects
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          description: Type of the node
+        dataObjects:
+          type: array
+          description: Data objects in the node
+          items:
+            $ref: '#/components/schemas/dataObject'
+        processoers:
+          type: array
+          description: Processors in the node
+          items:
+            $ref: '#/components/schemas/processor'
+    processorType:
+      title: Processor type
+      description: Processors to be deployed
+      properties:
+        type:
+          type: string
+          description: Type of the processor
+        verison:
+          type: string
+          description: Version of the processor
+        url:
+          type: string
+          description: Code repository of the processor code
+          example: https://github.com/cooling-singapore/mWRF_SG
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://example.com/oauth/authorize
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            read: Grants read access
+            write: Grants write access
+            admin: Grants access to admin operations
+
