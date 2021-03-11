@@ -412,7 +412,7 @@ class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
         package_path = self.script['package_path']
         descriptor_path = self.script['descriptor_path']
         module_name = self.script['module_name']
-        dependencies = self.script['dependencies']
+        dependencies = self.script.get('dependencies', [])
 
         for package in dependencies:
             logger.info(f"[RTIScriptProcessorAdapter] importing dependency '{package}'")
