@@ -340,7 +340,9 @@ def create_dummy_docker_processor(dummy_processor_path):
     create_folder_structure(output_path)
     shutil.copy(dummy_processor_path, processor_path)
 
-    _dummy_script_descriptor = copy.deepcopy(dummy_script_descriptor)
+    with open('descriptor_dummy_script.json') as f:
+        _dummy_script_descriptor = json.load(f)
+
     _dummy_script_descriptor['type'] = 'docker'
     with open(descriptor_path, 'w') as f:
         json.dump(_dummy_script_descriptor, f)
@@ -367,6 +369,23 @@ class RTITestCase(unittest.TestCase):
 
     def tearDown(self):
         pass
+
+    def wait_for_job(self, proc_id, job_id):
+        while True:
+            time.sleep(1)
+            job_info = get_job(self.keys[0], proc_id, job_id)
+            if job_info:
+                status = job_info['status']
+                logger.info(f"descriptor={job_info['job_descriptor']}")
+                logger.info(f"status={status}")
+
+                job_status = status.get('status')
+                self.assertIsNotNone(job_status)
+
+                if job_status == 'successful':
+                    break
+                elif job_status == 'failed':
+                    raise RuntimeError('Job failed')
 
     def test_deployment_undeployment(self):
         deployed = get_deployed(self.keys[0])
@@ -430,19 +449,7 @@ class RTITestCase(unittest.TestCase):
         assert jobs is not None
         assert len(jobs) == 1
 
-        while True:
-            time.sleep(1)
-            job_info = get_job(self.keys[0], proc_id, job_id)
-            if job_info:
-                status = job_info['status']
-                logger.info(f"descriptor={job_info['job_descriptor']}")
-                assert 'status' in status
-
-                logger.info(f"status={status}")
-                assert status['status'] != 'failed'
-
-                if status['status'] == 'successful':
-                    break
+        self.wait_for_job(proc_id, job_id)
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
@@ -498,19 +505,7 @@ class RTITestCase(unittest.TestCase):
         assert jobs is not None
         assert len(jobs) == 1
 
-        while True:
-            time.sleep(1)
-            job_info = get_job(self.keys[0], proc_id, job_id)
-            if job_info:
-                status = job_info['status']
-                logger.info(f"descriptor={job_info['job_descriptor']}")
-                logger.info(f"status={status}")
-                assert 'status' in status
-
-                assert status['status'] != 'failed'
-
-                if status['status'] == 'successful':
-                    break
+        self.wait_for_job(proc_id, job_id)
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
@@ -566,21 +561,7 @@ class RTITestCase(unittest.TestCase):
         # assert jobs is not None
         # assert len(jobs) == 1
 
-        while True:
-            time.sleep(1)
-            job_info = get_job(self.keys[0], proc_id, job_id)
-            if job_info:
-                status = job_info['status']
-                logger.info(f"descriptor={job_info['job_descriptor']}")
-                logger.info(f"status={status}")
-
-                assert 'status' in status
-                if status['status'] == 'failed':
-                    assert False
-                # assert status['status'] != 'failed'
-
-                if status['status'] == 'successful':
-                    break
+        self.wait_for_job(proc_id, job_id)
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
@@ -632,15 +613,7 @@ class RTITestCase(unittest.TestCase):
         assert jobs is not None
         assert len(jobs) == 1
 
-        while True:
-            time.sleep(1)
-            job_info = get_job(self.keys[0], proc_id, job_id)
-            if job_info:
-                status = job_info['status']
-                logger.info(f"descriptor={job_info['job_descriptor']}")
-                logger.info(f"status={status}")
-                if 'status' in status and status['status'] != 'running':
-                    break
+        self.wait_for_job(proc_id, job_id)
 
         jobs = get_jobs(self.keys[0], proc_id)
         logger.info(f"jobs={jobs}")
