@@ -198,7 +198,12 @@ def create_authorisation(url, auth_key, body=None):
     }
 
 
-def request_dor_add(address, sender, owner, content_path, data_type, data_format='json', creator='unknown'):
+def request_dor_add(address, sender, owner, content_path, task_descriptor, output_name, data_type, data_format='json', creator='unknown'):
+    recipe = {
+        'task_descriptor': task_descriptor,
+        'output_name': output_name
+    }
+
     url = f"http://{address[0]}:{address[1]}/repository"
     body = {
         'type': 'data_object',
@@ -207,7 +212,8 @@ def request_dor_add(address, sender, owner, content_path, data_type, data_format
             'data_type': data_type,
             'data_format': data_format,
             'created_t': get_timestamp_now(),
-            'created_by': creator
+            'created_by': creator,
+            'recipe': recipe
         }
     }
 
