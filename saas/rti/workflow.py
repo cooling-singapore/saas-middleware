@@ -24,6 +24,7 @@ class TaskWrapper(Thread):
         self.unresolved = {}
 
         self.is_done = False
+        self.is_successful = False
         self.outputs = {}
 
         for input_descriptor in task_descriptor['input']:
@@ -72,8 +73,11 @@ class TaskWrapper(Thread):
                     temp = item[0].split(":")
                     self.outputs[temp[1]] = item[1]
 
+            self.is_successful = True
+
         except Exception as e:
             logger.error(f"error while executing task wrapper: {e}")
+            self.is_successful = False
 
         self.is_done = True
 
@@ -100,6 +104,8 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
         super().__init__('workflow', rti)
 
     def execute(self, workflow_descriptor, working_directory, status):
+        status.update('status', 'running')
+
         pending = {}
         finished = {}
 
@@ -113,6 +119,7 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
         # waiting for pending tasks to be done
         status.update('stage', 'waiting for pending tasks')
         resolved = {}
+        success = True
         while pending:
             pacing = True
             for name in pending:
@@ -124,6 +131,10 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
                     for output_name in wrapper.outputs:
                         label = f"{wrapper.name}:{output_name}"
                         resolved[label] = wrapper.outputs[output_name]
+
+                    # if the task was unsuccessful, take note of it
+                    if not wrapper.is_successful:
+                        success = False
 
                     pacing = False
                     break
@@ -141,5 +152,5 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
             status.update(f"output:{output_name}", resolved[output_name])
 
         status.remove_all(['stage'])
-        status.update('status', 'successful')
+        return success
 

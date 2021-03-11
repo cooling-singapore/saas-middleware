@@ -138,8 +138,8 @@ def add_data_object_a(sender, owner):
             'created_by': 'heiko'
         }
     }
-    test_file_path = env.create_file_with_content('a.dat', json.dumps({'a': 1}))
-    test_obj_id = '2a0a01beaffbfd8bb757f4da783f3fd505a95e06306108b1b0325a4ead5b6ddb'
+    test_file_path = env.create_file_with_content('a.dat', json.dumps({'v': 1}))
+    test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
 
     authentication = create_authentication('POST:/repository', sender, body, test_file_path)
     content = {
@@ -163,14 +163,14 @@ def submit_job_value(sender, owner, proc_id):
                     'name': 'a',
                     'type': 'value',
                     'value': {
-                        'a': 1
+                        'v': 1
                     }
                 },
                 {
                     'name': 'b',
                     'type': 'value',
                     'value': {
-                        'b': 2
+                        'v': 2
                     }
                 }
             ],
@@ -206,7 +206,7 @@ def submit_job_reference(sender, owner, proc_id, a_obj_id):
                     'name': 'b',
                     'type': 'value',
                     'value': {
-                        'b': 2
+                        'v': 2
                     }
                 }
             ],
@@ -246,7 +246,7 @@ def submit_job_workflow(sender, owner, proc_id, obj_id_a):
                             'name': 'b',
                             'type': 'value',
                             'value': {
-                                'b': 2
+                                'v': 2
                             }
                         }
                     ],
@@ -267,7 +267,7 @@ def submit_job_workflow(sender, owner, proc_id, obj_id_a):
                             'name': 'b',
                             'type': 'value',
                             'value': {
-                                'b': 2
+                                'v': 2
                             }
                         }
                     ],

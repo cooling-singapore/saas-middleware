@@ -32,11 +32,11 @@ class DockerProcessor(unittest.TestCase):
         os.makedirs(self.working_dir)
         self.a_data_path = os.path.join(self.working_dir, "a")
         with open(self.a_data_path, 'w') as f:
-            json.dump({'a': 1}, f)
+            json.dump({'v': 1}, f)
 
         self.b_data_path = os.path.join(self.working_dir, "b")
         with open(self.b_data_path, 'w') as f:
-            json.dump({'b': 2}, f)
+            json.dump({'v': 2}, f)
 
     def tearDown(self):
         # Remove the directory after the test
@@ -56,7 +56,7 @@ class DockerProcessor(unittest.TestCase):
         c_data_path = os.path.join(self.working_dir, "c")
         with open(c_data_path, 'r') as f:
             c = json.load(f)
-            c_result = c.get('c')
+            c_result = c.get('v')
         self.assertEqual(3, c_result)
 
         processor.shutdown()
