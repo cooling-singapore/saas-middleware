@@ -200,7 +200,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             return False
 
         # push output data objects to DOR
-        if not self.push_output_data_objects(owner, working_directory, status):
+        if not self.push_output_data_objects(owner, working_directory, task_descriptor, status):
             return False
 
         return True
@@ -257,7 +257,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove_all(['input', 'input_content_path', 'input_status'])
         return successful
 
-    def push_output_data_objects(self, owner, wd_path, status):
+    def push_output_data_objects(self, owner, wd_path, task_descriptor, status):
         status.update('stage', 'push output data objects')
 
         successful = True
@@ -276,11 +276,12 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 successful = False
                 break
 
+            output_name = output_descriptor['name']
             data_type = output_descriptor['data_type']
             data_format = output_descriptor['data_format']
 
             obj_id = request_dor_add(self.rti.node.rest_api_address, self.rti.node.key, owner, output_content_path,
-                                     data_type, data_format)
+                                     task_descriptor, output_name, data_type, data_format)
 
             if not obj_id:
                 error = f"worker[{self.name}]: failed to add data object '{output_descriptor['name']}'to DOR."
