@@ -5,7 +5,7 @@ import {
     Grid
 } from '@material-ui/core';
 
-import initialData from './data/initialData';
+import initialData from './initialData';
 import Node from './node';
 import ProcessorTypeList from './processorTypeList';
 
