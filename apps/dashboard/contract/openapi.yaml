@@ -155,6 +155,94 @@ paths:
                 $ref: '#/components/schemas/dataObject'
         '400':
           description: Bad request
+  /users:
+    get:
+      summary: Get all user informatoin
+      tags:
+        - User
+      security:
+        - OAuth2: [admin]
+      responses:
+        '201':
+          description: Successfully get user information
+          content:
+            application/json:
+              schema: 
+                type: array
+                items: 
+                  $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+    post:
+      summary: Create a user
+      tags:
+        - User
+      security:
+        - OAuth2: [admin]
+      responses:
+        '201':
+          description: Successfully create user
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+  /users/{userId}:
+    parameters:
+      - in: path
+        name: userId
+        description: Id of the user
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get information of a specific user
+      tags:
+        - User
+      security:
+        - OAuth2: [admin]
+      responses:
+        '201':
+          description: Successfully get user information
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+    delete:
+      summary: delete a specific user
+      tags:
+        - User
+      security:
+        - OAuth2: [admin]
+      responses:
+        '201':
+          description: Successfully deleted user
+        '400':
+          description: Bad request
+    put:
+      summary: put a key to a user 
+      tags:
+        - User
+      security:
+        - OAuth2: [admin]
+      requestBody:
+        description: Key information
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key:
+                  $ref: '#/components/schemas/key'
+      responses:
+        '201':
+          description: Successfully deleted user
+        '400':
+          description: Bad request
 components:
   schemas:
     job:
@@ -258,6 +346,32 @@ components:
           type: string
           description: Code repository of the processor code
           example: https://github.com/cooling-singapore/mWRF_SG
+    user:
+      title: User
+      description: A user of the system
+      properties:
+        id:
+          type: string
+          description: User ID
+        type:
+          type: string
+          description: Type of the user, indicates privilege of the user 
+          example: admin, user
+        keys:
+          type: array
+          description: Keys of the user 
+          items:
+            $ref: '#/components/schemas/key'
+    key:
+      title: Key
+      description: A private key of a data object
+      properties:
+        key:
+          type: string
+          description: private key
+        dataObjectId:
+          type: string
+          description: Id of the data object
   securitySchemes:
     OAuth2:
       type: oauth2
