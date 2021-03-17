@@ -10,6 +10,13 @@ import Divider from '@material-ui/core/Divider';
 import IconButton from '@material-ui/core/IconButton';
 import Badge from '@material-ui/core/Badge';
 
+import {
+    BrowserRouter as Router,
+    Switch,
+    Route,
+    Link
+  } from "react-router-dom";
+
 import MenuIcon from '@material-ui/icons/Menu';
 import ChevronLeftIcon from '@material-ui/icons/ChevronLeft';
 import NotificationsIcon from '@material-ui/icons/Notifications';
@@ -17,6 +24,8 @@ import NotificationsIcon from '@material-ui/icons/Notifications';
 import Footer from './footer.js'
 import Setting from './setting.js'
 import DomainView from './domainView.js'
+import AdminView from './adminView.js'
+import Login from './login.js'
 
 const drawerWidth = 240;
 
@@ -130,8 +139,8 @@ export default function Dashboard() {
                     >
                         <MenuIcon />
                     </IconButton>
-                    <Typography variant='body1' component={'span'} color='inherit' noWrap className={classes.title}>
-                        <Typography>SaaS Manage Application</Typography>
+                    <Typography variant='h5' color='inherit' noWrap className={classes.title}>
+                        SaaS Middleware Dashboard
                     </Typography>
                     <IconButton color='inherit'>
                         <Badge badgeContent={4} color='secondary'>
@@ -141,7 +150,7 @@ export default function Dashboard() {
                     <Setting />
                 </Toolbar>
             </AppBar>
-
+            <Router>
             <Drawer
                 variant='permanent'
                 classes={{
@@ -159,10 +168,21 @@ export default function Dashboard() {
             <main className={classes.content}>
                 <div className={classes.appBarSpacer} />
                 {/* <Container className={classes.container}> */}
-                <DomainView />
+                <Switch>
+                    <Route path="/">
+                        <Login />
+                    </Route>
+                    <Route path="/domainView">
+                        <DomainView />
+                    </Route>
+                    <Route path="/adminView">
+                        <AdminView />
+                    </Route>
+                </Switch>
                 <Footer />
-                {/* </Container> */}
+                {/* </Container> */} 
             </main>
+            </Router>
         </div>
     );
 }
