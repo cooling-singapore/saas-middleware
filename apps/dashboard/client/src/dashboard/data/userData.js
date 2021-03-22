@@ -20,10 +20,16 @@ const userData = {
         "user1@test.com" : {email: "user1@test.com", password: "user1", role: "user", keys: [
             "key1"
         ]},
-        "user2@test.com" : {email: "user2@test.com", password: "user1", role: "user", keys: [
+        "user2@test.com" : {email: "user2@test.com", password: "user2", role: "user", keys: [
             "key2", "key3"
         ]}
-    }
+    },
+
+    userIndex: [ 
+        "admin1@test.com",
+        "user1@test.com",
+        "user2@test.com" 
+    ]
 } 
 
 export default userData;
