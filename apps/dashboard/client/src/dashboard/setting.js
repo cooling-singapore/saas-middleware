@@ -7,7 +7,14 @@ import {
 
 import SettingsIcon from '@material-ui/icons/Settings';
 
-export default function Setting() {
+import { useHistory } from "react-router-dom";
+
+export default function Setting(
+    {
+        handleSignOut,
+    }
+) {
+    const history = useHistory();
     const [anchorEl, setAnchorEl] = React.useState(null);
 
     const handleClick = (event) => {
@@ -16,6 +23,12 @@ export default function Setting() {
 
     const handleClose = () => {
         setAnchorEl(null);
+    };
+
+    const handleSignOutLocal = () => {
+        setAnchorEl(null);
+        handleSignOut();
+        history.push("/");
     };
 
     return (
@@ -30,9 +43,9 @@ export default function Setting() {
                 open={Boolean(anchorEl)}
                 onClose={handleClose}
             >
-                <MenuItem onClick={handleClose}>Setting 1</MenuItem>
-                <MenuItem onClick={handleClose}>Setting 2</MenuItem>
-                <MenuItem onClick={handleClose}>Setting 3</MenuItem>
+                {/* <MenuItem onClick={handleClose}>Setting 1</MenuItem>
+                <MenuItem onClick={handleClose}>Setting 2</MenuItem> */}
+                <MenuItem onClick={handleSignOutLocal}>Sign Out</MenuItem>
             </Menu>
         </div>
     );

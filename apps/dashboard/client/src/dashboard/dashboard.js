@@ -10,12 +10,19 @@ import Divider from '@material-ui/core/Divider';
 import IconButton from '@material-ui/core/IconButton';
 import Badge from '@material-ui/core/Badge';
 
+import ListItem from '@material-ui/core/ListItem';
+import ListItemIcon from '@material-ui/core/ListItemIcon';
+import ListItemText from '@material-ui/core/ListItemText';
+import DashboardIcon from '@material-ui/icons/Dashboard';
+import PeopleIcon from '@material-ui/icons/People';
+
 import {
     BrowserRouter as Router,
     Switch,
     Route,
-    Link
-  } from "react-router-dom";
+    Link,
+    Redirect
+} from "react-router-dom";
 
 import MenuIcon from '@material-ui/icons/Menu';
 import ChevronLeftIcon from '@material-ui/icons/ChevronLeft';
@@ -25,7 +32,7 @@ import Footer from './footer.js'
 import Setting from './setting.js'
 import DomainView from './domainView.js'
 import AdminView from './adminView.js'
-import Login from './login.js'
+import SignIn from './signIn.js'
 
 const drawerWidth = 240;
 
@@ -125,63 +132,100 @@ export default function Dashboard() {
         setDrawerOpen(false);
     };
 
+    const [isLoginPage, setIsLoginPage] = React.useState(true);
+    const [isAdmin, setIsAdmin] = React.useState(true);
+    const handleSignIn = (isAdminLogin) => {
+        setIsLoginPage(false);
+        setIsAdmin(isAdminLogin);
+    };
+
+    const handleSignOut = () => {
+        setIsLoginPage(true);
+        setIsAdmin(false);
+    };
+
     return (
         <div className={classes.root}>
             <CssBaseline />
+            <Router>
             <AppBar position='absolute' className={clsx(classes.appBar, open && classes.appBarShift)}>
                 <Toolbar className={classes.toolbar}>
-                    <IconButton
-                        edge='start'
-                        color='inherit'
-                        aria-label='open drawer'
-                        onClick={handleDrawerOpen}
-                        className={clsx(classes.menuButton, open && classes.menuButtonHidden)}
-                    >
-                        <MenuIcon />
-                    </IconButton>
+                    {!isLoginPage &&
+                        <IconButton
+                            edge='start'
+                            color='inherit'
+                            aria-label='open drawer'
+                            onClick={handleDrawerOpen}
+                            className={clsx(classes.menuButton, open && classes.menuButtonHidden)}
+                        >
+                            <MenuIcon />
+                        </IconButton>
+                    }
                     <Typography variant='h5' color='inherit' noWrap className={classes.title}>
                         SaaS Middleware Dashboard
                     </Typography>
-                    <IconButton color='inherit'>
-                        <Badge badgeContent={4} color='secondary'>
-                            <NotificationsIcon />
-                        </Badge>
-                    </IconButton>
-                    <Setting />
+                    {!isLoginPage &&
+                        <IconButton color='inherit'>
+                            <Badge badgeContent={4} color='secondary'>
+                                <NotificationsIcon />
+                            </Badge>
+                        </IconButton>
+                    }
+                    {!isLoginPage && 
+                        <Setting handleSignOut={handleSignOut} />
+                    }
                 </Toolbar>
             </AppBar>
-            <Router>
-            <Drawer
-                variant='permanent'
-                classes={{
-                    paper: clsx(classes.drawerPaper, !open && classes.drawerPaperClose),
-                }}
-                open={open}
-            >
-                <div className={classes.toolbarIcon}>
-                    <IconButton onClick={handleDrawerClose}>
-                        <ChevronLeftIcon />
-                    </IconButton>
-                </div>
-                <Divider />
-            </Drawer>
-            <main className={classes.content}>
-                <div className={classes.appBarSpacer} />
-                {/* <Container className={classes.container}> */}
-                <Switch>
-                    <Route path="/">
-                        <Login />
-                    </Route>
-                    <Route path="/domainView">
-                        <DomainView />
-                    </Route>
-                    <Route path="/adminView">
-                        <AdminView />
-                    </Route>
-                </Switch>
-                <Footer />
-                {/* </Container> */} 
-            </main>
+                {!isLoginPage &&
+                    <Drawer
+                        variant='permanent'
+                        classes={{
+                            paper: clsx(classes.drawerPaper, !open && classes.drawerPaperClose),
+                        }}
+                        open={open}
+                    >
+                        <div className={classes.toolbarIcon}>
+                            <IconButton onClick={handleDrawerClose}>
+                                <ChevronLeftIcon />
+                            </IconButton>
+                        </div>
+                        <Divider />
+                        <div>
+                            <ListItem button component={Link} to="/domainView">
+                                <ListItemIcon>
+                                    <DashboardIcon />
+                                </ListItemIcon>
+                                <ListItemText primary="Domain View" />
+                            </ListItem>
+                            {isAdmin &&
+                                <ListItem button component={Link} to="/adminView">
+                                    <ListItemIcon>
+                                        <PeopleIcon />
+                                    </ListItemIcon>
+                                    <ListItemText primary="User Management" />
+                                </ListItem>
+                            }
+                        </div>
+                    </Drawer>
+                }
+                <main className={classes.content}>
+                    <div className={classes.appBarSpacer} />
+                    <Switch>
+                        <Route exact path="/">
+                            <Redirect to="/login" />
+                        </Route>
+                        <Route path="/login">
+                            <SignIn onHandleLogin={handleSignIn} />
+                        </Route>
+                        <Route path="/domainView">
+                            <DomainView />
+                        </Route>
+                        <Route path="/adminView">
+                            <AdminView />
+                        </Route>
+                    </Switch>
+                    <Footer />
+                </main>
             </Router>
         </div>
     );
