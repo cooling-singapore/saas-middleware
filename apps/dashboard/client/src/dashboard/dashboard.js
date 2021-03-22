@@ -30,8 +30,8 @@ import NotificationsIcon from '@material-ui/icons/Notifications';
 
 import Footer from './footer.js'
 import Setting from './setting.js'
-import DomainView from './domainView.js'
-import AdminView from './adminView.js'
+import DomainView from './domainView/domainView.js'
+import AdminView from './adminView/adminView.js'
 import SignIn from './signIn.js'
 
 const drawerWidth = 240;
@@ -137,11 +137,13 @@ export default function Dashboard() {
     const handleSignIn = (isAdminLogin) => {
         setIsLoginPage(false);
         setIsAdmin(isAdminLogin);
+        setDrawerOpen(true);
     };
 
     const handleSignOut = () => {
         setIsLoginPage(true);
         setIsAdmin(false);
+        setDrawerOpen(false);
     };
 
     return (

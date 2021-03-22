@@ -158,7 +158,7 @@ export default function Processor(props) {
                 <DialogContent>
                     <DialogContentText id='alert-dialog-description'>
                         <Typography color="textSecondary">
-                            You will remove {props.item.name} from current node.
+                            You are removing {props.item.name} from current node.
             </Typography>
                     </DialogContentText>
                 </DialogContent>

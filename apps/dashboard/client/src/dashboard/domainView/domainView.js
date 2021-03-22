@@ -5,7 +5,7 @@ import {
     Grid
 } from '@material-ui/core';
 
-import initialData from './data/initialData';
+import initialData from '../data/initialData';
 import Node from './node';
 import ProcessorTypeList from './processorTypeList';
 
@@ -69,7 +69,7 @@ class DomainView extends React.Component {
             const start = this.state.nodes[sourceId];
             const finish = this.state.nodes[destinationId];
 
-            if (start == finish) {
+            if (start === finish) {
                 const newDataObjectIds = Array.from(start.dataObjectIds);
                 newDataObjectIds.splice(source.index, 1);
                 newDataObjectIds.splice(destination.index, 0, draggableId);
@@ -175,8 +175,9 @@ class DomainView extends React.Component {
         return (
             <Content>
                 {/* <div>
-          Update: {this.state.seconds}
-        </div> */}
+                        Update: {this.state.seconds}
+                    </div> 
+                */}
                 <DragDropContext onDragEnd={this.onDragEnd}>
                     <Grid
                         container
@@ -184,12 +185,13 @@ class DomainView extends React.Component {
                         direction='row'
                         justify='center'
                         alignItems='stretch'
+                        wrap='nowrap'
                         style={{ padding: '10px' }}
                     >
                         <Grid item style={{ backgroundColor: '#F4F4F4' }}>
                             <ProcessorTypeList processorTypes={this.state.processorTypes} processorTypeOrder={this.state.processorTypeOrder} />
                         </Grid>
-
+                    
                         {this.state.nodeOrder.map(nodeId => {
                             const node = this.state.nodes[nodeId];
                             const processors = node.processorIds.map(processorId => this.state.processors[processorId]);
