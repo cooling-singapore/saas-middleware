@@ -2,7 +2,7 @@ import React from 'react';
 import {
     Menu,
     MenuItem,
-    IconButton,
+    IconButton
 } from '@material-ui/core';
 
 import SettingsIcon from '@material-ui/icons/Settings';
@@ -47,6 +47,7 @@ export default function Setting(
                 <MenuItem onClick={handleClose}>Setting 2</MenuItem> */}
                 <MenuItem onClick={handleSignOutLocal}>Sign Out</MenuItem>
             </Menu>
+            
         </div>
     );
 }
