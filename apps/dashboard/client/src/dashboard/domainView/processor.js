@@ -64,16 +64,16 @@ export default function Processor(props) {
         setExpanded(!expanded);
     };
 
-    const [dialogOpen, setDialogOpen] = React.useState(false);
-    const handleUndeployClick = () => {
-        setDialogOpen(true);
-        console.log(dialogOpen);
-    }
+    const [open, setOpen] = React.useState(false);
 
-    const handleDialogCloseConfirm = () => {
-        props.onDeleteProcessor(props.item.id)
-        setDialogOpen(false);
-    }
+    const handleDialogOpen = () => {
+        setOpen(true);
+    };
+
+    const handleDialogClose = () => {
+        setOpen(false);
+        props.onDeleteProcessor(props.processorId);
+    };
 
     var statusLabel;
     var statusColor;
@@ -92,7 +92,6 @@ export default function Processor(props) {
             break;
     }
     return (
-
         <div>
             <Draggable
                 draggableId={props.item.id}
@@ -121,7 +120,7 @@ export default function Processor(props) {
                         <CardActions disableSpacing>
                             <Tooltip title="Undeploy">
                                 <IconButton aria-label="undeploy">
-                                    <DeleteOutlined fontSize="small" onClick={handleUndeployClick} />
+                                    <DeleteOutlined fontSize="small" onClick={handleDialogOpen} />
                                 </IconButton>
                             </Tooltip>
 
@@ -139,30 +138,7 @@ export default function Processor(props) {
                     </Container>
                 )}
             </Draggable>
-            <ConfirmDialog open={dialogOpen} title={"Undeploy" + props.item.name} text={"You are removing" + props.item.name + "from current node."} handleDialogCloseConfirm={handleDialogCloseConfirm}/>
-            {/* <Dialog
-                open={dialogOpen}
-                onClose={handleDialogClose}
-                aria-labelledby="alert-dialog-title"
-                aria-describedby="alert-dialog-description"
-            >
-                <DialogTitle id="alert-dialog-title"><Typography variant="subtitle1" component="span">Undeploy {props.item.name}</Typography></DialogTitle>
-                <DialogContent>
-                    <DialogContentText id="alert-dialog-description">
-                        <Typography color="textSecondary">
-                            You are removing {props.item.name} from current node.
-                        </Typography>
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleDialogClose} color="primary">
-                        Cancel
-                    </Button>
-                    <Button onClick={handleDialogCloseConfirm} color="primary" autoFocus>
-                        Confirm
-                    </Button>
-                </DialogActions>
-            </Dialog> */}
+            <ConfirmDialog open={open} text={"Are you sure to undeploy " + props.item.name + " from " + props.nodeName} handleDialogClose={handleDialogClose}/>
         </div>
     );
 
