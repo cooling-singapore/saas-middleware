@@ -9,6 +9,8 @@ import SettingsIcon from '@material-ui/icons/Settings';
 
 import { useHistory } from "react-router-dom";
 
+import ConfirmDialog from "./confirmDialog"
+
 export default function Setting(
     {
         handleSignOut,
@@ -16,6 +18,7 @@ export default function Setting(
 ) {
     const history = useHistory();
     const [anchorEl, setAnchorEl] = React.useState(null);
+    const [open, setOpen] = React.useState(false);
 
     const handleClick = (event) => {
         setAnchorEl(event.currentTarget);
@@ -29,6 +32,15 @@ export default function Setting(
         setAnchorEl(null);
         handleSignOut();
         history.push("/");
+    };
+
+    const handleDialogOpen = () => {
+        setOpen(true);
+    };
+
+    const handleDialogClose = () => {
+        setOpen(false);
+        handleSignOutLocal();
     };
 
     return (
@@ -45,9 +57,9 @@ export default function Setting(
             >
                 {/* <MenuItem onClick={handleClose}>Setting 1</MenuItem>
                 <MenuItem onClick={handleClose}>Setting 2</MenuItem> */}
-                <MenuItem onClick={handleSignOutLocal}>Sign Out</MenuItem>
+                <MenuItem onClick={handleDialogOpen}>Sign Out</MenuItem>
             </Menu>
-            
+            <ConfirmDialog open={open} text={"Are you sure to logout?"} handleDialogClose={handleDialogClose}/>
         </div>
     );
 }
