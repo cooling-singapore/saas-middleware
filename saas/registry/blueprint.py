@@ -49,7 +49,7 @@ def get_node_info():
         return create_signed_response(node, url, e.code, e.message)
 
 
-@blueprint.route('/', methods=['GET'])
+@blueprint.route('', methods=['GET'])
 def get_registry_contents():
     url = "GET:/"
 
