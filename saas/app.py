@@ -20,13 +20,9 @@ logging.basicConfig(
 logger = logging.getLogger('App')
 
 
-def create_node_instance(configuration):
-    # is the datastore path defined?
-    if 'datastore' not in configuration:
-        raise Exception("'datastore' not defined in configuration")
-
+def create_node_instance(parameters):
     # does the directory exist?
-    datastore_path = configuration['datastore']
+    datastore_path = parameters['datastore']
     if os.path.exists(datastore_path):
         # is it a directory?
         if not os.path.isdir(datastore_path):
@@ -39,19 +35,19 @@ def create_node_instance(configuration):
         os.makedirs(datastore_path)
 
     # check if there was a password provided in the config file
-    if 'password' in configuration:
-        logger.info(f"using password provided in config file")
-        password = configuration['password']
+    if parameters['password']:
+        logger.info(f"using provided password")
+        password = parameters['password']
 
     else:
         logger.info(f"no password provided for node identity")
         password = getpass.getpass("enter password: ")
 
-    p2p_server_address = get_address_from_string(configuration['p2p-server-address'])
-    boot_node_address = get_address_from_string(configuration['boot-node-address'])
-    rest_api_address = get_address_from_string(configuration['rest-api-address'])
+    p2p_server_address = get_address_from_string(parameters['p2p-server-address'])
+    boot_node_address = get_address_from_string(parameters['boot-node-address'])
+    rest_api_address = get_address_from_string(parameters['rest-api-address'])
 
-    instance = Node(configuration['name'], datastore_path, rest_api_address)
+    instance = Node(parameters['node-name'], datastore_path, rest_api_address)
     instance.initialise_identity(password)
     instance.start_server(p2p_server_address)
     instance.initialise_registry(boot_node_address)
@@ -59,9 +55,9 @@ def create_node_instance(configuration):
     return instance
 
 
-def initialise_app(configuration):
+def initialise_app(parameters):
     # create the node instance
-    node = create_node_instance(configuration)
+    node = create_node_instance(parameters)
 
     # create the Flask app
     app = Flask(__name__)
