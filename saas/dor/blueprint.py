@@ -32,7 +32,7 @@ def initialise(node_instance):
     node = node_instance
 
 
-@blueprint.route('/', methods=['POST'])
+@blueprint.route('', methods=['POST'])
 def add():
     url = "POST:/repository"
     body_specification = {
@@ -274,7 +274,7 @@ def transfer_ownership(obj_id):
         return create_signed_response(node, url, e.code, e.message)
 
 
-@blueprint.route('/', methods=['GET'])
+@blueprint.route('', methods=['GET'])
 def search_by_tags():
     url = f"GET:/repository"
 

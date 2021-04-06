@@ -30,7 +30,7 @@ def initialise(node_instance):
     node = node_instance
 
 
-@blueprint.route('/', methods=['GET'])
+@blueprint.route('', methods=['GET'])
 def get_deployed():
     url = "GET:/processor"
     try:
