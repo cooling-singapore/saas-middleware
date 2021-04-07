@@ -8,12 +8,10 @@ __status__ = "development"
 
 import logging
 
-from flask import Blueprint, request
+from flask import Blueprint, jsonify
 from flask_cors import CORS
 
-from saas.utilities.blueprint_helpers import create_signed_response
-from saas.utilities.blueprint_helpers import verify_request_authentication, verify_request_body
-from saas.utilities.blueprint_helpers import RequestError
+from saas.utilities.blueprint_helpers import request_manager
 from saas.json_schemas import task_descriptor_schema, workflow_descriptor_schema
 from saas.node import Node
 
@@ -31,188 +29,111 @@ def initialise(node_instance):
 
 
 @blueprint.route('', methods=['GET'])
+@request_manager.authentication_required
 def get_deployed():
-    url = "GET:/processor"
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        return create_signed_response(node, url, 200, {
-            'deployed': node.rti.get_deployed()
-        })
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify({
+        'deployed': node.rti.get_deployed()
+    }), 200
 
 
 @blueprint.route('/<proc_id>', methods=['POST'])
+@request_manager.authentication_required
 def deploy(proc_id):
-    url = f"POST:/processor/{proc_id}"
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-        # TODO: this should require authorisation - only whose authorisation?
-
-        descriptor = node.rti.deploy(proc_id)
-        if descriptor:
-            return create_signed_response(node, url, 201, {
-                'descriptor': descriptor
-            })
-        else:
-            return create_signed_response(node, url, 404, f"Processor {proc_id} not found.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    # TODO: this should require authorisation - only whose authorisation?
+    descriptor = node.rti.deploy(proc_id)
+    if descriptor:
+        return jsonify({
+            'descriptor': descriptor
+        }), 201
+    else:
+        return jsonify(f"Processor {proc_id} not found."), 404
 
 
 @blueprint.route('/<proc_id>', methods=['DELETE'])
+@request_manager.authentication_required
 def undeploy(proc_id):
-    url = f"DELETE:/processor/{proc_id}"
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-        # TODO: this should require authorisation - only whose authorisation?
-
-        if node.rti.undeploy(proc_id):
-            return create_signed_response(node, url, 200)
-        else:
-            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    # TODO: this should require authorisation - only whose authorisation?
+    if node.rti.undeploy(proc_id):
+        return jsonify(f"Processor {proc_id} deployed."), 200
+    else:
+        return jsonify(f"Processor {proc_id} not deployed."), 404
 
 
-@blueprint.route('/processor/<proc_id>', methods=['GET'])
-@blueprint.route('/processor/<proc_id>/descriptor', methods=['GET'])
+@blueprint.route('/<proc_id>', methods=['GET'])
+@blueprint.route('/<proc_id>/descriptor', methods=['GET'])
+@request_manager.authentication_required
 def get_descriptor(proc_id):
-    url = f"GET:/processor/{proc_id}/descriptor"
-
     try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
         descriptor = node.rti.get_descriptor(proc_id)
-        if descriptor:
-            return create_signed_response(node, url, 200, {
-                'descriptor': descriptor
-            })
-        else:
-            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
+        return jsonify({
+            'descriptor': descriptor
+        }), 200
+    except FileNotFoundError:
+        pass
 
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify(f"Processor {proc_id} not found."), 404
+
+
+job_body_specification = {
+    'type': 'object',
+    'properties': {
+        'type': {'type': 'string', 'enum': ['workflow', 'task']},
+    },
+    'if': {
+        'properties': {'type': {'const': 'workflow'}}
+    },
+    'then': {
+        'properties': {
+            'descriptor': workflow_descriptor_schema
+        }
+    },
+    'else': {
+        'properties': {
+            'descriptor': task_descriptor_schema
+        }
+    },
+    'required': ['type', 'descriptor']
+}
 
 
 @blueprint.route('/<proc_id>/jobs', methods=['POST'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(job_body_specification)
 def submit_job(proc_id):
-    url = f"POST:/processor/{proc_id}/jobs"
-    body_specification = {
-        'type': 'object',
-        'properties': {
-            'type': {'type': 'string', 'enum': ['workflow', 'task']},
-        },
-        'if': {
-            'properties': {'type': {'const': 'workflow'}}
-        },
-        'then': {
-            'properties': {
-                'descriptor': workflow_descriptor_schema
-            }
-        },
-        'else': {
-            'properties': {
-                'descriptor': task_descriptor_schema
-            }
-        },
-        'required': ['type', 'descriptor']
-    }
+    body = request_manager.get_request_variable('body')
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: not required
-        logger.info(f"body: {body}")
-        logger.info(f"body_specification: {body_specification}")
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: not required
-
-        # determine processor descriptor and id, then submit the job
-        descriptor = body['descriptor']
-        proc_id = descriptor['processor_id'] if body['type'] == 'task' else 'workflow'
-        job_id = node.rti.submit(proc_id, descriptor)
-        if job_id is not None:
-            return create_signed_response(node, url, 201, {
-                'job_id': job_id
-            })
-        else:
-            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    # determine processor descriptor and id, then submit the job
+    descriptor = body['descriptor']
+    proc_id = descriptor['processor_id'] if body['type'] == 'task' else 'workflow'
+    job_id = node.rti.submit(proc_id, descriptor)
+    if job_id is not None:
+        return jsonify({
+            'job_id': job_id
+        }), 201
+    else:
+        return jsonify(f"Processor {proc_id} not deployed."), 404
 
 
 @blueprint.route('/<proc_id>/jobs', methods=['GET'])
+@request_manager.authentication_required
 def get_jobs(proc_id):
-    url = f"GET:/processor/{proc_id}/jobs"
-
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        jobs = node.rti.get_jobs(proc_id)
-        if jobs is not None:
-            return create_signed_response(node, url, 200, {
-                'jobs': jobs
-            })
-        else:
-            return create_signed_response(node, url, 404, f"Processor {proc_id} not deployed.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    jobs = node.rti.get_jobs(proc_id)
+    if jobs is not None:
+        return jsonify({
+            'jobs': jobs
+        }), 200
+    else:
+        return jsonify(f"Processor {proc_id} not deployed."), 404
 
 
 @blueprint.route('/<proc_id>/jobs/<job_id>', methods=['GET'])
+@request_manager.authentication_required
 def get_job(proc_id, job_id):
-    url = f"GET:/processor/{proc_id}/jobs/{job_id}"
-
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        job_info = node.rti.get_job(job_id)
-        if job_info:
-            return create_signed_response(node, url, 200, {
-                'job_descriptor': job_info['job_descriptor'],
-                'status': job_info['status']
-            })
-        else:
-            return create_signed_response(node, url, 404, f"No job with id {job_id}.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    job_info = node.rti.get_job(job_id)
+    if job_info:
+        return jsonify({
+            'job_descriptor': job_info['job_descriptor'],
+            'status': job_info['status']
+        }), 200
+    else:
+        return jsonify(f"No job with id {job_id}."), 404

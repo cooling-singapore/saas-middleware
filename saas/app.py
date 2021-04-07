@@ -5,6 +5,7 @@ import getpass
 from flask import Flask
 
 from saas.node import Node
+from saas.utilities.blueprint_helpers import request_manager
 from saas.utilities.general_helpers import get_address_from_string
 
 import saas.dor.blueprint as dor_blueprint
@@ -65,6 +66,7 @@ def initialise_app(configuration):
 
     # create the Flask app
     app = Flask(__name__)
+    request_manager.init_app(app, node)
 
     # register the registry blueprint
     logger.info("register SaaS Node Registry service.")

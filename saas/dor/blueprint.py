@@ -9,13 +9,11 @@ __status__ = "development"
 import logging
 import os
 
-from flask import Blueprint, request, send_from_directory
+from flask import Blueprint, request, send_from_directory, jsonify
 from flask_cors import CORS
 
 from saas.json_schemas import data_object_descriptor_schema, processor_descriptor_schema
-from saas.utilities.blueprint_helpers import create_signed_response
-from saas.utilities.blueprint_helpers import verify_request_authentication, verify_request_body, verify_request_files
-from saas.utilities.blueprint_helpers import verify_authorisation_by_owner, verify_authorisation_by_user, RequestError
+from saas.utilities.blueprint_helpers import request_manager
 from saas.eckeypair import ECKeyPair
 from saas.node import Node
 
@@ -32,10 +30,7 @@ def initialise(node_instance):
     node = node_instance
 
 
-@blueprint.route('', methods=['POST'])
-def add():
-    url = "POST:/repository"
-    body_specification = {
+data_body_specification = {
         'type': 'object',
         'properties': {
             'type': {'type': 'string', 'enum': ['data_object', 'processor']},
@@ -57,337 +52,190 @@ def add():
         'required': ['type', 'owner_public_key', 'descriptor']
     }
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
 
-        # verification of contents: body and files
-        verify_request_body(body, body_specification)
-        verify_request_files(files, ['attachment'])
+@blueprint.route('', methods=['POST'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(data_body_specification)
+@request_manager.verify_request_files(['attachment'])
+def add():
+    body = request_manager.get_request_variable('body')
+    files = request_manager.get_request_variable('files')
 
-        # verification of authorisation: not required
-
-        status, result = node.dor.add(body['owner_public_key'], body['descriptor'], files['attachment'])
-        return create_signed_response(node, url, status, result)
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    status, result = node.dor.add(body['owner_public_key'], body['descriptor'], files['attachment'])
+    return jsonify(result), status
 
 
 @blueprint.route('/<obj_id>', methods=['DELETE'])
+@request_manager.authentication_required
+@request_manager.verify_authorisation_by_owner('obj_id')
 def delete(obj_id):
-    url = f"DELETE:/repository/{obj_id}"
-
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url)
-
-        status, result = node.dor.delete(obj_id)
-        return create_signed_response(node, url, status, result)
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    status, result = node.dor.delete(obj_id)
+    return jsonify(result), status
 
 
 @blueprint.route('/<obj_id>', methods=['GET'])
 @blueprint.route('/<obj_id>/descriptor', methods=['GET'])
+@request_manager.authentication_required
 def get_descriptor(obj_id):
-    url = f"GET:/repository/{obj_id}/descriptor"
-    logger.info(f"url={url}")
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        status, result = node.dor.get_descriptor(obj_id)
-        return create_signed_response(node, url, status, result)
-
-    except RequestError as e:
-        logger.info(f"exception: {e}")
-        return create_signed_response(node, url, e.code, e.message)
+    status, result = node.dor.get_descriptor(obj_id)
+    return jsonify(result), status
 
 
 @blueprint.route('/<obj_id>/content', methods=['GET'])
+@request_manager.authentication_required
+@request_manager.verify_authorisation_by_user('obj_id')
 def get_content(obj_id):
-    url = f"GET:/repository/{obj_id}/content"
+    # get the content hash for the data object
+    c_hash = node.dor.get_content_hash(obj_id)
+    if not c_hash:
+        return jsonify(f"Content '{c_hash}' for data object '{obj_id}' not found."), 500
 
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: required from any user that has access permission
-        verify_authorisation_by_user(request, obj_id, node, url)
-
-        # get the content hash for the data object
-        c_hash = node.dor.get_content_hash(obj_id)
-        if not c_hash:
-            return create_signed_response(node, url, 500, f"Content '{c_hash}' for data object '{obj_id}' not found.")
-
-        # stream the file content
-        head, tail = os.path.split(node.dor.obj_content_path(c_hash))
-        return send_from_directory(head, tail, as_attachment=True)
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    # stream the file content
+    head, tail = os.path.split(node.dor.obj_content_path(c_hash))
+    return send_from_directory(head, tail, as_attachment=True)
 
 
 @blueprint.route('/<obj_id>/access', methods=['GET'])
+@request_manager.authentication_required
 def get_access_permissions(obj_id):
-    url = f"GET:/repository/{obj_id}/access"
+    return jsonify({
+        "access": node.dor.get_access_permissions(obj_id)
+    }), 200
 
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
 
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        return create_signed_response(node, url, 200, {
-            "access": node.dor.get_access_permissions(obj_id)
-        })
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+user_key_body_specification = {
+    'user_public_key': {
+        'type': 'string'
+    }
+}
 
 
 @blueprint.route('/<obj_id>/access', methods=['POST'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(user_key_body_specification)
+@request_manager.verify_authorisation_by_owner('obj_id')
 def grant_access(obj_id):
-    url = f"POST:/repository/{obj_id}/access"
-    body_specification = {
-        'user_public_key': {
-            'type': 'string'
-        }
-    }
+    body = request_manager.get_request_variable('body')
+    # grant access permissions to the user
+    user = ECKeyPair.from_public_key_string(body['user_public_key'])
+    node.dor.grant_access(obj_id, user)
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: body only
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url, body)
-
-        # grant access permissions to the user
-        user = ECKeyPair.from_public_key_string(body['user_public_key'])
-        node.dor.grant_access(obj_id, user)
-
-        return create_signed_response(node, url, 200, "Access granted.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify("Access granted."), 200
 
 
 @blueprint.route('/<obj_id>/access', methods=['DELETE'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(user_key_body_specification)
+@request_manager.verify_authorisation_by_owner('obj_id')
 def revoke_access(obj_id):
-    url = f"DELETE:/repository/{obj_id}/access"
-    body_specification = {
-        'user_public_key': {
-            'type': 'string'
-        }
-    }
+    body = request_manager.get_request_variable('body')
+    # revoke access permissions from the user
+    user = ECKeyPair.from_public_key_string(body['user_public_key'])
+    node.dor.revoke_access(obj_id, user)
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: body only
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url, body)
-
-        # revoke access permissions from the user
-        user = ECKeyPair.from_public_key_string(body['user_public_key'])
-        node.dor.revoke_access(obj_id, user)
-
-        return create_signed_response(node, url, 200, "Access revoked.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify("Access revoked."), 200
 
 
 @blueprint.route('/<obj_id>/owner', methods=['GET'])
+@request_manager.authentication_required
 def get_owner(obj_id):
-    url = f"GET:/repository/{obj_id}/owner"
+    owner = node.dor.get_owner(obj_id)
+    if owner:
+        return jsonify({
+            "owner_iid": owner.iid,
+            "owner_public_key": owner.public_as_string()
+        }), 200
+    else:
+        return jsonify("Data object '{obj_id}' not found."), 404
 
-    try:
-        # verification of authentication: required
-        verify_request_authentication(url, request)
 
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        # return owner information
-        owner = node.dor.get_owner(obj_id)
-        if owner:
-            return create_signed_response(node, url, 200, {
-                "owner_iid": owner.iid,
-                "owner_public_key": owner.public_as_string()
-            })
-        else:
-            return create_signed_response(node, url, 404, f"Data object '{obj_id}' not found.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+owner_key_body_specification = {
+    'new_owner_public_key': {
+        'type': 'string'
+    }
+}
 
 
 @blueprint.route('/<obj_id>/owner', methods=['PUT'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(owner_key_body_specification)
+@request_manager.verify_authorisation_by_owner('obj_id')
 def transfer_ownership(obj_id):
-    url = f"PUT:/repository/{obj_id}/owner"
-    body_specification = {
-        'new_owner_public_key': {
-            'type': 'string'
-        }
-    }
+    body = request_manager.get_request_variable('body')
+    # transfer ownership
+    new_owner = ECKeyPair.from_public_key_string(body['new_owner_public_key'])
+    node.dor.update_ownership(obj_id, new_owner)
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: body only
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url, body)
-
-        # transfer ownership
-        new_owner = ECKeyPair.from_public_key_string(body['new_owner_public_key'])
-        node.dor.update_ownership(obj_id, new_owner)
-        return create_signed_response(node, url, 200,
-                                      f"Ownership of data object '{obj_id}' transferred to '{new_owner.iid}'.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify(f"Ownership of data object '{obj_id}' transferred to '{new_owner.iid}'."), 200
 
 
 @blueprint.route('', methods=['GET'])
+@request_manager.authentication_required
 def search_by_tags():
-    url = f"GET:/repository"
-
     key_criterion = request.args.get('key_criterion')
-    if key_criterion:
-        url = f"{url}?key_criterion={key_criterion}"
-
     value_criterion = request.args.get('value_criterion')
-    if value_criterion:
-        url = f"{url}&value_criterion={value_criterion}"
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        return create_signed_response(node, url, 200, {
-            "objects": node.dor.search_by_tags(key_criterion, value_criterion)
-        })
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify({
+        "objects": node.dor.search_by_tags(key_criterion, value_criterion)
+    }), 200
 
 
 @blueprint.route('/<obj_id>/tags', methods=['GET'])
+@request_manager.authentication_required
 def get_tags(obj_id):
-    url = f"GET:/repository/{obj_id}/tags"
+    return jsonify({
+        "tags": node.dor.get_tags(obj_id)
+    }), 200
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
 
-        # verification of contents: not required
-
-        # verification of authorisation: not required
-
-        return create_signed_response(node, url, 200, {
-            "tags": node.dor.get_tags(obj_id)
-        })
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+tags_body_specification = {
+    'tags': {
+        'type': 'array',
+        'items': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string'},
+                'value': {'type': 'string'}
+            },
+            'required': ['key', 'value']
+        }
+    }
+}
 
 
 @blueprint.route('/<obj_id>/tags', methods=['PUT'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(tags_body_specification)
+@request_manager.verify_authorisation_by_owner('obj_id')
 def update_tags(obj_id):
-    url = f"PUT:/repository/{obj_id}/tags"
-    body_specification = {
-        'tags': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'key': {'type': 'string'},
-                    'value': {'type': 'string'}
-                },
-                'required': ['key', 'value']
-            }
+    body = request_manager.get_request_variable('body')
+    # grant access permissions to the user
+    node.dor.update_tags(obj_id, body['tags'])
+
+    return jsonify("Tags updated."), 200
+
+
+delete_tags_body_specification = {
+    'tags': {
+        'type': 'array',
+        'items': {
+            'type': 'object',
+            'properties': {
+                'key': {'type': 'string'}
+            },
+            'required': ['key']
         }
     }
-
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: body only
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url, body)
-
-        # grant access permissions to the user
-        node.dor.update_tags(obj_id, body['tags'])
-
-        return create_signed_response(node, url, 200, "Tags updated.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+}
 
 
 @blueprint.route('/<obj_id>/tags', methods=['DELETE'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(delete_tags_body_specification)
+@request_manager.verify_authorisation_by_owner('obj_id')
 def remove_tags(obj_id):
-    url = f"DELETE:/repository/{obj_id}/tags"
-    body_specification = {
-        'tags': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'key': {'type': 'string'}
-                },
-                'required': ['key']
-            }
-        }
-    }
+    body = request_manager.get_request_variable('body')
+    # grant access permissions to the user
+    node.dor.remove_tags(obj_id, body['tags'])
 
-    try:
-        # verification of authentication: required
-        body, files = verify_request_authentication(url, request)
-
-        # verification of contents: body only
-        verify_request_body(body, body_specification)
-
-        # verification of authorisation: required from owner of data object
-        verify_authorisation_by_owner(request, obj_id, node, url, body)
-
-        # grant access permissions to the user
-        node.dor.remove_tags(obj_id, body['tags'])
-
-        return create_signed_response(node, url, 200, "Tags updated.")
-
-    except RequestError as e:
-        return create_signed_response(node, url, e.code, e.message)
+    return jsonify("Tags updated."), 200
