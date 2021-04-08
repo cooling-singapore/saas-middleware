@@ -289,7 +289,7 @@ class SaaSRequestManager:
             :param e: RequestError object
             :return: Response
             """
-            logger.error(f'{type(e).__name__}: {e.message}')
+            logger.error(e)
             r = request
             url = f'{r.method}:{r.path}'
             return create_signed_response(self.node, url, e.code, e.message)
@@ -345,7 +345,6 @@ class SaaSRequestManager:
                     _path += f'{k}={v}&'
                 _path = _path[:-1]
             url = f'{r.method}:{_path}'
-            logger.debug(url)
             body, files = verify_request_authentication(url, r)
 
             self._set_request_variable('body', body)
