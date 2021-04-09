@@ -6,17 +6,18 @@ __author__ = "Heiko Aydt"
 __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
+import functools
 import os
 import logging
 import json
 import tempfile
 import flask
 import requests
+from flask import request, Flask, g
 
 from jsonschema import validate, ValidationError
 from saas.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import get_timestamp_now, all_in_dict
-
 
 logger = logging.getLogger('Utilities.blueprint_helpers')
 
@@ -265,3 +266,140 @@ def request_rti_job_status(address, sender, proc_id, job_id):
     r = requests.get(url, data=content).json()
     return (r['reply']['job_descriptor'], r['reply']['status']) \
         if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
+
+
+class SaaSRequestManager:
+    def __init__(self, app: Flask = None, node=None):
+        self.node = node
+
+        if app is not None and node is not None:
+            self.init_app(app, node)
+
+    def init_app(self, app: Flask, node):
+        self.node = node
+        self._set_error_handler_callbacks(app)
+        self._set_response_modifier(app)
+
+    def _set_error_handler_callbacks(self, app: Flask):
+        @app.errorhandler(RequestError)
+        def handle_failed_request(e: RequestError):
+            """
+            Handles any failed request such as authentication errors
+
+            :param e: RequestError object
+            :return: Response
+            """
+            logger.error(e)
+            r = request
+            url = f'{r.method}:{r.path}'
+            return create_signed_response(self.node, url, e.code, e.message)
+
+    def _set_response_modifier(self, app):
+        def sign_response(response):
+            """
+            Sign the response before sending it to client
+
+            :param response:
+            :return:
+            """
+            # Do not sign any response that are not 200 code or is streamed data
+            if response.status_code >= 300 or response.is_streamed:
+                return response
+
+            data = None
+            try:
+                data = json.loads(response.get_data(as_text=True))
+            except json.decoder.JSONDecodeError as e:
+                logger.error('unable to decode response data')
+            r = request
+            url = f'{r.method}:{r.path}'
+            return create_signed_response(self.node, url, response.status_code, data)
+
+        @app.after_request
+        def _after_request(response):
+            return sign_response(response)
+
+    def _set_request_variable(self, name: str, value):
+        """
+        Stores request variables (e.g. body or files) to global context to be retrieved by decorators.
+
+        :param name: Name of variable
+        :param value: Value of variable
+        """
+        if '_request_var' not in g:
+            g._request_var = {}
+        g._request_var[name] = value
+
+    def get_request_variable(self, name: str):
+        values = g.get('_request_var', {})
+        return values.get(name, None)
+
+    def authentication_required(self, func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            r = request
+            _path = r.path
+            if r.args:  # Add query string to path if exists
+                _path += '?'
+                for k, v in r.args.items():
+                    _path += f'{k}={v}&'
+                _path = _path[:-1]
+            url = f'{r.method}:{_path}'
+            body, files = verify_request_authentication(url, r)
+
+            self._set_request_variable('body', body)
+            self._set_request_variable('files', files)
+            return func(*args, **kwargs)
+        return wrapper
+
+    def verify_request_body(self, body_specification):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                body = self.get_request_variable('body')
+                verify_request_body(body, body_specification)
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def verify_request_files(self, required_files=None):
+        if required_files is None:
+            required_files = []
+
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                files = self.get_request_variable('files')
+                verify_request_files(files, required_files)
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def verify_authorisation_by_owner(self, obj_id: str):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                r = request
+                url = f'{r.method}:{r.path}'
+                _obj_id = kwargs[obj_id]
+                body = self.get_request_variable('body')
+                verify_authorisation_by_owner(r, _obj_id, self.node, url, body)
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def verify_authorisation_by_user(self, obj_id: str):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                r = request
+                url = f'{r.method}:{r.path}'
+                _obj_id = kwargs[obj_id]
+                body = self.get_request_variable('body')
+                verify_authorisation_by_user(r, _obj_id, self.node, url, body)
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+
+request_manager = SaaSRequestManager()
