@@ -18,8 +18,6 @@ export default function Setting(
 ) {
     const history = useHistory();
     const [anchorEl, setAnchorEl] = React.useState(null);
-    const [open, setOpen] = React.useState(false);
-
     const handleClick = (event) => {
         setAnchorEl(event.currentTarget);
     };
@@ -34,12 +32,17 @@ export default function Setting(
         history.push("/");
     };
 
-    const handleDialogOpen = () => {
-        setOpen(true);
+    const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
+    const handleConfirmDialogOpen = () => {
+        setConfirmDialogOpen(true);
     };
 
-    const handleDialogClose = () => {
-        setOpen(false);
+    const handleConfirmDialogClose = () => {
+        setConfirmDialogOpen(false);
+    };
+
+    const handleConfirmDialogConfirm = () => {
+        handleConfirmDialogClose();
         handleSignOutLocal();
     };
 
@@ -57,9 +60,9 @@ export default function Setting(
             >
                 {/* <MenuItem onClick={handleClose}>Setting 1</MenuItem>
                 <MenuItem onClick={handleClose}>Setting 2</MenuItem> */}
-                <MenuItem onClick={handleDialogOpen}>Sign Out</MenuItem>
+                <MenuItem onClick={handleConfirmDialogOpen}>Sign Out</MenuItem>
             </Menu>
-            <ConfirmDialog open={open} text={"Are you sure to logout?"} handleDialogClose={handleDialogClose}/>
+            <ConfirmDialog open={confirmDialogOpen} text={"Are you sure to logout?"} handleDialogCancel={handleConfirmDialogClose} handleDialogConfirm={handleConfirmDialogConfirm} />
         </div>
     );
 }

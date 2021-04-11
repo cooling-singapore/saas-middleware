@@ -50,7 +50,7 @@ export default function SignIn({
         {
             if(userInfo.users[email].password === password)
             {
-                onHandleLogin(userInfo.users[email].role === "admin" ? true : false, true);
+                onHandleLogin(userInfo.users[email].role === "Admin" ? true : false, true);
                 history.push("/domainView");
             }
         } 

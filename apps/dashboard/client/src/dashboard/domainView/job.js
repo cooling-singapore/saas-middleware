@@ -22,7 +22,7 @@ export default function Job(props) {
         console.log("handle detail");
     };
     return ( 
-        <div>
+        <React.Fragment>
             <Grid container
             spacing={2}
             direction='row'
@@ -41,6 +41,6 @@ export default function Job(props) {
             </Grid>  
             </Grid>
             <Divider />
-        </div>
+        </React.Fragment>
     );
 }

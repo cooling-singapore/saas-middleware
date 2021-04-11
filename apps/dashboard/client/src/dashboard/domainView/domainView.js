@@ -36,6 +36,8 @@ class DomainView extends React.Component {
         if (type === 'processor') {
             if (destination.droppableId.includes('processor') && source.droppableId === 'processorType') {
                 var id = 'processor-' + (this.state.processorCount + 1);
+                
+                //TODO: use setstate to change state
                 this.state.processors[id] = { id: id, name: 'Processor ' + (this.state.processorCount + 1), type: this.state.processorTypes[draggableId].type, status: 1, jobs: [] };
 
                 var destinationId = destination.droppableId.replace('processor', '');
@@ -199,7 +201,6 @@ class DomainView extends React.Component {
 
                             return <Node key={node.id} node={node} processors={processors} dataObjects={dataObjects} onDeleteProcessor={this.onDeleteProcessor} handleClickOpen={this.handleClickOpen} handleClose={this.handleClose} />;
                         })}
-
                     </Grid>
                 </DragDropContext>
             </Content>
