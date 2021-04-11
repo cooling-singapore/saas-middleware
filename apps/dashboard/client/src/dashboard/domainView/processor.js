@@ -10,6 +10,7 @@ import {
     Tooltip,
     Collapse,
     IconButton,
+    Typography,
     makeStyles
 } from "@material-ui/core";
 
@@ -35,16 +36,10 @@ const Container = styled(Card)`
     background-color: ${props => (props.isDragDisabled ? "lightgrey" : props.isDragging ? "lightgreen" : "white")};
 `;
 
-const Title = styled.div`
-    font-size: small;
-    font-weight: bold;
-`;
-
-const Type = styled.div`
-    font-size: x-small;
-`;
-
 const useStyles = makeStyles((theme) => ({
+    noTextTransform: {
+        textTransform: 'none'
+    },
     expand: {
         transform: "rotate(0deg)",
         marginLeft: "auto",
@@ -64,24 +59,24 @@ export default function Processor(props) {
         setExpanded(!expanded);
     };
 
-    const [open, setOpen] = React.useState(false);
-
-    const handleDialogOpen = () => {
-        setOpen(true);
+    const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
+    const handleConfirmDialogOpen = () => {
+        setConfirmDialogOpen(true);
     };
 
-    const handleDialogClose = () => {
-        setOpen(false);
+    const handleConfirmDialogClose = () => {
+        setConfirmDialogOpen(false);
+        
+    };
+
+    const handleConfirmDialogConfirm = () => {
+        handleConfirmDialogClose();
         props.onDeleteProcessor(props.processorId);
     };
 
     var statusLabel;
     var statusColor;
     switch (props.item.status) {
-        case 1:
-            statusLabel = "Idle";
-            statusColor = green[500];
-            break;
         case 2:
             statusLabel = "Work";
             statusColor = yellow[500];
@@ -90,9 +85,14 @@ export default function Processor(props) {
             statusLabel = "Busy";
             statusColor = red[500];
             break;
+        case 1:
+        default:
+            statusLabel = "Idle";
+            statusColor = green[500];
+            break;
     }
     return (
-        <div>
+        <React.Fragment>
             <Draggable
                 draggableId={props.item.id}
                 index={props.index}
@@ -111,8 +111,8 @@ export default function Processor(props) {
                                     <FiberManualRecord fontSize="large" style={{ color: statusColor }} />
                                 </Tooltip>
                             }
-                            title={<Title>{props.item.name}</Title>}
-                            subheader={<Type>{props.item.type}</Type>}
+                            title={<Typography variant="subtitle1" className={classes.noTextTransform} gutterBottom>{props.item.name}</Typography>}
+                            subheader={<Typography variant="body2">{props.item.type}</Typography>}
                         />
                         {/* <CardContent>
                         //TODO: display node status
@@ -120,7 +120,7 @@ export default function Processor(props) {
                         <CardActions disableSpacing>
                             <Tooltip title="Undeploy">
                                 <IconButton aria-label="undeploy">
-                                    <DeleteOutlined fontSize="small" onClick={handleDialogOpen} />
+                                    <DeleteOutlined fontSize="small" onClick={handleConfirmDialogOpen} />
                                 </IconButton>
                             </Tooltip>
 
@@ -138,8 +138,8 @@ export default function Processor(props) {
                     </Container>
                 )}
             </Draggable>
-            <ConfirmDialog open={open} text={"Are you sure to undeploy " + props.item.name + " from " + props.nodeName} handleDialogClose={handleDialogClose}/>
-        </div>
+            <ConfirmDialog open={confirmDialogOpen} text={"Are you sure to undeploy " + props.item.name + " from " + props.nodeName} handleDialogCancel={handleConfirmDialogClose} handleDialogConfirm={handleConfirmDialogConfirm}/>
+        </React.Fragment>
     );
 
 }

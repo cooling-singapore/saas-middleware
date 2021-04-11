@@ -12,13 +12,14 @@ import {
 export default function ConfirmDialog({
     open,
     text,
-    handleDialogClose
+    handleDialogCancel,
+    handleDialogConfirm
 })
 {
     return(
         <Dialog
             open={open}
-            onClose={handleDialogClose}
+            onClose={handleDialogCancel}
             aria-labelledby='alert-dialog-title'
             aria-describedby='alert-dialog-description'
         >
@@ -31,10 +32,10 @@ export default function ConfirmDialog({
                 </DialogContentText>
             </DialogContent>
             <DialogActions>
-                <Button onClick={handleDialogClose} color='primary'>
+                <Button onClick={handleDialogCancel} color='primary'>
                     Cancel
                 </Button>
-                <Button onClick={handleDialogClose} color='primary' autoFocus>
+                <Button onClick={handleDialogConfirm} color='primary' autoFocus>
                     Confirm
                 </Button>
             </DialogActions>
