@@ -26,7 +26,7 @@ export default function ConfirmDialog({
             {/* <DialogTitle id='alert-dialog-title'><Typography variant="subtitle1" component="span">{title}</Typography></DialogTitle> */}
             <DialogContent>
                 <DialogContentText id='alert-dialog-description'>
-                    <Typography color="textSecondary">
+                    <Typography>
                         {text}
                     </Typography>
                 </DialogContentText>
