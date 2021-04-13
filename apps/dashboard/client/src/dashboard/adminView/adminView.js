@@ -5,7 +5,13 @@ import {
     Grid,
     Card,
     IconButton,
-    Tooltip
+    Tooltip,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    Input,
+    Button,
+    Typography
 } from '@material-ui/core';
 import User from "./user";
 import { PersonAdd } from '@material-ui/icons';
@@ -76,6 +82,9 @@ export default function AdminView() {
         setUserInfo(newUserInfo);
     }
 
+    const [email, setEmail] = React.useState();
+    const [name, setName] = React.useState();
+    const [password, setPassword] = React.useState();
     const onAddUser = (user) => {
         const newUsers = {
             ...userInfo.users,
@@ -91,8 +100,36 @@ export default function AdminView() {
             userIndex: newUserIndex
         };
 
-        setUserInfo(newUsers);
+        setUserInfo(newUserInfo);
+
+        console.log("add user");
     }
+
+    const [addUserDialogOpen, setAddUserDialogOpen] = React.useState(false);
+    const handleAddUser = () => {
+        setAddUserDialogOpen(true);
+    }
+
+    const handleAddUserClose = () => {
+        setAddUserDialogOpen(false);
+        
+    };
+
+    const handleAddUserConfirm = (event) => {
+        event.preventDefault();
+        handleAddUserClose();
+        const user = {
+            email: email,
+            name: name,
+            password: password,
+            role: 'User',
+            dataKeys: ['USER']
+        }
+        
+        onAddUser(user)
+    };
+
+
 
     return (
         <Content>
@@ -134,6 +171,35 @@ export default function AdminView() {
                     </Grid>
                 </Grid>
             </Grid>
+            <Dialog
+                open={addUserDialogOpen}
+                onClose={handleAddUserClose}
+                aria-labelledby='user-dialog-title'
+                aria-describedby='user-dialog-description'
+                maxWidth='xs'
+            >
+                 <form noValidate onSubmit={handleAddUserConfirm}>
+                    <DialogContent>
+                        <Typography>Email
+                        <Input onInput={ e=>setEmail(e.target.value)} inputProps={{ 'aria-label': 'description' }} style={{marginLeft:'10px'}}/>
+                        </Typography>
+                        <Typography>Name
+                        <Input onInput={ e=>setName(e.target.value)} inputProps={{ 'aria-label': 'description' }} style={{marginLeft:'10px'}}/>
+                        </Typography>
+                        <Typography>Password
+                        <Input onInput={ e=>setPassword(e.target.value)} inputProps={{ 'aria-label': 'description' }} style={{marginLeft:'10px'}} />
+                        </Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={handleAddUserClose} color='primary'>
+                                Cancel
+                        </Button>
+                        <Button color='primary' type="submit">
+                            Confirm
+                        </Button>
+                    </DialogActions>
+                </form>
+            </Dialog>
         </Content>
     );
 }
