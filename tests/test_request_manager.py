@@ -7,7 +7,7 @@ from io import BytesIO
 from flask import jsonify, Flask
 
 from saas.app import create_node_instance
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.blueprint_helpers import request_manager, create_authentication
 
 logging.basicConfig(

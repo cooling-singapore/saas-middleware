@@ -14,7 +14,7 @@ from flask_cors import CORS
 
 from saas.json_schemas import data_object_descriptor_schema, processor_descriptor_schema
 from saas.utilities.blueprint_helpers import request_manager
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.node import Node
 
 # create the blueprint object and allows CORS for the processor route

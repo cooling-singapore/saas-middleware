@@ -4,7 +4,7 @@ import logging
 import time
 
 from saas.node import Node
-from saas.secure_messenger import SecureMessenger, MessengerRuntimeError, MessengerInvalidUseException
+from saas.cryptography.messenger import SecureMessenger, MessengerRuntimeError, MessengerInvalidUseException
 
 from tests.testing_environment import TestingEnvironment
 
