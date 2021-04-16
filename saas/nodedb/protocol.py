@@ -8,7 +8,7 @@ __status__ = "development"
 
 import logging
 
-from saas.secure_messenger import MessengerProtocol, SecureMessenger
+from saas.cryptography.messenger import MessengerProtocol, SecureMessenger
 
 logger = logging.getLogger('NodeDB.Protocol')
 

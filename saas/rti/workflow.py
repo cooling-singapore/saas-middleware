@@ -3,7 +3,7 @@ import logging
 
 from threading import Lock, Thread
 
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.rti.adapters import RTIProcessorAdapter
 from saas.utilities.blueprint_helpers import request_rti_submit_task, request_rti_job_status
 

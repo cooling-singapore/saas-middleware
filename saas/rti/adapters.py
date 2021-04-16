@@ -11,7 +11,7 @@ import docker.errors
 import requests
 import subprocess
 
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
 from saas.utilities.blueprint_helpers import request_dor_add
 

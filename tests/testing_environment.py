@@ -8,7 +8,7 @@ from pathlib import Path
 from werkzeug.serving import make_server
 
 from saas.app import initialise_app
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import get_address_from_string
 
 logging.basicConfig(
