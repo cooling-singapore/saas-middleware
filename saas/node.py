@@ -23,7 +23,6 @@ from saas.dor.dor import DataObjectRepository
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rti.rti import RuntimeInfrastructure
 from saas.nodedb.nodedb import NodeDB
-from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.cryptography.eckeypair import ECKeyPair
 
 logger = logging.getLogger('Node')
@@ -62,8 +61,8 @@ class Node:
         registry_protocol = RegistryP2PProtocol(self)
 
         # initialise the node database
+        self.db_path = f"sqlite:///{os.path.join(datastore_path, 'node.db')}"
         self.db = NodeDB(self)
-        db_protocol = NodeDBP2PProtocol(self)
 
         # initialise the data object repository
         self.dor = DataObjectRepository(self)
@@ -75,7 +74,7 @@ class Node:
         # initialise messenger protocols
         self.msg_protocols = {
             registry_protocol.protocol_name: registry_protocol,
-            db_protocol.protocol_name: db_protocol,
+            self.db.protocol.protocol_name: self.db.protocol,
             dor_protocol.protocol_name: dor_protocol
         }
 
