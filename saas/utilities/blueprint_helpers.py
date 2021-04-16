@@ -114,7 +114,7 @@ def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None)
     :param body: the body (if any) that came with the request
     :return: the owner identity of the data object (if verification successful)
     """
-    owner = node.dor.get_owner(obj_id)
+    owner = node.db.get_owner(obj_id)
     if not owner:
         raise AuthorisationFailedError(404, f"Owner for data object '{obj_id}' not found.")
 

@@ -29,6 +29,7 @@ class DataObjectRepository:
     def __init__(self, node):
         # initialise properties
         self.node = node
+        self.protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise directories
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore_path,
@@ -84,7 +85,7 @@ class DataObjectRepository:
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, self.node.public_key_as_string(),
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, self.node.key.public_as_string(),
                                      expiration)
 
         return 201, {'data_object_id': obj_id}
@@ -143,21 +144,21 @@ class DataObjectRepository:
         :return: content hash (c_hash) of the data object
         """
         # are we the custodian? in other words: do we have a record for this object?
-        record = self.records.get_by_object_id(obj_id)
+        record = self.node.db.get_object_by_id(obj_id)
         if record:
             source_descriptor_path = self.obj_descriptor_path(obj_id)
             destination_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
             create_symbolic_link(source_descriptor_path, destination_descriptor_path)
 
-            source_content_path = self.obj_content_path(record['c_hash'])
-            destination_content_path = self.obj_content_path(record['c_hash'], cache=True)
+            source_content_path = self.obj_content_path(record.c_hash)
+            destination_content_path = self.obj_content_path(record.c_hash, cache=True)
             create_symbolic_link(source_content_path, destination_content_path)
 
             if job_input_obj_content_path:
                 create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
                 create_symbolic_link(source_content_path, job_input_obj_content_path)
 
-            return record['c_hash']
+            return record.c_hash
 
         else:
             # use P2P protocol to attempt fetching from all other nodes
@@ -167,7 +168,7 @@ class DataObjectRepository:
                 if c_hash:
                     if job_input_obj_content_path:
                         source_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
-                        source_content_path = self.obj_content_path(record['c_hash'], cache=True)
+                        source_content_path = self.obj_content_path(record.c_hash, cache=True)
                         create_symbolic_link(source_content_path, job_input_obj_content_path)
                         create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
 
