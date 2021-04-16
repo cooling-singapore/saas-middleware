@@ -161,10 +161,9 @@ class NodeDB:
             session.commit()
 
     def revoke_access(self, obj_id, public_key=None):
-        key = ECKeyPair.from_public_key_string(public_key)
-
         with self.Session() as session:
             if public_key:
+                key = ECKeyPair.from_public_key_string(public_key)
                 session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).delete()
             else:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
@@ -214,7 +213,7 @@ class NodeDB:
         with self.Session() as session:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
-                return ECKeyPair.from_public_key_string(self.get_public_key(item.owner_iid))
+                return self.get_public_key(item.owner_iid)
             else:
                 return None
 
