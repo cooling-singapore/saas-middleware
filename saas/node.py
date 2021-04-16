@@ -66,7 +66,6 @@ class Node:
 
         # initialise the data object repository
         self.dor = DataObjectRepository(self)
-        dor_protocol = DataObjectRepositoryP2PProtocol(self)
 
         # initialise the runtime infrastructure
         self.rti = RuntimeInfrastructure(self)
@@ -75,7 +74,7 @@ class Node:
         self.msg_protocols = {
             registry_protocol.protocol_name: registry_protocol,
             self.db.protocol.protocol_name: self.db.protocol,
-            dor_protocol.protocol_name: dor_protocol
+            self.dor.protocol.protocol_name: self.dor.protocol,
         }
 
     def initialise_identity(self, password):
