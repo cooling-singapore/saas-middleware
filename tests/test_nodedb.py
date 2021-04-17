@@ -125,6 +125,9 @@ class NodeDBTestCase(unittest.TestCase):
         obj_ids = node.db.find_data_objects('k0', 'v02')
         assert(len(obj_ids) == 0)
 
+        obj_ids = node.db.find_data_objects('k0', 'v0%')
+        assert(len(obj_ids) == 2)
+
         obj_ids = node.db.find_data_objects(value_criterion='v1')
         assert(len(obj_ids) == 1)
         assert('aaa' in obj_ids)

@@ -1,3 +1,5 @@
+from operator import and_
+
 from sqlalchemy import Column, String, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
@@ -99,14 +101,14 @@ class NodeDB:
         result = []
         if key_criterion or value_criterion:
             with self.Session() as session:
-                args = {}
-                if key_criterion:
-                    args['key'] = key_criterion
+                if key_criterion and value_criterion:
+                    arg = and_(DORTag.key.like(key_criterion), DORTag.value.like(value_criterion))
+                elif key_criterion:
+                    arg = DORTag.key.like(key_criterion)
+                else:
+                    arg = DORTag.value.like(value_criterion)
 
-                if value_criterion:
-                    args['value'] = value_criterion
-
-                tags = session.query(DORTag).filter_by(**args).all()
+                tags = session.query(DORTag).filter(arg).all()
                 for tag in tags:
                     result.append(tag.obj_id)
 
@@ -224,7 +226,7 @@ class NodeDB:
                 key = ECKeyPair.from_public_key_string(new_owner_public_key)
                 self.update_public_key(key.iid, key.public_as_string())
 
-                item.owner_iid = key.public_as_string()
+                item.owner_iid = key.iid
                 session.commit()
 
     def handle_update(self, update):
