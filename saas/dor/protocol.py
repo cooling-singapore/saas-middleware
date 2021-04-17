@@ -55,7 +55,7 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
     def handle_fetch(self, message, messenger):
         # check if we have that data object
         obj_id = message['object_id']
-        obj_record = self.node.dor.get(obj_id)
+        obj_record = self.node.db.get_object_by_id(obj_id)
         if not obj_record:
             messenger.reply_error(404, f"{obj_id} not found")
             messenger.close()
@@ -73,7 +73,7 @@ class DataObjectRepositoryP2PProtocol(MessengerProtocol):
             descriptor = json.load(f)
 
         # we should have the data object content in our local DOR
-        c_hash = obj_record['c_hash']
+        c_hash = obj_record.c_hash
         content_path = self.node.dor.obj_content_path(c_hash)
         if not os.path.isfile(content_path):
             messenger.reply_error(500, f"content {c_hash} expected but not found for data object {obj_id}.")

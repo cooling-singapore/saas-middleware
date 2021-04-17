@@ -110,7 +110,8 @@ def get_access_permissions(sender, obj_id):
 def grant_access(sender, obj_id, user, owner):
     url = f"http://127.0.0.1:5000/repository/{obj_id}/access"
     body = {
-        'user_public_key': user.public_as_string()
+        'public_key': user.public_as_string(),
+        'permission': 'permission'
     }
     authentication = create_authentication(f"POST:/repository/{obj_id}/access", sender, body)
     authorisation = create_authorisation(f"POST:/repository/{obj_id}/access", owner, body)
@@ -127,7 +128,7 @@ def grant_access(sender, obj_id, user, owner):
 def revoke_access(sender, obj_id, user, owner):
     url = f"http://127.0.0.1:5000/repository/{obj_id}/access"
     body = {
-        'user_public_key': user.public_as_string()
+        'public_key': user.public_as_string()
     }
     authentication = create_authentication(f"DELETE:/repository/{obj_id}/access", sender, body)
     authorisation = create_authorisation(f"DELETE:/repository/{obj_id}/access", owner, body)
@@ -227,9 +228,9 @@ def update_data_object_tags(sender, obj_id, owner, tags):
     return r['reply']
 
 
-def remove_data_object_tags(sender, obj_id, owner, tags):
+def remove_data_object_tags(sender, obj_id, owner, keys):
     body = {
-        'tags': tags
+        'keys': keys
     }
 
     url = f"http://127.0.0.1:5000/repository/{obj_id}/tags"
@@ -320,24 +321,21 @@ class DORBlueprintTestCases(unittest.TestCase):
 
         permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
-        assert self.keys[1].iid in permissions
+        assert len(permissions) == 0
 
         reply = grant_access(self.keys[0], obj_id, self.keys[2], self.keys[0])
         assert reply == 'Authorisation failed.'
 
         permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
-        assert permissions[0] == self.keys[1].iid
+        assert len(permissions) == 0
 
         reply = grant_access(self.keys[0], obj_id, self.keys[2], self.keys[1])
         assert reply == 'Access granted.'
 
         permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 2
-        assert self.keys[1].iid in permissions
+        assert len(permissions) == 1
         assert self.keys[2].iid in permissions
 
         reply = revoke_access(self.keys[0], obj_id, self.keys[2], self.keys[1])
@@ -345,8 +343,7 @@ class DORBlueprintTestCases(unittest.TestCase):
 
         permissions = get_access_permissions(self.keys[0], obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
-        assert self.keys[1].iid in permissions
+        assert len(permissions) == 0
 
         descriptor = delete_data_object(self.keys[0], obj_id, self.keys[1])
         logger.info(f"descriptor={descriptor}")
@@ -368,7 +365,7 @@ class DORBlueprintTestCases(unittest.TestCase):
 
         reply = transfer_ownership(self.keys[0], obj_id, self.keys[1], self.keys[2])
         logger.info(f"reply={reply}")
-        assert reply == f"Ownership of data object '{obj_id}' transferred to '{self.keys[2].iid}'."
+        assert reply == f"Ownership of data object '{obj_id}' transferred to '{self.keys[2].public_as_string()}'."
 
         owner_info = get_ownership(self.keys[0], obj_id)
         logger.info(f"owner_info={owner_info}")
