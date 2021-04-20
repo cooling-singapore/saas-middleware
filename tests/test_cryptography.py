@@ -57,11 +57,11 @@ class ECKeyPairTestCases(unittest.TestCase):
         result3 = ECKeyPair.from_public_key_string(pubkey_string1)
         result4 = ECKeyPair.from_public_key_file(pubkey_path)
 
-        assert(not result0.private_key)
-        assert(not result1.private_key)
-        assert(not result2.private_key)
-        assert(not result3.private_key)
-        assert(not result4.private_key)
+        assert(result0.private_key is not None)
+        assert(result1.private_key is not None)
+        assert(result2.private_key is not None)
+        assert(result3.private_key is not None)
+        assert(result4.private_key is not None)
 
         assert(result0.iid == self.key.iid)
         assert(result1.iid == self.key.iid)
@@ -172,11 +172,11 @@ class RSAKeyPairTestCases(unittest.TestCase):
         result3 = RSAKeyPair.from_public_key_string(pubkey_string1)
         result4 = RSAKeyPair.from_public_key_file(pubkey_path)
 
-        assert(not result0.private_key)
-        assert(not result1.private_key)
-        assert(not result2.private_key)
-        assert(not result3.private_key)
-        assert(not result4.private_key)
+        assert(result0.private_key is not None)
+        assert(result1.private_key is not None)
+        assert(result2.private_key is not None)
+        assert(result3.private_key is not None)
+        assert(result4.private_key is not None)
 
         assert(result0.iid == self.key.iid)
         assert(result1.iid == self.key.iid)
