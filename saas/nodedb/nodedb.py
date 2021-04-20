@@ -1,288 +1,235 @@
-"""
-"""
+from operator import and_
 
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
-import logging
-import sqlite3
-import os
-
-from threading import Lock
+from sqlalchemy import Column, String, BigInteger
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from saas.nodedb.protocol import NodeDBP2PProtocol
+from saas.cryptography.eckeypair import ECKeyPair
 
-logger = logging.getLogger('NodeDB.NodeDB')
+Base = declarative_base()
 
 
-class DBTable:
-    """
-    DBTable is a convenience base class that wraps a SQL table and provides simple access methods to perform common
-    SQL commands: CREATE TABLE, DROP TABLE, SELECT, INSERT, UPDATE, DELETE. This class is not thread-safe.
-    """
-    def __init__(self, node_db, name, columns, auto_sync):
-        self.mutex = Lock()
-        self.node_db = node_db
-        self.name = name
-        self.columns = columns
-        self.auto_sync = auto_sync
+class DORObject(Base):
+    __tablename__ = 'dor_object'
+    obj_id = Column(String(64), primary_key=True)
+    d_hash = Column(String(64), nullable=False)
+    c_hash = Column(String(64), nullable=False)
+    owner_iid = Column(String(64), nullable=False)
+    custodian_iid = Column(String(64), nullable=False)
+    expiration = Column(BigInteger)
 
-    # TODO: where conditions should allow for more than just 'equals' comparisons (this applies to other statements too)
-    def select(self, columns=None, where_parameters=None, use_distinct=False):
-        """
-        Executes a SELECT statement.
-        :param columns: list of selected column names (if none provided, all columns are selected)
-        :param where_parameters: list of where conditions as {'column_name': 'equals_condition'}
-        :param use_distinct: indicate whether to use DISTINCT or not (default: False)
-        :return: result of SQL query
-        """
-        self.mutex.acquire()
-        if not columns:
-            columns = self.columns
 
-        col_names = ",".join(columns)
+class DORTag(Base):
+    __tablename__ = 'dor_tag'
+    obj_id = Column(String(64), primary_key=True)
+    key = Column(String(64), primary_key=True)
+    value = Column(String(256))
 
-        db = sqlite3.connect(self.node_db.db_path)
-        if where_parameters:
-            where_clause = " AND ".join(
-                "{} LIKE {}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
-                where_parameters.items()
-            )
-            rows = db.execute(
-                    "SELECT {} {} FROM {} WHERE {}".format("DISTINCT" if use_distinct else "", col_names, self.name,
-                                                           where_clause)
-            )
 
-        else:
-            rows = db.execute(
-                    "SELECT {} {} FROM {}".format("DISTINCT" if use_distinct else "", col_names, self.name)
-            )
+class DORPermission(Base):
+    __tablename__ = 'dor_permission'
+    obj_id = Column(String(64), primary_key=True)
+    key_iid = Column(String(64), primary_key=True)
+    permission = Column(String, nullable=False)
 
-        # build records
-        records = []
-        for row in rows:
-            record = {}
-            for i in range(0, len(columns)):
-                record[columns[i]] = row[i]
-            records.append(record)
 
-        db.close()
-        self.mutex.release()
-        return records
-
-    def insert(self, parameters, or_ignore=False, propagate=True):
-        """
-        Executes an INSERT statement.
-        :param parameters: a dictionary containing {'column_name': 'value'}
-        :param or_ignore: indicates whether to use OR IGNORE or not (default: False)
-        :param propagate: indicates whether to propagate this SQL action to other nodes (default: True)
-        :return: None
-        """
-        self.mutex.acquire()
-        col_names = ",".join(parameters.keys())
-        col_values = ','.join("'{}'".format(value)
-                              if isinstance(value, str) else str(value)
-                              for value in parameters.values())
-
-        db = sqlite3.connect(self.node_db.db_path)
-        db.execute("INSERT {} INTO {} ({}) VALUES ({})".format(
-            'OR IGNORE' if or_ignore else '',
-            self.name, col_names, col_values))
-        db.commit()
-        db.close()
-
-        # queue the update for synchronisation purposes
-        if self.auto_sync and propagate:
-            self.node_db.queue_insert(self.name, parameters, or_ignore)
-        self.mutex.release()
-
-    def update(self, update_parameters, where_parameters, propagate=True):
-        """
-        Executes an UPDATE statement.
-        :param update_parameters: a dictionary containing {'column_name': 'new_value'}
-        :param where_parameters: list of where conditions as {'column_name': 'equals_condition'}
-        :param propagate: indicates whether to propagate this SQL action to other nodes (default: True)
-        :return: None
-        """
-        self.mutex.acquire()
-        update = ",".join("{}={}".format(key, "'{}'".format(value)
-                          if isinstance(value, str) else value)
-                          for key, value in update_parameters.items())
-
-        where_clause = " AND ".join("{}={}".format(key, "'{}'".format(value)
-                                    if isinstance(value, str) else value)
-                                    for key, value in where_parameters.items())
-
-        db = sqlite3.connect(self.node_db.db_path)
-        db.execute(f"UPDATE {self.name} SET {update} WHERE {where_clause}")
-        db.commit()
-        db.close()
-
-        # queue the update for synchronisation purposes
-        if self.auto_sync and propagate:
-            self.node_db.queue_update(self.name, update_parameters, where_parameters)
-        self.mutex.release()
-
-    def delete(self, where_parameters=None, propagate=True):
-        """
-        Executes a DELETE statement.
-        :param where_parameters: list of where conditions as {'column_name': 'equals_condition'}
-        :param propagate: indicates whether to propagate this SQL action to other nodes (default: True)
-        :return: None
-        """
-        self.mutex.acquire()
-        db = sqlite3.connect(self.node_db.db_path)
-        if where_parameters:
-            # create where clause
-            where_clause = " AND ".join(
-                "{}={}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
-                where_parameters.items()
-            )
-
-            db.execute(
-                f"DELETE FROM {self.name} WHERE {where_clause}"
-            )
-        else:
-            db.execute(
-                f"DELETE FROM {self.name}"
-            )
-        db.commit()
-        db.close()
-
-        # queue the update for synchronisation purposes
-        if self.auto_sync and propagate:
-            self.node_db.queue_delete(self.name, where_parameters)
-        self.mutex.release()
-
-    def get_number_of_rows(self):
-        """
-        Returns the number of rows in the table.
-        :return: number of rows
-        """
-        self.mutex.acquire()
-        db = sqlite3.connect(self.node_db.db_path)
-        sql_result = db.execute(f"SELECT COUNT(*) FROM {self.name}").fetchone()
-        result = int(sql_result[0])
-        db.close()
-        self.mutex.release()
-        return result
-
-    def has(self, where_parameters):
-        self.mutex.acquire()
-
-        db = sqlite3.connect(self.node_db.db_path)
-        where_clause = " AND ".join(
-            "{}={}".format(key, "'{}'".format(value) if isinstance(value, str) else value) for key, value in
-            where_parameters.items()
-        )
-
-        sql_result = db.execute(f"SELECT COUNT(*) FROM {self.name} WHERE {where_clause}").fetchone()
-        result = int(sql_result[0])
-
-        self.mutex.release()
-
-        return result > 0
+class PublicKey(Base):
+    __tablename__ = 'public_key'
+    iid = Column(String(64), primary_key=True)
+    public_key = Column(String, nullable=False)
 
 
 class NodeDB:
-    def __init__(self, node, immediate_updates=True):
-        self.mutex = Lock()
-        self.node = node
-        self.tables = {}
-        self.db_path = os.path.join(node.datastore_path, 'records.db')
-        self.immediate_updates = immediate_updates
-        self.queue = []
+    def __init__(self, node):
+        # create P2P protocol instance
+        self.protocol = NodeDBP2PProtocol(node)
 
-    def create_table(self, name, definitions, unique=None, auto_sync=False):
-        self.mutex.acquire()
-        columns = [*definitions]
+        # initialise database and session maker
+        engine = create_engine(node.db_path)
+        Base.metadata.create_all(engine)
+        self.Session = sessionmaker(bind=engine)
 
-        col_string = ','.join("{} {}".format(col_name, col_type) for col_name, col_type in definitions.items())
-        if unique:
-            col_string = f"{col_string}, UNIQUE({','.join(unique)})"
+    def update_tags(self, obj_id, tags, propagate=True):
+        with self.Session() as session:
+            for tag in tags:
+                item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
+                if item:
+                    item.value = tag['value']
+                else:
+                    session.add(DORTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
+            session.commit()
 
-        db = sqlite3.connect(self.db_path)
-        db.execute(
-            f"CREATE TABLE IF NOT EXISTS {name} ({col_string})"
-        )
-        db.close()
+            if propagate:
+                self.protocol.broadcast('update_tags', {
+                    'obj_id': obj_id,
+                    'tags': tags,
+                    'propagate': False
+                })
 
-        self.mutex.release()
-        self.tables[name] = DBTable(self, name, columns, auto_sync)
-        return self.tables[name]
+    def remove_tags(self, obj_id, keys=None, propagate=True):
+        with self.Session() as session:
+            if keys:
+                for key in keys:
+                    session.query(DORTag).filter_by(obj_id=obj_id, key=key).delete()
+            else:
+                session.query(DORTag).filter_by(obj_id=obj_id).delete()
 
-    def drop_table(self, name):
-        """
-        Executes a DROP TABLE statement.
-        :return: None
-        """
-        self.mutex.acquire()
-        if name in self.tables:
-            db = sqlite3.connect(self.db_path)
-            db.execute(
-                f"DROP TABLE {name}"
-            )
-            db.commit()
-            db.close()
-            self.tables.pop(name)
-        self.mutex.release()
+            session.commit()
 
-    def queue_insert(self, table_name, parameters, or_ignore):
-        self.mutex.acquire()
-        self.queue.append({
-            'action': 'sql_insert',
-            'table_name': table_name,
-            'parameters': parameters,
-            'or_ignore': or_ignore
-        })
-        self.mutex.release()
+            if propagate:
+                self.protocol.broadcast('remove_tags', {
+                    'obj_id': obj_id,
+                    'keys': keys,
+                    'propagate': False
+                })
 
-        if self.immediate_updates:
-            self.broadcast_updates()
+    def get_tags(self, obj_id):
+        with self.Session() as session:
+            tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
 
-    def queue_update(self, table_name, update_parameters, where_parameters):
-        self.mutex.acquire()
-        self.queue.append({
-            'action': 'sql_update',
-            'table_name': table_name,
-            'update_parameters': update_parameters,
-            'where_parameters': where_parameters
-        })
-        self.mutex.release()
+            result = {}
+            for tag in tags:
+                result[tag.key] = tag.value
+            return result
 
-        if self.immediate_updates:
-            self.broadcast_updates()
+    def find_data_objects(self, key_criterion=None, value_criterion=None):
+        # if no criterion is specified, then simply return an empty list.
+        # another option could be to return *all* data object ids but that's a potential issue with size and
+        # confidentiality
+        result = []
+        if key_criterion or value_criterion:
+            with self.Session() as session:
+                if key_criterion and value_criterion:
+                    arg = and_(DORTag.key.like(key_criterion), DORTag.value.like(value_criterion))
+                elif key_criterion:
+                    arg = DORTag.key.like(key_criterion)
+                else:
+                    arg = DORTag.value.like(value_criterion)
 
-    def queue_delete(self, table_name, where_parameters):
-        self.mutex.acquire()
-        self.queue.append({
-            'action': 'sql_delete',
-            'table_name': table_name,
-            'where_parameters': where_parameters
-        })
-        self.mutex.release()
+                tags = session.query(DORTag).filter(arg).all()
+                for tag in tags:
+                    result.append(tag.obj_id)
 
-        if self.immediate_updates:
-            self.broadcast_updates()
+        return result
 
-    def broadcast_updates(self):
-        self.mutex.acquire()
-        queue = self.queue
-        self.queue = []
-        self.mutex.release()
+    def update_public_key(self, iid, public_key, propagate=True):
+        with self.Session() as session:
+            item = session.query(PublicKey).get(iid)
+            if not item:
+                session.add(PublicKey(iid=iid, public_key=public_key))
+                session.commit()
 
-        protocol = self.node.msg_protocols[NodeDBP2PProtocol.id]
-        protocol.broadcast_updates(queue)
+                if propagate:
+                    self.protocol.broadcast('update_public_key', {
+                        'iid': iid,
+                        'public_key': public_key,
+                        'propagate': False
+                    })
 
-    def handle_updates(self, items):
-        for item in items:
-            table: DBTable = self.tables[item['table_name']]
-            if item['action'] == 'sql_insert':
-                table.insert(item['parameters'], item['or_ignore'], False)
+    def get_public_key(self, iid):
+        with self.Session() as session:
+            item = session.query(PublicKey).get(iid)
+            if item:
+                return ECKeyPair.from_public_key_string(item.public_key)
+            else:
+                return None
 
-            elif item['action'] == 'sql_update':
-                table.update(item['update_parameters'], item['where_parameters'], False)
+    def get_access_list(self, obj_id):
+        with self.Session() as session:
+            permissions = session.query(DORPermission).filter_by(obj_id=obj_id).all()
 
-            elif item['action'] == 'sql_delete':
-                table.delete(item['where_parameters'], False)
+            result = []
+            for permission in permissions:
+                result.append(permission.key_iid)
+            return result
+
+    def has_access(self, obj_id, key):
+        with self.Session() as session:
+            permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
+            return permission is not None
+
+    def grant_access(self, obj_id, public_key, permission):
+        key = ECKeyPair.from_public_key_string(public_key)
+        self.update_public_key(key.iid, key.public_as_string())
+
+        with self.Session() as session:
+            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
+            if item:
+                item.permission = permission
+            else:
+                session.add(DORPermission(obj_id=obj_id, key_iid=key.iid, permission=permission))
+            session.commit()
+
+    def revoke_access(self, obj_id, public_key=None):
+        with self.Session() as session:
+            if public_key:
+                key = ECKeyPair.from_public_key_string(public_key)
+                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).delete()
+            else:
+                session.query(DORPermission).filter_by(obj_id=obj_id).delete()
+            session.commit()
+
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key, custodian_public_key,
+                        expiration, propagate=True):
+        with self.Session() as session:
+            item = session.query(DORObject).get(obj_id)
+            if not item:
+                owner = ECKeyPair.from_public_key_string(owner_public_key)
+                custodian = ECKeyPair.from_public_key_string(custodian_public_key)
+
+                self.update_public_key(owner.iid, owner.public_as_string(), propagate=False)
+                self.update_public_key(custodian.iid, custodian.public_as_string(), propagate=False)
+
+                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash,
+                                      owner_iid=owner.iid, custodian_iid=custodian.iid,
+                                      expiration=expiration))
+                session.commit()
+
+                if propagate:
+                    self.protocol.broadcast('add_data_object', {
+                        'obj_id': obj_id,
+                        'd_hash': d_hash,
+                        'c_hash': c_hash,
+                        'owner_public_key': owner_public_key,
+                        'custodian_public_key': custodian_public_key,
+                        'expiration': expiration,
+                        'propagate': False
+                    })
+
+    def remove_data_object(self, obj_id):
+        with self.Session() as session:
+            session.query(DORObject).filter_by(obj_id=obj_id).delete()
+            session.commit()
+
+    def get_object_by_id(self, obj_id):
+        with self.Session() as session:
+            return session.query(DORObject).filter_by(obj_id=obj_id).first()
+
+    def get_objects_by_content_hash(self, c_hash):
+        with self.Session() as session:
+            return session.query(DORObject).filter_by(c_hash=c_hash).all()
+
+    def get_owner(self, obj_id):
+        with self.Session() as session:
+            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            if item:
+                return self.get_public_key(item.owner_iid)
+            else:
+                return None
+
+    def update_ownership(self, obj_id, new_owner_public_key):
+        with self.Session() as session:
+            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            if item:
+                key = ECKeyPair.from_public_key_string(new_owner_public_key)
+                self.update_public_key(key.iid, key.public_as_string())
+
+                item.owner_iid = key.iid
+                session.commit()
+
+    def handle_update(self, update):
+        method = getattr(self, update['method'])
+        method(**update['args'])
+
