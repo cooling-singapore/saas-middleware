@@ -14,7 +14,8 @@ import json
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 
-from saas.eckeypair import ECKeyPair, hash_json_object, hash_file_content
+from saas.cryptography.eckeypair import ECKeyPair
+from saas.cryptography.hashing import hash_json_object, hash_file_content
 from saas.utilities.general_helpers import get_timestamp_now, dump_json_to_file, create_symbolic_link
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 

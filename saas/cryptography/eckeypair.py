@@ -1,16 +1,9 @@
-"""
-This module contains the code for Elliptic Curve (EC) Key Pair functionality which is at the core of the identity
-concept used by the Saas Middleware.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
 import logging
 import time
-import canonicaljson
 import cryptography.hazmat.primitives.serialization as serialization
+
+from saas.cryptography.keypair import KeyPair
+from saas.cryptography.hashing import hash_file_content, hash_json_object, hash_string_object, hash_bytes_object
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -21,87 +14,16 @@ from cryptography.exceptions import InvalidSignature
 logger = logging.getLogger('ECKeyPair')
 
 
-def hash_file_content(path):
-    """
-    Hash the content of a given file using SHA256.
-    :param path: the path of the file that is to be hashed
-    :return: hash
-    """
-    # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-
-    # read the file in chunks of 64 bytes and update the digest
-    with open(path, 'rb') as f:
-        data = f.read(64)
-        while data:
-            digest.update(data)
-            data = f.read(64)
-
-    # calculate the hash and return
-    result = digest.finalize()
-    return result
-
-
-def hash_json_object(obj):
-    """
-    Hash a given JSON object. Before hashing the JSON input is encoded as canonical RFC 7159 JSON.
-    :param obj: the JSON object that is to be hashed
-    :return: hash
-    """
-    # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-
-    # encode the json input as RFC 7159 JSON as update the digest
-    json_input = canonicaljson.encode_canonical_json(obj)
-    digest.update(json_input)
-
-    # calculate the hash and return
-    result = digest.finalize()
-    return result
-
-
-def hash_string_object(obj):
-    """
-    Hash a given string.
-    :param obj: the string that is to be hashed
-    :return: hash
-    """
-    # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-    digest.update(obj.encode('utf-8'))
-
-    # calculate the hash and return
-    result = digest.finalize()
-    return result
-
-
-def hash_bytes_object(obj):
-    """
-    Hash a given byte array.
-    :param obj: the byte array that is to be hashed
-    :return: hash
-    """
-    # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-    digest.update(obj)
-
-    # calculate the hash and return
-    result = digest.finalize()
-    return result
-
-
-class ECKeyPair:
+class ECKeyPair(KeyPair):
     """
     ECKeyPair encapsulates the functionality for Elliptic Curve (EC) key pairs. It provides a number of convenience
     methods to create a ECKeyPair instance as well as for (de)serialisation of keys. A EC key pair consists of a
     private key and a public key whereby the public key can be derived from the private key. ECKeyPair provides also
     a number of methods for creating and verifying signatures and authentication/authorisation tokens.
     """
+
     def __init__(self, private_key, public_key):
-        self.private_key = private_key
-        self.public_key = public_key
-        self.iid = hash_bytes_object(self.public_as_bytes()).hex()
-        self.short_iid = f"{self.iid[:4]}...{self.iid[-4:]}"
+        KeyPair.__init__(self, private_key, public_key)
 
     @classmethod
     def create_new(cls):
@@ -122,6 +44,34 @@ class ECKeyPair:
         :param private_key:
         :return: ECKeyPair instance
         """
+        public_key = private_key.public_key()
+        return ECKeyPair(private_key, public_key)
+
+    @classmethod
+    def from_private_key_string(cls, private_key_string, password=None):
+        """
+        Creates an ECKeyPair instance based on a given private key string.
+        :param private_key_string:
+        :param password: the password used to protect the private key
+        :return: ECKeyPair instance
+        """
+        if password:
+            password = password.encode('utf-8')
+
+            if '-----BEGIN ENCRYPTED PRIVATE KEY-----' not in private_key_string:
+                private_key_string = '\n'.join(private_key_string[i:i + 64] for i in range(0, len(private_key_string), 64))
+                private_key_string = f"-----BEGIN ENCRYPTED PRIVATE KEY-----\n{private_key_string}\n-----END ENCRYPTED PRIVATE KEY-----"
+
+        else:
+            if '-----BEGIN PRIVATE KEY-----' not in private_key_string:
+                private_key_string = '\n'.join(private_key_string[i:i + 64] for i in range(0, len(private_key_string), 64))
+                private_key_string = f"-----BEGIN PRIVATE KEY-----\n{private_key_string}\n-----END PRIVATE KEY-----"
+
+        private_key = serialization.load_pem_private_key(
+            data=private_key_string.encode('utf-8'),
+            password=password,
+            backend=default_backend()
+        )
         public_key = private_key.public_key()
         return ECKeyPair(private_key, public_key)
 
@@ -197,70 +147,6 @@ class ECKeyPair:
                 backend=default_backend()
             )
             return ECKeyPair.from_public_key(public_key)
-
-    def private_as_bytes(self, password):
-        """
-        Serialises the private key and returns it as byte array (or None in case this ECKeyPair instance does not
-        have a private key).
-        :param password: the password to protect the private key
-        :return: byte array representing the password-protected private key or None if no private key is available
-        """
-        return self.private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8'))
-        ) if self.private_key else None
-
-    def public_as_bytes(self):
-        """
-        Serialises the public key and returns it as byte array.
-        :return: byte array representing the public key
-        """
-        return self.public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-
-    def private_as_string(self, password):
-        """
-        Serialises the private key and returns it as string (or None in case this ECKeyPair instance does not
-        have a private key).
-        :param password: the password to protect the private key
-        :return: string representing of the private key or None if no private key is available
-        """
-        return self.private_as_bytes(password).decode('utf-8') if self.private_key else None
-
-    def public_as_string(self, truncate=True):
-        """
-        Serialises the public key and returns it as string. If truncate=True, the PEM prefix and suffix is removed
-        as well as all white space characters.
-        :param truncate: indicates whether or not to create a truncated string (default: False)
-        :return: string representing the public key
-        """
-        result = self.public_as_bytes().decode('utf-8')
-        if truncate:
-            result = result.replace('\n', '')
-            result = result[26:-24]
-        return result
-
-    def write_private(self, path, password):
-        """
-        Writes the private key into a file.
-        :param path: the path where to store the private key
-        :param password: the password used to protected the private key
-        :return: None
-        """
-        with open(path, 'wb') as f:
-            f.write(self.private_as_bytes(password))
-
-    def write_public(self, path):
-        """
-        Writes the public key into a file.
-        :param path: the path where to store the public key
-        :return: None
-        """
-        with open(path, 'wb') as f:
-            f.write(self.public_as_bytes())
 
     def sign(self, message):
         """

@@ -16,7 +16,7 @@ import requests
 from flask import request, Flask, g
 
 from jsonschema import validate, ValidationError
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import get_timestamp_now, all_in_dict
 
 logger = logging.getLogger('Utilities.blueprint_helpers')

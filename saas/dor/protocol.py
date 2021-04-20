@@ -10,7 +10,7 @@ import os
 import logging
 import json
 
-from saas.secure_messenger import SecureMessenger, MessengerProtocol, MessengerRuntimeError
+from saas.cryptography.messenger import SecureMessenger, MessengerProtocol, MessengerRuntimeError
 from saas.utilities.general_helpers import dump_json_to_file
 
 logger = logging.getLogger('DOR.Protocol')
