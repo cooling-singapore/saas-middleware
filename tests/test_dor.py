@@ -1,14 +1,11 @@
 import unittest
 import logging
-import time
 import os
-import time
 import json
 import requests
 
 
 from tests.testing_environment import TestingEnvironment
-from saas.eckeypair import hash_file_content
 from saas.utilities.general_helpers import object_to_ordered_list
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
 from saas.node import Node

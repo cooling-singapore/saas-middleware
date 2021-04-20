@@ -1,19 +1,10 @@
-"""
-This module contains the code for the SecureMessenger including Exceptions and the MessengerProtocol base class
-for custom P2P protocol implementations.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
 import os
 import logging
 import json
 import base64
 import socket
 
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.general_helpers import all_in_dict
 
 from cryptography.hazmat.primitives import hashes
@@ -68,7 +59,7 @@ class MessengerProtocol:
         Handles a message that has been received by forwarding it to the appropriate handler function for this
         type of message.
         :param message: the message
-        :param messenger: the messenger that facilitates communication between the node and the peer
+        :param messenger: the messenger that facilitates communication between the db and the peer
         :return: None
         """
 
@@ -101,9 +92,9 @@ class MessengerProtocol:
 
     def broadcast_message(self, message, exclude=None):
         """
-        Broadcasts a message to all known peers (according to the node registry) unless they are excluded from the
-        broadcast. Note that the node registry typically also includes a record for the node its hosted on. In order
-        to prevent nodes sending messages to themselves as part of a broadcast, the sending node is added to the
+        Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
+        broadcast. Note that the db registry typically also includes a record for the db its hosted on. In order
+        to prevent nodes sending messages to themselves as part of a broadcast, the sending db is added to the
         exclusion list by default.
         :param message: the message to be broadcast
         :param exclude: an (optional) list of peer iids which are to be excluded from the broadcast
@@ -144,10 +135,10 @@ class SecureMessenger:
         """
         Connect to a peer given its address.
         :param peer_address: the address of the peer
-        :param self_node: the counterparty for the peer (i.e., the node that wants to connect to the peer)
+        :param self_node: the counterparty for the peer (i.e., the db that wants to connect to the peer)
         :param expected_peer_iid: the (optional) expected iid for the peer at the given address. If peer iid and
         expected iid do not match, a warning message is produced in the log.
-        :return: the messenger that facilitates communication between the node and the peer
+        :return: the messenger that facilitates communication between the db and the peer
         """
         try:
             peer_socket = socket.create_connection(peer_address)
@@ -170,8 +161,8 @@ class SecureMessenger:
     def accept_connection_by_peer(cls, node):
         """
         Accepts and incoming connection from a peer.
-        :param node: the node whose socket server is used to accept the incoming connection
-        :return: the messenger that facilitates communication between the node and the peer
+        :param node: the db whose socket server is used to accept the incoming connection
+        :return: the messenger that facilitates communication between the db and the peer
         """
         client_socket, client_address = node.server_socket.accept()
         messenger = SecureMessenger(client_socket)
@@ -183,7 +174,7 @@ class SecureMessenger:
     def handshake(self, node):
         """
         Performs the handshake (i.e., key exchange) in order to secure all further message exchange.
-        :param node: the node that represents the counterparty to the handshake with the peer
+        :param node: the db that represents the counterparty to the handshake with the peer
         :return: the peer identity (i.e., a key pair with public key component only)
         """
         # generate an ephemeral key pair

@@ -16,7 +16,7 @@ import traceback
 from threading import Lock
 from pathlib import Path
 
-from saas.secure_messenger import SecureMessenger
+from saas.cryptography.messenger import SecureMessenger
 from saas.registry.registry import Registry
 from saas.registry.protocol import RegistryP2PProtocol
 from saas.dor.dor import DataObjectRepository
@@ -24,7 +24,7 @@ from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rti.rti import RuntimeInfrastructure
 from saas.nodedb.nodedb import NodeDB
 from saas.nodedb.protocol import NodeDBP2PProtocol
-from saas.eckeypair import ECKeyPair
+from saas.cryptography.eckeypair import ECKeyPair
 
 logger = logging.getLogger('Node')
 

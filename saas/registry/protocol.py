@@ -9,7 +9,7 @@ __status__ = "development"
 import logging
 
 from saas.utilities.general_helpers import get_timestamp_now
-from saas.secure_messenger import SecureMessenger, MessengerProtocol
+from saas.cryptography.messenger import SecureMessenger, MessengerProtocol
 
 logger = logging.getLogger('Registry.Protocol')
 
