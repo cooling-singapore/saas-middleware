@@ -114,7 +114,7 @@ def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None)
     :param body: the body (if any) that came with the request
     :return: the owner identity of the data object (if verification successful)
     """
-    owner = node.dor.get_owner(obj_id)
+    owner = node.db.get_owner(obj_id)
     if not owner:
         raise AuthorisationFailedError(404, f"Owner for data object '{obj_id}' not found.")
 
@@ -152,7 +152,7 @@ def verify_authorisation_by_user(request_content, obj_id, node, url, body=None):
     user = ECKeyPair.from_public_key_string(authorisation['public_key'])
 
     # does the user have access rights?
-    if not node.dor.has_access(obj_id, user):
+    if not node.db.has_access(obj_id, user):
         raise AuthorisationFailedError(401, f"User '{user.iid}' has no permission to access data object '{obj_id}'.")
 
     # verify the the request using the user public key

@@ -3,9 +3,10 @@ import logging
 import os
 import time
 
+from saas.cryptography.eckeypair import ECKeyPair
 from tests.testing_environment import TestingEnvironment
 from saas.node import Node
-from saas.nodedb.nodedb import DBTable
+from saas.nodedb.nodedb import NodeDB
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +16,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 env = TestingEnvironment.get_instance('../config/testing-config.json')
-n_nodes = 5
+n_nodes = 2
 
 
 class NodeDBTestCase(unittest.TestCase):
@@ -35,75 +36,197 @@ class NodeDBTestCase(unittest.TestCase):
             self.nodes.append(node)
 
         # give it some time to settle
-        time.sleep(5)
+        time.sleep(2)
 
     def tearDown(self):
         for node in self.nodes:
-            logger.info(f"stopping node '{node.name}'")
+            logger.info(f"stopping db '{node.name}'")
             node.stop_server()
 
-    def test_registry(self):
-        # nodes have already been created in the setup... here we just see if all nodes know of each other
-        for node in self.nodes:
-            content = node.registry.get()
-            logger.info(f"{node.name} registry content: {content}")
-            assert len(content) == len(self.nodes)
+    def test_add_update_remove_tags(self):
+        node = self.nodes[0]
 
-            for node2 in self.nodes:
-                assert node2.key.iid in content
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 0)
 
-    def test_node_db(self):
-        # create a test table (each node has the same)
-        tables = []
-        for node in self.nodes:
-            table = node.db.create_table('test_table', {
-                'row_id': 'INTEGER PRIMARY KEY AUTOINCREMENT',
-                'col_a': 'VARCHAR(64) NOT NULL',
-                'col_b': 'VARCHAR(64) NOT NULL'
-            }, auto_sync=True)
-            tables.append(table)
+        node.db.update_tags('aaa', [
+            {'key': 'k0', 'value': 'v0'}
+        ], propagate=False)
 
-        for table in tables:
-            records = table.select()
-            logger.info(f"{table.name} records: {records}")
-            assert len(records) == 0
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 1)
+        assert('k0' in tags)
 
-        table: DBTable = tables[0]
-        table.insert({
-            'col_a': 'abc',
-            'col_b': 'def'
-        })
+        node.db.update_tags('aaa', [
+            {'key': 'k1', 'value': 'v1'},
+            {'key': 'k2', 'value': 'v2'}
+        ], propagate=False)
 
-        for table in tables:
-            records = table.select()
-            logger.info(f"{table.name} records: {records}")
-            assert len(records) == 1
-            assert records[0]['col_a'] == 'abc'
-            assert records[0]['col_b'] == 'def'
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 3)
 
-        table: DBTable = tables[1]
-        table.update({
-            'col_a': 'def'
-        }, {
-            'col_a': 'abc'
-        })
+        node.db.update_tags('aaa', [
+            {'key': 'k0', 'value': '999'}
+        ], propagate=False)
 
-        for table in tables:
-            records = table.select()
-            logger.info(f"{table.name} records: {records}")
-            assert len(records) == 1
-            assert records[0]['col_a'] == 'def'
-            assert records[0]['col_b'] == 'def'
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 3)
+        assert(tags['k0'] == '999')
 
-        table: DBTable = tables[2]
-        table.delete({
-            'col_a': 'def'
-        })
+        node.db.remove_tags('aaa', ['k3'], propagate=False)
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 3)
 
-        for table in tables:
-            records = table.select()
-            logger.info(f"{table.name} records: {records}")
-            assert len(records) == 0
+        node.db.remove_tags('bbb', ['k2'], propagate=False)
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 3)
+
+        node.db.remove_tags('aaa', ['k2'], propagate=False)
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 2)
+
+        node.db.remove_tags('aaa', ['k0', 'k1'], propagate=False)
+        tags = node.db.get_tags('aaa')
+        assert(len(tags) == 0)
+
+    def test_find_data_objects(self):
+        node = self.nodes[0]
+
+        node.db.update_tags('aaa', [
+            {'key': 'k0', 'value': 'v00'},
+            {'key': 'k1', 'value': 'v1'}
+        ], propagate=False)
+
+        node.db.update_tags('bbb', [
+            {'key': 'k0', 'value': 'v01'},
+            {'key': 'k2', 'value': 'v2'}
+        ], propagate=False)
+
+        obj_ids = node.db.find_data_objects('k0')
+        assert(len(obj_ids) == 2)
+        assert('aaa' in obj_ids)
+        assert('bbb' in obj_ids)
+
+        obj_ids = node.db.find_data_objects('k1')
+        assert(len(obj_ids) == 1)
+        assert('aaa' in obj_ids)
+
+        obj_ids = node.db.find_data_objects('k2')
+        assert(len(obj_ids) == 1)
+        assert('bbb' in obj_ids)
+
+        obj_ids = node.db.find_data_objects('k3')
+        assert(len(obj_ids) == 0)
+
+        obj_ids = node.db.find_data_objects('k0', 'v00')
+        assert(len(obj_ids) == 1)
+        assert('aaa' in obj_ids)
+
+        obj_ids = node.db.find_data_objects('k0', 'v02')
+        assert(len(obj_ids) == 0)
+
+        obj_ids = node.db.find_data_objects('k0', 'v0%')
+        assert(len(obj_ids) == 2)
+
+        obj_ids = node.db.find_data_objects(value_criterion='v1')
+        assert(len(obj_ids) == 1)
+        assert('aaa' in obj_ids)
+
+    def test_propagate_tag_updates(self):
+        node0 = self.nodes[0]
+        node1 = self.nodes[1]
+
+        node0.db.update_tags('aaa', [
+            {'key': 'k0', 'value': 'v0'}
+        ], propagate=True)
+        time.sleep(1)
+
+        tags = node0.db.get_tags('aaa')
+        assert(len(tags) == 1)
+        assert('k0' in tags)
+
+        tags = node1.db.get_tags('aaa')
+        assert(len(tags) == 1)
+        assert('k0' in tags)
+
+        node1.db.remove_tags('aaa', ['k0'], propagate=True)
+        time.sleep(1)
+
+        tags = node0.db.get_tags('aaa')
+        assert(len(tags) == 0)
+
+        tags = node1.db.get_tags('aaa')
+        assert(len(tags) == 0)
+
+    def test_update_public_key(self):
+        node = self.nodes[0]
+
+        key = ECKeyPair.create_new()
+
+        result = node.db.get_public_key(key.iid)
+        assert(result is None)
+
+        node.db.update_public_key(key.iid, key.public_as_string(), propagate=False)
+        node.db.update_public_key(key.iid, key.public_as_string(), propagate=False)
+
+        result = node.db.get_public_key(key.iid)
+        assert(result is not None)
+        assert(key.iid == result.iid)
+
+    def test_propagate_public_key_update(self):
+        node0 = self.nodes[0]
+        node1 = self.nodes[0]
+
+        key = ECKeyPair.create_new()
+
+        result = node0.db.get_public_key(key.iid)
+        assert(result is None)
+
+        result = node1.db.get_public_key(key.iid)
+        assert(result is None)
+
+        node1.db.update_public_key(key.iid, key.public_as_string(), propagate=True)
+        time.sleep(1)
+
+        result = node0.db.get_public_key(key.iid)
+        assert(result is not None)
+        assert(key.iid == result.iid)
+
+        result = node1.db.get_public_key(key.iid)
+        assert(result is not None)
+        assert(key.iid == result.iid)
+
+    def test_grant_revoke_permissions(self):
+        node = self.nodes[0]
+
+        key0 = ECKeyPair.create_new()
+        key1 = ECKeyPair.create_new()
+
+        result = node.db.get_access_list('aaa')
+        assert(len(result) == 0)
+
+        result = node.db.has_access('aaa', key0)
+        assert(not result)
+
+        result = node.db.has_access('aaa', key1)
+        assert(not result)
+
+        node.db.grant_access('aaa', key0.public_as_string(), 'permission1')
+
+        result = node.db.get_access_list('aaa')
+        assert(len(result) == 1)
+        assert(key0.iid in result)
+
+        node.db.revoke_access('aaa', key1.public_as_string())
+
+        result = node.db.get_access_list('aaa')
+        assert(len(result) == 1)
+        assert(key0.iid in result)
+
+        node.db.revoke_access('aaa', key0.public_as_string())
+
+        result = node.db.get_access_list('aaa')
+        assert(len(result) == 0)
 
 
 if __name__ == '__main__':
