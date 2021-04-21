@@ -35,7 +35,7 @@ def create_node_instance(parameters):
         os.makedirs(datastore_path)
 
     # check if there was a password provided in the config file
-    if parameters['password']:
+    if 'password' in parameters and parameters['password'] is not None:
         logger.info(f"using provided password")
         password = parameters['password']
 
@@ -47,7 +47,7 @@ def create_node_instance(parameters):
     boot_node_address = get_address_from_string(parameters['boot-node-address'])
     rest_api_address = get_address_from_string(parameters['rest-api-address'])
 
-    instance = Node(parameters['node-name'], datastore_path, rest_api_address)
+    instance = Node(parameters['name'], datastore_path, rest_api_address)
     instance.initialise_identity(password)
     instance.start_server(p2p_server_address)
     instance.initialise_registry(boot_node_address)
