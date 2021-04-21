@@ -74,6 +74,8 @@ class TestingEnvironment:
 
         self.app = None
         self.app_service = None
+        self.app_service_rest_host = None
+        self.app_service_rest_port = None
         self.app_service_p2p_host = None
         self.app_service_p2p_port = None
         self.app_wd_path = None
@@ -136,14 +138,14 @@ class TestingEnvironment:
         self.app_wd_path = self.test_node_config['datastore']
         self.prepare_working_directory(self.app_wd_path)
 
-        rest_url, rest_port = get_address_from_string(self.test_node_config['rest-api-address'])
+        self.app_service_rest_host, self.app_service_rest_port = get_address_from_string(self.test_node_config['rest-api-address'])
         app = initialise_app(self.test_node_config)
 
         self.app_service_p2p_host, self.app_service_p2p_port = get_address_from_string(
             self.test_node_config['p2p-server-address']
         )
 
-        self.app_service = FlaskServerThread(app, rest_url, rest_port)
+        self.app_service = FlaskServerThread(app, self.app_service_rest_host, self.app_service_rest_port)
         self.app_service.start()
 
     def stop_flask_app(self):
