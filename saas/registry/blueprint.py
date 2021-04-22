@@ -31,8 +31,10 @@ def initialise(node_instance):
 @request_manager.authentication_required
 def get_node_info():
     return jsonify({
-        "node_address": node.server_address,
-        "node_public_key": node.key.public_as_string()
+        "iid": node.key.iid,
+        "public_key": node.key.public_as_string(),
+        "rest_address": node.rest_api_address,
+        "p2p_address": node.server_address
     }), 200
 
 
@@ -40,5 +42,5 @@ def get_node_info():
 @request_manager.authentication_required
 def get_registry_contents():
     return jsonify({
-        "contents": node.registry.get_by_object_id()
+        "contents": node.registry.get()
     }), 200

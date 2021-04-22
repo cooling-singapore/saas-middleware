@@ -54,9 +54,9 @@ def deploy(proc_id):
 def undeploy(proc_id):
     # TODO: this should require authorisation - only whose authorisation?
     if node.rti.undeploy(proc_id):
-        return jsonify(f"Processor {proc_id} deployed."), 200
+        return jsonify(f"Processor {proc_id} undeployed."), 200
     else:
-        return jsonify(f"Processor {proc_id} not deployed."), 404
+        return jsonify(f"Processor {proc_id} not found."), 404
 
 
 @blueprint.route('/<proc_id>', methods=['GET'])

@@ -22,6 +22,38 @@ from saas.utilities.general_helpers import get_timestamp_now, all_in_dict
 logger = logging.getLogger('Utilities.blueprint_helpers')
 
 
+def post(url, content, attachment_path=None):
+    if attachment_path:
+        with open(attachment_path, 'rb') as f:
+            return requests.post(url, data=content, files={'attachment': f.read()}).json()
+    else:
+        return requests.post(url, data=content).json()
+
+
+def get(url, content, download_path=None):
+    if download_path:
+        with requests.get(url, data=content, stream=True) as r:
+            if r.status_code == 401:
+                return 401
+
+            with open(download_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            return r.status_code
+
+    else:
+        return requests.get(url, data=content).json()
+
+
+def put(url, content):
+    return requests.put(url, data=content).json()
+
+
+def delete(url, content):
+    return requests.delete(url, data=content).json()
+
+
 class RequestError(Exception):
     def __init__(self, code, message):
         self.code = code
