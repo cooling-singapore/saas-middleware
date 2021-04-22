@@ -4,6 +4,7 @@ import os
 import time
 
 import saas.utilities.general_helpers as utilities
+from saas.registry.proxy import EndpointProxy
 
 from tests.testing_environment import TestingEnvironment
 from saas.node import Node
@@ -22,6 +23,14 @@ n_nodes = 4
 
 
 class RegistryTestCases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        env.start_flask_app()
+
+    @classmethod
+    def tearDownClass(cls):
+        env.stop_flask_app()
+
     def setUp(self):
         env.prepare_working_directory()
 
@@ -42,6 +51,8 @@ class RegistryTestCases(unittest.TestCase):
             node.initialise_registry((env.p2p_server_address[0], env.p2p_server_address[1] + i))
 
             self.nodes.append(node)
+
+        self.proxy = EndpointProxy(f"{env.app_service_rest_host}:{env.app_service_rest_port}", self.nodes[0].key)
 
     def tearDown(self):
         for node in self.nodes:
@@ -220,6 +231,19 @@ class RegistryTestCases(unittest.TestCase):
         # nodes 0 should have removed the record of node 1
         records0 = self.nodes[0].registry.get()
         assert (len(records0) == 1)
+
+    def test_proxy(self):
+        node_info = self.proxy.get_node_info()
+        logger.info(node_info)
+        assert(node_info['rest_address'][0] == env.app_service_rest_host)
+        assert(node_info['rest_address'][1] == env.app_service_rest_port)
+        assert(node_info['p2p_address'][0] == env.app_service_p2p_host)
+        assert(node_info['p2p_address'][1] == env.app_service_p2p_port)
+
+        contents = self.proxy.get_registry_contents()
+        logger.info(contents)
+        assert(len(contents) == 1)
+        assert(node_info['iid'] in contents)
 
 
 if __name__ == '__main__':
