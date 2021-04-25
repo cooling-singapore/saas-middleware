@@ -1,9 +1,8 @@
-import React from 'react';
-import styled from 'styled-components';
-import clsx from 'clsx';
-import { Draggable } from 'react-beautiful-dnd';
+import React from "react";
+import styled from "styled-components";
+import clsx from "clsx";
+import { Draggable } from "react-beautiful-dnd";
 import {
-    Button,
     Card,
     CardHeader,
     CardContent,
@@ -11,55 +10,45 @@ import {
     Tooltip,
     Collapse,
     IconButton,
-    makeStyles,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogContentText,
-    DialogActions,
     Typography,
+    makeStyles
 } from "@material-ui/core";
 
 import {
     green,
     red,
     yellow
-} from '@material-ui/core/colors';
+} from "@material-ui/core/colors";
 
 import {
     ExpandMore,
     FiberManualRecord,
     DeleteOutlined
-} from '@material-ui/icons';
+} from "@material-ui/icons";
 
-import Job from './job'
+import ConfirmDialog from "../confirmDialog"
+import Job from "./job"
 
 const Container = styled(Card)`
     border-radius: 0;
     margin-bottom: 8px;
     margin-top: 8px;
-    background-color: ${props => (props.isDragDisabled ? 'lightgrey' : props.isDragging ? 'lightgreen' : 'white')};
-`;
-
-const Title = styled.div`
-    font-size: small;
-    font-weight: bold;
-`;
-
-const Type = styled.div`
-    font-size: x-small;
+    background-color: ${props => (props.isDragDisabled ? "lightgrey" : props.isDragging ? "lightgreen" : "white")};
 `;
 
 const useStyles = makeStyles((theme) => ({
+    noTextTransform: {
+        textTransform: 'none'
+    },
     expand: {
-        transform: 'rotate(0deg)',
-        marginLeft: 'auto',
-        transition: theme.transitions.create('transform', {
+        transform: "rotate(0deg)",
+        marginLeft: "auto",
+        transition: theme.transitions.create("transform", {
             duration: theme.transitions.duration.shortest,
         }),
     },
     expandOpen: {
-        transform: 'rotate(180deg)',
+        transform: "rotate(180deg)",
     },
 }));
 
@@ -70,39 +59,40 @@ export default function Processor(props) {
         setExpanded(!expanded);
     };
 
-    const [dialogOpen, setDialogOpen] = React.useState(false);
-    const handleUndeployClick = () => {
-        setDialogOpen(true);
-    }
+    const [confirmDialogOpen, setConfirmDialogOpen] = React.useState(false);
+    const handleConfirmDialogOpen = () => {
+        setConfirmDialogOpen(true);
+    };
 
-    const handleDialogClose = () => {
-        setDialogOpen(false);
-    }
+    const handleConfirmDialogClose = () => {
+        setConfirmDialogOpen(false);
+        
+    };
 
-    const handleDialogCloseConfirm = () => {
-        props.onDeleteProcessor(props.item.id)
-        setDialogOpen(false);
-    }
+    const handleConfirmDialogConfirm = () => {
+        handleConfirmDialogClose();
+        props.onDeleteProcessor(props.processorId);
+    };
 
     var statusLabel;
     var statusColor;
     switch (props.item.status) {
-        case 1:
-            statusLabel = 'Idle';
-            statusColor = green[500];
-            break;
         case 2:
-            statusLabel = 'Work';
+            statusLabel = "Work";
             statusColor = yellow[500];
             break;
         case 3:
-            statusLabel = 'Busy';
+            statusLabel = "Busy";
             statusColor = red[500];
+            break;
+        case 1:
+        default:
+            statusLabel = "Idle";
+            statusColor = green[500];
             break;
     }
     return (
-
-        <div>
+        <React.Fragment>
             <Draggable
                 draggableId={props.item.id}
                 index={props.index}
@@ -118,11 +108,11 @@ export default function Processor(props) {
                         <CardHeader
                             action={
                                 <Tooltip title={statusLabel}>
-                                    <FiberManualRecord fontSize='large' style={{ color: statusColor }} />
+                                    <FiberManualRecord fontSize="large" style={{ color: statusColor }} />
                                 </Tooltip>
                             }
-                            title={<Title>{props.item.name}</Title>}
-                            subheader={<Type>{props.item.type}</Type>}
+                            title={<Typography variant="subtitle1" className={classes.noTextTransform} gutterBottom>{props.item.name}</Typography>}
+                            subheader={<Typography variant="body2">{props.item.type}</Typography>}
                         />
                         {/* <CardContent>
                         //TODO: display node status
@@ -130,7 +120,7 @@ export default function Processor(props) {
                         <CardActions disableSpacing>
                             <Tooltip title="Undeploy">
                                 <IconButton aria-label="undeploy">
-                                    <DeleteOutlined fontSize="small" onClick={handleUndeployClick} />
+                                    <DeleteOutlined fontSize="small" onClick={handleConfirmDialogOpen} />
                                 </IconButton>
                             </Tooltip>
 
@@ -148,30 +138,8 @@ export default function Processor(props) {
                     </Container>
                 )}
             </Draggable>
-            <Dialog
-                open={dialogOpen}
-                onClose={handleDialogClose}
-                aria-labelledby='alert-dialog-title'
-                aria-describedby='alert-dialog-description'
-            >
-                <DialogTitle id='alert-dialog-title'><Typography variant="subtitle1" component="span">Undeploy {props.item.name}</Typography></DialogTitle>
-                <DialogContent>
-                    <DialogContentText id='alert-dialog-description'>
-                        <Typography color="textSecondary">
-                            You will remove {props.item.name} from current node.
-            </Typography>
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleDialogClose} color='primary'>
-                        Cancel
-            </Button>
-                    <Button onClick={handleDialogCloseConfirm} color='primary' autoFocus>
-                        Confirm
-            </Button>
-                </DialogActions>
-            </Dialog>
-        </div>
+            <ConfirmDialog open={confirmDialogOpen} text={"Are you sure to undeploy " + props.item.name + " from " + props.nodeName} handleDialogCancel={handleConfirmDialogClose} handleDialogConfirm={handleConfirmDialogConfirm}/>
+        </React.Fragment>
     );
 
 }

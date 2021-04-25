@@ -7,6 +7,18 @@ info:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
 paths:
+  /login:
+    post:
+      summary: Login
+      tags:
+        - Login
+      responses:
+        '200':
+          description: Successfully logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/accessToken'
   /nodes:
     get:
       summary: Get information of all nodes 
@@ -49,8 +61,6 @@ paths:
       summary: Deploy a processor to a target node
       tags:
         - Processor
-      security:
-        - OAuth2: [admin]
       requestBody:
         description: Processor Type information
         required: true
@@ -75,8 +85,6 @@ paths:
       summary: Undeploy a processor from a target node
       tags:
         - Processor
-      security:
-        - OAuth2: [admin]
       parameters:
         - in: path
           name: nodeId
@@ -92,10 +100,10 @@ paths:
             type: string
       responses:
         '201':
-          description: Successfully undeployed processor from node
+          description: Successfully undeploy processor from node
         '400':
           description: Bad request
-  /nodes/{nodeId}/dataobjects/{dataObjectId}:
+  /nodes/{nodeId}/data_objects/{dataObjectId}:
     parameters:
       - in: path
         name: nodeId
@@ -113,8 +121,6 @@ paths:
       summary: transfer target data object from current node to a specific node
       tags:
         - Data Object
-      security:
-        - OAuth2: [write]
       requestBody:
         description: Targetted node information
         required: true
@@ -134,8 +140,6 @@ paths:
       summary: delete target data object from current node
       tags:
         - Data Object
-      security:
-        - OAuth2: [write]
       responses:
         '201':
           description: Successfully deleted data object
@@ -145,7 +149,6 @@ paths:
       summary: get target data object for visualization
       tags:
         - Data Object
-      security: []
       responses:
         '201':
           description: Successfully get data object
@@ -155,8 +158,96 @@ paths:
                 $ref: '#/components/schemas/dataObject'
         '400':
           description: Bad request
+  /users:
+    get:
+      summary: Get all user information
+      tags:
+        - User
+      responses:
+        '201':
+          description: Successfully get user information
+          content:
+            application/json:
+              schema: 
+                type: array
+                items: 
+                  $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+    post:
+      summary: Create a user
+      tags:
+        - User
+      responses:
+        '201':
+          description: Successfully create user
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+  /users/{userId}:
+    parameters:
+      - in: path
+        name: userId
+        description: Id of the user
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get information of a specific user
+      tags:
+        - User
+
+      responses:
+        '201':
+          description: Successfully get user information
+          content:
+            application/json:
+              schema: 
+                $ref: '#/components/schemas/user'
+        '400':
+          description: Bad request
+    delete:
+      summary: delete a specific user
+      tags:
+        - User
+      responses:
+        '201':
+          description: Successfully deleted user
+        '400':
+          description: Bad request
+    put:
+      summary: put a key to a user 
+      tags:
+        - User
+      requestBody:
+        description: Key information
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key:
+                  $ref: '#/components/schemas/key'
+      responses:
+        '201':
+          description: Successfully deleted user
+        '400':
+          description: Bad request
 components:
   schemas:
+    accessToken:
+      title: Access Token
+      description: Access Token
+      properties:
+        access_token:
+          type: string
+        message:
+          type: string
+          example: Logged in as user
     job:
       title: Job
       description: Job in a processor
@@ -215,7 +306,7 @@ components:
         type:
           type: string
           description: Type of the data object
-          example: 3d model, Heapmap
+          example: 3d model, Heatmap
         owner:
           type: string
           description: Owner of the data object
@@ -239,7 +330,7 @@ components:
           description: Data objects in the node
           items:
             $ref: '#/components/schemas/dataObject'
-        processoers:
+        processors:
           type: array
           description: Processors in the node
           items:
@@ -251,22 +342,43 @@ components:
         type:
           type: string
           description: Type of the processor
-        verison:
+        version:
           type: string
           description: Version of the processor
         url:
           type: string
           description: Code repository of the processor code
           example: https://github.com/cooling-singapore/mWRF_SG
+    user:
+      title: User
+      description: A user of the system
+      properties:
+        id:
+          type: string
+          description: User ID
+        type:
+          type: string
+          description: Type of the user, indicates privilege of the user 
+          example: admin, user
+        keys:
+          type: array
+          description: Keys of the user 
+          items:
+            $ref: '#/components/schemas/key'
+    key:
+      title: Key
+      description: A private key of a data object
+      properties:
+        key:
+          type: string
+          description: private key
+        dataObjectId:
+          type: string
+          description: Id of the data object
   securitySchemes:
-    OAuth2:
-      type: oauth2
-      flows:
-        authorizationCode:
-          authorizationUrl: https://example.com/oauth/authorize
-          tokenUrl: https://example.com/oauth/token
-          scopes:
-            read: Grants read access
-            write: Grants write access
-            admin: Grants access to admin operations
-
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []

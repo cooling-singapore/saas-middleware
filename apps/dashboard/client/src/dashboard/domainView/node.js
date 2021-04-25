@@ -46,7 +46,7 @@ export default function Node(props) {
                         {...provided.droppableProps}
                         isDraggingOver={snapshot.isDraggingOver}
                     >
-                        {props.processors.map((processor, index) => <Processor key={processor.id} item={processor} onDeleteProcessor={onDeleteProcessor} index={index} />)}
+                        {props.processors.map((processor, index) => <Processor key={processor.id} item={processor} nodeName={props.node.title} onDeleteProcessor={onDeleteProcessor} index={index} />)}
                         {provided.placeholder}
                     </List>
                 )}

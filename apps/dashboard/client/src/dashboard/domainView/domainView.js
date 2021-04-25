@@ -5,7 +5,7 @@ import {
     Grid
 } from '@material-ui/core';
 
-import initialData from './initialData';
+import initialData from '../data/initialData';
 import Node from './node';
 import ProcessorTypeList from './processorTypeList';
 
@@ -36,6 +36,8 @@ class DomainView extends React.Component {
         if (type === 'processor') {
             if (destination.droppableId.includes('processor') && source.droppableId === 'processorType') {
                 var id = 'processor-' + (this.state.processorCount + 1);
+                
+                //TODO: use setstate to change state
                 this.state.processors[id] = { id: id, name: 'Processor ' + (this.state.processorCount + 1), type: this.state.processorTypes[draggableId].type, status: 1, jobs: [] };
 
                 var destinationId = destination.droppableId.replace('processor', '');
@@ -69,7 +71,7 @@ class DomainView extends React.Component {
             const start = this.state.nodes[sourceId];
             const finish = this.state.nodes[destinationId];
 
-            if (start == finish) {
+            if (start === finish) {
                 const newDataObjectIds = Array.from(start.dataObjectIds);
                 newDataObjectIds.splice(source.index, 1);
                 newDataObjectIds.splice(destination.index, 0, draggableId);
@@ -175,8 +177,9 @@ class DomainView extends React.Component {
         return (
             <Content>
                 {/* <div>
-          Update: {this.state.seconds}
-        </div> */}
+                        Update: {this.state.seconds}
+                    </div> 
+                */}
                 <DragDropContext onDragEnd={this.onDragEnd}>
                     <Grid
                         container
@@ -184,12 +187,13 @@ class DomainView extends React.Component {
                         direction='row'
                         justify='center'
                         alignItems='stretch'
+                        wrap='nowrap'
                         style={{ padding: '10px' }}
                     >
                         <Grid item style={{ backgroundColor: '#F4F4F4' }}>
                             <ProcessorTypeList processorTypes={this.state.processorTypes} processorTypeOrder={this.state.processorTypeOrder} />
                         </Grid>
-
+                    
                         {this.state.nodeOrder.map(nodeId => {
                             const node = this.state.nodes[nodeId];
                             const processors = node.processorIds.map(processorId => this.state.processors[processorId]);
@@ -197,7 +201,6 @@ class DomainView extends React.Component {
 
                             return <Node key={node.id} node={node} processors={processors} dataObjects={dataObjects} onDeleteProcessor={this.onDeleteProcessor} handleClickOpen={this.handleClickOpen} handleClose={this.handleClose} />;
                         })}
-
                     </Grid>
                 </DragDropContext>
             </Content>
