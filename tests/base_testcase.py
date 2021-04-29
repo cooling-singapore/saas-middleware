@@ -1,0 +1,71 @@
+import os
+import subprocess
+import unittest
+import logging
+from multiprocessing import Lock
+
+from saas.keystore.keystore import Keystore
+from saas.node import Node
+
+logger = logging.getLogger('tests.base_testcase')
+
+
+class TestCaseBase():
+    def __init__(self):
+        self._mutex = Lock()
+
+        self.wd_path = None
+        self.host = None
+        self.nodes = None
+        self.proxies = None
+        self._next_p2p_port = None
+        self._next_rest_port = None
+
+    def initialise(self, wd_path=None, host='127.0.0.1', next_p2p_port=4000, next_rest_port=5000):
+        default_wd_path = os.path.join(os.environ['HOME'], 'testing')
+        self.wd_path = wd_path if wd_path else default_wd_path
+        subprocess.check_output(['mkdir', '-p', self.wd_path])
+
+        self.host = host
+        self.nodes = {}
+        self.proxies = {}
+
+        self._next_p2p_port = next_p2p_port
+        self._next_rest_port = next_rest_port
+
+    def cleanup(self):
+        for node in self.nodes:
+            logger.info(f"stopping node '{node.name}'")
+            node.p2p.stop_service()
+
+    def generate_p2p_address(self):
+        with self._mutex:
+            address = (self.host, self._next_p2p_port)
+            self._next_p2p_port += 1
+            return address
+
+    def generate_rest_address(self):
+        with self._mutex:
+            address = (self.host, self._next_rest_port)
+            self._next_rest_port += 1
+            return address
+
+    def node(self, name):
+        if name in self.nodes:
+            return self.nodes[name]
+
+        else:
+            p2p_address = self.generate_p2p_address()
+            rest_address = self.generate_rest_address()
+
+            storage_path = os.path.join(self.wd_path, name)
+            subprocess.check_output(['mkdir', '-p', storage_path])
+
+            logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path}")
+
+            keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
+            node = Node(keystore, storage_path)
+
+            self.nodes[name] = node
+            return node
+
