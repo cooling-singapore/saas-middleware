@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
 
-logger = logging.getLogger('SecureMessenger')
+logger = logging.getLogger('cryptography.messenger')
 
 
 class MessengerException(Exception):
@@ -21,17 +21,17 @@ class MessengerException(Exception):
     MessengerException is the base class for all messenger-related exception classes.
     """
     def __init__(self, info):
-        super().__init__(info)
+        super().__init__()
+        self.info = info
 
 
 class MessengerRuntimeError(MessengerException):
     """
     MessengerRuntimeError indicates that there has been an error during runtime.
     """
-    def __init__(self, info, status=None, message=None):
+    def __init__(self, info, status=None):
         super().__init__(info)
         self.status = status
-        self.message = message
 
 
 class MessengerInvalidUseException(MessengerException):
@@ -42,81 +42,6 @@ class MessengerInvalidUseException(MessengerException):
     """
     def __init__(self, info):
         super().__init__(info)
-
-
-class MessengerProtocol:
-    """
-    MessengerProtocol is the base class for all P2P protocol classes. It provides convenience methods that is
-    needed regardless of the specific protocol implementation.
-    """
-    def __init__(self, node, protocol_name, function_mapping):
-        self.node = node
-        self.protocol_name = protocol_name
-        self.function_mapping = function_mapping
-
-    def handle_message(self, message, messenger):
-        """
-        Handles a message that has been received by forwarding it to the appropriate handler function for this
-        type of message.
-        :param message: the message
-        :param messenger: the messenger that facilitates communication between the db and the peer
-        :return: None
-        """
-
-        # check if that message is meant for this protocol
-        if not message['protocol'] == self.protocol_name:
-            raise MessengerInvalidUseException(
-                f"message routed to the wrong protocol: protocol_name='{self.protocol_name}' message='{message}'")
-
-        # check if we have a mapping for that message type
-        if message['type'] not in self.function_mapping:
-            raise MessengerInvalidUseException(
-                f"message protocol '{self.protocol_name}' does not support message of this type: message='{message}'")
-
-        # forward the message to the appropriate handler function
-        self.function_mapping[message['type']](message['payload'], messenger)
-
-    def prepare_message(self, message_type, payload=None):
-        """
-        Convenience method for preparing a message. It creates the body of the message and fills in the 'protocol',
-        'type' and 'payload' fields.
-        :param message_type: the message type
-        :param payload: the (optional) payload, i.e., the type-specific content of this message
-        :return: a dictionary containing 'protocol', 'type' and 'payload' fields
-        """
-        return {
-            'protocol': self.protocol_name,
-            'type': message_type,
-            'payload': payload if payload else {}
-        }
-
-    def broadcast_message(self, message, exclude=None):
-        """
-        Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
-        broadcast. Note that the db registry typically also includes a record for the db its hosted on. In order
-        to prevent nodes sending messages to themselves as part of a broadcast, the sending db is added to the
-        exclusion list by default.
-        :param message: the message to be broadcast
-        :param exclude: an (optional) list of peer iids which are to be excluded from the broadcast
-        :return: None
-        """
-        logger.debug(f"broadcast message: {message}")
-
-        # we always exclude ourselves
-        if exclude is None:
-            exclude = []
-        exclude.append(self.node.key.iid)
-
-        # send message to all peers we know of
-        for peer_iid, record in self.node.registry.get().items():
-            # is this peer iid in the exclusion list?
-            if peer_iid in exclude:
-                continue
-
-            # connect to the peer, send message and close connection
-            peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node, peer_iid)
-            messenger.send(message)
-            messenger.close()
 
 
 class SecureMessenger:
@@ -157,20 +82,6 @@ class SecureMessenger:
             logger.warning(f"cannot connect to peer at address '{peer_address}'")
             return None, None
 
-    @classmethod
-    def accept_connection_by_peer(cls, node):
-        """
-        Accepts and incoming connection from a peer.
-        :param node: the db whose socket server is used to accept the incoming connection
-        :return: the messenger that facilitates communication between the db and the peer
-        """
-        client_socket, client_address = node.server_socket.accept()
-        messenger = SecureMessenger(client_socket)
-        peer = messenger.handshake(node)
-        logger.info(f"connected by peer '{peer.iid}'")
-
-        return peer, messenger
-
     def handshake(self, node):
         """
         Performs the handshake (i.e., key exchange) in order to secure all further message exchange.
@@ -199,7 +110,7 @@ class SecureMessenger:
 
         # exchange public keys. note that this is not strictly speaking part of the handshake. it is merely for the
         # benefit of the peers to know who their counterparty is.
-        self.send({'public_key': node.key.public_as_string()})
+        self.send({'public_key': node.keystore.identity.public_as_string()})
         self.peer = ECKeyPair.from_public_key_string(self.receive()['public_key'])
 
         return self.peer
@@ -316,10 +227,10 @@ class SecureMessenger:
             raise MessengerInvalidUseException(f"error during request: {request_message}")
 
         elif reply['status'] == 501:
-            raise MessengerRuntimeError(reply['status'], reply['content'])
+            raise MessengerRuntimeError(reply['content'], reply['status'])
 
         elif not reply['status'] == 200:
-            raise MessengerRuntimeError(reply['status'], reply['content'])
+            raise MessengerRuntimeError(reply['content'], reply['status'])
 
         return reply['content']
 
