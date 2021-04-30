@@ -1,110 +1,138 @@
 import time
 import logging
+import traceback
 
 from threading import Lock, Thread
 
+from jsonschema import validate
+
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.rti.adapters import RTIProcessorAdapter
-from saas.utilities.blueprint_helpers import request_rti_submit_task, request_rti_job_status
+from saas.rti.blueprint import RTIProxy
+from saas.schemas import task_descriptor_schema
+from saas.rti.adapters import State
 
-logger = logging.getLogger('RTI.workflow')
+logger = logging.getLogger('rti.workflow')
 
 
 class TaskWrapper(Thread):
     def __init__(self, node, task_descriptor):
-        super().__init__()
-        self.mutex = Lock()
-        self.node = node
-        self.name = task_descriptor['name']
-        self.proc_id = task_descriptor['processor_id']
-        self.owner = ECKeyPair.from_public_key_string(task_descriptor['output']['owner_public_key'])
-        self.input_interface = {}
-        self.status = None
-        self.dependencies = {}
-        self.unresolved = {}
+        Thread.__init__(self, name=task_descriptor['name'])
+        self._mutex = Lock()
+        self._node = node
+        self._proxy = RTIProxy(node.rest.address(), node.identity())
+        self._task_descriptor = task_descriptor
+        self._input_interface = {}
+        self._status = None
+        self._dependencies = {}
+        self._unresolved = {}
 
         self.is_done = False
         self.is_successful = False
-        self.outputs = {}
+        self._outputs = {}
 
+        # validate the task descriptor and process it
+        validate(instance=task_descriptor, schema=task_descriptor_schema)
         for input_descriptor in task_descriptor['input']:
             key = input_descriptor['name']
-            self.input_interface[key] = input_descriptor
+            self._input_interface[key] = input_descriptor
 
             if input_descriptor['type'] == 'reference':
                 obj_id = input_descriptor['obj_id']
                 if obj_id.startswith('label'):
                     temp = obj_id.split(":")
                     label = f"{temp[1]}:{temp[2]}"
-                    self.unresolved[label] = key
-                    self.dependencies[key] = None
+                    self._unresolved[label] = key
+                    self._dependencies[key] = None
                 else:
-                    self.dependencies[key] = obj_id
+                    self._dependencies[key] = obj_id
             else:
-                self.dependencies[key] = input_descriptor
+                self._dependencies[key] = input_descriptor
+
+    def _wait_for_dependencies(self):
+        while True:
+            time.sleep(0.5)
+            with self._mutex:
+                if len(self._unresolved) == 0:
+                    break
+
+    def _wait_for_processor(self):
+        while True:
+            proc_id = self._task_descriptor['processor_id']
+            records = self._node.registry.get()
+            for node_iid in records:
+                record = records[node_iid]
+                if proc_id in record['processors']:
+                    return
+
+            time.sleep(60)
+
+    def _submit_and_wait_for_task(self):
+        proc_id = self._task_descriptor['processor_id']
+        owner = ECKeyPair.from_public_key_string(self._task_descriptor['output']['owner_public_key'])
+        job_id = self._proxy.submit_task(proc_id, self._input_interface, owner)
+        while True:
+            time.sleep(5)
+            _, self._status = self._proxy.get_job_info(proc_id, job_id)
+
+            state = State.from_string(self._status['state'])
+            if state in [State.FAILED, State.SUCCESSFUL]:
+                break
+
+    def _extract_outputs(self):
+        with self._mutex:
+            for item in self._status.items():
+                if item[0].startswith("output:"):
+                    temp = item[0].split(":")
+                    self._outputs[temp[1]] = item[1]
 
     def run(self):
         try:
             # are all input data object dependencies resolved?
-            self.mutex.acquire()
-            while self.unresolved:
-                self.mutex.release()
-                time.sleep(1)
-                self.mutex.acquire()
-            self.mutex.release()
+            self._wait_for_dependencies()
 
             # do we have the required processor deployed somewhere in the domain?
-            address = self.find_processor_rest_api()
-            while not address:
-                time.sleep(60)
-                address = self.find_processor_rest_api()
+            self._wait_for_processor()
 
             # submit the job and wait until it's done
-            job_id = request_rti_submit_task(address, self.node.key, self.owner, self.proc_id, self.input_interface)
-            while True:
-                time.sleep(5)
-                job_descriptor, self.status = request_rti_job_status(address, self.node.key, self.proc_id, job_id)
-                if self.status['status'] != 'running':
-                    break
+            self._submit_and_wait_for_task()
 
             # extract the object ids for the output data objects (i.e., the products of the task)
-            for item in self.status.items():
-                if item[0].startswith("output:"):
-                    temp = item[0].split(":")
-                    self.outputs[temp[1]] = item[1]
+            self._extract_outputs()
 
             self.is_successful = True
 
         except Exception as e:
-            logger.error(f"error while executing task wrapper: {e}")
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.error(f"error while executing task wrapper: {e}, trace={trace}")
             self.is_successful = False
 
         self.is_done = True
 
-    def find_processor_rest_api(self):
-        records = self.node.registry.get()
-        for node_iid in records:
-            record = records[node_iid]
-            if self.proc_id in record['processors']:
-                return record['rest_api_address']
-        return None
-
-    def has_unresolved_dependencies(self):
-        return self.unresolved
+    # def has_unresolved_dependencies(self):
+    #     with self._mutex:
+    #         return len(self._unresolved) > 0
 
     def resolve(self, key, obj_id):
-        if key in self.unresolved:
-            key2 = self.unresolved.pop(key)
-            self.input_interface[key2]['obj_id'] = obj_id
-            self.dependencies[key2] = obj_id
+        with self._mutex:
+            if key in self._unresolved:
+                key2 = self._unresolved.pop(key)
+                self._input_interface[key2]['obj_id'] = obj_id
+                self._dependencies[key2] = obj_id
+
+    def get_outputs(self):
+        with self._mutex:
+            return self._outputs
 
 
 class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, rti):
-        super().__init__('workflow', rti)
+    def __init__(self, node):
+        RTIProcessorAdapter.__init__(self, 'workflow', node)
+
+        self._node = node
 
     def execute(self, workflow_descriptor, working_directory, status):
-        status.update('status', 'running')
+        status.update_state(State.RUNNING)
 
         pending = {}
         finished = {}
@@ -112,9 +140,9 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
         # initialise pending tasks
         status.update('stage', 'initialise pending tasks')
         for task in workflow_descriptor['tasks']:
-            wrapper = TaskWrapper(self.rti.node, task)
-            wrapper.start()
+            wrapper = TaskWrapper(self._node, task)
             pending[wrapper.name] = wrapper
+            wrapper.start()
 
         # waiting for pending tasks to be done
         status.update('stage', 'waiting for pending tasks')
@@ -128,9 +156,10 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
                     pending.pop(name)
                     finished[name] = wrapper
 
-                    for output_name in wrapper.outputs:
+                    outputs = wrapper.get_outputs()
+                    for output_name in outputs:
                         label = f"{wrapper.name}:{output_name}"
-                        resolved[label] = wrapper.outputs[output_name]
+                        resolved[label] = outputs[output_name]
 
                     # if the task was unsuccessful, take note of it
                     if not wrapper.is_successful:
@@ -144,7 +173,7 @@ class RTIWorkflowProcessorAdapter(RTIProcessorAdapter):
                         wrapper.resolve(key, resolved[key])
 
             if pacing:
-                time.sleep(1)
+                time.sleep(0.1)
 
         # collect the output data object ids
         status.update('stage', 'collecting outputs')
