@@ -110,7 +110,7 @@ class SecureMessenger:
 
         # exchange public keys. note that this is not strictly speaking part of the handshake. it is merely for the
         # benefit of the peers to know who their counterparty is.
-        self.send({'public_key': node.keystore.identity.public_as_string()})
+        self.send({'public_key': node.identity().public_as_string()})
         self.peer = ECKeyPair.from_public_key_string(self.receive()['public_key'])
 
         return self.peer
