@@ -2,6 +2,7 @@ import os
 import logging
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.keystore.keystore import Keystore
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.registry.service import RegistryService
@@ -89,3 +90,24 @@ class Node:
 
         if self.rest:
             self.rest.stop_service()
+
+    @classmethod
+    def create(cls, keystore, storage_path, p2p_address=None, rest_address=None, enable_dor=False, enable_rti=False):
+        node = Node(keystore, storage_path)
+
+        if p2p_address:
+            node.start_p2p_service(p2p_address)
+
+        if rest_address:
+            node.start_rest_service(rest_address)
+
+        if enable_dor:
+            node.start_dor_service()
+
+        if enable_rti:
+            node.start_rti_service()
+
+        node.start_nodedb_service()
+        node.start_registry_service()
+
+        return node
