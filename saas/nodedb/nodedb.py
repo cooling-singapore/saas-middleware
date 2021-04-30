@@ -5,7 +5,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.cryptography.eckeypair import ECKeyPair
 
 Base = declarative_base()
@@ -42,17 +41,14 @@ class PublicKey(Base):
 
 
 class NodeDB:
-    def __init__(self, node):
-        # create P2P protocol instance
-        self.protocol = NodeDBP2PProtocol(node)
-
-        # initialise database and session maker
-        engine = create_engine(node.db_path)
-        Base.metadata.create_all(engine)
-        self.Session = sessionmaker(bind=engine)
+    def __init__(self, db_path, protocol):
+        self._protocol = protocol
+        self._engine = create_engine(db_path)
+        Base.metadata.create_all(self._engine)
+        self._Session = sessionmaker(bind=self._engine)
 
     def update_tags(self, obj_id, tags, propagate=True):
-        with self.Session() as session:
+        with self._Session() as session:
             for tag in tags:
                 item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
                 if item:
@@ -62,14 +58,14 @@ class NodeDB:
             session.commit()
 
             if propagate:
-                self.protocol.broadcast('update_tags', {
+                self._protocol.broadcast('update_tags', {
                     'obj_id': obj_id,
                     'tags': tags,
                     'propagate': False
                 })
 
     def remove_tags(self, obj_id, keys=None, propagate=True):
-        with self.Session() as session:
+        with self._Session() as session:
             if keys:
                 for key in keys:
                     session.query(DORTag).filter_by(obj_id=obj_id, key=key).delete()
@@ -79,14 +75,14 @@ class NodeDB:
             session.commit()
 
             if propagate:
-                self.protocol.broadcast('remove_tags', {
+                self._protocol.broadcast('remove_tags', {
                     'obj_id': obj_id,
                     'keys': keys,
                     'propagate': False
                 })
 
     def get_tags(self, obj_id):
-        with self.Session() as session:
+        with self._Session() as session:
             tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
 
             result = {}
@@ -100,7 +96,7 @@ class NodeDB:
         # confidentiality
         result = []
         if key_criterion or value_criterion:
-            with self.Session() as session:
+            with self._Session() as session:
                 if key_criterion and value_criterion:
                     arg = and_(DORTag.key.like(key_criterion), DORTag.value.like(value_criterion))
                 elif key_criterion:
@@ -115,21 +111,21 @@ class NodeDB:
         return result
 
     def update_public_key(self, iid, public_key, propagate=True):
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(PublicKey).get(iid)
             if not item:
                 session.add(PublicKey(iid=iid, public_key=public_key))
                 session.commit()
 
                 if propagate:
-                    self.protocol.broadcast('update_public_key', {
+                    self._protocol.broadcast('update_public_key', {
                         'iid': iid,
                         'public_key': public_key,
                         'propagate': False
                     })
 
     def get_public_key(self, iid):
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(PublicKey).get(iid)
             if item:
                 return ECKeyPair.from_public_key_string(item.public_key)
@@ -137,7 +133,7 @@ class NodeDB:
                 return None
 
     def get_access_list(self, obj_id):
-        with self.Session() as session:
+        with self._Session() as session:
             permissions = session.query(DORPermission).filter_by(obj_id=obj_id).all()
 
             result = []
@@ -146,7 +142,7 @@ class NodeDB:
             return result
 
     def has_access(self, obj_id, key):
-        with self.Session() as session:
+        with self._Session() as session:
             permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
             return permission is not None
 
@@ -154,7 +150,7 @@ class NodeDB:
         key = ECKeyPair.from_public_key_string(public_key)
         self.update_public_key(key.iid, key.public_as_string())
 
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
             if item:
                 item.permission = permission
@@ -163,7 +159,7 @@ class NodeDB:
             session.commit()
 
     def revoke_access(self, obj_id, public_key=None):
-        with self.Session() as session:
+        with self._Session() as session:
             if public_key:
                 key = ECKeyPair.from_public_key_string(public_key)
                 session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).delete()
@@ -173,7 +169,7 @@ class NodeDB:
 
     def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key, custodian_public_key,
                         expiration, propagate=True):
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
                 owner = ECKeyPair.from_public_key_string(owner_public_key)
@@ -188,7 +184,7 @@ class NodeDB:
                 session.commit()
 
                 if propagate:
-                    self.protocol.broadcast('add_data_object', {
+                    self._protocol.broadcast('add_data_object', {
                         'obj_id': obj_id,
                         'd_hash': d_hash,
                         'c_hash': c_hash,
@@ -199,20 +195,20 @@ class NodeDB:
                     })
 
     def remove_data_object(self, obj_id):
-        with self.Session() as session:
+        with self._Session() as session:
             session.query(DORObject).filter_by(obj_id=obj_id).delete()
             session.commit()
 
     def get_object_by_id(self, obj_id):
-        with self.Session() as session:
+        with self._Session() as session:
             return session.query(DORObject).filter_by(obj_id=obj_id).first()
 
     def get_objects_by_content_hash(self, c_hash):
-        with self.Session() as session:
+        with self._Session() as session:
             return session.query(DORObject).filter_by(c_hash=c_hash).all()
 
     def get_owner(self, obj_id):
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
                 return self.get_public_key(item.owner_iid)
@@ -220,7 +216,7 @@ class NodeDB:
                 return None
 
     def update_ownership(self, obj_id, new_owner_public_key):
-        with self.Session() as session:
+        with self._Session() as session:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
                 key = ECKeyPair.from_public_key_string(new_owner_public_key)
