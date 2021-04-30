@@ -4,7 +4,7 @@ import os
 from flask import Blueprint, request, send_from_directory, jsonify
 from flask_cors import CORS
 
-from saas.json_schemas import data_object_descriptor_schema, processor_descriptor_schema
+from saas.schemas import data_object_descriptor_schema, processor_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.utilities.blueprint_helpers import request_manager
 from saas.utilities.general_helpers import get_timestamp_now
