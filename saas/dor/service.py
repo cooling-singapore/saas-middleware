@@ -7,24 +7,24 @@ from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_
 from saas.utilities.general_helpers import dump_json_to_file, create_symbolic_link
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
-logger = logging.getLogger('DOR.Records')
+logger = logging.getLogger('dor.service')
 
 
-class DataObjectRepository:
+class DataObjectRepositoryService:
     infix_master_path = 'dor-master'
     infix_cache_path = 'dor-cache'
 
     def obj_content_path(self, c_hash, cache=False):
         if cache:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path, f"{c_hash}.content")
+            return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path, f"{c_hash}.content")
         else:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path, f"{c_hash}.content")
+            return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, f"{c_hash}.content")
 
     def obj_descriptor_path(self, obj_id, cache=False):
         if cache:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_cache_path, f"{obj_id}.descriptor")
+            return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path, f"{obj_id}.descriptor")
         else:
-            return os.path.join(self.node.datastore_path, DataObjectRepository.infix_master_path, f"{obj_id}.descriptor")
+            return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, f"{obj_id}.descriptor")
 
     def __init__(self, node):
         # initialise properties
@@ -32,10 +32,10 @@ class DataObjectRepository:
         self.protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise directories
-        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore_path,
-                                                             DataObjectRepository.infix_master_path)])
-        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore_path,
-                                                             DataObjectRepository.infix_cache_path)])
+        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
+                                                             DataObjectRepositoryService.infix_master_path)])
+        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
+                                                             DataObjectRepositoryService.infix_cache_path)])
 
     def add(self, owner_public_key, descriptor, content_path, expiration=None):
         # calculate the hash for the data object content
@@ -85,7 +85,7 @@ class DataObjectRepository:
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, self.node.key.public_as_string(),
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, self.node.identity().public_as_string(),
                                      expiration)
 
         return 201, {'data_object_id': obj_id}
@@ -97,7 +97,7 @@ class DataObjectRepository:
             return 404, f"Database record for data object '{obj_id}' not found."
 
         # if we are not the custodian, we are not allowed to delete it
-        if not record.custodian_iid == self.node.key.iid:
+        if not record.custodian_iid == self.node.id():
             return 403, f"Node is not custodian for data object '{obj_id}'"
 
         # do we have a descriptor for this data object?
