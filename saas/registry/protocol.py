@@ -1,20 +1,13 @@
-"""
-This module contains the code for the Registry P2P protocol.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
 import logging
 
+from saas.cryptography.messenger import SecureMessenger
 from saas.utilities.general_helpers import get_timestamp_now
-from saas.cryptography.messenger import SecureMessenger, MessengerProtocol
+from saas.p2p.protocol import P2PProtocol
 
-logger = logging.getLogger('Registry.Protocol')
+logger = logging.getLogger('registry.protocol')
 
 
-class RegistryP2PProtocol(MessengerProtocol):
+class RegistryP2PProtocol(P2PProtocol):
     """
     The RegistryP2PProtocol provides the necessary methods to synchronise registry records across a network of
     SaaS nodes within a domain. The protocol handles the following message types: 'join', 'leave', 'update', 'ping'
@@ -161,7 +154,7 @@ class RegistryP2PProtocol(MessengerProtocol):
         # send ping message and receive response
         t0 = get_timestamp_now()
         response = messenger.request(self.prepare_message("ping", {
-            'from': self.node.key.iid,
+            'from': self.node.id(),
             'to': peer_iid,
             't_sent': t0
         }))
@@ -174,8 +167,8 @@ class RegistryP2PProtocol(MessengerProtocol):
             t1 = response['payload']['t_sent']
             dt0 = t1-t0
             dt1 = t2-t1
-            logger.info(f"response latency: dt('{self.node.key.short_iid}'->'{peer.short_iid}')={dt0} and "
-                        f"dt('{peer.short_iid}'->'{self.node.key.short_iid}')={dt1}")
+            logger.info(f"response latency: dt('{self.node.id(truncate=True)}'->'{peer.short_iid}')={dt0} and "
+                        f"dt('{peer.short_iid}'->'{self.node.id(truncate=True)}')={dt1}")
 
             # response received, touch the record
             self.node.registry.touch(peer_iid)
