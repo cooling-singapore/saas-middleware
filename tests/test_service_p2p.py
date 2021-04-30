@@ -64,9 +64,10 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         self.service.start_service()
 
         # message malformed message
+        _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
+        assert (messenger is not None)
+
         try:
-            _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
-            assert(messenger is not None)
             message = "sdfsdfsdfs"
             messenger.request(message)
             assert False
@@ -77,10 +78,14 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         except Exception:
             assert False
 
+        finally:
+            messenger.close()
+
         # protocol not supported
+        _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
+        assert (messenger is not None)
+
         try:
-            _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
-            assert(messenger is not None)
             message = protocol.prepare_message('blub', 'test')
             message['protocol'] = 'alsjdfhskjdf'
             messenger.request(message)
@@ -92,10 +97,14 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         except Exception:
             assert False
 
+        finally:
+            messenger.close()
+
         # message type not supported
+        _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
+        assert (messenger is not None)
+
         try:
-            _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
-            assert(messenger is not None)
             message = protocol.prepare_message('beee', 'test')
             messenger.request(message)
             assert False
@@ -106,7 +115,15 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         except Exception:
             assert False
 
+        finally:
+            messenger.close()
+
         self.service.stop_service()
+
+    def test_unreachable(self):
+        # valid message
+        _, messenger = SecureMessenger.connect_to_peer(self.p2p_address, self.node)
+        assert(messenger is None)
 
 
 if __name__ == '__main__':
