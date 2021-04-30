@@ -1,5 +1,4 @@
 import json
-
 import requests
 
 from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
@@ -44,10 +43,7 @@ class EndpointProxy:
                 return r.status_code
 
         else:
-            try:
-                return requests.get(url, data=content).json()
-            except Exception as e:
-                print(e)
+            return requests.get(url, data=content).json()
 
     def put(self, endpoint, body=None, parameters=None, attachment=None,
             with_authentication=True, with_authorisation_by=None):
