@@ -5,7 +5,6 @@ import logging
 
 from multiprocessing import Lock
 
-from saas.cryptography.eckeypair import ECKeyPair
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.registry.protocol import RegistryP2PProtocol
@@ -14,7 +13,7 @@ from saas.utilities.general_helpers import get_timestamp_now
 logger = logging.getLogger('tests.base_testcase')
 
 
-class TestCaseBase():
+class TestCaseBase:
     def __init__(self):
         self._mutex = Lock()
 
