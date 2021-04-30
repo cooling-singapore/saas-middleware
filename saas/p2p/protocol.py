@@ -11,12 +11,12 @@ class P2PProtocol:
     needed regardless of the specific protocol implementation.
     """
     def __init__(self, node, protocol_name, function_mapping):
-        self._node = node
-        self._protocol_name = protocol_name
+        self.node = node
+        self.protocol_name = protocol_name
         self._function_mapping = function_mapping
 
     def name(self):
-        return self._protocol_name
+        return self.protocol_name
 
     def supports(self, message_type):
         return message_type in self._function_mapping
@@ -31,14 +31,14 @@ class P2PProtocol:
         """
 
         # check if that message is meant for this protocol
-        if not message['protocol'] == self._protocol_name:
+        if not message['protocol'] == self.protocol_name:
             raise MessengerInvalidUseException(
-                f"message routed to the wrong protocol: protocol_name='{self._protocol_name}' message='{message}'")
+                f"message routed to the wrong protocol: protocol_name='{self.protocol_name}' message='{message}'")
 
         # check if we have a mapping for that message type
         if message['type'] not in self._function_mapping:
             raise MessengerInvalidUseException(
-                f"message protocol '{self._protocol_name}' does not support message of this type: message='{message}'")
+                f"message protocol '{self.protocol_name}' does not support message of this type: message='{message}'")
 
         # forward the message to the appropriate handler function
         self._function_mapping[message['type']](message['payload'], messenger)
@@ -52,7 +52,7 @@ class P2PProtocol:
         :return: a dictionary containing 'protocol', 'type' and 'payload' fields
         """
         return {
-            'protocol': self._protocol_name,
+            'protocol': self.protocol_name,
             'type': message_type,
             'payload': payload if payload else {}
         }
@@ -72,15 +72,15 @@ class P2PProtocol:
         # we always exclude ourselves
         if exclude is None:
             exclude = []
-        exclude.append(self._node.id())
+        exclude.append(self.node.id())
 
         # send message to all peers we know of
-        for peer_iid, record in self._node.registry.get().items():
+        for peer_iid, record in self.node.registry.get().items():
             # is this peer iid in the exclusion list?
             if peer_iid in exclude:
                 continue
 
             # connect to the peer, send message and close connection
-            peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self._node, peer_iid)
+            peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node, peer_iid)
             messenger.send(message)
             messenger.close()

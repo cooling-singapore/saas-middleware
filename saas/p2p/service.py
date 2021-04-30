@@ -26,6 +26,9 @@ class P2PService:
             logger.info(f"add support for p2p protocol '{protocol.name()}'")
             self._registered_protocols[protocol.name()] = protocol
 
+    def address(self):
+        return self._address
+
     def start_service(self, concurrency=5):
         """
         Starts the TCP socket server at the specified address, allowing for some degree of concurrency. A separate
