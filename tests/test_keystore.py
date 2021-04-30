@@ -3,7 +3,7 @@ import logging
 import os
 
 from saas.keystore.keystore import Keystore
-from tests.testing_environment import TestingEnvironment
+from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -12,37 +12,39 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-env = TestingEnvironment.get_instance('../config/testing-config.json')
 
 
-class KeystoreTestCase(unittest.TestCase):
-    def setUp(self):
-        env.prepare_working_directory()
+class KeystoreTestCase(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
 
-        self.path = env.wd_path
         self.name = 'name'
         self.email = 'email'
         self.password = 'password'
 
+    def setUp(self):
+        self.initialise()
+
     def tearDown(self):
-        pass
+        self.cleanup()
 
     def test_create_and_load(self):
-        keystore = Keystore.create(self.path, self.name, self.email, self.password)
+        keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
         assert(keystore is not None)
         assert(keystore.identity is not None)
         assert(keystore.name() == self.name)
         assert(keystore.email() == self.email)
 
         keystore_id = keystore.id()
-        master_path = os.path.join(self.path, f"{keystore_id}.master")
-        keystore_path = os.path.join(self.path, f"{keystore_id}.keystore")
+        master_path = os.path.join(self.wd_path, f"{keystore_id}.master")
+        keystore_path = os.path.join(self.wd_path, f"{keystore_id}.keystore")
         assert(os.path.isfile(master_path))
         assert(os.path.isfile(keystore_path))
 
-        assert(Keystore.is_valid(self.path, keystore_id))
+        assert(Keystore.is_valid(self.wd_path, keystore_id))
 
-        keystore = Keystore.load(self.path, keystore_id, self.password)
+        keystore = Keystore.load(self.wd_path, keystore_id, self.password)
         assert(keystore is not None)
         assert(keystore.identity is not None)
         assert(keystore.id() == keystore_id)
@@ -50,7 +52,7 @@ class KeystoreTestCase(unittest.TestCase):
         assert(keystore.email() == self.email)
 
     def test_update(self):
-        keystore = Keystore.create(self.path, self.name, self.email, self.password)
+        keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
         keystore_id = keystore.id()
         assert(keystore.name() == self.name)
         assert(keystore.email() == self.email)
@@ -62,7 +64,7 @@ class KeystoreTestCase(unittest.TestCase):
         assert(keystore.name() == name)
         assert(keystore.email() == email)
 
-        keystore = Keystore.load(self.path, keystore_id, self.password)
+        keystore = Keystore.load(self.wd_path, keystore_id, self.password)
         assert(keystore is not None)
         assert(keystore.identity is not None)
         assert(keystore.id() == keystore_id)
@@ -70,7 +72,7 @@ class KeystoreTestCase(unittest.TestCase):
         assert(keystore.email() == email)
 
     def test_add_get_object_key(self):
-        keystore = Keystore.create(self.path, self.name, self.email, self.password)
+        keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
         keystore_id = keystore.id()
 
         obj_id = 'obj1'
@@ -78,7 +80,7 @@ class KeystoreTestCase(unittest.TestCase):
         keystore.add_object_key(obj_id, obj_key)
         assert(keystore.get_object_key(obj_id) == obj_key)
 
-        keystore = Keystore.load(self.path, keystore_id, self.password)
+        keystore = Keystore.load(self.wd_path, keystore_id, self.password)
         assert(keystore.get_object_key(obj_id) == obj_key)
 
 

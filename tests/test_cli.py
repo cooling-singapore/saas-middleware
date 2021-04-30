@@ -3,7 +3,6 @@ import logging
 import unittest
 
 from saas_cli import parse_args, load_keystore
-from tests.testing_environment import TestingEnvironment
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -11,7 +10,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
 
 
