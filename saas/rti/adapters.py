@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -12,6 +13,7 @@ import requests
 import subprocess
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.dor.git_helper import GitSpec, GitProcessorHelper
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
 from saas.utilities.blueprint_helpers import request_dor_add
 
@@ -371,7 +373,8 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         try:
             container = client.containers.get(self.docker_container_id)
         except docker.errors.NotFound:
-            logger.warning(f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
+            logger.warning(
+                f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
         else:
             container.stop()
             container.wait()
@@ -390,46 +393,95 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                                                            'task_descriptor': task_descriptor})
             status_code = r.status_code
         except Exception as e:
-            logger.warning(f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
+            logger.warning(
+                f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
             return False
         else:
             return r.status_code == 200
 
 
-class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
+class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, descriptor, content_path, rti):
         super().__init__(proc_id, rti)
+        self.descriptor = descriptor
+        git_spec = load_json_from_file(content_path)
+        self.git_spec = GitSpec(**git_spec)
+        self.git_helper = GitProcessorHelper(rti)
+
+        self.git_local_path = self.git_helper.get_git_local_path(self.git_spec)
+        self.proc_path = os.path.join(self.git_local_path, self.git_spec.processor_path)
 
 
-class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, content_path, rti):
-        super().__init__(proc_id, rti)
+        logger.info(f"[{self.__class__.name}] {self.git_spec}")
 
-        logger.info(f"[RTIScriptProcessorAdapter] init: content_path={content_path}")
-        self.script = load_json_from_file(content_path)
-        self.module = None
+    @property
+    def log_dir(self):
+        log_dir = os.path.join(self.rti.node.datastore_path, 'logs')
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
+        return log_dir
+
+    def _install_dependencies(self):
+        # FIXME: Currently installs dependencies directly to host machine (might not be a problem actually)
+
+        git_repo_descriptor = self.git_helper.get_repo_descriptor(self.git_spec)
+        logger.info(f"[{self.__class__.name}] {git_repo_descriptor}")
+        install_scripts = git_repo_descriptor.get('install_scripts')
+        requirements_file = git_repo_descriptor.get('requirements_file')
+
+        # Run install scripts if found
+        if install_scripts is not None:
+            for script_relpath in install_scripts:
+                script_path = os.path.join(self.git_local_path, script_relpath)
+                if os.path.exists(script_path):
+                    with open(script_path, 'rb') as f:
+                        script_contents = f.read()
+
+                    _, script_name = os.path.split(script_path)
+                    logger.info(f"[{self.__class__.name}] Running install script {script_name}")
+                    result = subprocess.run(script_contents, shell=True, capture_output=True, check=True)
+
+                    # Save script output as log file
+                    log_path = os.path.join(self.log_dir, f'{self.proc_id}_script_{script_name}.txt')
+                    with open(log_path, 'ab') as f:
+                        f.write(result.stdout)
+                else:
+                    logger.error(f"[{self.__class__.name}] Install script {script_relpath} not found")
+
+        # Install python dependencies if found
+        if requirements_file is not None:
+            if os.path.exists(os.path.join(self.git_local_path, requirements_file)):
+                result = subprocess.run(['python', '-m', 'pip', 'install', '-r', requirements_file],
+                                        cwd=self.git_local_path, capture_output=True, check=True)
+
+                # Save script output as log file
+                log_path = os.path.join(self.log_dir, f'{self.proc_id}_requirements_file.txt')
+                with open(log_path, 'ab') as f:
+                    f.write(result.stdout)
+            else:
+                logger.error(f"[{self.__class__.name}] Requirements file {requirements_file} not found")
 
     def startup(self):
-        package_path = self.script['package_path']
-        descriptor_path = self.script['descriptor_path']
-        module_name = self.script['module_name']
-        dependencies = self.script.get('dependencies', [])
+        # Check if the processor exists in repo
+        if not os.path.exists(self.proc_path):
+            raise FileNotFoundError(f'{self.git_spec.processor_path} not found in repo')
 
-        for package in dependencies:
-            logger.info(f"[RTIScriptProcessorAdapter] importing dependency '{package}'")
-            import_with_auto_install(package)
+        logger.info(f"[{self.__class__.name}] Installing dependencies")
+        self._install_dependencies()
 
-        logger.info(f"[RTIScriptProcessorAdapter] startup: package_path={package_path} module_name={module_name}")
-        sys.path.insert(1, package_path)
+        # To prevent name collision during import of processor as module (since processors are named processor.py)
+        # git repo store will be used as path and processor will be imported as {proc_id}.{path_to_proc}.processor
+        sys.path.insert(1, self.git_helper.git_repo_store)
 
-        self.module = importlib.import_module(module_name)
-        logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{module_name}'")
-
-        descriptor = load_json_from_file(descriptor_path)
-        self.parse_io_interface(descriptor)
-
-    def shutdown(self):
-        pass
+        self.module = importlib.import_module(
+            f'{self.git_spec.hash()}.{".".join(self.git_spec.processor_path.split(os.pathsep))}.processor')
+        
+        self.parse_io_interface(self.descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
         return self.module.function(task_descriptor, working_directory, status_logger)
+
+
+class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
+    def __init__(self, proc_id, descriptor, content_path, rti):
+        super().__init__(proc_id, rti)
