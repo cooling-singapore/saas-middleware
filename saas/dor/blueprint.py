@@ -6,15 +6,17 @@ __author__ = "Heiko Aydt"
 __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
+import json
 import logging
 import os
+import tempfile
 
 from flask import Blueprint, request, send_from_directory, jsonify
 from flask_cors import CORS
 
+from saas.dor.git_helper import GitProcessorHelper, GitSpec
 from saas.json_schemas import data_object_descriptor_schema, processor_descriptor_schema
 from saas.utilities.blueprint_helpers import request_manager
-from saas.cryptography.eckeypair import ECKeyPair
 from saas.node import Node
 
 # create the blueprint object and allows CORS for the processor route
@@ -236,3 +238,41 @@ def remove_tags(obj_id):
     node.db.remove_tags(obj_id, body['keys'])
 
     return jsonify("Tags updated."), 200
+
+
+git_spec_specification = {
+    'type': 'object',
+    'properties': {
+        'source': {'type': 'string'},
+        'commit_id': {'type': 'string'},
+        'processor_path': {'type': 'string'}
+    },
+    'required': ['source', 'commit_id', 'processor_path']
+}
+
+git_processor_body_specification = {
+    'type': 'object',
+    'properties': {
+        'owner_public_key': {'type': 'string'},
+        'git_specification': git_spec_specification
+    },
+    'required': ['owner_public_key', 'git_specification']
+}
+
+
+@blueprint.route('/processors', methods=['POST'])
+@request_manager.authentication_required
+@request_manager.verify_request_body(git_processor_body_specification)
+def add_processor():
+    body = request_manager.get_request_variable('body')
+
+    git_spec = body['git_specification']
+    descriptor = GitProcessorHelper(node.rti).get_processor_descriptor(GitSpec(**git_spec))
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        git_spec_path = os.path.join(temp_dir, 'git_specification.json')
+        with open(git_spec_path, 'w') as f:
+            json.dump(git_spec, f)
+        status, result = node.dor.add(body['owner_public_key'], descriptor, git_spec_path)
+
+    return jsonify(result), status

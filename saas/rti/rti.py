@@ -9,9 +9,9 @@ import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter, StatusLogger
+from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter, StatusLogger, \
+    RTINativeProcessorAdapter, RTIProcessorAdapter
 from saas.rti.workflow import RTIWorkflowProcessorAdapter
-from saas.rti.adapters import RTIScriptProcessorAdapter, RTIProcessorAdapter
 
 from jsonschema import validate, ValidationError
 
@@ -52,7 +52,7 @@ class RuntimeInfrastructure:
             }
             adapter.start()
 
-    def deploy(self, proc_id):
+    def deploy(self, proc_id, proc_type='native'):
         self.mutex.acquire()
 
         # is the processor already deployed?
@@ -77,22 +77,22 @@ class RuntimeInfrastructure:
 
         # create an RTI adapter
         content_path = self.node.dor.obj_content_path(c_hash, cache=True)
-        if descriptor['type'] == 'docker':
+        if proc_type == 'native':
+            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTINativeProcessorAdapter(proc_id,
+                                                                                               descriptor,
+                                                                                               content_path,
+                                                                                               self)
+        elif proc_type == 'docker':
             self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(proc_id,
                                                                                                descriptor,
                                                                                                content_path,
                                                                                                self)
 
-        elif descriptor['type'] == 'package':
+        elif proc_type == 'package':
             self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIPackageProcessorAdapter(proc_id,
                                                                                                 descriptor,
                                                                                                 content_path,
                                                                                                 self)
-
-        elif descriptor['type'] == 'script':
-            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIScriptProcessorAdapter(proc_id,
-                                                                                               content_path,
-                                                                                               self)
 
         self.deployed_processors[proc_id].start()
 
