@@ -468,17 +468,12 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         logger.info(f"[{self.__class__.__name__}] Installing dependencies")
         self._install_dependencies()
 
-        # To prevent name collision during import of processor as module (since processors are named processor.py)
-        # git repo store will be used as path and processor will be imported as {proc_id}.{path_to_proc}.processor
-        sys.path.insert(1, self.git_helper.git_repo_store)
-
-        self.module = importlib.import_module(
-            f'{self.git_spec.hash()}.{".".join(self.git_spec.processor_path.split(os.pathsep))}.processor')
-        
         self.parse_io_interface(self.descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
-        return self.module.function(task_descriptor, working_directory, status_logger)
+        print(['python', os.path.join(self.proc_path, 'processor.py'), working_directory])
+        subprocess.run(['python', os.path.join(self.proc_path, 'processor.py'), working_directory], check=True)
+        return True
 
 
 class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
