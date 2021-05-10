@@ -411,8 +411,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         self.git_local_path = self.git_helper.get_git_local_path(self.git_spec)
         self.proc_path = os.path.join(self.git_local_path, self.git_spec.processor_path)
 
-
-        logger.info(f"[{self.__class__.name}] {self.git_spec}")
+        logger.info(f"[{self.__class__.__name__}] {self.git_spec}")
 
     @property
     def log_dir(self):
@@ -425,7 +424,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         # FIXME: Currently installs dependencies directly to host machine (might not be a problem actually)
 
         git_repo_descriptor = self.git_helper.get_repo_descriptor(self.git_spec)
-        logger.info(f"[{self.__class__.name}] {git_repo_descriptor}")
+        logger.info(f"[{self.__class__.__name__}] {git_repo_descriptor}")
         install_scripts = git_repo_descriptor.get('install_scripts')
         requirements_file = git_repo_descriptor.get('requirements_file')
 
@@ -438,7 +437,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                         script_contents = f.read()
 
                     _, script_name = os.path.split(script_path)
-                    logger.info(f"[{self.__class__.name}] Running install script {script_name}")
+                    logger.info(f"[{self.__class__.__name__}] Running install script {script_name}")
                     result = subprocess.run(script_contents, shell=True, capture_output=True, check=True)
 
                     # Save script output as log file
@@ -446,7 +445,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                     with open(log_path, 'ab') as f:
                         f.write(result.stdout)
                 else:
-                    logger.error(f"[{self.__class__.name}] Install script {script_relpath} not found")
+                    logger.error(f"[{self.__class__.__name__}] Install script {script_relpath} not found")
 
         # Install python dependencies if found
         if requirements_file is not None:
@@ -459,14 +458,14 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 with open(log_path, 'ab') as f:
                     f.write(result.stdout)
             else:
-                logger.error(f"[{self.__class__.name}] Requirements file {requirements_file} not found")
+                logger.error(f"[{self.__class__.__name__}] Requirements file {requirements_file} not found")
 
     def startup(self):
         # Check if the processor exists in repo
         if not os.path.exists(self.proc_path):
             raise FileNotFoundError(f'{self.git_spec.processor_path} not found in repo')
 
-        logger.info(f"[{self.__class__.name}] Installing dependencies")
+        logger.info(f"[{self.__class__.__name__}] Installing dependencies")
         self._install_dependencies()
 
         # To prevent name collision during import of processor as module (since processors are named processor.py)
