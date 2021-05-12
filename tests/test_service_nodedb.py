@@ -1,12 +1,9 @@
 import unittest
 import logging
-import os
 import time
 
 from saas.cryptography.eckeypair import ECKeyPair
-from tests.testing_environment import TestingEnvironment
-from saas.node import Node
-from saas.nodedb.nodedb import NodeDB
+from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,36 +12,21 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-env = TestingEnvironment.get_instance('../config/testing-config.json')
-n_nodes = 2
 
 
-class NodeDBTestCase(unittest.TestCase):
+class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
+
     def setUp(self):
-        env.prepare_working_directory()
-
-        self.nodes = []
-        for i in range(0, n_nodes):
-            name = f"node_{i}"
-            datastore_path = os.path.join(env.wd_path, name)
-
-            logger.info(f"creating node '{name}'")
-            node = Node(name, datastore_path, env.rest_api_address)
-            node.initialise_identity(env.password)
-            node.start_server((env.p2p_server_address[0], env.p2p_server_address[1] + i))
-            node.initialise_registry(env.p2p_server_address)
-            self.nodes.append(node)
-
-        # give it some time to settle
-        time.sleep(2)
+        self.initialise()
 
     def tearDown(self):
-        for node in self.nodes:
-            logger.info(f"stopping db '{node.name}'")
-            node.stop_server()
+        self.cleanup()
 
     def test_add_update_remove_tags(self):
-        node = self.nodes[0]
+        node = self.get_node('node')
 
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 0)
@@ -90,7 +72,7 @@ class NodeDBTestCase(unittest.TestCase):
         assert(len(tags) == 0)
 
     def test_find_data_objects(self):
-        node = self.nodes[0]
+        node = self.get_node('node')
 
         node.db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v00'},
@@ -133,33 +115,32 @@ class NodeDBTestCase(unittest.TestCase):
         assert('aaa' in obj_ids)
 
     def test_propagate_tag_updates(self):
-        node0 = self.nodes[0]
-        node1 = self.nodes[1]
+        nodes = self.create_nodes(2)
 
-        node0.db.update_tags('aaa', [
+        nodes[0].db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v0'}
         ], propagate=True)
         time.sleep(1)
 
-        tags = node0.db.get_tags('aaa')
+        tags = nodes[0].db.get_tags('aaa')
         assert(len(tags) == 1)
         assert('k0' in tags)
 
-        tags = node1.db.get_tags('aaa')
+        tags = nodes[1].db.get_tags('aaa')
         assert(len(tags) == 1)
         assert('k0' in tags)
 
-        node1.db.remove_tags('aaa', ['k0'], propagate=True)
+        nodes[1].db.remove_tags('aaa', ['k0'], propagate=True)
         time.sleep(1)
 
-        tags = node0.db.get_tags('aaa')
+        tags = nodes[0].db.get_tags('aaa')
         assert(len(tags) == 0)
 
-        tags = node1.db.get_tags('aaa')
+        tags = nodes[1].db.get_tags('aaa')
         assert(len(tags) == 0)
 
     def test_update_public_key(self):
-        node = self.nodes[0]
+        node = self.get_node('node')
 
         key = ECKeyPair.create_new()
 
@@ -174,30 +155,29 @@ class NodeDBTestCase(unittest.TestCase):
         assert(key.iid == result.iid)
 
     def test_propagate_public_key_update(self):
-        node0 = self.nodes[0]
-        node1 = self.nodes[0]
+        nodes = self.create_nodes(2)
 
         key = ECKeyPair.create_new()
 
-        result = node0.db.get_public_key(key.iid)
+        result = nodes[0].db.get_public_key(key.iid)
         assert(result is None)
 
-        result = node1.db.get_public_key(key.iid)
+        result = nodes[1].db.get_public_key(key.iid)
         assert(result is None)
 
-        node1.db.update_public_key(key.iid, key.public_as_string(), propagate=True)
+        nodes[1].db.update_public_key(key.iid, key.public_as_string(), propagate=True)
         time.sleep(1)
 
-        result = node0.db.get_public_key(key.iid)
+        result = nodes[0].db.get_public_key(key.iid)
         assert(result is not None)
         assert(key.iid == result.iid)
 
-        result = node1.db.get_public_key(key.iid)
+        result = nodes[1].db.get_public_key(key.iid)
         assert(result is not None)
         assert(key.iid == result.iid)
 
     def test_grant_revoke_permissions(self):
-        node = self.nodes[0]
+        node = self.get_node('node')
 
         key0 = ECKeyPair.create_new()
         key1 = ECKeyPair.create_new()

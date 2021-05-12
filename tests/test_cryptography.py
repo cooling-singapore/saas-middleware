@@ -5,7 +5,7 @@ import time
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
-from tests.testing_environment import TestingEnvironment
+from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -13,37 +13,26 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
 
-#
-# def create_authentication(url, body, auth_key, attachment_path=None):
-#     return {
-#         'public_key': auth_key.public_as_string(),
-#         'signature': auth_key.sign_authentication_token(url, body, [attachment_path] if attachment_path else [])
-#     }
-#
-#
-# def create_authorisation(url, body, auth_key):
-#     return {
-#         'public_key': auth_key.public_as_string(),
-#         'signature': auth_key.sign_authorisation_token(url, body)
-#     }
 
+class ECKeyPairTestCases(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
 
-class ECKeyPairTestCases(unittest.TestCase):
     def setUp(self):
-        env.prepare_working_directory()
+        self.initialise()
         self.key = ECKeyPair.create_new()
 
     def tearDown(self):
-        pass
+        self.cleanup()
 
     def test_serialisation(self):
         password = 'test'
 
-        pubkey_path = os.path.join(env.wd_path, 'pubkey.pem')
-        prvkey_path = os.path.join(env.wd_path, 'prvkey.pem')
+        pubkey_path = os.path.join(self.wd_path, 'pubkey.pem')
+        prvkey_path = os.path.join(self.wd_path, 'prvkey.pem')
         self.key.write_public(pubkey_path)
         self.key.write_private(prvkey_path, password)
 
@@ -104,7 +93,7 @@ class ECKeyPairTestCases(unittest.TestCase):
             'f': 2343
         }
 
-        file_path = env.generate_random_file('data.dat', 1e6)
+        file_path = self.generate_random_file('data.dat', 1e6)
 
         # case 1: no body, no files
         signature = self.key.sign_authentication_token(url)
@@ -146,19 +135,23 @@ class ECKeyPairTestCases(unittest.TestCase):
         assert not self.key.verify_authorisation_token(signature, url, body)
 
 
-class RSAKeyPairTestCases(unittest.TestCase):
+class RSAKeyPairTestCases(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
+
     def setUp(self):
-        env.prepare_working_directory()
+        self.initialise()
         self.key = RSAKeyPair.create_new()
 
     def tearDown(self):
-        pass
+        self.cleanup()
 
     def test_serialisation(self):
         password = 'test'
 
-        pubkey_path = os.path.join(env.wd_path, 'pubkey.pem')
-        prvkey_path = os.path.join(env.wd_path, 'prvkey.pem')
+        pubkey_path = os.path.join(self.wd_path, 'pubkey.pem')
+        prvkey_path = os.path.join(self.wd_path, 'prvkey.pem')
         self.key.write_public(pubkey_path)
         self.key.write_private(prvkey_path, password)
 

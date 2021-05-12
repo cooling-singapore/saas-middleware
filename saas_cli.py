@@ -8,7 +8,8 @@ import subprocess
 from cryptography.fernet import Fernet
 
 from saas.keystore.keystore import Keystore
-from saas.utilities.general_helpers import prompt
+from saas.node import Node
+from saas.utilities.general_helpers import prompt, get_address_from_string
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -139,6 +140,28 @@ def cmd_initialise_keystore(args):
     return keystore.identity.iid
 
 
+def cmd_initialise_service(args):
+    keystore = load_keystore(args)
+
+    rest_service_address = (args['host'], args['rest-port'])
+    p2p_service_address = (args['host'], args['p2p-port'])
+    boot_node_address = get_address_from_string(args['boot-node'])
+    enable_dor = args['service'] == 'full' or args['service'] == 'storage'
+    enable_rti = args['service'] == 'full' or args['service'] == 'execution'
+
+    # check datastore path and create new directory if needed.
+    if os.path.isfile(args['datastore']):
+        raise Exception(f"Datastore path '{args['datastore']}' is pointing at a file.")
+
+    elif not os.path.isdir(args['datastore']):
+        subprocess.check_output(['mkdir', '-p', args['datastore']])
+
+    node = Node.create(keystore, args['datastore'], p2p_address=p2p_service_address, rest_address=rest_service_address,
+                       enable_dor=enable_dor, enable_rti=enable_rti)
+
+    return node
+
+
 def create_parser():
     # define defaults
     default_keystore = os.path.join(os.environ['HOME'], '.keystore')
@@ -167,6 +190,35 @@ def create_parser():
     init_parser.add_argument('--password', dest='password', action='store',
                              help=f"password for the keystore")
 
+    service_parser = subparsers.add_parser('service', help='start a node as service provider')
+    service_parser.add_argument('--datastore', dest='datastore', action='store',
+                                default=default_datastore,
+                                help=f"path to the datastore (default: '{default_datastore}')")
+    service_parser.add_argument('--host', dest='host', action='store',
+                                default=default_host,
+                                help=f"host to be used by the services (default: '{default_host}').")
+    service_parser.add_argument('--rest-port', dest='rest-port', action='store',
+                                default=default_rest_port,
+                                help=f"port to be used by the service REST API endpoints (default: {default_rest_port}).")
+    service_parser.add_argument('--p2p-port', dest='p2p-port', action='store',
+                                default=default_p2p_port,
+                                help=f"port to be used by the node P2P interface (default: {default_p2p_port}).")
+    service_parser.add_argument('--boot-node', dest='boot-node', action='store',
+                                default=f"{default_host}:{default_p2p_port}",
+                                help=f"URL (address:p2p-port) of a existing node for joining a network "
+                                     f"(default: '{default_host}:{default_p2p_port}').")
+    service_parser.add_argument('--service', dest='service', action='store',
+                                choices=['full', 'storage', 'execution'],
+                                default=default_service,
+                                help=f"indicate the service provided by the node: 'storage' and 'execution' will only "
+                                     f"load the DOR or RTI modules, respectively; a 'full' node will provide both "
+                                     f"(default: '{default_service}').")
+    service_parser.add_argument('--keystore-id', dest='keystore-id', action='store',
+                                help=f"id of the keystore to be used if there are more than one available "
+                                     f"(default: id of the only keystore if only one is available )")
+    service_parser.add_argument('--password', dest='password', action='store',
+                                help=f"password for the keystore")
+
     return parser
 
 
@@ -180,6 +232,13 @@ def parse_args(args):
         # execute the command...
         if args['command'] == 'init':
             return cmd_initialise_keystore(args)
+
+        elif args['command'] == 'service':
+            node = cmd_initialise_service(args)
+
+            prompt("Press return to shutdown!")
+
+            node.stop_services()
 
     except argparse.ArgumentError:
         parser.print_help()

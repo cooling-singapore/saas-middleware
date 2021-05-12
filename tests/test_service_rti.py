@@ -7,13 +7,14 @@ import time
 import unittest
 import pip
 
-import requests
-
+from saas.cryptography.eckeypair import ECKeyPair
+from saas.dor.blueprint import DORProxy
 from saas.rti.adapters import import_with_auto_install
-from saas.rti.proxy import EndpointProxy
-from saas.utilities.blueprint_helpers import create_authentication, create_authorisation
+from saas.rti.blueprint import RTIProxy
+from saas.rti.status import State
+from saas.rti.workflow import TaskWrapper
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
-from tests.testing_environment import TestingEnvironment
+from tests.base_testcase import TestCaseBase
 from tools.create_template import create_folder_structure
 
 from tools.package_processor import package_docker
@@ -24,100 +25,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-env = TestingEnvironment.get_instance('../config/testing-config.json')
 logger = logging.getLogger(__name__)
-
-
-def add_dummy_processor(sender, owner):
-    descriptor_path = "./descriptor_dummy_script.json"
-    descriptor = load_json_from_file(descriptor_path)
-
-    url = "http://127.0.0.1:5000/repository"
-    body = {
-        'type': 'processor',
-        'owner_public_key': owner.public_as_string(),
-        'descriptor': descriptor
-    }
-
-    script_path = os.path.join(env.wd_path, f"script_dummy_script.json")
-    dump_json_to_file({
-        'package_path': ".",
-        'descriptor_path': descriptor_path,
-        'module_name': 'proc_dummy_script'
-    }, script_path)
-
-    authentication = create_authentication('POST:/repository', sender, body, script_path)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    with open(script_path, 'rb') as f:
-        r = requests.post(url, data=content, files={'attachment': f.read()}).json()
-        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
-
-
-def add_docker_processor(sender, owner, image_path, descriptor_path):
-    url = "http://127.0.0.1:5000/repository"
-    with open(descriptor_path) as f:
-        docker_descriptor = json.load(f)
-
-    body = {
-        'type': 'processor',
-        'owner_public_key': owner.public_as_string(),
-        'descriptor': docker_descriptor
-    }
-
-    authentication = create_authentication('POST:/repository', sender, body, image_path)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    with open(image_path, 'rb') as f:
-        attachment = f.read()
-
-    r = requests.post(url, data=content, files={'attachment': attachment}).json()
-    return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
-
-
-def delete_data_object(sender, obj_id, owner):
-    url = f"http://127.0.0.1:5000/repository/{obj_id}"
-    authentication = create_authentication(f"DELETE:/repository/{obj_id}", sender)
-    authorisation = create_authorisation(f"DELETE:/repository/{obj_id}", owner)
-    content = {
-        'authentication': json.dumps(authentication),
-        'authorisation': json.dumps(authorisation)
-    }
-
-    r = requests.delete(url, data=content).json()
-    return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
-
-
-def add_data_object_a(sender, owner):
-    url = "http://127.0.0.1:5000/repository"
-    body = {
-        'type': 'data_object',
-        'owner_public_key': owner.public_as_string(),
-        'descriptor': {
-            'data_type': 'JSONObject',
-            'data_format': 'json',
-            'created_t': 21342342,
-            'created_by': 'heiko'
-        }
-    }
-    test_file_path = env.create_file_with_content('a.dat', json.dumps({'v': 1}))
-    test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
-
-    authentication = create_authentication('POST:/repository', sender, body, test_file_path)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    with open(test_file_path, 'rb') as f:
-        r = requests.post(url, data=content, files={'attachment': f.read()}).json()
-        return test_obj_id, r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
 
 
 def create_dummy_docker_processor(dummy_processor_path):
@@ -144,38 +52,77 @@ def create_dummy_docker_processor(dummy_processor_path):
     return image_path, descriptor_path, temp_dir.cleanup
 
 
-class RTITestCase(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        env.start_flask_app()
-
-    @classmethod
-    def tearDownClass(cls):
-        env.stop_flask_app()
+class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
 
     def setUp(self):
-        env.prepare_working_directory()
-        self.keys = env.generate_keys(3)
-        self.proxy = EndpointProxy(f"{env.app_service_rest_host}:{env.app_service_rest_port}", self.keys[0])
+        self.initialise()
+
+        self.node = self.get_node('node', enable_rest=True)
+        self.proxy = RTIProxy(self.node.rest.address(), self.node.identity())
+
+        self.keys = []
+        for i in range(3):
+            self.keys.append(ECKeyPair.create_new())
+        logger.info(f"keys[0].iid={self.keys[0].iid}")
+        logger.info(f"keys[1].iid={self.keys[1].iid}")
+        logger.info(f"keys[2].iid={self.keys[2].iid}")
 
     def tearDown(self):
-        pass
+        self.cleanup()
+
+    def deploy_dummy_processor(self):
+        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+
+        descriptor_path = "./descriptor_dummy_script.json"
+        descriptor = load_json_from_file(descriptor_path)
+
+        script_path = os.path.join(self.wd_path, f"script_dummy_script.json")
+        dump_json_to_file({
+            'package_path': ".",
+            'descriptor_path': descriptor_path,
+            'module_name': 'proc_dummy_script'
+        }, script_path)
+
+        proc_id = proxy.add_processor(script_path, self.keys[1], descriptor)
+        self.proxy.deploy(proc_id)
+        return proc_id
+
+    def add_dummy_data_object(self, owner):
+        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+
+        test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
+        test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
+
+        data_type = 'JSONObject'
+        data_format = 'json'
+        created_t = 21342342
+        created_by = 'heiko'
+
+        return test_obj_id, proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
+
+    def add_docker_processor(self, owner, image_path, descriptor_path):
+        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+
+        with open(descriptor_path) as f:
+            descriptor = json.load(f)
+
+        return proxy.add_processor(image_path, owner, descriptor)
 
     def wait_for_job(self, proc_id, job_id):
         while True:
-            time.sleep(1)
-            job_info = self.proxy.get_job(proc_id, job_id)
-            if job_info:
-                status = job_info['status']
-                logger.info(f"descriptor={job_info['job_descriptor']}")
+            time.sleep(5)
+            descriptor, status = self.proxy.get_job_info(proc_id, job_id)
+            if descriptor and status:
+                logger.info(f"descriptor={descriptor}")
                 logger.info(f"status={status}")
 
-                job_status = status.get('status')
-                self.assertIsNotNone(job_status)
-
-                if job_status == 'successful':
+                state = State.from_string(status['state'])
+                if state == State.SUCCESSFUL:
                     break
-                elif job_status == 'failed':
+                elif state == State.FAILED:
                     raise RuntimeError('Job failed')
 
     def test_deployment_undeployment(self):
@@ -185,7 +132,7 @@ class RTITestCase(unittest.TestCase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        proc_id = self.deploy_dummy_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -218,7 +165,7 @@ class RTITestCase(unittest.TestCase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        proc_id = self.deploy_dummy_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -269,7 +216,7 @@ class RTITestCase(unittest.TestCase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
         self.proxy.undeploy(proc_id)
@@ -287,7 +234,7 @@ class RTITestCase(unittest.TestCase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        proc_id = self.deploy_dummy_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -305,7 +252,7 @@ class RTITestCase(unittest.TestCase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        a_obj_id_ref, a_obj_id = add_data_object_a(self.keys[0], self.keys[1])
+        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(self.keys[1])
         logger.info(f"a_obj_id={a_obj_id}")
         assert a_obj_id == a_obj_id_ref
 
@@ -340,7 +287,7 @@ class RTITestCase(unittest.TestCase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
         self.proxy.undeploy(proc_id)
@@ -358,7 +305,7 @@ class RTITestCase(unittest.TestCase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = add_dummy_processor(self.keys[0], self.keys[1])
+        proc_id = self.deploy_dummy_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -376,7 +323,7 @@ class RTITestCase(unittest.TestCase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        a_obj_id_ref, obj_id_a = add_data_object_a(self.keys[0], self.keys[1])
+        a_obj_id_ref, obj_id_a = self.add_dummy_data_object(self.keys[1])
         logger.info(f"obj_id_a={obj_id_a}")
         assert obj_id_a == a_obj_id_ref
 
@@ -473,7 +420,7 @@ class RTITestCase(unittest.TestCase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = add_docker_processor(self.keys[0], self.keys[1], image_path, descriptor_path)
+        proc_id = self.add_docker_processor(self.keys[1], image_path, descriptor_path)
         logger.info(f"proc_id={proc_id}")
         cleanup_func()
 
@@ -525,7 +472,7 @@ class RTITestCase(unittest.TestCase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(env.app_wd_path, 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
         self.proxy.undeploy(proc_id)
@@ -544,13 +491,112 @@ class RTITestCase(unittest.TestCase):
             import_with_auto_install(package)
             import h5py
 
-            output_path = os.path.join(env.wd_path, 'test.hdf5')
+            output_path = os.path.join(self.wd_path, 'test.hdf5')
             f = h5py.File(output_path, "w")
             f.close()
 
         except Exception as e:
             logger.error(e)
             assert False
+
+
+class WorkflowTestCase(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
+
+    def setUp(self):
+        self.initialise()
+
+        self.node = self.get_node('node', enable_rest=True)
+        self.rti_proxy = RTIProxy(self.node.rest.address(), self.node.identity())
+        self.dor_proxy = DORProxy(self.node.rest.address(), self.node.identity())
+        self.owner = ECKeyPair.create_new()
+
+    def tearDown(self):
+        self.cleanup()
+
+    def deploy_dummy_processor(self):
+        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+
+        descriptor_path = "./descriptor_dummy_script.json"
+        descriptor = load_json_from_file(descriptor_path)
+
+        script_path = os.path.join(self.wd_path, f"script_dummy_script.json")
+        dump_json_to_file({
+            'package_path': ".",
+            'descriptor_path': descriptor_path,
+            'module_name': 'proc_dummy_script'
+        }, script_path)
+
+        proc_id = proxy.add_processor(script_path, self.owner, descriptor)
+        return proc_id, self.rti_proxy.deploy(proc_id)
+
+    def test_deploy_dummy_processor(self):
+        proc_id, descriptor = self.deploy_dummy_processor()
+        print(proc_id)
+        print(descriptor)
+        assert(proc_id is not None)
+        assert(descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
+        print(deployed)
+        assert(deployed is not None)
+        assert(len(deployed) == 2)
+        assert(proc_id in deployed)
+
+    def test_task_wrapper(self):
+        proc_id, descriptor = self.deploy_dummy_processor()
+        print(proc_id)
+        print(descriptor)
+        assert(proc_id is not None)
+        assert(descriptor is not None)
+
+        task_descriptor = {
+            'name': 'test',
+            'processor_id': proc_id,
+            'input': [
+                {
+                    'name': 'a',
+                    'type': 'value',
+                    'value': {'v': 1.0}
+                },
+                {
+                    'name': 'b',
+                    'type': 'value',
+                    'value': {'v': 2.0}
+                }
+            ],
+            'output': {
+                'owner_public_key': self.owner.public_as_string()
+            }
+        }
+
+        task = TaskWrapper(self.node, task_descriptor)
+        task.start()
+
+        while not task.is_done:
+            time.sleep(1)
+
+        assert(task.is_successful is True)
+
+        outputs = task.get_outputs()
+        print(outputs)
+        assert(outputs is not None)
+        assert('c' in outputs)
+
+        descriptor = self.dor_proxy.get_descriptor(outputs['c'])
+        print(descriptor)
+        assert(descriptor is not None)
+
+        obj_path = os.path.join(self.wd_path, outputs['c'])
+        self.dor_proxy.get_content(outputs['c'], self.owner, obj_path)
+        with open(obj_path, 'r') as f:
+            obj = json.loads(f.read())
+            print(obj)
+            assert(obj is not None)
+            assert('v' in obj)
+            assert(obj['v'] == 3.0)
 
 
 if __name__ == '__main__':

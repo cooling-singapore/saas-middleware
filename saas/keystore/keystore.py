@@ -98,8 +98,8 @@ class Keystore:
         self.content['identity']['email'] = email
         self.sync_to_disk()
 
-    def id(self):
-        return self.identity.iid
+    def id(self, truncate=False):
+        return self.identity.short_iid if truncate else self.identity.iid
 
     def name(self):
         return self.content['identity']['name']
