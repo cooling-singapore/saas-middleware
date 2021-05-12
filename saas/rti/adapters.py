@@ -403,15 +403,17 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
     def __init__(self, proc_id, descriptor, content_path, rti):
         super().__init__(proc_id, rti)
-        self.descriptor = descriptor
-        git_spec = load_json_from_file(content_path)
-        self.git_spec = GitSpec(**git_spec)
-        self.git_helper = GitProcessorHelper(rti)
+        self.local_git_path = os.path.join(rti.node.datastore_path, '_git_repos', proc_id)
+        self.git_spec = self._read_git_spec(content_path)
 
-        self.git_local_path = self.git_helper.get_git_local_path(self.git_spec)
-        self.proc_path = os.path.join(self.git_local_path, self.git_spec.processor_path)
+        self.processor_path = None
+        self.processor_descriptor = None
 
-        logger.info(f"[{self.__class__.__name__}] {self.git_spec}")
+    @staticmethod
+    def _read_git_spec(git_spec_path):
+        with open(git_spec_path, 'rb') as f:
+            git_spec = json.load(f)
+        return git_spec
 
     @property
     def log_dir(self):
@@ -420,62 +422,16 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             os.mkdir(log_dir)
         return log_dir
 
-    def _install_dependencies(self):
-        # FIXME: Currently installs dependencies directly to host machine (might not be a problem actually)
-
-        git_repo_descriptor = self.git_helper.get_repo_descriptor(self.git_spec)
-        logger.info(f"[{self.__class__.__name__}] {git_repo_descriptor}")
-        install_scripts = git_repo_descriptor.get('install_scripts')
-        requirements_file = git_repo_descriptor.get('requirements_file')
-
-        # Run install scripts if found
-        if install_scripts is not None:
-            for script_relpath in install_scripts:
-                script_path = os.path.join(self.git_local_path, script_relpath)
-                if os.path.exists(script_path):
-                    with open(script_path, 'rb') as f:
-                        script_contents = f.read()
-
-                    _, script_name = os.path.split(script_path)
-                    logger.info(f"[{self.__class__.__name__}] Running install script {script_name}")
-                    result = subprocess.run(script_contents, shell=True, capture_output=True, check=True)
-
-                    # Save script output as log file
-                    log_path = os.path.join(self.log_dir, f'{self.proc_id}_script_{script_name}.txt')
-                    with open(log_path, 'ab') as f:
-                        f.write(result.stdout)
-                else:
-                    logger.error(f"[{self.__class__.__name__}] Install script {script_relpath} not found")
-
-        # Install python dependencies if found
-        if requirements_file is not None:
-            if os.path.exists(os.path.join(self.git_local_path, requirements_file)):
-                result = subprocess.run(['python', '-m', 'pip', 'install', '-r', requirements_file],
-                                        cwd=self.git_local_path, capture_output=True, check=True)
-
-                # Save script output as log file
-                log_path = os.path.join(self.log_dir, f'{self.proc_id}_requirements_file.txt')
-                with open(log_path, 'ab') as f:
-                    f.write(result.stdout)
-            else:
-                logger.error(f"[{self.__class__.__name__}] Requirements file {requirements_file} not found")
-
     def startup(self):
-        # Check if the processor exists in repo
-        if not os.path.exists(self.proc_path):
-            raise FileNotFoundError(f'{self.git_spec.processor_path} not found in repo')
+        deploy_git_processor(self.local_git_path, self.git_spec, self.log_dir)
+        processor_path, processor_descriptor = get_processor(self.local_git_path, self.git_spec)
 
-        logger.info(f"[{self.__class__.__name__}] Installing dependencies")
-        self._install_dependencies()
+        self.processor_path = processor_path
+        self.processor_descriptor = processor_descriptor
 
-        self.parse_io_interface(self.descriptor)
+        self.parse_io_interface(processor_descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
-        print(['python', os.path.join(self.proc_path, 'processor.py'), working_directory])
-        subprocess.run(['python', os.path.join(self.proc_path, 'processor.py'), working_directory], check=True)
+        venv_py_path = os.path.join(self.local_git_path, 'venv', 'bin', 'python')
+        subprocess.run([venv_py_path, self.processor_path, working_directory], check=True)
         return True
-
-
-class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, rti):
-        super().__init__(proc_id, rti)
