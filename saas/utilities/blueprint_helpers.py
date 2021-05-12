@@ -12,46 +12,12 @@ import logging
 import json
 import tempfile
 import flask
-import requests
 from flask import request, Flask, g
 
 from jsonschema import validate, ValidationError
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.utilities.general_helpers import get_timestamp_now, all_in_dict
 
 logger = logging.getLogger('Utilities.blueprint_helpers')
-
-
-def post(url, content, attachment_path=None):
-    if attachment_path:
-        with open(attachment_path, 'rb') as f:
-            return requests.post(url, data=content, files={'attachment': f.read()}).json()
-    else:
-        return requests.post(url, data=content).json()
-
-
-def get(url, content, download_path=None):
-    if download_path:
-        with requests.get(url, data=content, stream=True) as r:
-            if r.status_code == 401:
-                return 401
-
-            with open(download_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-            return r.status_code
-
-    else:
-        return requests.get(url, data=content).json()
-
-
-def put(url, content):
-    return requests.put(url, data=content).json()
-
-
-def delete(url, content):
-    return requests.delete(url, data=content).json()
 
 
 class RequestError(Exception):
@@ -203,7 +169,7 @@ def create_signed_response(node, url, status_code, reply=None):
     :param reply: the reply, i.e., the content of the response (in JSON)
     :return: a signed response
     """
-    signature = node.key.sign_authentication_token(url, reply)
+    signature = node.identity().sign_authentication_token(url, reply)
     reply_body = {
         'signature': signature
     }
@@ -215,11 +181,11 @@ def create_signed_response(node, url, status_code, reply=None):
     return response
 
 
-def create_authentication(url, auth_key, body=None, attachment_path=None):
+def create_authentication(url, auth_key, body=None, attachment=None):
     return {
         'public_key': auth_key.public_as_string(),
         'signature':
-            auth_key.sign_authentication_token(url, body=body, files=[attachment_path]) if attachment_path else
+            auth_key.sign_authentication_token(url, body=body, files=[attachment]) if attachment else
             auth_key.sign_authentication_token(url, body=body)
     }
 
@@ -229,75 +195,6 @@ def create_authorisation(url, auth_key, body=None):
         'public_key': auth_key.public_as_string(),
         'signature': auth_key.sign_authorisation_token(url, body)
     }
-
-
-def request_dor_add(address, sender, owner, content_path, task_descriptor, output_name, data_type, data_format='json', creator='unknown'):
-    recipe = {
-        'task_descriptor': task_descriptor,
-        'output_name': output_name
-    }
-
-    url = f"http://{address[0]}:{address[1]}/repository"
-    body = {
-        'type': 'data_object',
-        'owner_public_key': owner.public_as_string(),
-        'descriptor': {
-            'data_type': data_type,
-            'data_format': data_format,
-            'created_t': get_timestamp_now(),
-            'created_by': creator,
-            'recipe': recipe
-        }
-    }
-
-    authentication = create_authentication('POST:/repository', sender, body, content_path)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    with open(content_path, 'rb') as f:
-        r = requests.post(url, data=content, files={'attachment': f.read()}).json()
-        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
-
-
-def request_rti_submit_task(address, sender, owner, proc_id, input_descriptor):
-    input_descriptor_array = []
-    for item in input_descriptor.items():
-        input_descriptor_array.append(item[1])
-
-    url = f"http://{address[0]}:{address[1]}/processor/{proc_id}/jobs"
-    body = {
-        'type': 'task',
-        'descriptor': {
-            'processor_id': proc_id,
-            'input': input_descriptor_array,
-            'output': {
-                'owner_public_key': owner.public_as_string()
-            }
-        }
-    }
-
-    authentication = create_authentication(f"POST:/processor/{proc_id}/jobs", sender, body)
-    content = {
-        'body': json.dumps(body),
-        'authentication': json.dumps(authentication)
-    }
-
-    r = requests.post(url, data=content).json()
-    return r['reply']['job_id'] if 'job_id' in r['reply'] else None
-
-
-def request_rti_job_status(address, sender, proc_id, job_id):
-    url = f"http://{address[0]}:{address[1]}/processor/{proc_id}/jobs/{job_id}"
-    authentication = create_authentication(f"GET:/processor/{proc_id}/jobs/{job_id}", sender)
-    content = {
-        'authentication': json.dumps(authentication)
-    }
-
-    r = requests.get(url, data=content).json()
-    return (r['reply']['job_descriptor'], r['reply']['status']) \
-        if all_in_dict(['job_descriptor', 'status'], r['reply']) else None
 
 
 class SaaSRequestManager:
