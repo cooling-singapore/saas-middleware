@@ -9,8 +9,7 @@ import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter, StatusLogger, \
-    RTINativeProcessorAdapter, RTIProcessorAdapter
+from saas.rti.adapters import RTIDockerProcessorAdapter, StatusLogger, RTINativeProcessorAdapter, RTIProcessorAdapter
 from saas.rti.workflow import RTIWorkflowProcessorAdapter
 
 from jsonschema import validate, ValidationError
@@ -87,12 +86,6 @@ class RuntimeInfrastructure:
                                                                                                descriptor,
                                                                                                content_path,
                                                                                                self)
-
-        elif proc_type == 'package':
-            self.deployed_processors[proc_id]: RTIProcessorAdapter = RTIPackageProcessorAdapter(proc_id,
-                                                                                                descriptor,
-                                                                                                content_path,
-                                                                                                self)
 
         self.deployed_processors[proc_id].start()
 

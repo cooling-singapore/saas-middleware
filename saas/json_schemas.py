@@ -105,9 +105,16 @@ io_variable_schema = {
 processor_descriptor_schema = {
     'type': 'object',
     'properties': {
+        'created_t': {'type': 'number'},
+        'created_by': {'type': 'string'},
+    },
+    'required': ['created_t', 'created_by']
+}
+
+git_spec_descriptor = {
+    'type': 'object',
+    'properties': {
         'name': {'type': 'string'},
-        'version': {'type': 'string'},
-        'type': {'type': 'string', 'enum': ['docker', 'package', 'script']},
         'input': {
             'type': 'array',
             'items': io_variable_schema
@@ -117,5 +124,16 @@ processor_descriptor_schema = {
             'items': io_variable_schema
         }
     },
-    'required': ['name', 'version', 'type', 'input', 'output']
+    'required': ['name', 'input', 'output']
+}
+
+git_spec_specification = {
+    'type': 'object',
+    'properties': {
+        'source': {'type': 'string'},
+        'commit_id': {'type': 'string'},
+        'path': {'type': 'string'},
+        'descriptor': git_spec_descriptor
+    },
+    'required': ['source', 'commit_id', 'path', 'descriptor']
 }
