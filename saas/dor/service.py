@@ -85,8 +85,7 @@ class DataObjectRepositoryService:
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, self.node.identity().public_as_string(),
-                                     expiration)
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, expiration)
 
         return 201, {'data_object_id': obj_id}
 
@@ -95,10 +94,6 @@ class DataObjectRepositoryService:
         record = self.node.db.get_object_by_id(obj_id)
         if not record:
             return 404, f"Database record for data object '{obj_id}' not found."
-
-        # if we are not the custodian, we are not allowed to delete it
-        if not record.custodian_iid == self.node.id():
-            return 403, f"Node is not custodian for data object '{obj_id}'"
 
         # do we have a descriptor for this data object?
         descriptor_path = self.obj_descriptor_path(obj_id)

@@ -3,6 +3,7 @@ import logging
 import time
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.keystore.keystore import unknown_identity_record
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -139,43 +140,6 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         tags = nodes[1].db.get_tags('aaa')
         assert(len(tags) == 0)
 
-    def test_update_public_key(self):
-        node = self.get_node('node')
-
-        key = ECKeyPair.create_new()
-
-        result = node.db.get_public_key(key.iid)
-        assert(result is None)
-
-        node.db.update_public_key(key.iid, key.public_as_string(), propagate=False)
-        node.db.update_public_key(key.iid, key.public_as_string(), propagate=False)
-
-        result = node.db.get_public_key(key.iid)
-        assert(result is not None)
-        assert(key.iid == result.iid)
-
-    def test_propagate_public_key_update(self):
-        nodes = self.create_nodes(2)
-
-        key = ECKeyPair.create_new()
-
-        result = nodes[0].db.get_public_key(key.iid)
-        assert(result is None)
-
-        result = nodes[1].db.get_public_key(key.iid)
-        assert(result is None)
-
-        nodes[1].db.update_public_key(key.iid, key.public_as_string(), propagate=True)
-        time.sleep(1)
-
-        result = nodes[0].db.get_public_key(key.iid)
-        assert(result is not None)
-        assert(key.iid == result.iid)
-
-        result = nodes[1].db.get_public_key(key.iid)
-        assert(result is not None)
-        assert(key.iid == result.iid)
-
     def test_grant_revoke_permissions(self):
         node = self.get_node('node')
 
@@ -207,6 +171,39 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = node.db.get_access_list('aaa')
         assert(len(result) == 0)
+
+    def test_update_identity(self):
+        nodes = self.create_nodes(3)
+        init_nonce = unknown_identity_record['nonce']
+
+        # propagate its identity
+        nodes[0].update_identity()
+        time.sleep(1)
+
+        # check identities known to nodes
+        for node in nodes:
+            ids = node.db.get_identity_record()
+            print(ids)
+            assert(len(ids) == 1)
+
+            id0 = ids[0]
+            print(f"{id0.iid}:{id0.name}:{id0.email}:{id0.nonce}")
+            assert(ids[0].iid == nodes[0].id())
+            assert(ids[0].nonce == init_nonce+2)
+
+        # update id of node0 but don't propagate
+        nodes[0].update_identity(propagate=False)
+        time.sleep(1)
+        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+3)
+        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+2)
+        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+2)
+
+        # update id of node0
+        nodes[0].update_identity(propagate=True)
+        time.sleep(1)
+        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
+        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
+        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
 
 
 if __name__ == '__main__':
