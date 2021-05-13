@@ -1,11 +1,12 @@
 import logging
 
-from saas.cryptography.messenger import MessengerProtocol
-
-logger = logging.getLogger('NodeDB.Protocol')
+from saas.p2p.protocol import P2PProtocol
 
 
-class NodeDBP2PProtocol(MessengerProtocol):
+logger = logging.getLogger('nodedb.protocol')
+
+
+class NodeDBP2PProtocol(P2PProtocol):
     id = "node_db"
 
     def __init__(self, node):

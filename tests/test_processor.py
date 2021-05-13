@@ -5,7 +5,7 @@ import unittest
 
 from saas.node import Node
 from saas.rti.adapters import RTIDockerProcessorAdapter
-from tests.test_rti import create_dummy_docker_processor
+from tests.test_service_rti import create_dummy_docker_processor
 
 
 class DockerProcessor(unittest.TestCase):
