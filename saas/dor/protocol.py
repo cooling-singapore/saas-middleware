@@ -10,13 +10,14 @@ import os
 import logging
 import json
 
-from saas.cryptography.messenger import SecureMessenger, MessengerProtocol, MessengerRuntimeError
+from saas.cryptography.messenger import MessengerRuntimeError, SecureMessenger
+from saas.p2p.protocol import P2PProtocol
 from saas.utilities.general_helpers import dump_json_to_file
 
-logger = logging.getLogger('DOR.Protocol')
+logger = logging.getLogger('dor.protocol')
 
 
-class DataObjectRepositoryP2PProtocol(MessengerProtocol):
+class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
     def __init__(self, node):

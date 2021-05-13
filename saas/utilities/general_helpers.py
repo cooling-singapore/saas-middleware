@@ -14,6 +14,8 @@ import subprocess
 import random
 import string
 
+from getpass import getpass
+
 logger = logging.getLogger('Utilities.general_helpers')
 
 
@@ -75,3 +77,17 @@ def create_symbolic_link(source_path, destination_path):
         subprocess.check_output(['rm', destination_path])
     subprocess.check_output(['ln', '-s', source_path, destination_path])
 
+
+def prompt(question, valid_answers=None, hidden=False):
+    f = getpass if hidden else input
+    while True:
+        if valid_answers:
+            joined_answers = "|".join(valid_answers)
+            answer = f(f"{question} ({joined_answers}) ")
+
+            if answer in valid_answers:
+                return answer
+
+        else:
+            answer = f(f"{question} ")
+            return answer
