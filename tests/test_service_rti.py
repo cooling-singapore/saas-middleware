@@ -55,8 +55,8 @@ def create_dummy_docker_processor(dummy_processor_path):
 def create_test_processor(output_directory):
     git_spec_path = os.path.join(output_directory, f"git_spec.json")
     dump_json_to_file({
-        'source': 'https://github.com/reyery/test_processor_template',
-        'commit_id': '9c65e87',
+        'source': 'https://github.com/cooling-singapore/saas-processor-template',
+        'commit_id': '09d00d6',
         'path': 'processor_dummy',
         'descriptor': {
             "name": "test",
