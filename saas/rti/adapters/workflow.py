@@ -7,10 +7,10 @@ from threading import Lock, Thread
 from jsonschema import validate
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.rti.adapters import RTIProcessorAdapter
+from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.blueprint import RTIProxy
+from saas.rti.status import State
 from saas.schemas import task_descriptor_schema
-from saas.rti.adapters import State
 
 logger = logging.getLogger('rti.workflow')
 
