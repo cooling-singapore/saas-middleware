@@ -59,6 +59,7 @@ def create_test_processor(output_directory):
         'commit_id': '9c65e87',
         'path': 'processor_dummy',
         'descriptor': {
+            "name": "test",
             "input": [
                 {
                     "name": "a",
