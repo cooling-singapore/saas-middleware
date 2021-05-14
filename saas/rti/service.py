@@ -9,8 +9,10 @@ import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTINativeProcessorAdapter, RTIProcessorAdapter
-from saas.rti.workflow import RTIWorkflowProcessorAdapter
+from saas.rti.adapters.adapters import RTIProcessorAdapter
+from saas.rti.adapters.docker import RTIDockerProcessorAdapter
+from saas.rti.adapters.native import RTINativeProcessorAdapter
+from saas.rti.adapters.workflow import RTIWorkflowProcessorAdapter
 from saas.rti.status import StatusLogger, State
 
 from jsonschema import validate, ValidationError

@@ -1,24 +1,14 @@
-import json
-import os
-import time
-import logging
 import importlib
-import socket
-
-from threading import Lock, Thread
-import docker
-import docker.errors
-import requests
+import logging
+import os
 import subprocess
-
-from jsonschema import validate
+import time
+from threading import Lock, Thread
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.rti.status import State
-from saas.schemas import git_specification_schema
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
-from tools.processor_scripts import get_processor, deploy_git_processor
 
 logger = logging.getLogger('rti.adapters')
 
@@ -33,16 +23,6 @@ def import_with_auto_install(package):
         subprocess.check_output(['python3', '-m', 'pip', 'install', package])
 
     return importlib.import_module(package)
-
-
-def find_open_port():
-    """
-    Use socket's built in ability to find an open port.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        port = s.getsockname()[1]
-    return port
 
 
 class RTIProcessorAdapter(Thread):
@@ -282,140 +262,3 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['output', 'output_content_path', 'output_status'])
         return successful
-
-
-class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
-        super().__init__(proc_id, node)
-        self._node = node
-        self.descriptor = descriptor
-        self.processor_name = self.descriptor['name']
-        self.processor_version = self.descriptor['version']
-        self.content_path = content_path
-
-        self.port = None
-        self.docker_image_id = None
-        self.docker_container_id = None
-        self.docker_container_name = f'{self.processor_name}-{self.processor_version}'
-
-    @property
-    def uri(self):
-        if self.port is not None:
-            return f'http://localhost:{self.port}'
-        else:
-            raise ValueError('Port has not been initialised.')
-
-    def startup(self):
-        client = docker.from_env()
-
-        # Load image to docker
-        with open(self.content_path, 'rb') as docker_package:
-            image_list = client.images.load(docker_package)
-            docker_image = image_list[0]
-        self.docker_image_id = docker_image.id
-
-        # check if there are any containers running with the same name, from the same image, and remove it
-        containers = client.containers.list(filters={'name': self.docker_container_name})
-        if len(containers) == 1 and containers[0].image.id == self.docker_image_id:
-            logger.info(
-                "[RTIDockerProcessorAdapter] startup: removing docker processor container with the same name"
-                " '{}'".format(self.processor_name))
-            container = containers[0]
-            container.stop()
-            container.wait()
-            container.remove()
-
-        # bind rti.jobs_path to jobs_path in Docker
-        jobs_path = os.path.realpath(self._node.rti.get_job_wd())
-        self.port = find_open_port()
-        container = client.containers.run(self.docker_image_id,
-                                          name=self.docker_container_name,
-                                          ports={'5000/tcp': self.port},
-                                          volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
-                                          detach=True)
-
-        self.docker_container_id = container.id
-        self.parse_io_interface(self.descriptor)
-
-        while True:
-            if container.status != 'running':
-                time.sleep(1)
-                container.reload()  # refresh container attrs
-            else:  # check if server is responding to requests
-                r = requests.get(f'{self.uri}/descriptor')
-                if r.status_code == 200:
-                    break
-
-        client.close()
-        logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
-
-    def shutdown(self):
-        client = docker.from_env()
-
-        # Kill and remove docker container
-        try:
-            container = client.containers.get(self.docker_container_id)
-        except docker.errors.NotFound:
-            logger.warning(
-                f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
-        else:
-            container.stop()
-            container.wait()
-            container.remove()
-
-        # Remove image from docker
-        client.images.remove(self.docker_image_id)
-
-        client.close()
-        logger.info(f"[RTIDockerProcessorAdapter] shutdown: shutdown docker processor '{self.processor_name}'")
-
-    def execute(self, task_descriptor, working_directory, status_logger):
-        try:
-            job_id = os.path.basename(working_directory)
-            r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
-                                                           'task_descriptor': task_descriptor})
-            status_code = r.status_code
-        except Exception as e:
-            logger.warning(
-                f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
-            return False
-        else:
-            return r.status_code == 200
-
-
-class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
-        super().__init__(proc_id, node)
-        self.local_git_path = os.path.join(node.datastore(), '_git_repos', proc_id)
-        self.git_spec = self._read_git_spec(content_path)
-
-        self.processor_path = None
-        self.processor_descriptor = None
-
-    @staticmethod
-    def _read_git_spec(git_spec_path):
-        with open(git_spec_path, 'rb') as f:
-            git_spec = json.load(f)
-        validate(instance=git_spec, schema=git_specification_schema)
-        return git_spec
-
-    @property
-    def log_dir(self):
-        log_dir = os.path.join(self._node.datastore(), 'logs')
-        if not os.path.exists(log_dir):
-            os.mkdir(log_dir)
-        return log_dir
-
-    def startup(self):
-        deploy_git_processor(self.local_git_path, self.git_spec, self.log_dir)
-
-        processor_path, processor_descriptor = get_processor(self.local_git_path, self.git_spec)
-        self.processor_path = processor_path
-        self.processor_descriptor = processor_descriptor
-
-        self.parse_io_interface(self.processor_descriptor)
-
-    def execute(self, task_descriptor, working_directory, status_logger):
-        venv_py_path = os.path.join(self.local_git_path, 'venv', 'bin', 'python')
-        subprocess.run([venv_py_path, self.processor_path, working_directory], check=True)
-        return True

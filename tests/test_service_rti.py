@@ -9,11 +9,11 @@ import pip
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
-from saas.rti.adapters import import_with_auto_install
+from saas.rti.adapters.adapters import import_with_auto_install
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.rti.workflow import TaskWrapper
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, get_timestamp_now
+from saas.rti.adapters.workflow import TaskWrapper
+from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
 from tests.base_testcase import TestCaseBase
 from tools.create_template import create_folder_structure
 
