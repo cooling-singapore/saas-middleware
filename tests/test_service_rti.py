@@ -9,11 +9,11 @@ import pip
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
-from saas.rti.adapters import import_with_auto_install
+from saas.rti.adapters.adapters import import_with_auto_install
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.rti.workflow import TaskWrapper
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
+from saas.rti.adapters.workflow import TaskWrapper
+from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
 from tests.base_testcase import TestCaseBase
 from tools.create_template import create_folder_structure
 
@@ -52,6 +52,44 @@ def create_dummy_docker_processor(dummy_processor_path):
     return image_path, descriptor_path, temp_dir.cleanup
 
 
+def create_test_processor(output_directory):
+    git_spec_path = os.path.join(output_directory, f"git_spec.json")
+    dump_json_to_file({
+        'source': 'https://github.com/cooling-singapore/saas-processor-template',
+        'commit_id': '09d00d6',
+        'path': 'processor_dummy',
+        'descriptor': {
+            "name": "test",
+            "input": [
+                {
+                    "name": "a",
+                    "data_type": "JSONObject",
+                    "data_format": "json"
+                },
+                {
+                    "name": "b",
+                    "data_type": "JSONObject",
+                    "data_format": "json"
+                }
+            ],
+            "output": [
+                {
+                    "name": "c",
+                    "data_type": "JSONObject",
+                    "data_format": "json"
+                }
+            ]
+        }
+    }, git_spec_path)
+
+    descriptor = {
+        'created_t': get_timestamp_now(),
+        'created_by': 'test_user'
+    }
+
+    return git_spec_path, descriptor
+
+
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def __init__(self, method_name='runTest'):
         unittest.TestCase.__init__(self, method_name)
@@ -73,20 +111,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
-    def deploy_dummy_processor(self):
+    def deploy_test_processor(self):
         proxy = DORProxy(self.node.rest.address(), self.node.identity())
 
-        descriptor_path = "./descriptor_dummy_script.json"
-        descriptor = load_json_from_file(descriptor_path)
+        git_spec_path, descriptor = create_test_processor(self.wd_path)
 
-        script_path = os.path.join(self.wd_path, f"script_dummy_script.json")
-        dump_json_to_file({
-            'package_path': ".",
-            'descriptor_path': descriptor_path,
-            'module_name': 'proc_dummy_script'
-        }, script_path)
-
-        proc_id = proxy.add_processor(script_path, self.keys[1], descriptor)
+        proc_id = proxy.add_processor(git_spec_path, self.keys[1], descriptor)
         self.proxy.deploy(proc_id)
         return proc_id
 
@@ -132,7 +162,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = self.deploy_dummy_processor()
+        proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -165,7 +195,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = self.deploy_dummy_processor()
+        proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -234,7 +264,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = self.deploy_dummy_processor()
+        proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -305,7 +335,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = self.deploy_dummy_processor()
+        proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
         descriptor = self.proxy.deploy(proc_id)
@@ -516,20 +546,13 @@ class WorkflowTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
+    # FIXME: Looks like duplicated code
     def deploy_dummy_processor(self):
         proxy = DORProxy(self.node.rest.address(), self.node.identity())
 
-        descriptor_path = "./descriptor_dummy_script.json"
-        descriptor = load_json_from_file(descriptor_path)
+        git_spec_path, descriptor = create_test_processor(self.wd_path)
 
-        script_path = os.path.join(self.wd_path, f"script_dummy_script.json")
-        dump_json_to_file({
-            'package_path': ".",
-            'descriptor_path': descriptor_path,
-            'module_name': 'proc_dummy_script'
-        }, script_path)
-
-        proc_id = proxy.add_processor(script_path, self.owner, descriptor)
+        proc_id = proxy.add_processor(git_spec_path, self.owner, descriptor)
         return proc_id, self.rti_proxy.deploy(proc_id)
 
     def test_deploy_dummy_processor(self):
