@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 import time
 import logging
 import importlib
@@ -16,6 +15,7 @@ from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.rti.status import State
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
+from tools.processor_scripts import get_processor, deploy_git_processor
 
 logger = logging.getLogger('rti.adapters')
 
@@ -102,7 +102,7 @@ class RTIProcessorAdapter(Thread):
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
                 if not self._is_active:
-                    return None
+                    return None, None
 
                 # if there is a job, return it
                 elif len(self._pending) > 0:
@@ -381,9 +381,9 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, rti):
-        super().__init__(proc_id, rti)
-        self.local_git_path = os.path.join(rti.node.datastore_path, '_git_repos', proc_id)
+    def __init__(self, proc_id, descriptor, content_path, node):
+        super().__init__(proc_id, node)
+        self.local_git_path = os.path.join(node.datastore(), '_git_repos', proc_id)
         self.git_spec = self._read_git_spec(content_path)
 
         self.processor_path = None
@@ -397,19 +397,19 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
     @property
     def log_dir(self):
-        log_dir = os.path.join(self.rti.node.datastore_path, 'logs')
+        log_dir = os.path.join(self._node.datastore(), 'logs')
         if not os.path.exists(log_dir):
             os.mkdir(log_dir)
         return log_dir
 
     def startup(self):
         deploy_git_processor(self.local_git_path, self.git_spec, self.log_dir)
-        processor_path, processor_descriptor = get_processor(self.local_git_path, self.git_spec)
 
+        processor_path, processor_descriptor = get_processor(self.local_git_path, self.git_spec)
         self.processor_path = processor_path
         self.processor_descriptor = processor_descriptor
 
-        self.parse_io_interface(processor_descriptor)
+        self.parse_io_interface(self.processor_descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
         venv_py_path = os.path.join(self.local_git_path, 'venv', 'bin', 'python')

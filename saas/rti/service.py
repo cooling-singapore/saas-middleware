@@ -9,10 +9,9 @@ import json
 
 from threading import Lock
 
-from saas.rti.adapters import RTIDockerProcessorAdapter, RTIPackageProcessorAdapter
+from saas.rti.adapters import RTIDockerProcessorAdapter, RTINativeProcessorAdapter, RTIProcessorAdapter
 from saas.rti.workflow import RTIWorkflowProcessorAdapter
 from saas.rti.status import StatusLogger, State
-from saas.rti.adapters import RTIScriptProcessorAdapter, RTIProcessorAdapter
 
 from jsonschema import validate, ValidationError
 
@@ -59,7 +58,8 @@ class RuntimeInfrastructureService:
     def get_job_wd(self, job_id=None):
         return os.path.join(self._jobs_path, job_id) if job_id else self._jobs_path
 
-    def deploy(self, proc_id):
+    # FIXME: Remove default value
+    def deploy(self, proc_id, deployment='native'):
         with self._mutex:
             # is the processor already deployed?
             descriptor_path = self._node.dor.obj_descriptor_path(proc_id, cache=True)
@@ -80,20 +80,15 @@ class RuntimeInfrastructureService:
 
             # create an RTI adapter
             content_path = self._node.dor.obj_content_path(c_hash, cache=True)
-            if descriptor['type'] == 'docker':
-                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(proc_id,
+            if deployment == 'native':
+                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTINativeProcessorAdapter(proc_id,
                                                                                                     descriptor,
                                                                                                     content_path,
                                                                                                     self._node)
 
-            elif descriptor['type'] == 'package':
-                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTIPackageProcessorAdapter(proc_id,
-                                                                                                     descriptor,
-                                                                                                     content_path,
-                                                                                                     self._node)
-
-            elif descriptor['type'] == 'script':
-                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTIScriptProcessorAdapter(proc_id,
+            elif deployment == 'docker':
+                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(proc_id,
+                                                                                                    descriptor,
                                                                                                     content_path,
                                                                                                     self._node)
 
