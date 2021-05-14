@@ -1,15 +1,9 @@
-import os
-import sys
-import time
-import logging
 import importlib
-import socket
-
-from threading import Lock, Thread
-import docker
-import docker.errors
-import requests
+import logging
+import os
 import subprocess
+import time
+from threading import Lock, Thread
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
@@ -29,16 +23,6 @@ def import_with_auto_install(package):
         subprocess.check_output(['python3', '-m', 'pip', 'install', package])
 
     return importlib.import_module(package)
-
-
-def find_open_port():
-    """
-    Use socket's built in ability to find an open port.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        port = s.getsockname()[1]
-    return port
 
 
 class RTIProcessorAdapter(Thread):
@@ -101,7 +85,7 @@ class RTIProcessorAdapter(Thread):
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
                 if not self._is_active:
-                    return None
+                    return None, None
 
                 # if there is a job, return it
                 elif len(self._pending) > 0:
@@ -278,139 +262,3 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # clean up transient status information
         status.remove_all(['output', 'output_content_path', 'output_status'])
         return successful
-
-
-class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
-        super().__init__(proc_id, node)
-        self._node = node
-        self.descriptor = descriptor
-        self.processor_name = self.descriptor['name']
-        self.processor_version = self.descriptor['version']
-        self.content_path = content_path
-
-        self.port = None
-        self.docker_image_id = None
-        self.docker_container_id = None
-        self.docker_container_name = f'{self.processor_name}-{self.processor_version}'
-
-    @property
-    def uri(self):
-        if self.port is not None:
-            return f'http://localhost:{self.port}'
-        else:
-            raise ValueError('Port has not been initialised.')
-
-    def startup(self):
-        client = docker.from_env()
-
-        # Load image to docker
-        with open(self.content_path, 'rb') as docker_package:
-            image_list = client.images.load(docker_package)
-            docker_image = image_list[0]
-        self.docker_image_id = docker_image.id
-
-        # check if there are any containers running with the same name, from the same image, and remove it
-        containers = client.containers.list(filters={'name': self.docker_container_name})
-        if len(containers) == 1 and containers[0].image.id == self.docker_image_id:
-            logger.info(
-                "[RTIDockerProcessorAdapter] startup: removing docker processor container with the same name"
-                " '{}'".format(self.processor_name))
-            container = containers[0]
-            container.stop()
-            container.wait()
-            container.remove()
-
-        # bind rti.jobs_path to jobs_path in Docker
-        jobs_path = os.path.realpath(self._node.rti.get_job_wd())
-        self.port = find_open_port()
-        container = client.containers.run(self.docker_image_id,
-                                          name=self.docker_container_name,
-                                          ports={'5000/tcp': self.port},
-                                          volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
-                                          detach=True)
-
-        self.docker_container_id = container.id
-        self.parse_io_interface(self.descriptor)
-
-        while True:
-            if container.status != 'running':
-                time.sleep(1)
-                container.reload()  # refresh container attrs
-            else:  # check if server is responding to requests
-                r = requests.get(f'{self.uri}/descriptor')
-                if r.status_code == 200:
-                    break
-
-        client.close()
-        logger.info("[RTIDockerProcessorAdapter] startup: started docker processor '{}'".format(self.processor_name))
-
-    def shutdown(self):
-        client = docker.from_env()
-
-        # Kill and remove docker container
-        try:
-            container = client.containers.get(self.docker_container_id)
-        except docker.errors.NotFound:
-            logger.warning(f"[RTIDockerProcessorAdapter] shutdown: could not find docker processor '{self.processor_name}'")
-        else:
-            container.stop()
-            container.wait()
-            container.remove()
-
-        # Remove image from docker
-        client.images.remove(self.docker_image_id)
-
-        client.close()
-        logger.info(f"[RTIDockerProcessorAdapter] shutdown: shutdown docker processor '{self.processor_name}'")
-
-    def execute(self, task_descriptor, working_directory, status_logger):
-        try:
-            job_id = os.path.basename(working_directory)
-            r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
-                                                           'task_descriptor': task_descriptor})
-            status_code = r.status_code
-        except Exception as e:
-            logger.warning(f"[RTIDockerProcessorAdapter] execute: execute failed for docker processor '{self.processor_name}'")
-            return False
-        else:
-            return r.status_code == 200
-
-
-class RTIPackageProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
-        super().__init__(proc_id, node)
-
-
-class RTIScriptProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, content_path, node):
-        super().__init__(proc_id, node)
-
-        logger.info(f"[RTIScriptProcessorAdapter] init: content_path={content_path}")
-        self.script = load_json_from_file(content_path)
-        self.module = None
-
-    def startup(self):
-        package_path = self.script['package_path']
-        descriptor_path = self.script['descriptor_path']
-        module_name = self.script['module_name']
-        dependencies = self.script.get('dependencies', [])
-
-        for package in dependencies:
-            logger.info(f"[RTIScriptProcessorAdapter] importing dependency '{package}'")
-            import_with_auto_install(package)
-
-        logger.info(f"[RTIScriptProcessorAdapter] startup: package_path={package_path} module_name={module_name}")
-        sys.path.insert(1, package_path)
-
-        self.module = importlib.import_module(module_name)
-        logger.info(f"[RTIScriptProcessorAdapter] startup: imported module '{module_name}'")
-
-        descriptor = load_json_from_file(descriptor_path)
-        self.parse_io_interface(descriptor)
-
-    def shutdown(self):
-        pass
-
-    def execute(self, task_descriptor, working_directory, status_logger):
-        return self.module.function(task_descriptor, working_directory, status_logger)
