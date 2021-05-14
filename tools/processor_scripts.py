@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 
+# TODO: Create cli interface for this script
 
 def clone_repo(git_local_path: str, git_spec: dict):
     git_url = git_spec['source']
