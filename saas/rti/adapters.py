@@ -11,9 +11,12 @@ import docker.errors
 import requests
 import subprocess
 
+from jsonschema import validate
+
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.rti.status import State
+from saas.schemas import git_specification_schema
 from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
 from tools.processor_scripts import get_processor, deploy_git_processor
 
@@ -393,6 +396,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
     def _read_git_spec(git_spec_path):
         with open(git_spec_path, 'rb') as f:
             git_spec = json.load(f)
+        validate(instance=git_spec, schema=git_specification_schema)
         return git_spec
 
     @property

@@ -111,7 +111,7 @@ processor_descriptor_schema = {
     'required': ['created_t', 'created_by']
 }
 
-git_spec_descriptor = {
+git_specification_descriptor_schema = {
     'type': 'object',
     'properties': {
         'name': {'type': 'string'},
@@ -127,13 +127,13 @@ git_spec_descriptor = {
     'required': ['name', 'input', 'output']
 }
 
-git_spec_specification = {
+git_specification_schema = {
     'type': 'object',
     'properties': {
         'source': {'type': 'string'},
         'commit_id': {'type': 'string'},
         'path': {'type': 'string'},
-        'descriptor': git_spec_descriptor
+        'descriptor': git_specification_descriptor_schema
     },
     'required': ['source', 'commit_id', 'path', 'descriptor']
 }
