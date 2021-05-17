@@ -2,7 +2,6 @@ import os
 import logging
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.keystore import Keystore
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.registry.service import RegistryService
@@ -10,7 +9,7 @@ from saas.registry.protocol import RegistryP2PProtocol
 from saas.dor.service import DataObjectRepositoryService
 from saas.rest.service import RESTService
 from saas.rti.service import RuntimeInfrastructureService
-from saas.nodedb.nodedb import NodeDB
+from saas.nodedb.service import NodeDBService
 
 import saas.registry.blueprint as registry_blueprint
 import saas.dor.blueprint as dor_blueprint
@@ -71,7 +70,7 @@ class Node:
     def start_nodedb_service(self):
         logger.info("starting NodeDB service.")
         protocol = NodeDBP2PProtocol(self)
-        self.db = NodeDB(f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
+        self.db = NodeDBService(f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
         self.p2p.add(protocol)
 
     def start_dor_service(self):
@@ -90,6 +89,15 @@ class Node:
 
         if self.rest:
             self.rest.stop_service()
+
+    def update_identity(self, name=None, email=None, propagate=True):
+        # update the keystore
+        _, signature = self._keystore.update(name, email)
+
+        # update the nodedb (and propagate if applicable)
+        self.db.update_identity(self._keystore.identity.public_as_string(),
+                                self._keystore.name(), self._keystore.email(), self._keystore.nonce(), signature,
+                                propagate=propagate)
 
     @classmethod
     def create(cls, keystore, storage_path, p2p_address=None, rest_address=None, enable_dor=False, enable_rti=False):

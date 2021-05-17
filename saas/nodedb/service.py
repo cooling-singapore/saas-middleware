@@ -1,11 +1,16 @@
+import logging
+
 from operator import and_
 
-from sqlalchemy import Column, String, BigInteger
+from sqlalchemy import Column, String, BigInteger, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.keystore.keystore import verify_identity_record
+
+logger = logging.getLogger('nodedb.service')
 
 Base = declarative_base()
 
@@ -16,7 +21,6 @@ class DORObject(Base):
     d_hash = Column(String(64), nullable=False)
     c_hash = Column(String(64), nullable=False)
     owner_iid = Column(String(64), nullable=False)
-    custodian_iid = Column(String(64), nullable=False)
     expiration = Column(BigInteger)
 
 
@@ -34,13 +38,17 @@ class DORPermission(Base):
     permission = Column(String, nullable=False)
 
 
-class PublicKey(Base):
-    __tablename__ = 'public_key'
+class Identity(Base):
+    __tablename__ = 'identity'
     iid = Column(String(64), primary_key=True)
     public_key = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    nonce = Column(Integer, nullable=False)
+    signature = Column(String, nullable=True)
 
 
-class NodeDB:
+class NodeDBService:
     def __init__(self, db_path, protocol):
         self._protocol = protocol
         self._engine = create_engine(db_path)
@@ -110,28 +118,6 @@ class NodeDB:
 
         return result
 
-    def update_public_key(self, iid, public_key, propagate=True):
-        with self._Session() as session:
-            item = session.query(PublicKey).get(iid)
-            if not item:
-                session.add(PublicKey(iid=iid, public_key=public_key))
-                session.commit()
-
-                if propagate:
-                    self._protocol.broadcast('update_public_key', {
-                        'iid': iid,
-                        'public_key': public_key,
-                        'propagate': False
-                    })
-
-    def get_public_key(self, iid):
-        with self._Session() as session:
-            item = session.query(PublicKey).get(iid)
-            if item:
-                return ECKeyPair.from_public_key_string(item.public_key)
-            else:
-                return None
-
     def get_access_list(self, obj_id):
         with self._Session() as session:
             permissions = session.query(DORPermission).filter_by(obj_id=obj_id).all()
@@ -147,52 +133,40 @@ class NodeDB:
             return permission is not None
 
     def grant_access(self, obj_id, public_key, permission):
-        key = ECKeyPair.from_public_key_string(public_key)
-        self.update_public_key(key.iid, key.public_as_string())
+        # resolve the identity of the public key
+        identity = self.resolve_identity(public_key)
 
         with self._Session() as session:
-            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
+            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.iid).first()
             if item:
                 item.permission = permission
             else:
-                session.add(DORPermission(obj_id=obj_id, key_iid=key.iid, permission=permission))
+                session.add(DORPermission(obj_id=obj_id, key_iid=identity.iid, permission=permission))
+
             session.commit()
 
     def revoke_access(self, obj_id, public_key=None):
         with self._Session() as session:
-            if public_key:
-                key = ECKeyPair.from_public_key_string(public_key)
-                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).delete()
-            else:
+            if not public_key:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
+            else:
+                # resolve the identity of the public key
+                identity = self.resolve_identity(public_key)
+                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.iid).delete()
+
             session.commit()
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key, custodian_public_key,
-                        expiration, propagate=True):
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key, expiration):
         with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
-                owner = ECKeyPair.from_public_key_string(owner_public_key)
-                custodian = ECKeyPair.from_public_key_string(custodian_public_key)
+                # resolve the identity of the owner
+                owner = self.resolve_identity(owner_public_key)
 
-                self.update_public_key(owner.iid, owner.public_as_string(), propagate=False)
-                self.update_public_key(custodian.iid, custodian.public_as_string(), propagate=False)
-
-                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash,
-                                      owner_iid=owner.iid, custodian_iid=custodian.iid,
+                # add a new data object record
+                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner.iid,
                                       expiration=expiration))
                 session.commit()
-
-                if propagate:
-                    self._protocol.broadcast('add_data_object', {
-                        'obj_id': obj_id,
-                        'd_hash': d_hash,
-                        'c_hash': c_hash,
-                        'owner_public_key': owner_public_key,
-                        'custodian_public_key': custodian_public_key,
-                        'expiration': expiration,
-                        'propagate': False
-                    })
 
     def remove_data_object(self, obj_id):
         with self._Session() as session:
@@ -219,11 +193,82 @@ class NodeDB:
         with self._Session() as session:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
-                key = ECKeyPair.from_public_key_string(new_owner_public_key)
-                self.update_public_key(key.iid, key.public_as_string())
+                # resolve the identity of the owner
+                new_owner = self.resolve_identity(new_owner_public_key)
 
-                item.owner_iid = key.iid
+                #
+                # key = ECKeyPair.from_public_key_string(new_owner_public_key)
+                # self.update_public_key(key.iid, key.public_as_string())
+
+                item.owner_iid = new_owner.iid
                 session.commit()
+
+    def resolve_identity(self, public_key_as_string):
+        # if we don't have the identity already in the table, then we create a record to allow for mapping of
+        # idd's to public keys. the record will indicate identity as 'unknown'. if we ever get an identity
+        # update, the record will be amended accordingly.
+        identity = ECKeyPair.from_public_key_string(public_key_as_string)
+        if not self.get_public_key(identity.iid):
+            self.update_identity(public_key_as_string, 'unknown', 'unknown', 0, propagate=False)
+
+        return identity
+
+    def update_identity(self, public_key_as_string, name, email, nonce, signature=None, propagate=True):
+        # get the key and check the signature (if any)
+        public_key = ECKeyPair.from_public_key_string(public_key_as_string)
+        has_valid_signature = verify_identity_record(public_key, name, email, nonce, signature) if signature else False
+
+        with self._Session() as session:
+            # do we have the identity already on record? only update if either the record does not exist yet OR if
+            # the information provided is valid and more recent, i.e., if the nonce is greater than the one on record.
+            record = session.query(Identity).filter_by(iid=public_key.iid).first()
+            if record is None:
+                session.add(Identity(iid=public_key.iid, public_key=public_key.public_as_string(), name=name,
+                                     email=email, nonce=nonce, signature=signature))
+                session.commit()
+
+            else:
+                # is the update valid (i.e., does the signature match)?
+                if not has_valid_signature:
+                    logger.warning(f"ignoring identity update (no signature or invalid signature): "
+                                   f"public_key={public_key.public_as_string()} name={name} email={email} "
+                                   f"nonce={nonce} signature={signature}")
+                    return
+
+                elif nonce > record.nonce:
+                    record.name = name
+                    record.email = email
+                    record.nonce = nonce
+                    record.signature = signature
+                    session.commit()
+
+                else:
+                    logger.debug(f"ignoring identity update (more recent nonce={record.nonce} on record): "
+                                 f"public_key={public_key.public_as_string()} name={name} email={email} nonce={nonce} "
+                                 f"signature={signature}")
+
+        # propagate only if flag is set AND there is a valid signature
+        if propagate and has_valid_signature:
+            self._protocol.broadcast('update_identity', {
+                'public_key_as_string': public_key.public_as_string(),
+                'name': name,
+                'email': email,
+                'nonce': nonce,
+                'signature': signature,
+                'propagate': False
+            })
+
+    def get_public_key(self, iid):
+        identity = self.get_identity_record(iid)
+        return ECKeyPair.from_public_key_string(identity.public_key) if identity else None
+
+    def get_identity_record(self, iid=None):
+        with self._Session() as session:
+            if iid:
+                return session.query(Identity).filter_by(iid=iid).first()
+
+            else:
+                return session.query(Identity).all()
 
     def handle_update(self, update):
         method = getattr(self, update['method'])
