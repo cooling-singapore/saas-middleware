@@ -14,6 +14,17 @@ logging.basicConfig(
 logger = logging.getLogger('Keystore.Keystore')
 
 
+def sign_identity_record(key, name, email, nonce):
+    record = f"{key.iid}:{name}:{email}:{nonce}"
+    signature = key.sign(record.encode('utf-8'))
+    return record, signature
+
+
+def verify_identity_record(key, name, email, nonce, signature):
+    record = f"{key.iid}:{name}:{email}:{nonce}"
+    return key.verify(record.encode('utf-8'), signature)
+
+
 class Keystore:
     def __init__(self, path, master, content):
         self.path = path
@@ -37,6 +48,7 @@ class Keystore:
             'identity': {
                 'name': name,
                 'email': email,
+                'nonce': 1,
                 'key': identity.private_as_string()
             },
             'object_keys': {}
@@ -93,10 +105,18 @@ class Keystore:
         with open(self.path, 'wb') as f:
             f.write(content_enc)
 
-    def update(self, name, email):
-        self.content['identity']['name'] = name
-        self.content['identity']['email'] = email
+    def update(self, name=None, email=None):
+        self.content['identity']['nonce'] += 1
+
+        if name:
+            self.content['identity']['name'] = name
+
+        if email:
+            self.content['identity']['email'] = email
+
         self.sync_to_disk()
+
+        return sign_identity_record(self.identity, self.name(), self.email(), self.nonce())
 
     def id(self, truncate=False):
         return self.identity.short_iid if truncate else self.identity.iid
@@ -106,6 +126,9 @@ class Keystore:
 
     def email(self):
         return self.content['identity']['email']
+
+    def nonce(self):
+        return self.content['identity']['nonce']
 
     def add_object_key(self, object_id, key):
         self.content['object_keys'][object_id] = key.decode('utf-8')
