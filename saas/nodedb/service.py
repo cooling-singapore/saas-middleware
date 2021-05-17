@@ -21,7 +21,6 @@ class DORObject(Base):
     d_hash = Column(String(64), nullable=False)
     c_hash = Column(String(64), nullable=False)
     owner_iid = Column(String(64), nullable=False)
-    # custodian_iid = Column(String(64), nullable=False)
     expiration = Column(BigInteger)
 
 

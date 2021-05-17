@@ -3,7 +3,6 @@ import logging
 import time
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.keystore.keystore import unknown_identity_record
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -174,7 +173,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_update_identity(self):
         nodes = self.create_nodes(3)
-        init_nonce = unknown_identity_record['nonce']
+        init_nonce = 0
 
         # propagate its identity
         nodes[0].update_identity()
