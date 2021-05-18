@@ -59,10 +59,12 @@ class TaskWrapper(Thread):
     def _wait_for_processor(self):
         while True:
             proc_id = self._task_descriptor['processor_id']
-            records = self._node.registry.get()
-            for node_iid in records:
-                record = records[node_iid]
-                if proc_id in record['processors']:
+
+            network = self._node.db.get_network()
+            for record in network:
+                proxy = RTIProxy(record.rest_address.split(":"), self._node.identity())
+                deployed = proxy.get_deployed()
+                if proc_id in deployed:
                     return
 
             time.sleep(60)
