@@ -94,6 +94,9 @@ class Node:
         self.rest.add(blueprint_nodedb.blueprint())
         self.rest.start_service()
 
+        self.update_network_node(propagate=True)
+
+
     def start_dor_service(self):
         logger.info("starting DOR service.")
         self.dor = DataObjectRepositoryService(self)
