@@ -48,6 +48,15 @@ class Identity(Base):
     signature = Column(String, nullable=True)
 
 
+class NetworkNode(Base):
+    __tablename__ = 'network_node'
+    iid = Column(String(64), primary_key=True)
+    last_seen = Column(BigInteger, nullable=False)
+    host = Column(String(15), nullable=False)
+    rest_port = Column(Integer, nullable=True)
+    p2p_port = Column(Integer, nullable=True)
+
+
 class NodeDBService:
     def __init__(self, db_path, protocol):
         self._protocol = protocol
@@ -55,7 +64,9 @@ class NodeDBService:
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-    def update_tags(self, obj_id, tags, propagate=True):
+    # BEGIN: things that do NOT require synchronisation/propagation: DORObject, DORTag, DORPermission
+
+    def update_tags(self, obj_id, tags):
         with self._Session() as session:
             for tag in tags:
                 item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
@@ -65,14 +76,7 @@ class NodeDBService:
                     session.add(DORTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
             session.commit()
 
-            if propagate:
-                self._protocol.broadcast('update_tags', {
-                    'obj_id': obj_id,
-                    'tags': tags,
-                    'propagate': False
-                })
-
-    def remove_tags(self, obj_id, keys=None, propagate=True):
+    def remove_tags(self, obj_id, keys=None):
         with self._Session() as session:
             if keys:
                 for key in keys:
@@ -81,13 +85,6 @@ class NodeDBService:
                 session.query(DORTag).filter_by(obj_id=obj_id).delete()
 
             session.commit()
-
-            if propagate:
-                self._protocol.broadcast('remove_tags', {
-                    'obj_id': obj_id,
-                    'keys': keys,
-                    'propagate': False
-                })
 
     def get_tags(self, obj_id):
         with self._Session() as session:
@@ -213,6 +210,10 @@ class NodeDBService:
 
         return identity
 
+    # END: things that do NOT require synchronisation/propagation
+
+    # BEGIN: things that DO require synchronisation/propagation: Identity, NetworkNode
+
     def update_identity(self, public_key_as_string, name, email, nonce, signature=None, propagate=True):
         # get the key and check the signature (if any)
         public_key = ECKeyPair.from_public_key_string(public_key_as_string)
@@ -270,7 +271,86 @@ class NodeDBService:
             else:
                 return session.query(Identity).all()
 
+    def update_network_node(self, node_iid, last_seen, host, rest_port=None, p2p_port=None, propagate=True):
+        with self._Session() as session:
+            # do we already have a record for this node? only update if either the record does not exist yet OR if
+            # the information provided is more recent.
+            record = session.query(NetworkNode).filter_by(iid=node_iid).first()
+            if record is None:
+                session.add(NetworkNode(iid=node_iid, last_seen=last_seen, host=host,
+                                        rest_port=rest_port, p2p_port=p2p_port))
+                session.commit()
+
+            elif last_seen > record.last_seen:
+                record.last_seen = last_seen
+                record.host = host
+                record.rest_port = rest_port
+                record.p2p_port = p2p_port
+                session.commit()
+
+            else:
+                logger.debug(f"ignoring network node update (more recent timestamp={record.last_seen} on record)")
+
+        # propagate only if flag is set
+        if propagate:
+            self._protocol.broadcast('update_network_node', {
+                'node_iid': node_iid,
+                'last_seen': last_seen,
+                'host': host,
+                'rest_port': rest_port,
+                'p2p_port': p2p_port,
+                'propagate': False
+            })
+
+    def get_network_node(self, node_iid):
+        with self._Session() as session:
+            return session.query(Identity).filter_by(iid=node_iid).first()
+
+    def get_network(self):
+        with self._Session() as session:
+            return session.query(NetworkNode).all()
+
+    # END: things that DO require synchronisation/propagation
+
+    # BEGIN: handling incremental updates and complete snapshots
+
+    def send_snapshot(self, remote_address):
+        identity_items = []
+        network_node_items = []
+        with self._Session() as session:
+            for item in session.query(Identity).all():
+                identity_items.append({
+                    'public_key_as_string': item.public_key,
+                    'name': item.name,
+                    'email': item.email,
+                    'nonce': item.nonce,
+                    'signature': item.signature,
+                    'propagate': False
+                  })
+
+            for item in session.query(NetworkNode).all():
+                network_node_items.append({
+                    'node_iid': item.node_iid,
+                    'last_seen': item.last_seen,
+                    'host': item.host,
+                    'rest_port': item.rest_port,
+                    'p2p_port': item.p2p_port,
+                    'propagate': False
+                })
+
+        self._protocol.send_snapshot(remote_address, {
+            'update_identity': identity_items,
+            'update_network_node': network_node_items
+        })
+
+    def handle_snapshot(self, snapshot):
+        for method_name in snapshot:
+            method = getattr(self, method_name)
+            for args in snapshot[method_name]:
+                method(**args)
+
     def handle_update(self, update):
         method = getattr(self, update['method'])
         method(**update['args'])
 
+    # END: handling incremental updates and complete snapshots
