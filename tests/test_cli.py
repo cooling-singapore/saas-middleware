@@ -1,9 +1,8 @@
 import os
 import logging
-import time
 import unittest
 
-from saas.registry.blueprint import RegistryProxy
+from saas.nodedb.blueprint import NodeDBProxy
 from saas_cli import parse_args, load_keystore, cmd_initialise_service
 from tests.base_testcase import TestCaseBase
 
@@ -100,17 +99,14 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             'password': self.password
         }
         node = cmd_initialise_service(args)
-        proxy = RegistryProxy(node.rest.address(), node.identity())
-
-        # rest_address = f"{service_host}:{service_rest_port}"
-        # proxy = EndpointProxy(rest_address, service.node.key)
-        result = proxy.get_node_info()
+        proxy = NodeDBProxy(node.rest.address(), node.identity())
+        result = proxy.get_node()
         logger.info(result)
         assert(result is not None)
         assert(result['rest_service_address'][0] == service_host)
         assert(result['rest_service_address'][1] == service_rest_port)
 
-        node.stop_services()
+        node.shutdown()
 
 
 if __name__ == '__main__':
