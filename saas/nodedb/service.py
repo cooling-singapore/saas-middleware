@@ -52,14 +52,13 @@ class NetworkNode(Base):
     __tablename__ = 'network_node'
     iid = Column(String(64), primary_key=True)
     last_seen = Column(BigInteger, nullable=False)
-    host = Column(String(15), nullable=False)
-    rest_port = Column(Integer, nullable=True)
-    p2p_port = Column(Integer, nullable=True)
+    p2p_address = Column(String(21), nullable=False)
+    rest_address = Column(String(21), nullable=True)
 
 
 class NodeDBService:
     def __init__(self, db_path, protocol):
-        self._protocol = protocol
+        self.protocol = protocol
         self._engine = create_engine(db_path)
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
@@ -250,7 +249,7 @@ class NodeDBService:
 
         # propagate only if flag is set AND there is a valid signature
         if propagate and has_valid_signature:
-            self._protocol.broadcast('update_identity', {
+            self.protocol.broadcast_update('update_identity', {
                 'public_key_as_string': public_key.public_as_string(),
                 'name': name,
                 'email': email,
@@ -271,21 +270,20 @@ class NodeDBService:
             else:
                 return session.query(Identity).all()
 
-    def update_network_node(self, node_iid, last_seen, host, rest_port=None, p2p_port=None, propagate=True):
+    def update_network_node(self, node_iid, last_seen, p2p_address, rest_address=None, propagate=True):
         with self._Session() as session:
             # do we already have a record for this node? only update if either the record does not exist yet OR if
             # the information provided is more recent.
             record = session.query(NetworkNode).filter_by(iid=node_iid).first()
             if record is None:
-                session.add(NetworkNode(iid=node_iid, last_seen=last_seen, host=host,
-                                        rest_port=rest_port, p2p_port=p2p_port))
+                session.add(NetworkNode(iid=node_iid, last_seen=last_seen, p2p_address=p2p_address,
+                                        rest_address=rest_address))
                 session.commit()
 
             elif last_seen > record.last_seen:
                 record.last_seen = last_seen
-                record.host = host
-                record.rest_port = rest_port
-                record.p2p_port = p2p_port
+                record.p2p_address = p2p_address
+                record.rest_address = rest_address
                 session.commit()
 
             else:
@@ -293,12 +291,11 @@ class NodeDBService:
 
         # propagate only if flag is set
         if propagate:
-            self._protocol.broadcast('update_network_node', {
+            self.protocol.broadcast_update('update_network_node', {
                 'node_iid': node_iid,
                 'last_seen': last_seen,
-                'host': host,
-                'rest_port': rest_port,
-                'p2p_port': p2p_port,
+                'p2p_address': p2p_address,
+                'rest_address': rest_address,
                 'propagate': False
             })
 
@@ -310,11 +307,14 @@ class NodeDBService:
         with self._Session() as session:
             return session.query(NetworkNode).all()
 
+    def remove_network_node(self, node_iid):
+        with self._Session() as session:
+            session.query(NetworkNode).filter_by(iid=node_iid).delete()
+            session.commit()
+
     # END: things that DO require synchronisation/propagation
 
-    # BEGIN: handling incremental updates and complete snapshots
-
-    def send_snapshot(self, remote_address):
+    def create_sync_snapshot(self):
         identity_items = []
         network_node_items = []
         with self._Session() as session:
@@ -330,27 +330,14 @@ class NodeDBService:
 
             for item in session.query(NetworkNode).all():
                 network_node_items.append({
-                    'node_iid': item.node_iid,
+                    'node_iid': item.iid,
                     'last_seen': item.last_seen,
-                    'host': item.host,
-                    'rest_port': item.rest_port,
-                    'p2p_port': item.p2p_port,
+                    'p2p_address': item.p2p_address,
+                    'rest_address': item.rest_address,
                     'propagate': False
                 })
 
-        self._protocol.send_snapshot(remote_address, {
+        return {
             'update_identity': identity_items,
             'update_network_node': network_node_items
-        })
-
-    def handle_snapshot(self, snapshot):
-        for method_name in snapshot:
-            method = getattr(self, method_name)
-            for args in snapshot[method_name]:
-                method(**args)
-
-    def handle_update(self, update):
-        method = getattr(self, update['method'])
-        method(**update['args'])
-
-    # END: handling incremental updates and complete snapshots
+        }
