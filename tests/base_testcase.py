@@ -7,7 +7,6 @@ from multiprocessing import Lock
 
 from saas.keystore.keystore import Keystore
 from saas.node import Node
-from saas.registry.protocol import RegistryP2PProtocol
 from saas.utilities.general_helpers import get_timestamp_now
 
 logger = logging.getLogger('tests.base_testcase')
@@ -50,7 +49,7 @@ class TestCaseBase:
         for name in self.nodes:
             logger.info(f"stopping node '{name}'")
             node = self.nodes[name]
-            node.stop_services()
+            node.shutdown()
 
         # delete working directory
         subprocess.check_output(['rm', '-rf', self.wd_path])
@@ -76,15 +75,13 @@ class TestCaseBase:
 
         return identities
 
-    def create_nodes(self, n, perform_join=True):
+    def create_nodes(self, n, offset=0, perform_join=True, enable_rest=False):
         nodes = []
         for i in range(n):
-            nodes.append(self.get_node(f"node_{i}"))
+            nodes.append(self.get_node(f"node_{i+offset}", enable_rest=enable_rest))
 
             if perform_join and i > 0:
-                # send a join message to node0
-                protocol = RegistryP2PProtocol(nodes[i])
-                protocol.send_join(nodes[0].p2p.address())
+                nodes[i].join_network(nodes[0].p2p.address())
                 time.sleep(2)
 
         return nodes
@@ -122,14 +119,13 @@ class TestCaseBase:
 
             keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
             node = Node(keystore, storage_path)
-            node.start_p2p_service(p2p_address)
-            if enable_rest:
-                node.start_rest_service(rest_address)
+            node.startup(p2p_address)
 
-            node.start_nodedb_service()
-            node.start_registry_service()
             node.start_dor_service()
             node.start_rti_service()
+
+            if enable_rest:
+                node.start_rest_service(rest_address)
 
             self.nodes[name] = node
             return node
