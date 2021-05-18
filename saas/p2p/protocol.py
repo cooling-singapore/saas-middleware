@@ -57,6 +57,14 @@ class P2PProtocol:
             'payload': payload if payload else {}
         }
 
+    def send_message(self, remote_address, message):
+        logger.debug(f"send message: {message}")
+
+        # connect to the peer, send message and close connection
+        peer, messenger = SecureMessenger.connect_to_peer(remote_address, self.node)
+        messenger.send(message)
+        messenger.close()
+
     def broadcast_message(self, message, exclude=None):
         """
         Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the

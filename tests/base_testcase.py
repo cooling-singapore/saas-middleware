@@ -67,6 +67,15 @@ class TestCaseBase:
             self._next_rest_port += 1
             return address
 
+    def create_identities(self, n):
+        identities = []
+        for i in range(n):
+            identities.append(
+                Keystore.create(self.wd_path, f"identity_{i}", f"identity_{i}@somewhere.com", f"password_{i}")
+            )
+
+        return identities
+
     def create_nodes(self, n, perform_join=True):
         nodes = []
         for i in range(n):

@@ -204,6 +204,45 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
         assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
 
+    def test_snapshot(self):
+        nodes = self.create_nodes(3, perform_join=False)
+        identities = self.create_identities(3*len(nodes))
+
+        # feed each node with some identities
+        for i in range(len(identities)):
+            j = i % 3
+            nodes[j].db.update_identity(
+                identities[i].public_key_as_string(),
+                identities[i].name(),
+                identities[i].email(),
+                0
+            )
+
+        # each node should know about 3 identities
+        for j in range(len(nodes)):
+            records = nodes[j].db.get_identity_record()
+            assert(len(records) == 3)
+
+        # send snapshot from node 0 to node 1
+        nodes[0].db.send_snapshot(nodes[1].p2p.address())
+        time.sleep(2)
+
+        # send snapshot from node 1 to node 2
+        nodes[1].db.send_snapshot(nodes[2].p2p.address())
+        time.sleep(2)
+
+        # node 0 should know about 3 identities now
+        records = nodes[0].db.get_identity_record()
+        assert (len(records) == 3)
+
+        # node 1 should know about 6 identities now
+        records = nodes[1].db.get_identity_record()
+        assert (len(records) == 6)
+
+        # node 2 should know about 9 identities now
+        records = nodes[2].db.get_identity_record()
+        assert (len(records) == 9)
+
 
 if __name__ == '__main__':
     unittest.main()
