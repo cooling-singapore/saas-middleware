@@ -179,7 +179,6 @@ function update_tasks(data) {
                 "    <tr><td colspan=\"2\"><b>TODO: Review Output Data Object '"+obj_name+"'</b></td></tr>" +
                 "    <tr><td colspan=\"2\">Output Data Object: <a href=\"http://"+agent_address+"/api/v1/agent/download/"+tx_id+"/"+obj_name+"\">Download</a></td></tr>" +
                 "    <tr><td colspan=\"2\"><form enctype=\"multipart/form-data\" action=\"http://{{ app_address }}/api/v1/user/review\" method=\"POST\">" +
-<!--                "    <tr><td colspan=\"2\"><form enctype=\"multipart/form-data\" action=\"http://"+agent_address+"/api/v1/agent/review/"+tx_id+"/"+obj_name+"\" method=\"POST\">" +-->
                 "        <input type=\"HIDDEN\" name=\"tx_id\" value=\""+tx_id+"\"/>" +
                 "        <input type=\"HIDDEN\" name=\"agent_address\" value=\""+agent_address+"\"/>" +
                 "        <input type=\"HIDDEN\" name=\"obj_name\" value=\""+obj_name+"\"/>" +
@@ -187,10 +186,6 @@ function update_tasks(data) {
                 "        <input type=\"submit\" name=\"decision\" value=\"Release\"/>" +
                 "        <input type=\"submit\" name=\"decision\" value=\"Hold\"/>" +
                 "    </form><td></tr>" +
-<!--                "    <tr><td>Output Data Object:</td><td><a href=\"http://{{ app_address }}/api/v1/user/download_output\">Download</a></td></tr>" +-->
-<!--                "    <tr><td colspan=\"2\">Comments:</td><td></td></tr>" +-->
-<!--                "    <tr><td colspan=\"2\"><textarea cols=\"70\" rows=\"5\">Please enter your comments here.</textarea></td></tr>" +-->
-<!--                "    <tr><td><button>Release</button></td></tr>" +-->
                 "    <tr></tr>" +
                 "</table>"
         }
