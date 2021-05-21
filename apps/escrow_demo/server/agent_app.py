@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 
 from apps.escrow_demo.server.helpers import get_keystore
 
-from flask import Flask, Blueprint, jsonify, request, render_template
+from flask import Flask, Blueprint, jsonify, request, render_template, send_from_directory
 from flask_cors import CORS
 
 from saas.dor.blueprint import DORProxy
@@ -115,6 +115,8 @@ class EscrowAgent:
         blueprint.add_url_rule('/confirm/<tx_id>/input', self.confirm_input.__name__, self.confirm_input, methods=['POST'])
         blueprint.add_url_rule('/confirm/<tx_id>/processor', self.confirm_processor.__name__, self.confirm_processor, methods=['POST'])
         blueprint.add_url_rule('/confirm/<tx_id>/execute', self.confirm_execute.__name__, self.confirm_execute, methods=['POST'])
+        blueprint.add_url_rule('/review/<tx_id>/<obj_name>', self.review.__name__, self.review, methods=['POST'])
+        blueprint.add_url_rule('/download/<tx_id>/<obj_name>', self.download.__name__, self.download, methods=['GET'])
         self._app.register_blueprint(blueprint)
 
     def start_service(self, address):
@@ -157,7 +159,8 @@ class EscrowAgent:
                 'proc_id': None,
                 'proc_descriptor': None,
                 'in_obj_ids': {},
-                'out_obj_id': None,
+                'out_obj_ids': {},
+                'review': {},
                 'status': 'initialised'
             }
             self._next_tid += 1
@@ -176,6 +179,20 @@ class EscrowAgent:
         if 'job_id' in transaction:
             job_info = self.node.rti.get_job_info(transaction['job_id'])
             transaction['job_info'] = job_info
+
+            status = job_info['status']
+            is_successful = True
+            for obj_name in transaction['out_obj_ids']:
+                key = f"output:{obj_name}"
+                if key in status:
+                    obj_id = status[key]
+                    transaction['out_obj_ids'][obj_name] = obj_id
+                else:
+                    is_successful = False
+
+            if is_successful:
+                transaction['status'] = 'done'
+
 
         provider_record = self.node.db.get_identity_record(transaction['provider_iid'])
         consumer_record = self.node.db.get_identity_record(transaction['consumer_iid'])
@@ -242,15 +259,13 @@ class EscrowAgent:
 
             repo_path = os.path.join(self._path, tx_id)
             subprocess.check_output(['git', 'clone', source, repo_path])
-
-            temp = os.curdir
-            os.chdir(repo_path)
-            subprocess.check_output(['git', 'checkout', commit_id])
+            subprocess.check_output(['git', 'checkout', commit_id], cwd=repo_path)
 
             descriptor_path = os.path.join(repo_path, path, 'descriptor.json')
 
             proc_descriptor = load_json_from_file(descriptor_path)
             print(proc_descriptor)
+            shutil.rmtree(repo_path)
 
             git_spec_path = os.path.join(self._path, f"{tx_id}_git_spec.json")
             dump_json_to_file({
@@ -269,11 +284,11 @@ class EscrowAgent:
             })
             descriptor = rti.deploy(proc_id)
 
-            os.chdir(temp)
-            shutil.rmtree(repo_path)
-
             self._transactions[tx_id]['proc_id'] = proc_id
             self._transactions[tx_id]['proc_descriptor'] = proc_descriptor
+
+            for item in proc_descriptor['output']:
+                self._transactions[tx_id]['out_obj_ids'][item['name']] = None
 
             return jsonify({
                 'proc_id': proc_id,
@@ -306,6 +321,38 @@ class EscrowAgent:
             transaction['job_id'] = job_id
 
             return jsonify(job_id), 201
+
+    def review(self, tx_id, obj_name):
+        form = request.json if request.json else json.loads(request.form['body'])
+
+        comment = form['comment']
+        decision = form['decision']
+
+        # get the transaction details
+        with self._lock:
+            transaction = self._transactions[tx_id]
+            transaction['review'][obj_name] = {
+                'released': decision,
+                'comment': comment
+            }
+
+        return jsonify(), 201
+
+    def download(self, tx_id, obj_name):
+        # get the transaction details
+        with self._lock:
+            transaction = self._transactions[tx_id]
+            obj_id = transaction['out_obj_ids'][obj_name]
+
+            obj_path = os.path.join(self._path, 'files', obj_id)
+
+            dor = DORProxy(node_rest_address, self.node.identity())
+            dor.get_content(obj_id, self.node.identity(), obj_path)
+
+            # stream the file content
+            head, tail = os.path.split(obj_path)
+            return send_from_directory(head, tail, as_attachment=True)
+
 
 
 def run_app():

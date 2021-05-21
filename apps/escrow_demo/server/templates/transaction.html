@@ -130,8 +130,8 @@ function update_tasks(data) {
                     "        <input type=\"HIDDEN\" name=\"tx_id\" value=\""+tx_id+"\"/>" +
                     "        <input type=\"HIDDEN\" name=\"agent_address\" value=\""+agent_address+"\"/>" +
                     "        <input type=\"HIDDEN\" name=\"obj_name\" value=\""+obj_name+"\"/>" +
-                    "        <input type=\"HIDDEN\" name=\"data_type\" value=\"data_type\"/>" +
-                    "        <input type=\"HIDDEN\" name=\"data_format\" value=\"data_format\"/>" +
+                    "        <input type=\"HIDDEN\" name=\"data_type\" value=\""+data_type+"\"/>" +
+                    "        <input type=\"HIDDEN\" name=\"data_format\" value=\""+data_format+"\"/>" +
                     "        <label for=\"file\">File: </label><input type=\"FILE\" name=\"file\"/>" +
                     "        <input type=\"submit\" name=\"Upload\" value=\"Upload\"/>" +
                     "    </form><td></tr>" +
@@ -170,16 +170,30 @@ function update_tasks(data) {
             "</table>"
     }
 
-    if (data.transaction.out_obj_id != null && data.provider.id == me_iid) {
-        document.getElementById('tasks').innerHTML +=
-            "<table style=\"width:300px\">" +
-            "    <tr><td colspan=\"2\"><b>TODO: Review Output Data Object(s)</b></td></tr>" +
-            "    <tr><td>Output Data Object:</td><td><a href>Download</a></td></tr>" +
-            "    <tr><td colspan=\"2\">Comments:</td><td></td></tr>" +
-            "    <tr><td colspan=\"2\"><textarea cols=\"70\" rows=\"5\">Please enter your comments here.</textarea></td></tr>" +
-            "    <tr><td><button>Release</button></td></tr>" +
-            "    <tr></tr>" +
-            "</table>"
+    if (data.transaction.status == 'done' && data.provider.id == me_iid) {
+        for (obj_name in data.transaction.out_obj_ids) {
+            if (obj_name in data.transaction.review) continue;
+
+            document.getElementById('tasks').innerHTML +=
+                "<table style=\"width:300px\">" +
+                "    <tr><td colspan=\"2\"><b>TODO: Review Output Data Object '"+obj_name+"'</b></td></tr>" +
+                "    <tr><td colspan=\"2\">Output Data Object: <a href=\"http://"+agent_address+"/api/v1/agent/download/"+tx_id+"/"+obj_name+"\">Download</a></td></tr>" +
+                "    <tr><td colspan=\"2\"><form enctype=\"multipart/form-data\" action=\"http://{{ app_address }}/api/v1/user/review\" method=\"POST\">" +
+<!--                "    <tr><td colspan=\"2\"><form enctype=\"multipart/form-data\" action=\"http://"+agent_address+"/api/v1/agent/review/"+tx_id+"/"+obj_name+"\" method=\"POST\">" +-->
+                "        <input type=\"HIDDEN\" name=\"tx_id\" value=\""+tx_id+"\"/>" +
+                "        <input type=\"HIDDEN\" name=\"agent_address\" value=\""+agent_address+"\"/>" +
+                "        <input type=\"HIDDEN\" name=\"obj_name\" value=\""+obj_name+"\"/>" +
+                "        <label for=\"comment\">Comment: </label><input type=\"TEXT\" name=\"comment\" size=\"70\" value=\"(no comment)\"/>" +
+                "        <input type=\"submit\" name=\"decision\" value=\"Release\"/>" +
+                "        <input type=\"submit\" name=\"decision\" value=\"Hold\"/>" +
+                "    </form><td></tr>" +
+<!--                "    <tr><td>Output Data Object:</td><td><a href=\"http://{{ app_address }}/api/v1/user/download_output\">Download</a></td></tr>" +-->
+<!--                "    <tr><td colspan=\"2\">Comments:</td><td></td></tr>" +-->
+<!--                "    <tr><td colspan=\"2\"><textarea cols=\"70\" rows=\"5\">Please enter your comments here.</textarea></td></tr>" +-->
+<!--                "    <tr><td><button>Release</button></td></tr>" +-->
+                "    <tr></tr>" +
+                "</table>"
+        }
     }
 
     if (data.transaction.status == 'ready' && (data.provider.id == me_iid || data.consumer.id == me_iid)) {
@@ -229,8 +243,7 @@ function update_transaction() {
                 document.getElementById('tx_summary_processor').innerHTML +=
                     "<table style=\"width:300px\">" +
                     "    <tr><td colspan=\"2\"><b>Uploaded Data Processor</b></td></tr>" +
-                    "    <tr><td>Id:</td><td>"+data.transaction.proc_id+"</td></tr>" +
-                    "    <tr><td>Name:</td><td>"+data.transaction.proc_descriptor.name+"</td></tr>" +
+                    "    <tr><td>"+data.transaction.proc_descriptor.name+":</td><td>"+data.transaction.proc_id+"</td></tr>" +
                     "    <tr></tr>" +
                     "</table>"
             }
@@ -246,14 +259,32 @@ function update_transaction() {
             if(data.transaction.job_info != null) {
                 console.log(data.transaction.job_info)
 
-                state = data.transaction.job_info.status.state
+                html =
+                    "<table style=\"width:300px\">" +
+                    "    <tr><td colspan=\"2\"><b>Produced Output Data Object(s)</b></td></tr>"
 
-                document.getElementById('tx_summary_processor').innerHTML +=
+                for (obj_name in data.transaction.out_obj_ids) {
+                    obj_id = data.transaction.out_obj_ids[obj_name]
+                    if (obj_id == null) {
+                        html += "    <tr><td>"+obj_name+":</td><td>unavailable</td></tr>"
+                    }
+                    else {
+                        html += "    <tr><td>"+obj_name+":</td><td>"+obj_id+"</td></tr>"
+                    }
+                }
+                html +=
+                    "    <tr></tr>" +
+                    "</table>"
+
+                state = data.transaction.job_info.status.state
+                html +=
                     "<table style=\"width:300px\">" +
                     "    <tr><td colspan=\"2\"><b>Job Info</b></td></tr>" +
                     "    <tr><td>State:</td><td>"+state+"</td></tr>" +
                     "    <tr></tr>" +
                     "</table>"
+
+                document.getElementById('tx_summary_processor').innerHTML += html
             }
 
             document.getElementById('tx_name').innerHTML = data.transaction.name

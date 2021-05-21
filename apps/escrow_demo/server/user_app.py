@@ -4,7 +4,7 @@ import logging
 import traceback
 from threading import Lock
 
-from flask import Flask, jsonify, Blueprint, request, render_template
+from flask import Flask, jsonify, Blueprint, request, render_template, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -64,6 +64,7 @@ class EscrowUser:
         blueprint.add_url_rule('/upload_input', self.upload_input.__name__, self.upload_input, methods=['POST'])
         blueprint.add_url_rule('/deploy_processor', self.deploy_processor.__name__, self.deploy_processor, methods=['POST'])
         blueprint.add_url_rule('/run_processor', self.run_processor.__name__, self.run_processor, methods=['POST'])
+        blueprint.add_url_rule('/review', self.review.__name__, self.review, methods=['POST'])
         self._app.register_blueprint(blueprint)
 
     def start_service(self, address):
@@ -155,6 +156,19 @@ class EscrowUser:
                                app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
+    def review(self):
+        agent_address = request.form['agent_address'].split(":")
+        tx_id = request.form['tx_id']
+        obj_name = request.form['obj_name']
+        comment = request.form['comment']
+        decision = request.form['decision'] == 'Release'
+
+        agent = AgentProxy(agent_address, self.node.identity())
+        agent.review(tx_id, obj_name, comment, decision)
+
+        return render_template("transaction.html", tx_id=tx_id,
+                               app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
+                               agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
 def run_app():
     try:

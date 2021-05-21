@@ -58,3 +58,16 @@ class AgentProxy(EndpointProxy):
     def confirm_execute(self, tx_id):
         r = self.post(f"/confirm/{tx_id}/execute")
         return r
+
+    def review(self, tx_id, obj_name, comment, decision):
+        body = {
+            'comment': comment,
+            'decision': decision,
+        }
+
+        r = self.post(f"/review/{tx_id}/{obj_name}", body=body)
+        return r
+
+    def download(self, tx_id, obj_name, download_path):
+        r = self.get(f"/download/{tx_id}/{obj_name}", download_path=download_path)
+        return r
