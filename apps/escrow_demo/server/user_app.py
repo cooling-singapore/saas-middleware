@@ -170,6 +170,7 @@ class EscrowUser:
                                app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
+
 def run_app():
     try:
         path = os.path.join(os.environ['HOME'], '.datastore_user')
