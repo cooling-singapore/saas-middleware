@@ -5,7 +5,8 @@ from saas.utilities.blueprint_helpers import create_authentication, create_autho
 
 
 class EndpointProxy:
-    def __init__(self, endpoint_prefix, remote_address, sender):
+    def __init__(self, endpoint_prefix, remote_address, sender, use_auth=True):
+        self._use_auth = use_auth
         self._endpoint_prefix = endpoint_prefix
         self._remote_address = remote_address
         self._sender = sender
@@ -90,12 +91,12 @@ class EndpointProxy:
         if body:
             content['body'] = json.dumps(body)
 
-        if with_authentication:
+        if self._use_auth and with_authentication:
             authentication = create_authentication(f"{action}:{self._auth_url(endpoint, parameters)}",
                                                    self._sender, body=body, attachment=attachment)
             content['authentication'] = json.dumps(authentication)
 
-        if with_authorisation_by:
+        if self._use_auth and with_authorisation_by:
             authorisation = create_authorisation(f"{action}:{self._auth_url(endpoint, parameters)}",
                                                  with_authorisation_by, body=body)
             content['authorisation'] = json.dumps(authorisation)
