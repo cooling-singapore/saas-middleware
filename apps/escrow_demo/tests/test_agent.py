@@ -93,33 +93,6 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
         assert('proc_id' in result)
         assert('descriptor' in result)
 
-    def test_add_download_data(self):
-        sender = self.get_node("sender")
-        proxy = AgentProxy(app_rest_address, sender)
-        identity = sender.identity()
-
-        self._agent.node.db.update_identity(identity.public_as_string(), sender.name(), sender.email(),
-                                            sender.nonce(), propagate=False)
-
-        transaction = proxy.add_transaction('name', 'description', identity, identity, False, False)
-        print(transaction)
-        assert(transaction['consumer_iid'] == identity.iid)
-        assert(transaction['provider_iid'] == identity.iid)
-
-        tx_id = transaction['id']
-        assert(tx_id == '0')
-
-        source = 'https://github.com/cooling-singapore/saas-processor-template'
-        commit_id = '09d00d6'
-        path = 'processor_dummy'
-
-        result = proxy.confirm_processor(tx_id, source, commit_id, path)
-        print(result)
-        assert(result is not None)
-        assert('proc_id' in result)
-        assert('descriptor' in result)
-
-        proxy.download(tx_id, p)
 
 
 if __name__ == '__main__':
