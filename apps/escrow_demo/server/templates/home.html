@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Overview</title>
+    <style id="css">
+      body {
+        font: 400 14px 'Helvetica Neue', Helvetica;
+      }
+    </style>
+</head>
+<body>
+    <div>
+        <h2 align=\"left\">Identity</h2>
+        <table>
+            <tr><td>Id:</td><td id="id_id"></td></tr>
+            <tr><td>Name:</td><td id="id_name"></td></tr>
+            <tr><td>Email:</td><td id="id_email"></td></tr>
+        </table>
+    </div>
+    <div>
+        <h2 align=\"left\">Agent</h2>
+        <table>
+            <tr><td>Host:</td><td><input id="agent_host" type="text" value="127.0.0.1" minlength="7" maxlength="15" size="15" pattern="^((\d{1,2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])$"></td></tr>
+            <tr><td>REST port:</td><td><input id="agent_rest_port" type="number" value="5010" min="0" max="65535"></td></tr>
+            <tr><td>P2P port:</td><td><input id="agent_p2p_port" type="number" value="4011" min="0" max="65535"></td></tr>
+        </table>
+        <button onclick="connect_to_agent()">Reconnect</button>
+    </div>
+    <div>
+        <h2 align=\"left\">Existing Transaction</h2>
+        <table id="tx_summary" style="width:600px">
+        </table>
+    </div>
+    <div>
+        <h2 align=\"left\">New Transaction</h2>
+        <table style="width:300px">
+            <tr><td><b>Data Provider</b></td></tr>
+            <tr><td><select id="new_tx_dp_id" style="width:60%;"></select></td></tr>
+            <tr></tr>
+            <tr><td><b>Algorithm Provider</b></td><td></td></tr>
+            <tr><td><select id="new_tx_ap_id" style="width:60%;"></select></td></tr>
+            <tr></tr>
+            <tr><td><b>Name</b></td><td></td></tr>
+            <tr><td><textarea id="new_tx_name" cols="70" rows="1">Please enter a name for this transaction here.</textarea></td></tr>
+            <tr></tr>
+            <tr><td><b>Description</b></td><td></td></tr>
+            <tr><td><textarea id="new_tx_desc" cols="70" rows="5">Please enter a description for this transaction here.</textarea></td></tr>
+            <tr></tr>
+            <tr><td><b>Optional Terms</b></td><td></td></tr>
+            <tr><td><input type="checkbox" id="new_tx_algo_review" name="new_tx_algo_review"> Algorithm review by Data Provider prior execution.</td></tr>
+            <tr><td><input type="checkbox" id="new_tx_output_review" name="new_tx_output_review"> Output data review by Data Provider prior release.</td></tr>
+            <tr></tr>
+        </table>
+        <button onclick="submit_transaction()">Create</button>
+    </div>
+
+</body>
+<script>
+public_key = "no_public_key"
+
+function removeOptions(selectElement) {
+    selectElement.options.length = 0;
+}
+
+function addOption(selectElement, value, text) {
+    var opt = document.createElement('option');
+    opt.value = value;
+    opt.innerHTML = text;
+    selectElement.appendChild(opt);
+}
+
+function update_tx_summary() {
+    var iid = document.getElementById('id_id').innerHTML
+    var host = document.getElementById('agent_host').value
+    var port = document.getElementById('agent_rest_port').value
+    var url="http://"+host+":"+port+"/api/v1/agent/transaction"
+
+    fetch(url)
+        .then((resp) => resp.json())
+        .then(function(transactions) {
+            console.log(transactions)
+            table = document.getElementById('tx_summary')
+
+            const host = document.getElementById('agent_host').value
+            const port = document.getElementById('agent_rest_port').value
+
+            if (Object.keys(transactions).length == 0) {
+                table.innerHTML = "<tr><td>No transactions found.</td></tr>"
+            }
+            else {
+                table.innerHTML = "<tr>" +
+                    "<td width=\"10%\"><b>Id</b></td>" +
+                    "<td width=\"80%\"><b>Name</b></td>" +
+                    "<td width=\"10%\"><b>Status</b></td>" +
+                    "</tr>"
+
+                for (const id in transactions) {
+                    var tx_info = transactions[id]['transaction']
+                    var tx_url="http://{{ app_address }}/api/v1/user/view_transaction/"+id+"?"+new URLSearchParams({
+                        host: host,
+                        port: port
+                    })
+                    console.log(tx_url)
+
+                    tx = transactions[id]
+                    table.innerHTML += "<tr>" +
+                        "<td width=\"10%\"><a href=\""+tx_url+"\">"+id+"</a></td>" +
+                        "<td width=\"80%\">"+tx_info['name']+"</td>" +
+                        "<td width=\"10%\">"+tx_info['status']+"</td>" +
+                        "</tr>"
+                }
+            }
+        })
+        .catch(function(error) {
+            console.log(error)
+        });
+}
+
+function update_identity() {
+    const url="http://{{ app_address }}/api/v1/user/identity"
+    fetch(url)
+        .then((resp) => resp.json())
+        .then(function(data) {
+            document.getElementById('id_id').innerHTML = data.id
+            document.getElementById('id_name').innerHTML = data.name
+            document.getElementById('id_email').innerHTML = data.email
+            public_key = data.public_key
+
+            connect_to_agent()
+        })
+        .catch(function(error) {
+            console.log(error)
+        });
+}
+
+function connect_to_agent() {
+    const host = document.getElementById('agent_host').value
+    const port = document.getElementById('agent_p2p_port').value
+
+    const url="http://{{ app_address }}/api/v1/user/connect?"+new URLSearchParams({
+        host: host,
+        port: port
+    })
+
+    fetch(url)
+        .then((resp) => resp.json())
+        .then(function(data) {
+            selectDP = document.getElementById('new_tx_dp_id')
+            selectAP = document.getElementById('new_tx_ap_id')
+
+            removeOptions(selectDP);
+            removeOptions(selectAP);
+
+            for (const iid in data) {
+                record = data[iid]
+                name = record['name']
+                email = record['email']
+                text = name+" ("+email+")"
+
+                addOption(selectDP, iid, text)
+                addOption(selectAP, iid, text)
+            }
+
+            update_tx_summary()
+        })
+        .catch(function(error) {
+            console.log(error)
+        });
+}
+
+function submit_transaction() {
+    const host = document.getElementById('agent_host').value
+    const port = document.getElementById('agent_rest_port').value
+    const url="http://"+host+":"+port+"/api/v1/agent/transaction"
+
+    const parameters = {
+        provider_iid: document.getElementById('new_tx_dp_id').value,
+        consumer_iid: document.getElementById('new_tx_ap_id').value,
+        name: document.getElementById('new_tx_name').value,
+        description: document.getElementById('new_tx_desc').value,
+        review_algorithm: document.getElementById('new_tx_algo_review').checked,
+        review_output: document.getElementById('new_tx_output_review').checked
+    };
+
+    const options = {
+        method: 'POST',
+        body: JSON.stringify(parameters),
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    }
+
+    fetch(url, options)
+        .then((resp) => resp.json())
+        .then(function(data) {
+            update_tx_summary()
+        })
+        .catch(function(error) {
+            console.log(error)
+        });
+}
+
+update_identity()
+
+</script>
+</html>
