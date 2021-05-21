@@ -41,6 +41,9 @@ class Node:
     def email(self):
         return self._keystore.email()
 
+    def nonce(self):
+        return self._keystore.nonce()
+
     def identity(self):
         return self._keystore.identity
 
@@ -76,6 +79,7 @@ class Node:
     def join_network(self, boot_node_address):
         logger.info(f"joining network via boot node '{boot_node_address}'.")
         self.db.protocol.send_join(boot_node_address)
+        return True
 
     def leave_network(self):
         logger.info(f"leaving network.")
