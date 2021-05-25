@@ -2,11 +2,11 @@ import logging
 
 from saas.rest.proxy import EndpointProxy
 
-logger = logging.getLogger('escrow_demo.agent.proxy')
+logger = logging.getLogger('remote_execution_demo.agent.proxy')
 endpoint_prefix = "/api/v1/agent"
 
 
-class AgentProxy(EndpointProxy):
+class ExecutionAgentProxy(EndpointProxy):
     def __init__(self, remote_address, sender):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender, use_auth=False)
 
@@ -68,6 +68,14 @@ class AgentProxy(EndpointProxy):
         r = self.post(f"/review/{tx_id}/{obj_name}", body=body)
         return r
 
-    def download(self, tx_id, obj_name, download_path):
-        r = self.get(f"/download/{tx_id}/{obj_name}", download_path=download_path)
+    def download_input_object(self, tx_id, obj_name, download_path):
+        r = self.get(f"/download/{tx_id}/in/{obj_name}", download_path=download_path)
+        return r
+
+    def download_output_object(self, tx_id, obj_name, download_path):
+        r = self.get(f"/download/{tx_id}/out/{obj_name}", download_path=download_path)
+        return r
+
+    def download_processor(self, tx_id, download_path):
+        r = self.get(f"/download/{tx_id}/proc", download_path=download_path)
         return r

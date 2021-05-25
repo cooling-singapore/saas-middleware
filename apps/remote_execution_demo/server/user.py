@@ -1,20 +1,16 @@
 import os
 import sys
 import logging
-import traceback
 from threading import Lock
 
-from flask import Flask, jsonify, Blueprint, request, render_template, send_from_directory
+from flask import Flask, jsonify, Blueprint, request, render_template
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-from apps.escrow_demo.server.helpers import get_keystore
 from saas.node import Node
 from saas.rest.service import FlaskServerThread
-from saas.utilities.general_helpers import prompt
 
-from agent_proxy import AgentProxy
-from saas.dor.blueprint import DORProxy
+from apps.remote_execution_demo.server.agent_proxy import ExecutionAgentProxy
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,31 +18,26 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-logger = logging.getLogger('escrow_demo')
+logger = logging.getLogger('user_agent')
 logger.info(f"using the following command line arguments: {sys.argv}")
 
-app_rest_address = ('127.0.0.1', 5020)
-node_rest_address = ('127.0.0.1', 5021)
-node_p2p_address = ('127.0.0.1', 4021)
 endpoint_prefix = "/api/v1/user"
 
 
-class EscrowUser:
-    def __init__(self, path, password=None):
+class UserAgent:
+    def __init__(self, path, keystore, app_rest_address, node_rest_address, node_p2p_address):
         self._lock = Lock()
         self._path = path
+        self._app_rest_address = app_rest_address
+        self._node_rest_address = node_rest_address
+        self._node_p2p_address = node_p2p_address
 
-        # initialise the path
-        if os.path.isfile(path):
-            raise Exception(f"Keystore path '{path}' is a file.")
-
-        if not os.path.isdir(path):
-            logger.info(f"creating keystore directory '{path}'")
-            os.makedirs(self._path, exist_ok=True)
-            os.makedirs(os.path.join(self._path, 'files'), exist_ok=True)
+        files_path = os.path.join(self._path, 'files')
+        if not os.path.isdir(files_path):
+            logger.info(f"creating directory '{files_path}'")
+            os.makedirs(files_path, exist_ok=True)
 
         # get the keystore and initialise the node
-        keystore = get_keystore(path, password=password)
         self.node = Node(keystore, path)
         self.node.startup(node_p2p_address)
         self.node.start_rest_service(node_rest_address)
@@ -67,8 +58,8 @@ class EscrowUser:
         blueprint.add_url_rule('/review', self.review.__name__, self.review, methods=['POST'])
         self._app.register_blueprint(blueprint)
 
-    def start_service(self, address):
-        self._thread = FlaskServerThread(self._app, address[0], address[1])
+    def start_service(self):
+        self._thread = FlaskServerThread(self._app, self._app_rest_address[0], self._app_rest_address[1])
         self._thread.start()
 
     def stop_service(self):
@@ -78,16 +69,15 @@ class EscrowUser:
             self._thread.shutdown()
 
     def view_home(self):
-        result = render_template("home.html", app_address=f"{app_rest_address[0]}:{app_rest_address[1]}")
+        result = render_template("home.html", app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}")
         return result
 
     def view_transaction(self, tx_id):
-        host = request.args.get('host')
-        port = request.args.get('port')
+        agent_address = request.args.get('agent_address')
 
         result = render_template("transaction.html", tx_id=tx_id,
-                                 app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
-                                 agent_address=f"{host}:{port}")
+                                 app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}",
+                                 agent_address=f"{agent_address}")
         return result
 
     def get_identity(self):
@@ -124,13 +114,13 @@ class EscrowUser:
 
         agent_address = request.form['agent_address'].split(":")
         tx_id = request.form['tx_id']
-        agent = AgentProxy(agent_address, self.node.identity())
+        agent = ExecutionAgentProxy(agent_address, self.node.identity())
         obj_id = agent.confirm_input(tx_id, request.form['obj_name'], request.form['data_type'], request.form['data_format'], path)
 
         os.remove(path)
 
         return render_template("transaction.html", tx_id=tx_id,
-                               app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
+                               app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
     def deploy_processor(self):
@@ -139,21 +129,21 @@ class EscrowUser:
         source = request.form['source']
         commit_id = request.form['commit_id']
         path = request.form['path']
-        agent = AgentProxy(agent_address, self.node.identity())
+        agent = ExecutionAgentProxy(agent_address, self.node.identity())
         obj_id = agent.confirm_processor(tx_id, source, commit_id, path)
 
         return render_template("transaction.html", tx_id=tx_id,
-                               app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
+                               app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
     def run_processor(self):
         agent_address = request.form['agent_address'].split(":")
         tx_id = request.form['tx_id']
-        agent = AgentProxy(agent_address, self.node.identity())
+        agent = ExecutionAgentProxy(agent_address, self.node.identity())
         job_id = agent.confirm_execute(tx_id)
 
         return render_template("transaction.html", tx_id=tx_id,
-                               app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
+                               app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
 
     def review(self):
@@ -163,31 +153,9 @@ class EscrowUser:
         comment = request.form['comment']
         decision = request.form['decision'] == 'Release'
 
-        agent = AgentProxy(agent_address, self.node.identity())
+        agent = ExecutionAgentProxy(agent_address, self.node.identity())
         agent.review(tx_id, obj_name, comment, decision)
 
         return render_template("transaction.html", tx_id=tx_id,
-                               app_address=f"{app_rest_address[0]}:{app_rest_address[1]}",
+                               app_address=f"{self._app_rest_address[0]}:{self._app_rest_address[1]}",
                                agent_address=f"{agent_address[0]}:{agent_address[1]}")
-
-
-def run_app():
-    try:
-        path = os.path.join(os.environ['HOME'], '.datastore_user')
-        agent = EscrowUser(path, 'password')
-        agent.start_service(app_rest_address)
-
-        prompt("Press return to terminate the agent.")
-
-        agent.stop_service()
-
-    except Exception as e:
-        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        print(trace)
-        logger.error(e)
-
-
-if __name__ == "__main__":
-    run_app()
-
-

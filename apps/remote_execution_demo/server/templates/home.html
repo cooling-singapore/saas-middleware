@@ -19,16 +19,16 @@
         </table>
     </div>
     <div>
-        <h2 align=\"left\">Agent</h2>
+        <h2 align=\"left\">Execution Agent</h2>
         <table>
             <tr><td>Host:</td><td><input id="agent_host" type="text" value="127.0.0.1" minlength="7" maxlength="15" size="15" pattern="^((\d{1,2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])$"></td></tr>
-            <tr><td>REST port:</td><td><input id="agent_rest_port" type="number" value="5010" min="0" max="65535"></td></tr>
-            <tr><td>P2P port:</td><td><input id="agent_p2p_port" type="number" value="4011" min="0" max="65535"></td></tr>
+            <tr><td>REST port:</td><td><input id="agent_rest_port" type="number" value="5000" min="0" max="65535"></td></tr>
+            <tr><td>P2P port:</td><td><input id="agent_p2p_port" type="number" value="4001" min="0" max="65535"></td></tr>
         </table>
         <button onclick="connect_to_agent()">Reconnect</button>
     </div>
     <div>
-        <h2 align=\"left\">Existing Transaction</h2>
+        <h2 align=\"left\">Existing Transaction(s)</h2>
         <table id="tx_summary" style="width:600px">
         </table>
     </div>
@@ -47,10 +47,10 @@
             <tr><td><b>Description</b></td><td></td></tr>
             <tr><td><textarea id="new_tx_desc" cols="70" rows="5">Please enter a description for this transaction here.</textarea></td></tr>
             <tr></tr>
-            <tr><td><b>Optional Terms</b></td><td></td></tr>
-            <tr><td><input type="checkbox" id="new_tx_algo_review" name="new_tx_algo_review"> Algorithm review by Data Provider prior execution.</td></tr>
-            <tr><td><input type="checkbox" id="new_tx_output_review" name="new_tx_output_review"> Output data review by Data Provider prior release.</td></tr>
-            <tr></tr>
+<!--            <tr><td><b>Optional Terms</b></td><td></td></tr>-->
+<!--            <tr><td><input type="checkbox" id="new_tx_algo_review" name="new_tx_algo_review"> Algorithm review by Data Provider prior execution.</td></tr>-->
+<!--            <tr><td><input type="checkbox" id="new_tx_output_review" name="new_tx_output_review"> Output data review by Data Provider prior release.</td></tr>-->
+<!--            <tr></tr>-->
         </table>
         <button onclick="submit_transaction()">Create</button>
     </div>
@@ -79,7 +79,6 @@ function update_tx_summary() {
     fetch(url)
         .then((resp) => resp.json())
         .then(function(transactions) {
-            console.log(transactions)
             table = document.getElementById('tx_summary')
 
             const host = document.getElementById('agent_host').value
@@ -98,10 +97,9 @@ function update_tx_summary() {
                 for (const id in transactions) {
                     var tx_info = transactions[id]['transaction']
                     var tx_url="http://{{ app_address }}/api/v1/user/view_transaction/"+id+"?"+new URLSearchParams({
-                        host: host,
-                        port: port
+                        agent_address: host+":"+port
                     })
-                    console.log(tx_url)
+<!--                    console.log(tx_url)-->
 
                     tx = transactions[id]
                     table.innerHTML += "<tr>" +
@@ -179,8 +177,10 @@ function submit_transaction() {
         consumer_iid: document.getElementById('new_tx_ap_id').value,
         name: document.getElementById('new_tx_name').value,
         description: document.getElementById('new_tx_desc').value,
-        review_algorithm: document.getElementById('new_tx_algo_review').checked,
-        review_output: document.getElementById('new_tx_output_review').checked
+<!--        review_algorithm: document.getElementById('new_tx_algo_review').checked,-->
+<!--        review_output: document.getElementById('new_tx_output_review').checked-->
+        review_algorithm: false,
+        review_output: true
     };
 
     const options = {

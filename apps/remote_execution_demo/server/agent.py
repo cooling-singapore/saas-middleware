@@ -4,23 +4,18 @@ import shutil
 import subprocess
 import sys
 import logging
-import time
-import traceback
-from threading import Lock, Thread
+from threading import Lock
 
 from werkzeug.utils import secure_filename
 
-from apps.escrow_demo.server.helpers import get_keystore
-
-from flask import Flask, Blueprint, jsonify, request, render_template, send_from_directory
+from flask import Flask, Blueprint, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from saas.dor.blueprint import DORProxy
 from saas.node import Node
 from saas.rest.service import FlaskServerThread
 from saas.rti.blueprint import RTIProxy
-from saas.rti.status import State
-from saas.utilities.general_helpers import prompt, load_json_from_file, get_timestamp_now, dump_json_to_file
+from saas.utilities.general_helpers import load_json_from_file, get_timestamp_now, dump_json_to_file
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -28,73 +23,26 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-logger = logging.getLogger('escrow_demo')
+logger = logging.getLogger('execution_agent')
 logger.info(f"using the following command line arguments: {sys.argv}")
 
-app_rest_address = ('127.0.0.1', 5010)
-node_rest_address = ('127.0.0.1', 5011)
-node_p2p_address = ('127.0.0.1', 4011)
 endpoint_prefix = "/api/v1/agent"
 
 
-class Worker(Thread):
-    def __init__(self, node, t):
-        super().__init__()
-        self.node = node
-        self.t = t
-
-        self.job_id = None
-
-    def run(self):
-        if not self.node.rti.is_deployed(self.t['proc_id']):
-            self.node.rti.deploy(self.t['proc_id'])
-
-        proc_input = [
-            {
-                'name': 'input',
-                'type': 'reference',
-                'obj_id': self.t['in_obj_id']
-            }
-        ]
-
-        job_id = self.node.rti.submit_job(self.t['proc_id'], proc_input, self.node.identity())
-        logger.info(f"job_id={job_id}")
-        assert(job_id is not None)
-
-        # wait for job to be done
-        while True:
-            time.sleep(5)
-            descriptor, status = self.node.get_job_info(self.t['proc_id'], self.job_id)
-            if descriptor and status:
-                logger.info(f"descriptor={descriptor}")
-                logger.info(f"status={status}")
-
-                state = State.from_string(status['state'])
-                if state == State.SUCCESSFUL:
-                    break
-                elif state == State.FAILED:
-                    raise RuntimeError('Job failed')
-
-
-class EscrowAgent:
-    def __init__(self, path, password=None):
+class ExecutionAgent:
+    def __init__(self, path, keystore, app_rest_address, node_rest_address, node_p2p_address):
         self._lock = Lock()
         self._transactions = {}
         self._workers = {}
         self._next_tid = 0
         self._path = path
+        self._app_rest_address = app_rest_address
+        self._node_rest_address = node_rest_address
 
-        # initialise the path
-        if os.path.isfile(path):
-            raise Exception(f"Keystore path '{path}' is a file.")
-
-        if not os.path.isdir(path):
-            logger.info(f"creating keystore directory '{path}'")
-            os.makedirs(self._path, exist_ok=True)
-            os.makedirs(os.path.join(self._path, 'files'), exist_ok=True)
-
-        # get the keystore and initialise the node
-        keystore = get_keystore(path, password)
+        files_path = os.path.join(self._path, 'files')
+        if not os.path.isdir(files_path):
+            logger.info(f"creating directory '{files_path}'")
+            os.makedirs(files_path, exist_ok=True)
 
         self.node = Node(keystore, path)
         self.node.startup(node_p2p_address)
@@ -116,11 +64,13 @@ class EscrowAgent:
         blueprint.add_url_rule('/confirm/<tx_id>/processor', self.confirm_processor.__name__, self.confirm_processor, methods=['POST'])
         blueprint.add_url_rule('/confirm/<tx_id>/execute', self.confirm_execute.__name__, self.confirm_execute, methods=['POST'])
         blueprint.add_url_rule('/review/<tx_id>/<obj_name>', self.review.__name__, self.review, methods=['POST'])
-        blueprint.add_url_rule('/download/<tx_id>/<obj_name>', self.download.__name__, self.download, methods=['GET'])
+        blueprint.add_url_rule('/download/<tx_id>/in/<obj_name>', self.download_input_object.__name__, self.download_input_object, methods=['GET'])
+        blueprint.add_url_rule('/download/<tx_id>/out/<obj_name>', self.download_output_object.__name__, self.download_output_object, methods=['GET'])
+        blueprint.add_url_rule('/download/<tx_id>/proc', self.download_processor.__name__, self.download_processor, methods=['GET'])
         self._app.register_blueprint(blueprint)
 
-    def start_service(self, address):
-        self._thread = FlaskServerThread(self._app, address[0], address[1])
+    def start_service(self):
+        self._thread = FlaskServerThread(self._app, self._app_rest_address[0], self._app_rest_address[1])
         self._thread.start()
 
     def stop_service(self):
@@ -193,7 +143,6 @@ class EscrowAgent:
             if is_successful:
                 transaction['status'] = 'done'
 
-
         provider_record = self.node.db.get_identity_record(transaction['provider_iid'])
         consumer_record = self.node.db.get_identity_record(transaction['consumer_iid'])
         result = {
@@ -231,7 +180,7 @@ class EscrowAgent:
 
         # get the transaction details
         with self._lock:
-            dor = DORProxy(node_rest_address, self.node.identity())
+            dor = DORProxy(self._node_rest_address, self.node.identity())
             obj_name = form['obj_name']
             data_type = form['data_type']
             data_format = form['data_format']
@@ -275,8 +224,8 @@ class EscrowAgent:
                 'descriptor': proc_descriptor
             }, git_spec_path)
 
-            dor = DORProxy(node_rest_address, self.node.identity())
-            rti = RTIProxy(node_rest_address, self.node.identity())
+            dor = DORProxy(self._node_rest_address, self.node.identity())
+            rti = RTIProxy(self._node_rest_address, self.node.identity())
 
             proc_id = dor.add_processor(git_spec_path, self.node.identity(), {
                 'created_t': get_timestamp_now(),
@@ -313,7 +262,7 @@ class EscrowAgent:
 
             print(proc_input)
             proc_id = transaction['proc_id']
-            rti = RTIProxy(node_rest_address, self.node.identity())
+            rti = RTIProxy(self._node_rest_address, self.node.identity())
             job_id = rti.submit_job(proc_id, proc_input, self.node.identity())
             job_id = str(job_id)
 
@@ -338,38 +287,38 @@ class EscrowAgent:
 
         return jsonify(), 201
 
-    def download(self, tx_id, obj_name):
+    def _download_object(self, tx_id, category, obj_name):
         # get the transaction details
         with self._lock:
             transaction = self._transactions[tx_id]
-            obj_id = transaction['out_obj_ids'][obj_name]
+            obj_id = transaction[category][obj_name]
 
             obj_path = os.path.join(self._path, 'files', obj_id)
 
-            dor = DORProxy(node_rest_address, self.node.identity())
+            dor = DORProxy(self._node_rest_address, self.node.identity())
             dor.get_content(obj_id, self.node.identity(), obj_path)
 
             # stream the file content
             head, tail = os.path.split(obj_path)
             return send_from_directory(head, tail, as_attachment=True)
 
+    def download_input_object(self, tx_id, obj_name):
+        return self._download_object(tx_id, 'in_obj_ids', obj_name)
 
+    def download_output_object(self, tx_id, obj_name):
+        return self._download_object(tx_id, 'out_obj_ids', obj_name)
 
-def run_app():
-    try:
-        path = os.path.join(os.environ['HOME'], '.datastore_escrow')
-        agent = EscrowAgent(path, 'password')
-        agent.start_service(app_rest_address)
+    def download_processor(self, tx_id):
+        # get the transaction details
+        with self._lock:
+            transaction = self._transactions[tx_id]
+            obj_id = transaction['proc_id']
 
-        prompt("Press return to terminate the agent.")
+            obj_path = os.path.join(self._path, 'files', obj_id)
 
-        agent.stop_service()
+            dor = DORProxy(self._node_rest_address, self.node.identity())
+            dor.get_content(obj_id, self.node.identity(), obj_path)
 
-    except Exception as e:
-        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        print(trace)
-        logger.error(e)
-
-
-if __name__ == "__main__":
-    run_app()
+            # stream the file content
+            head, tail = os.path.split(obj_path)
+            return send_from_directory(head, tail, as_attachment=True)

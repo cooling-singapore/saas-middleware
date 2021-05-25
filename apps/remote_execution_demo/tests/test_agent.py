@@ -1,11 +1,15 @@
-import time
+import traceback
 import unittest
+import os
 
-from apps.escrow_demo.server.agent_proxy import AgentProxy
-from apps.escrow_demo.server.agent_app import app_rest_address
+from apps.remote_execution_demo.server.agent_proxy import ExecutionAgentProxy
 from tests.base_testcase import TestCaseBase
 
-from apps.escrow_demo.server.agent_app import EscrowAgent
+from apps.remote_execution_demo.server.agent import ExecutionAgent
+
+app_rest_address = ('127.0.0.1', 5000)
+node_rest_address = ('127.0.0.1', 5001)
+node_p2p_address = ('127.0.0.1', 4001)
 
 
 class AgentAppCase(unittest.TestCase, TestCaseBase):
@@ -16,9 +20,9 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        self.create_keystores(1, password='password')
-        self._agent = EscrowAgent(self.wd_path, password='password')
-        self._agent.start_service(app_rest_address)
+        keystores = self.create_keystores(1, password='password')
+        self._agent = ExecutionAgent(self.wd_path, keystores[0], app_rest_address, node_rest_address, node_p2p_address)
+        self._agent.start_service()
 
     def tearDown(self):
         self._agent.stop_service()
@@ -27,14 +31,14 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
 
     def test_identity(self):
         sender = self.get_node("sender")
-        proxy = AgentProxy(app_rest_address, sender)
+        proxy = ExecutionAgentProxy(app_rest_address, sender)
 
         identity = proxy.get_identity()
         assert(identity is not None)
 
     def test_add_get_transaction(self):
         sender = self.get_node("sender")
-        proxy = AgentProxy(app_rest_address, sender)
+        proxy = ExecutionAgentProxy(app_rest_address, sender)
 
         # update node with identities
         keystores = self.create_keystores(2)
@@ -69,7 +73,7 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
 
     def test_deploy_processor(self):
         sender = self.get_node("sender")
-        proxy = AgentProxy(app_rest_address, sender)
+        proxy = ExecutionAgentProxy(app_rest_address, sender)
         identity = sender.identity()
 
         self._agent.node.db.update_identity(identity.public_as_string(), sender.name(), sender.email(),
@@ -84,8 +88,10 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
         assert(tx_id == '0')
 
         source = 'https://github.com/cooling-singapore/saas-processor-template'
-        commit_id = '09d00d6'
-        path = 'processor_dummy'
+        # commit_id = '09d00d6'
+        # path = 'processor_dummy'
+        commit_id = '0d40f2b'
+        path = 'processor_20210602-demo'
 
         result = proxy.confirm_processor(tx_id, source, commit_id, path)
         print(result)
@@ -93,6 +99,52 @@ class AgentAppCase(unittest.TestCase, TestCaseBase):
         assert('proc_id' in result)
         assert('descriptor' in result)
 
+
+    def test_function(self):
+        wd = os.path.join(os.environ['HOME'], 'Desktop')
+        function(wd)
+
+        out_path = os.path.join(wd, 'aggregated')
+        assert(os.path.isfile(out_path))
+
+
+def function(working_directory):
+    status_path = os.path.join(working_directory, 'status.log')
+    with open(status_path, 'w') as status:
+        try:
+            in_path = os.path.join(working_directory, 'confidential')
+            with open(in_path, 'r') as f:
+                # read the header
+                header = f.readline()
+                status.write(f"{header}\n")
+
+                result = []
+                for t in range(24):
+                    line = f.readline()
+                    print(line)
+
+                    line = line.split(',')
+                    s = 0
+                    for i in range(1, len(line)):
+                        s += float(line[i])
+
+                    result.append(s)
+
+            status.write(f"{result}\n")
+
+            out_path = os.path.join(working_directory, 'aggregated')
+            status.write(f"out_path={out_path}\n")
+            with open(out_path, 'w') as f:
+                f.write("Time,Aggregated\n")
+
+                for t in range(24):
+                    f.write(f"{t},{result[t]}\n")
+
+            status.write(f"done\n")
+
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            status.write(trace)
 
 
 if __name__ == '__main__':
