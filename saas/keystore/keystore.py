@@ -121,6 +121,9 @@ class Keystore:
     def id(self, truncate=False):
         return self.identity.short_iid if truncate else self.identity.iid
 
+    def public_key_as_string(self):
+        return self.identity.public_as_string()
+
     def name(self):
         return self.content['identity']['name']
 
