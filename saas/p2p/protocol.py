@@ -57,6 +57,25 @@ class P2PProtocol:
             'payload': payload if payload else {}
         }
 
+    def send_message(self, remote_address, message):
+        logger.debug(f"send message: {message}")
+
+        # connect to the peer, send message and close connection
+        peer, messenger = SecureMessenger.connect_to_peer(remote_address, self.node)
+        messenger.send(message)
+        messenger.close()
+
+    def send_request(self, remote_address, message):
+        logger.debug(f"send request: {message}")
+
+        # connect to the peer, send request and close connection
+        peer, messenger = SecureMessenger.connect_to_peer(remote_address, self.node)
+        response = messenger.request(message)
+        logger.debug(f"received response: {response}")
+
+        messenger.close()
+        return response
+
     def broadcast_message(self, message, exclude=None):
         """
         Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
@@ -75,12 +94,15 @@ class P2PProtocol:
         exclude.append(self.node.id())
 
         # send message to all peers we know of
-        for peer_iid, record in self.node.registry.get().items():
+        for record in self.node.db.get_network():
             # is this peer iid in the exclusion list?
-            if peer_iid in exclude:
+            if record.iid in exclude:
                 continue
 
-            # connect to the peer, send message and close connection
-            peer, messenger = SecureMessenger.connect_to_peer(record['p2p_address'], self.node, peer_iid)
-            messenger.send(message)
-            messenger.close()
+            # connect to the peer (if it is online), send message and close connection
+            # if a peer is not available, we just skip it. this is a broadcast and we can't expect every peer
+            # in the list to be online/reachable.
+            _, messenger = SecureMessenger.connect_to_peer(record.p2p_address.split(":"), self.node, record.iid)
+            if messenger:
+                messenger.send(message)
+                messenger.close()

@@ -96,9 +96,6 @@ class RuntimeInfrastructureService:
 
             self._deployed_processors[proc_id].start()
 
-            # update registry
-            self._node.registry.add_processor(proc_id)
-
             return descriptor
 
     def undeploy(self, proc_id, force=False):
@@ -114,8 +111,6 @@ class RuntimeInfrastructureService:
                 # remove the processor
                 self._deployed_processors.pop(proc_id)
 
-                # update registry
-                self._node.registry.remove_processor(proc_id)
                 return processor
             else:
                 return None

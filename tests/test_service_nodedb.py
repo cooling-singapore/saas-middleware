@@ -3,6 +3,7 @@ import logging
 import time
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -25,6 +26,17 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
+    def test_node_self_awareness(self):
+        node = self.get_node('node')
+
+        records = node.db.get_identity_record()
+        assert(len(records) == 1)
+        assert(records[0].name == 'node')
+
+        records = node.db.get_network()
+        assert(len(records) == 1)
+        assert(records[0].iid == node.id())
+
     def test_add_update_remove_tags(self):
         node = self.get_node('node')
 
@@ -33,7 +45,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         node.db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v0'}
-        ], propagate=False)
+        ])
 
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 1)
@@ -42,32 +54,32 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         node.db.update_tags('aaa', [
             {'key': 'k1', 'value': 'v1'},
             {'key': 'k2', 'value': 'v2'}
-        ], propagate=False)
+        ])
 
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
         node.db.update_tags('aaa', [
             {'key': 'k0', 'value': '999'}
-        ], propagate=False)
+        ])
 
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 3)
         assert(tags['k0'] == '999')
 
-        node.db.remove_tags('aaa', ['k3'], propagate=False)
+        node.db.remove_tags('aaa', ['k3'])
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
-        node.db.remove_tags('bbb', ['k2'], propagate=False)
+        node.db.remove_tags('bbb', ['k2'])
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
-        node.db.remove_tags('aaa', ['k2'], propagate=False)
+        node.db.remove_tags('aaa', ['k2'])
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 2)
 
-        node.db.remove_tags('aaa', ['k0', 'k1'], propagate=False)
+        node.db.remove_tags('aaa', ['k0', 'k1'])
         tags = node.db.get_tags('aaa')
         assert(len(tags) == 0)
 
@@ -77,12 +89,12 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         node.db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v00'},
             {'key': 'k1', 'value': 'v1'}
-        ], propagate=False)
+        ])
 
         node.db.update_tags('bbb', [
             {'key': 'k0', 'value': 'v01'},
             {'key': 'k2', 'value': 'v2'}
-        ], propagate=False)
+        ])
 
         obj_ids = node.db.find_data_objects('k0')
         assert(len(obj_ids) == 2)
@@ -113,31 +125,6 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_ids = node.db.find_data_objects(value_criterion='v1')
         assert(len(obj_ids) == 1)
         assert('aaa' in obj_ids)
-
-    def test_propagate_tag_updates(self):
-        nodes = self.create_nodes(2)
-
-        nodes[0].db.update_tags('aaa', [
-            {'key': 'k0', 'value': 'v0'}
-        ], propagate=True)
-        time.sleep(1)
-
-        tags = nodes[0].db.get_tags('aaa')
-        assert(len(tags) == 1)
-        assert('k0' in tags)
-
-        tags = nodes[1].db.get_tags('aaa')
-        assert(len(tags) == 1)
-        assert('k0' in tags)
-
-        nodes[1].db.remove_tags('aaa', ['k0'], propagate=True)
-        time.sleep(1)
-
-        tags = nodes[0].db.get_tags('aaa')
-        assert(len(tags) == 0)
-
-        tags = nodes[1].db.get_tags('aaa')
-        assert(len(tags) == 0)
 
     def test_grant_revoke_permissions(self):
         node = self.get_node('node')
@@ -175,34 +162,127 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         nodes = self.create_nodes(3)
         init_nonce = 0
 
-        # propagate its identity
-        nodes[0].update_identity()
-        time.sleep(1)
-
-        # check identities known to nodes
+        # check identities known to nodes (they should all know of each other)
         for node in nodes:
             ids = node.db.get_identity_record()
             print(ids)
-            assert(len(ids) == 1)
-
-            id0 = ids[0]
-            print(f"{id0.iid}:{id0.name}:{id0.email}:{id0.nonce}")
-            assert(ids[0].iid == nodes[0].id())
-            assert(ids[0].nonce == init_nonce+2)
+            assert(len(ids) == 3)
 
         # update id of node0 but don't propagate
-        nodes[0].update_identity(propagate=False)
+        nodes[0].update_identity(name='bob', propagate=False)
         time.sleep(1)
-        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+3)
-        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+2)
-        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+2)
+        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+2)
+        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+1)
+        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+1)
 
         # update id of node0
-        nodes[0].update_identity(propagate=True)
+        nodes[0].update_identity(name='jane', propagate=True)
         time.sleep(1)
-        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
-        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
-        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+4)
+        assert(nodes[0].db.get_identity_record(nodes[0].id()).nonce == init_nonce+3)
+        assert(nodes[1].db.get_identity_record(nodes[0].id()).nonce == init_nonce+3)
+        assert(nodes[2].db.get_identity_record(nodes[0].id()).nonce == init_nonce+3)
+
+    def test_snapshot(self):
+        nodes = self.create_nodes(3, perform_join=False)
+        extras = self.create_identities(len(nodes))
+
+        # each node should know about 1 identity (its own)
+        for node in nodes:
+            records = node.db.get_identity_record()
+            assert(len(records) == 1)
+            assert(records[0].iid == node.id())
+
+        # feed each node with an extra identity
+        for i in range(len(nodes)):
+            nodes[i].db.update_identity(
+                extras[i].public_key_as_string(),
+                extras[i].name(),
+                extras[i].email(),
+                0
+            )
+
+        # each node should know about 2 identities now
+        for node in nodes:
+            records = node.db.get_identity_record()
+            assert(len(records) == 2)
+
+        # send snapshot from node 0 to node 1
+        nodes[0].db.protocol.send_snapshot(nodes[1].p2p.address())
+        time.sleep(2)
+
+        # send snapshot from node 1 to node 2
+        nodes[1].db.protocol.send_snapshot(nodes[2].p2p.address())
+        time.sleep(2)
+
+        # node 0 should know about 2 identities now
+        records = nodes[0].db.get_identity_record()
+        assert (len(records) == 2)
+
+        # node 1 should know about 4 identities now
+        records = nodes[1].db.get_identity_record()
+        assert (len(records) == 4)
+
+        # node 2 should know about 6 identities now
+        records = nodes[2].db.get_identity_record()
+        assert (len(records) == 6)
+
+    def test_join_protocol(self):
+        nodes = self.create_nodes(3, perform_join=True)
+        extras = self.create_identities(len(nodes))
+
+        # each node should know about 3 identities
+        for node in nodes:
+            records = node.db.get_identity_record()
+            assert(len(records) == 3)
+
+        # feed each node with an extra identity
+        for i in range(len(nodes)):
+            nodes[i].db.update_identity(
+                extras[i].public_key_as_string(),
+                extras[i].name(),
+                extras[i].email(),
+                0
+            )
+
+        # each node should know about 4 identities now
+        for node in nodes:
+            records = node.db.get_identity_record()
+            assert(len(records) == 4)
+
+        # create more nodes and manually join them with the existing nodes
+        nodes2 = self.create_nodes(len(nodes), offset=len(nodes), perform_join=False)
+        for i in range(len(nodes2)):
+            nodes2[i].join_network(nodes[i].p2p.address())
+
+        time.sleep(2)
+
+        # each node should know about 9 identities (len(nodes) + len(extras) + len(nodes2))
+        all_nodes = nodes + nodes2
+        for node in all_nodes:
+            records = node.db.get_identity_record()
+            assert(len(records) == len(nodes) + len(extras) + len(nodes2))
+
+    def test_proxy(self):
+        nodes = self.create_nodes(3, perform_join=True, enable_rest=True)
+        time.sleep(2)
+
+        proxy = NodeDBProxy(nodes[0].rest.address(), nodes[0].identity())
+
+        result = proxy.get_node()
+        print(result)
+        assert(result is not None)
+        assert(result['iid'] == nodes[0].id())
+
+        result = proxy.get_network()
+        print(result)
+        assert(result is not None)
+        assert(len(result) == 3)
+
+        result = proxy.get_identities()
+        print(result)
+        assert(result is not None)
+        assert(len(result) == 3)
+
 
 
 if __name__ == '__main__':
