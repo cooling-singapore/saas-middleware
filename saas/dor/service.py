@@ -87,7 +87,7 @@ class DataObjectRepositoryService:
         # update database
         self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, expiration)
 
-        return 201, {'data_object_id': obj_id}
+        return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
 
     def delete(self, obj_id):
         # do we have a record for this data object?

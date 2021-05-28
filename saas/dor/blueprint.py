@@ -253,7 +253,7 @@ class DORProxy(EndpointProxy):
             body['descriptor']['recipe'] = recipe
 
         r = self.post('', body=body, attachment=content_path)
-        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
+        return (r['reply']['data_object_id'], r['reply']['descriptor']) if 'data_object_id' in r['reply'] else None
 
     def add_processor(self, content_path, owner, descriptor):
         body = {
