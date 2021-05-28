@@ -48,7 +48,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
 
         except MessengerRuntimeError as e:
             if not e.status == 404:
-                logger.error(f"runtime error during send_fetch: {e.status} {e.message}")
+                logger.error(f"runtime error during send_fetch: {e.status} {e.info}")
 
             messenger.close()
             return None
