@@ -37,7 +37,7 @@ class DataObjectRepositoryService:
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
                                                              DataObjectRepositoryService.infix_cache_path)])
 
-    def add(self, owner_public_key, descriptor, content_path, expiration=None):
+    def add(self, owner_public_key, security, descriptor, content_path, expiration=None):
         # calculate the hash for the data object content
         c_hash = hash_file_content(content_path)
 
@@ -85,7 +85,10 @@ class DataObjectRepositoryService:
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, expiration)
+        access_restricted = security['access_restricted']
+        content_encrypted = security['content_encrypted']
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, access_restricted, content_encrypted,
+                                     expiration)
 
         return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
 
