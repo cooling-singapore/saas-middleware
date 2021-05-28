@@ -3,7 +3,7 @@ import logging
 import unittest
 
 from saas.nodedb.blueprint import NodeDBProxy
-from saas_cli import parse_args, load_keystore, cmd_initialise_service
+from saas_cli import parse_args, load_keystore, exec_cmd_service
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -98,7 +98,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             'keystore-id': keystore_id,
             'password': self.password
         }
-        node = cmd_initialise_service(args)
+        node = exec_cmd_service(args)
         proxy = NodeDBProxy(node.rest.address(), node.identity())
         result = proxy.get_node()
         logger.info(result)
@@ -107,6 +107,53 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         assert(result['rest_service_address'][1] == service_rest_port)
 
         node.shutdown()
+
+    def test_cmd_dor_add_remove(self):
+        node = self.get_node('node', enable_rest=True)
+
+        args = [
+            '--keystore', self.wd_path,
+            'init',
+            '--name', 'name', '--email', 'email@internet.com', '--password', self.password
+        ]
+        keystore_id = parse_args(args)
+        assert(keystore_id is not None)
+
+        path = self.generate_random_file('content.dat', 1024*1024)
+        address = node.rest.address()
+
+        # perform ADD
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            'dor', '--keystore-id', keystore_id, '--password', self.password,
+            '--dor-address', f"{address[0]}:{address[1]}",
+            'add', '--data-type', 'Type', '--data-format', 'Format', path
+        ]
+        obj_id = parse_args(args)
+        assert(obj_id is not None)
+        record = node.db.get_object_by_id(obj_id)
+        assert(record is not None)
+        print(record.obj_id)
+        print(record.owner_iid)
+        assert(record.obj_id == obj_id)
+        assert(record.owner_iid == keystore_id)
+
+        fake_obj_id = '345345345345345'
+        # perform REMOVE
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            'dor', '--keystore-id', keystore_id, '--password', self.password,
+            '--dor-address', f"{address[0]}:{address[1]}",
+            'remove', obj_id, fake_obj_id
+        ]
+        result = parse_args(args)
+        print(result)
+        assert(result is not None)
+        assert(obj_id in result)
+        assert(fake_obj_id in result)
+        assert(result[obj_id] is not None)
+        assert(result[fake_obj_id] is None)
+
 
 
 if __name__ == '__main__':
