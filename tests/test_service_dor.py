@@ -44,7 +44,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         # create the data object
-        obj_id = self.proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
+        obj_id, descriptor = self.proxy.add_data_object(test_file_path, owner, False, False,
+                                                        data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
@@ -79,35 +80,38 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
-        obj_id = self.proxy.add_data_object(test_file_path, keys[1], data_type, data_format, created_by, created_t)
+        obj_id, _ = self.proxy.add_data_object(test_file_path, keys[1], False, False,
+                                               data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
-        permissions = self.proxy.get_access_permissions(obj_id)
+        permissions = self.proxy.get_access_list(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 0
 
         reply = self.proxy.grant_access(obj_id, keys[0], keys[2], 'permission')
         assert reply == 'Authorisation failed.'
 
-        permissions = self.proxy.get_access_permissions(obj_id)
+        permissions = self.proxy.get_access_list(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 0
 
         reply = self.proxy.grant_access(obj_id, keys[1], keys[2], 'permission')
-        assert reply == 'Access granted.'
+        assert reply is not None
+        assert reply[obj_id] == keys[2].iid
 
-        permissions = self.proxy.get_access_permissions(obj_id)
+        permissions = self.proxy.get_access_list(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
         assert keys[2].iid in permissions
 
         reply = self.proxy.revoke_access(obj_id, keys[1], keys[2])
-        assert reply == 'Access revoked.'
+        assert reply is not None
+        assert reply[obj_id] == keys[2].iid
 
-        permissions = self.proxy.get_access_permissions(obj_id)
+        permissions = self.proxy.get_access_list(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 0
 
@@ -134,7 +138,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         # create the data object
-        obj_id = self.proxy.add_data_object(test_file_path, keys[1], data_type, data_format, created_by, created_t)
+        obj_id, _ = self.proxy.add_data_object(test_file_path, keys[1], False, False,
+                                               data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
@@ -181,7 +186,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         # create the data object
-        obj_id = self.proxy.add_data_object(test_file_path, keys[1], data_type, data_format, created_by, created_t)
+        obj_id, _ = self.proxy.add_data_object(test_file_path, keys[1], False, False,
+                                               data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
@@ -190,6 +196,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         descriptor1 = self.proxy.get_descriptor(obj_id)
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
+
+        # only the OWNER can get the content via the REST API
 
         destination = os.path.join(self.wd_path, 'test_copy.dat')
         reply = self.proxy.get_content(obj_id, keys[0], destination)
@@ -218,8 +226,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
-        # create the data object
-        obj_id = self.proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
+        # create the data object (set access_restricted to True which means permission needs to be granted
+        # before fetching is possible)
+        obj_id, _ = self.proxy.add_data_object(test_file_path, owner, True, False,
+                                               data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
@@ -232,15 +242,27 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # create the receiving node
         receiver = self.get_node('receiver')
 
+        # try to fetch a data object that doesn't exist
         protocol = DataObjectRepositoryP2PProtocol(receiver)
         c_hash = protocol.send_fetch(self.node.p2p.address(), 'abcdef')
-        assert not c_hash
+        assert c_hash is None
 
+        # the receiver does not have permission at this point to receive the data object
         c_hash = protocol.send_fetch(self.node.p2p.address(), obj_id)
-        assert c_hash
+        assert c_hash is None
 
-        destination_descriptor_path = os.path.join(receiver.datastore(), receiver.dor.infix_cache_path, f"{obj_id}.descriptor")
-        destination_content_path = os.path.join(receiver.datastore(), receiver.dor.infix_cache_path, f"{c_hash}.content")
+        # grant permission
+        result = self.proxy.grant_access(obj_id, owner, receiver.identity())
+        assert result[obj_id] == receiver.id()
+
+        # the receiver does not have permission at this point to receive the data object
+        c_hash = protocol.send_fetch(self.node.p2p.address(), obj_id)
+        assert c_hash is not None
+
+        destination_descriptor_path = os.path.join(receiver.datastore(),
+                                                   receiver.dor.infix_cache_path, f"{obj_id}.descriptor")
+        destination_content_path = os.path.join(receiver.datastore(),
+                                                receiver.dor.infix_cache_path, f"{c_hash}.content")
         assert os.path.isfile(destination_descriptor_path)
         assert os.path.isfile(destination_content_path)
 
@@ -263,7 +285,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         # create the data object
-        obj_id = self.proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
+        obj_id, _ = self.proxy.add_data_object(test_file_path, owner, False, False,
+                                               data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
         assert obj_id is not None
@@ -328,7 +351,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         test_file_path1 = self.generate_random_file('test001.dat', 1024*1024)
 
         # create the data object
-        obj_id0 = self.proxy.add_data_object(test_file_path0, owner, data_type, data_format, created_by, created_t)
+        obj_id0, _ = self.proxy.add_data_object(test_file_path0, owner, False, False,
+                                                data_type, data_format, created_by, created_t)
         logger.info(f"obj_id0: {obj_id0}")
         assert obj_id0 is not None
 
@@ -343,7 +367,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert len(tags0) == 3
 
         # create the data object 1
-        obj_id1 = self.proxy.add_data_object(test_file_path1, owner, data_type, data_format, created_by, created_t)
+        obj_id1, _ = self.proxy.add_data_object(test_file_path1, owner, False, False,
+                                                data_type, data_format, created_by, created_t)
         logger.info(f"obj_id1: {obj_id1}")
         assert obj_id1 is not None
 

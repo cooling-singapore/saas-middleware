@@ -145,17 +145,19 @@ class NodeDBService:
                 session.add(DORPermission(obj_id=obj_id, key_iid=identity.iid, permission=permission))
 
             session.commit()
+            return identity.iid
 
     def revoke_access(self, obj_id, public_key=None):
         with self._Session() as session:
             if not public_key:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
+                return '*'
             else:
                 # resolve the identity of the public key
                 identity = self.resolve_identity(public_key)
                 session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.iid).delete()
-
-            session.commit()
+                session.commit()
+                return identity.iid
 
     def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key,
                         access_restricted, content_encrypted, expiration):

@@ -160,27 +160,43 @@ class DORBlueprint:
 
     @request_manager.authentication_required
     def get_access(self, obj_id):
-        return jsonify({
-            "access": self._node.db.get_access_list(obj_id)
-        }), 200
+        if not self._node.db.get_object_by_id(obj_id):
+            return jsonify(f"{obj_id} not found"), 404
+
+        else:
+            return jsonify(
+                self._node.db.get_access_list(obj_id)
+            ), 200
 
     @request_manager.authentication_required
     @request_manager.verify_request_body(grant_access_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id):
-        body = request_manager.get_request_variable('body')
-        self._node.db.grant_access(obj_id, body['public_key'], body['permission'])
+        if not self._node.db.get_object_by_id(obj_id):
+            return jsonify(f"{obj_id} not found"), 404
 
-        return jsonify("Access granted."), 200
+        else:
+            body = request_manager.get_request_variable('body')
+            user_iid = self._node.db.grant_access(obj_id, body['public_key'], body['permission'])
+
+            return jsonify({
+                obj_id: user_iid
+            }), 200
 
     @request_manager.authentication_required
     @request_manager.verify_request_body(revoke_access_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id):
-        body = request_manager.get_request_variable('body')
-        self._node.db.revoke_access(obj_id, body['public_key'])
+        if not self._node.db.get_object_by_id(obj_id):
+            return jsonify(f"{obj_id} not found"), 404
 
-        return jsonify("Access revoked."), 200
+        else:
+            body = request_manager.get_request_variable('body')
+            user_iid = self._node.db.revoke_access(obj_id, body['public_key'])
+
+            return jsonify({
+                obj_id: user_iid
+            }), 200
 
     @request_manager.authentication_required
     def get_owner(self, obj_id):
@@ -292,9 +308,9 @@ class DORProxy(EndpointProxy):
         r = self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=owner)
         return r
 
-    def get_access_permissions(self, obj_id):
+    def get_access_list(self, obj_id):
         r = self.get(f"/{obj_id}/access")
-        return r['reply']['access'] if 'access' in r['reply'] else None
+        return r['reply'] if 'reply' in r else []
 
     def grant_access(self, obj_id, owner, key, permission=""):
         body = {
