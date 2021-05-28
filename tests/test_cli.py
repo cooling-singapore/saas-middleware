@@ -125,9 +125,9 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         # perform ADD
         args = [
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
-            'dor', '--keystore-id', keystore_id, '--password', self.password,
-            '--dor-address', f"{address[0]}:{address[1]}",
-            'add', '--data-type', 'Type', '--data-format', 'Format', path
+            '--keystore-id', keystore_id, '--password', self.password,
+            'dor', '--dor-address', f"{address[0]}:{address[1]}",
+            'add', '--access-restricted', '--data-type', 'Type', '--data-format', 'Format', path
         ]
         obj_id = parse_args(args)
         assert(obj_id is not None)
@@ -142,8 +142,8 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         # perform REMOVE
         args = [
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
-            'dor', '--keystore-id', keystore_id, '--password', self.password,
-            '--dor-address', f"{address[0]}:{address[1]}",
+            '--keystore-id', keystore_id, '--password', self.password,
+            'dor', '--dor-address', f"{address[0]}:{address[1]}",
             'remove', obj_id, fake_obj_id
         ]
         result = parse_args(args)
@@ -154,6 +154,61 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         assert(result[obj_id] is not None)
         assert(result[fake_obj_id] is None)
 
+    def test_cmd_access_grant_revoke(self):
+        node = self.get_node('node', enable_rest=True)
+
+        args = [
+            '--keystore', self.wd_path,
+            'init',
+            '--name', 'name', '--email', 'email@internet.com', '--password', self.password
+        ]
+        keystore_id = parse_args(args)
+        assert(keystore_id is not None)
+
+        path = self.generate_random_file('content.dat', 1024*1024)
+        address = node.rest.address()
+
+        # perform ADD
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            '--keystore-id', keystore_id, '--password', self.password,
+            'dor', '--dor-address', f"{address[0]}:{address[1]}",
+            'add', '--access-restricted', '--data-type', 'Type', '--data-format', 'Format', path
+        ]
+        obj_id = parse_args(args)
+        assert(obj_id is not None)
+        record = node.db.get_object_by_id(obj_id)
+        assert(record is not None)
+        print(record.obj_id)
+        print(record.owner_iid)
+        assert(record.obj_id == obj_id)
+        assert(record.owner_iid == keystore_id)
+
+        # GRANT access
+        public_key = node.identity().public_as_string()
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            '--keystore-id', keystore_id, '--password', self.password,
+            'access', '--dor-address', f"{address[0]}:{address[1]}", '--user-public-key', public_key,
+            'grant', obj_id
+        ]
+        result = parse_args(args)
+        assert(result is not None)
+        print(result)
+        assert(result[obj_id] == node.id())
+
+        # REVOKE access
+        public_key = node.identity().public_as_string()
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            '--keystore-id', keystore_id, '--password', self.password,
+            'access', '--dor-address', f"{address[0]}:{address[1]}", '--user-public-key', public_key,
+            'revoke', obj_id
+        ]
+        result = parse_args(args)
+        assert(result is not None)
+        print(result)
+        assert(result[obj_id] == node.id())
 
 
 if __name__ == '__main__':

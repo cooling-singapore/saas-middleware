@@ -7,6 +7,7 @@ import subprocess
 
 from cryptography.fernet import Fernet
 
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.keystore.keystore import Keystore
 from saas.node import Node
@@ -214,11 +215,6 @@ def exec_cmd_service(args):
 def add_cmd_dor(subparsers):
     dor_parser = subparsers.add_parser('dor', help='add/remove and search for data objects')
 
-    dor_parser.add_argument('--keystore-id', dest='keystore-id', action='store',
-                            help=f"id of the keystore to be used if there are more than one available "
-                                 f"(default: id of the only keystore if only one is available )")
-    dor_parser.add_argument('--password', dest='password', action='store',
-                            help=f"password for the keystore")
     dor_parser.add_argument('--dor-address', dest='dor-address', action='store',
                             help=f"the address (host:port) of the DOR")
 
@@ -227,6 +223,10 @@ def add_cmd_dor(subparsers):
 
     add_parser = dor_subparsers.add_parser('add', help='add a data object to the DOR')
 
+    add_parser.add_argument('--access-restricted', dest="access_restricted", action='store_const', const=True,
+                            help=f"indicates that access to this data object requires permission by the data owner")
+    add_parser.add_argument('--content-encrypted', dest="content_encrypted", action='store_const', const=True,
+                            help=f"indicates that the content of the data object is encrypted")
     add_parser.add_argument('--data-type', dest='data-type', action='store',
                             help=f"the data type of the data object")
     add_parser.add_argument('--data-format', dest='data-format', action='store',
@@ -271,8 +271,11 @@ def exec_cmd_dor(args):
         encrypt_file(obj_path0, obj_path1, obj_key)
 
         proxy = DORProxy(args['dor-address'].split(":"), keystore.identity)
-        obj_id, descriptor = proxy.add_data_object(obj_path1, keystore.identity, args['data-type'], args['data-format'],
-                                       keystore.content['identity']['name'])
+        access_restricted = args['access_restricted'] is True
+        content_encrypted = args['content_encrypted'] is True
+        obj_id, descriptor = proxy.add_data_object(obj_path1, keystore.identity, access_restricted, content_encrypted,
+                                                   args['data-type'], args['data-format'],
+                                                   keystore.content['identity']['name'])
 
         # add object key to key chain
         keystore.add_object_key(obj_id, obj_key)
@@ -295,23 +298,87 @@ def exec_cmd_dor(args):
         return result
 
 
+def add_cmd_access(subparsers):
+    access_parser = subparsers.add_parser('access', help='grant/revoke access to data objects')
+
+    access_parser.add_argument('--dor-address', dest='dor-address', action='store',
+                               help=f"the address (host:port) of the DOR")
+
+    access_parser.add_argument('--user-public-key', dest='user-public-key', action='store',
+                               help=f"the public key of the user to/from whom access is granted/revoked")
+
+    permission_subparsers = access_parser.add_subparsers(title='Available access commands',
+                                                         metavar='command', dest='command2', required=True)
+
+    grant_permission_parser = permission_subparsers.add_parser('grant',
+                                                               help='grant access to one ore more data objects')
+
+    grant_permission_parser.add_argument('obj-ids', metavar='obj-id', type=str, nargs='+',
+                                         help="the ids of the data object to which access will be granted")
+
+    revoke_permission_parser = permission_subparsers.add_parser('revoke',
+                                                                help='revoke access to one or more data objects')
+
+    revoke_permission_parser.add_argument('obj-ids', metavar='obj-id', type=str, nargs='+',
+                                          help="the ids of the data object to which access will be revoked")
+
+
+def exec_cmd_access(args):
+    keystore = load_keystore(args)
+
+    user_public_key = args['user-public-key']
+    key = ECKeyPair.from_public_key_string(user_public_key)
+    if key is None:
+        print("Invalid public key provided.")
+        return None
+
+    proxy = DORProxy(args['dor-address'].split(":"), keystore.identity)
+
+    if args['command2'] == 'grant':
+        result = {}
+        for obj_id in args['obj-ids']:
+            r = proxy.grant_access(obj_id, keystore.identity, key)
+            result[obj_id] = r[obj_id]
+
+        print(f"Access granted for user_iid={key.iid}: {result}")
+        return result
+
+    elif args['command2'] == 'revoke':
+        result = {}
+        for obj_id in args['obj-ids']:
+            r = proxy.revoke_access(obj_id, keystore.identity, key)
+            result[obj_id] = r[obj_id]
+
+        print(f"Access revoked for user_iid={key.iid}: {result}")
+        return result
+
+
 def parse_args(args):
     default_keystore = os.path.join(os.environ['HOME'], '.keystore')
     default_temp_dir = os.path.join(default_keystore)
 
     parser = argparse.ArgumentParser(description='SaaS Middleware command line interface (CLI)')
+
     parser.add_argument('--keystore', dest='keystore', action='store',
                         default=default_keystore,
                         help=f"path to the keystore (default: '{default_keystore}')")
+
     parser.add_argument('--temp-dir', dest='temp-dir', action='store',
                         default=default_temp_dir,
                         help=f"path to directory used for intermediate files (default: '{default_temp_dir}')")
+
+    parser.add_argument('--keystore-id', dest='keystore-id', action='store',
+                        help=f"id of the keystore to be used if there are more than one available "
+                             f"(default: id of the only keystore if only one is available )")
+    parser.add_argument('--password', dest='password', action='store',
+                        help=f"password for the keystore")
 
     subparsers = parser.add_subparsers(title='Available commands', metavar='command', dest='command', required=True)
 
     add_cmd_initialise(subparsers)
     add_cmd_service(subparsers)
     add_cmd_dor(subparsers)
+    add_cmd_access(subparsers)
 
     try:
         args = vars(parser.parse_args(args))
@@ -331,6 +398,9 @@ def parse_args(args):
 
         elif args['command'] == 'dor':
             return exec_cmd_dor(args)
+
+        elif args['command'] == 'access':
+            return exec_cmd_access(args)
 
     except argparse.ArgumentError:
         parser.print_help()
