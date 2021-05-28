@@ -2,7 +2,7 @@ import logging
 
 from operator import and_
 
-from sqlalchemy import Column, String, BigInteger, Integer
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -21,6 +21,8 @@ class DORObject(Base):
     d_hash = Column(String(64), nullable=False)
     c_hash = Column(String(64), nullable=False)
     owner_iid = Column(String(64), nullable=False)
+    access_restricted = Column(Boolean, nullable=False)
+    content_encrypted = Column(Boolean, nullable=False)
     expiration = Column(BigInteger)
 
 
@@ -124,9 +126,12 @@ class NodeDBService:
             return result
 
     def has_access(self, obj_id, key):
+        return self.get_permission(obj_id, key) is not None
+
+    def get_permission(self, obj_id, key):
         with self._Session() as session:
             permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
-            return permission is not None
+            return permission
 
     def grant_access(self, obj_id, public_key, permission):
         # resolve the identity of the public key
@@ -152,7 +157,8 @@ class NodeDBService:
 
             session.commit()
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key, expiration):
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key,
+                        access_restricted, content_encrypted, expiration):
         with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
@@ -161,6 +167,7 @@ class NodeDBService:
 
                 # add a new data object record
                 session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner.iid,
+                                      access_restricted=access_restricted, content_encrypted=content_encrypted,
                                       expiration=expiration))
                 session.commit()
 
@@ -182,6 +189,14 @@ class NodeDBService:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
                 return self.get_public_key(item.owner_iid)
+            else:
+                return None
+
+    def get_owner_record(self, obj_id):
+        with self._Session() as session:
+            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            if item:
+                return self.get_identity_record(item.owner_iid)
             else:
                 return None
 

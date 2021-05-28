@@ -10,9 +10,10 @@ import os
 import logging
 import json
 
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.messenger import MessengerRuntimeError, SecureMessenger
 from saas.p2p.protocol import P2PProtocol
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
 
 logger = logging.getLogger('dor.protocol')
 
@@ -32,10 +33,16 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
 
         # send 'fetch' message and receive the data object descriptor and content from the peer
         try:
+            key = self.node.identity()
+            timestamp = get_timestamp_now()
+            signature = key.sign(f"{obj_id}:{timestamp}".encode('utf-8'))
+
             reply = messenger.request(self.prepare_message("fetch", {
-                'object_id': obj_id
+                'object_id': obj_id,
+                'timestamp': timestamp,
+                'public_key': key.public_as_string(),
+                'signature': signature
             }))
-            logger.debug(f"send_fetch: reply={reply}")
             c_hash = reply['c_hash']
 
             destination_descriptor_path = self.node.dor.obj_descriptor_path(obj_id, cache=True)
@@ -62,7 +69,33 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             messenger.close()
             return
 
-        # if we have it, then we send the descriptor in the reply and stream the contents of the data object
+        # check if the data object access is restricted and (if so) if the user has the required permission
+        if obj_record.access_restricted:
+            public_key = message['public_key']
+            key = ECKeyPair.from_public_key_string(public_key)
+
+            # check if there is a permission for this key
+            permission = self.node.db.get_permission(obj_id, key)
+            if permission is None:
+                messenger.reply_error(403, f"access to {obj_id} not permitted for {key.iid}")
+                messenger.close()
+                return
+
+            # check the age of the request (if it's older than 2 seconds, reject it)
+            timestamp = message['timestamp']
+            if get_timestamp_now() > timestamp + 2*1000:
+                messenger.reply_error(408, f"request timestamp {timestamp} is too old")
+                messenger.close()
+                return
+
+            # verify the access request
+            signature = message['signature']
+            if not key.verify(f"{obj_id}:{timestamp}".encode('utf-8'), signature):
+                messenger.reply_error(403, f"access request cannot be verified for {key.iid}")
+                messenger.close()
+                return
+
+        # we send the descriptor in the reply and stream the contents of the data object
         descriptor_path = self.node.dor.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
             messenger.reply_error(500, f"descriptor expected but not found for data object {obj_id}")

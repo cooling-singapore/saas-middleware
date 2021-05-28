@@ -12,11 +12,20 @@ from saas.utilities.general_helpers import get_timestamp_now
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
 
+security_specification = {
+    'type': 'object',
+    'properties': {
+        'access_restricted': {'type': 'boolean'},
+        'content_encrypted': {'type': 'boolean'}
+    },
+    'required': ['access_restricted', 'content_encrypted']
+}
 
 data_body_specification = {
     'type': 'object',
     'properties': {
         'type': {'type': 'string', 'enum': ['data_object', 'processor']},
+        'security': security_specification,
         'owner_public_key': {'type': 'string'}
     },
     'if': {
@@ -32,7 +41,7 @@ data_body_specification = {
             'descriptor': processor_descriptor_schema
         }
     },
-    'required': ['type', 'owner_public_key', 'descriptor']
+    'required': ['type', 'security', 'owner_public_key', 'descriptor']
 }
 
 grant_access_body_specification = {
@@ -122,7 +131,8 @@ class DORBlueprint:
         body = request_manager.get_request_variable('body')
         files = request_manager.get_request_variable('files')
 
-        status, result = self._node.dor.add(body['owner_public_key'], body['descriptor'], files['attachment'])
+        status, result = self._node.dor.add(body['owner_public_key'], body['security'],
+                                            body['descriptor'], files['attachment'])
         return jsonify(result), status
 
     @request_manager.authentication_required
@@ -237,10 +247,15 @@ class DORProxy(EndpointProxy):
             'output_name': output_name
         }
 
-    def add_data_object(self, content_path, owner, data_type, data_format, created_by, created_t=None, recipe=None):
+    def add_data_object(self, content_path, owner, access_restricted, content_encrypted,
+                        data_type, data_format, created_by, created_t=None, recipe=None):
         body = {
             'type': 'data_object',
             'owner_public_key': owner.public_as_string(),
+            'security': {
+                'access_restricted': access_restricted,
+                'content_encrypted': content_encrypted
+            },
             'descriptor': {
                 'data_type': data_type,
                 'data_format': data_format,
@@ -281,7 +296,7 @@ class DORProxy(EndpointProxy):
         r = self.get(f"/{obj_id}/access")
         return r['reply']['access'] if 'access' in r['reply'] else None
 
-    def grant_access(self, obj_id, owner, key, permission):
+    def grant_access(self, obj_id, owner, key, permission=""):
         body = {
             'public_key': key.public_as_string(),
             'permission': permission
