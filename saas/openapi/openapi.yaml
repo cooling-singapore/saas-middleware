@@ -1,0 +1,827 @@
+openapi: 3.0.0
+info:
+  description: SaaS Middleware
+  version: 0.0.1
+  title: OpenAPI SaaS Middleware
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+paths:
+  /repository:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: query
+          name: key_criterion
+          schema:
+            type: string
+        - in: query
+          name: value_criterion
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  objects:
+                    description: Object IDs
+                    type: array
+                    items:
+                      type: string
+                    uniqueItems: true
+    post:
+      tags:
+        - DOR
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                body:
+                  $ref: "#/components/schemas/data_upload"
+                attachment:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data_object_id:
+                    type: string
+
+  /repository/{obj_id}:
+    delete:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  descriptor:
+                    oneOf:
+                      - $ref: "#/components/schemas/data_object_descriptor"
+                      - $ref: "#/components/schemas/processor_descriptor"
+
+  /repository/{obj_id}/content:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: "Data object {obj_id} not found"
+
+  /repository/{obj_id}/descriptor:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  descriptor:
+                    oneOf:
+                      - $ref: "#/components/schemas/data_object_descriptor"
+                      - $ref: "#/components/schemas/processor_descriptor"
+
+  /repository/{obj_id}/access:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access:
+                    description: Key IDs
+                    type: array
+                    items:
+                      type: string
+                    uniqueItems: True
+    post:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: True
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                public_key:
+                  type: string
+                permission:
+                  type: string
+              required:
+                - public_key
+                - permission
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Access granted.
+    delete:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Access revoked.
+
+  /repository/{obj_id}/owner:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  owner_iid:
+                    type: string
+                  owner_public_key:
+                    type: string
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Data object {obj_id} not found.
+    put:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: True
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                new_owner_public_key:
+                  type: string
+              required: [new_owner_public_key]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Ownership of data object '{obj_id}' transferred to '{new_owner_public_key}'.
+
+  /repository/{obj_id}/tags:
+    get:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tag:
+                    description: Tags
+                    type: array
+                    items:
+                      type: string
+    put:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: True
+        content:
+          application/json:
+            schema:
+              description: Tags
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+                required:
+                  - key
+                  - value
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Tags updated.
+    delete:
+      tags:
+        - DOR
+      parameters:
+        - in: path
+          name: obj_id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Tags
+              type: array
+              items:
+                type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Tags updated.
+
+  /nodedb/node:
+    get:
+      tags:
+        - NodeDB
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/node"
+    
+  /nodedb/network:
+    get:
+      tags:
+        - NodeDB
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/node_network"
+  
+  /nodedb/identities:
+    get:
+      tags:
+        - NodeDB
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/identities"
+  
+  /processor:
+    get:
+      tags:
+        - RTI
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployed:
+                    description: Processor IDs
+                    type: array
+                    items:
+                      type: string
+                    uniqueItems: true
+    
+  /processor/{proc_id}:
+    post:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  descriptor:
+                    $ref: "#/components/schemas/processor_descriptor"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} not found.
+    delete:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} undeployed.
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} not found.
+  
+  /processor/{proc_id}/descriptor:
+    get:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  descriptor:
+                    $ref: "#/components/schemas/processor_descriptor"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} not found.
+  
+  /processor/{proc_id}/jobs:
+    get:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/job_descriptor"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} not deployed.
+    post:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/job_upload"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: Processor {proc_id} not deployed.
+  
+  /processor/{proc_id}/jobs/{job_id}:
+    get:
+      tags:
+        - RTI
+      parameters:
+        - in: path
+          name: proc_id
+          schema:
+            type: string
+          required: true
+        - in: path
+          name: job_id
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_descriptor:
+                    $ref: "#/components/schemas/job_descriptor"
+                  status:
+                    $ref: "#/components/schemas/job_status"
+                    
+        "404":  
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                example: No job with id {job_id}.
+
+components:
+  schemas:
+    data_upload:
+      title: Data Upload
+      type: object
+      properties:
+          type:
+            type: string
+            enum: [data_object, processor]
+          owner_public_key:
+            type: string
+          descriptor:
+            oneOf:
+              - $ref: "#/components/schemas/data_object_descriptor"
+              - $ref: "#/components/schemas/processor_descriptor"
+            discriminator:
+              propertyName: type
+              mapping:
+                data_object: "#/components/schemas/data_object_descriptor"
+                processor: "#/components/schemas/processor_descriptor"
+      required:
+        - type
+        - owner_public_key
+        - descriptor
+
+    data_object_descriptor:
+      title: Data Object Descriptor
+      type: object
+      properties:
+        data_type:
+          description: Data Type
+          type: string
+        data_format:
+          description: Data Format
+          type: string
+        created_t:
+          description: Time created
+          type: number
+        created_by:
+          type: string
+          description: Owner of the data object
+      required:
+        - data_type
+        - data_format
+        - created_t
+        - created_by
+
+    recipe:
+      title: Recipe
+      type: object
+      properties:
+        task_descriptor:
+          $ref: "#/components/schemas/task_descriptor"
+        output_name:
+          type: string
+      required:
+        - task_descriptor
+        - output_name
+
+    task_descriptor:
+      title: Task Descriptor
+      type: object
+      properties:
+        processor_id:
+          type: string
+        input:
+          $ref: "#/components/schemas/input_interface"
+        output:
+          $ref: "#/components/schemas/output_interface"
+      required:
+        - processor_id
+        - input
+        - output
+
+    input_interface:
+      title: Input Interface
+      allOf:
+        - properties:
+            name:
+              type: string
+            type:
+              type: string
+              enum: [reference, value]
+          discriminator:
+            propertyName: type
+            mapping:
+              reference: "#/components/schemas/input_interface_reference"
+              value: "#/components/schemas/input_interface_value"
+          required:
+            - name
+            - type
+        - oneOf:
+            - $ref: "#/components/schemas/input_interface_reference"
+            - $ref: "#/components/schemas/input_interface_value"
+
+    input_interface_reference:
+      title: Input Interface Reference
+      type: object
+      properties:
+        obj_id:
+          type: string
+      required:
+        - obj_id
+
+    input_interface_value:
+      title: Input Interface Value
+      type: object
+      properties:
+        value:
+          type: object
+      required:
+        - value
+
+    output_interface:
+      title: Output Interface
+      properties:
+        owner_public_key:
+          type: string
+      required:
+        - owner_public_key
+
+    processor_descriptor:
+      title: Processor Descriptor
+      type: object
+      properties:
+        created_t:
+          type: number
+        created_by:
+          type: string
+      required:
+        - created_t
+        - created_by
+
+    node:
+      title: Node
+      type: object
+      properties:
+        iid:
+          type: string
+        name:
+          type: string
+        public_key:
+          type: string
+        rest_service_address:
+          type: string
+        p2p_service_address:
+          type: string
+    
+    node_network:
+      title: Node Network
+      type: array
+      items:
+        type: object
+        properties:
+          iid:
+            type: string
+          last_seen:
+            type: number
+          p2p_address:
+            type: string
+          rest_address:
+            type: string
+      
+    identities:
+      title: Identities
+      type: array
+      items:
+        type: object
+        properties:
+          iid:
+            type: string
+          public_key:
+            type: string
+          name:
+            type: string
+          email:
+            type: string
+          nonce:
+            type: number
+          signature:
+            type: string
+    
+    job_upload:
+      title: Job Upload
+      allOf:
+        - properties:
+            type:
+              type: string
+              enum:
+                - task
+                - workflow
+          discriminator:
+            propertyName: type
+            mapping:
+              task: "#/components/schemas/task_descriptor"
+              workflow: "#/components/schemas/workflow_descriptor"
+          required: [type]
+        - oneOf:
+          - $ref: "#/components/schemas/task_descriptor" 
+          - $ref: "#/components/schemas/workflow_descriptor"
+
+    workflow_descriptor:
+      title: Workflow Descriptor
+      type: object
+      properties:
+        name:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/workflow_task_descriptor"
+      required:
+        - name
+        - tasks
+
+    workflow_task_descriptor:
+      title: Workflow Task Descriptor
+      type: object
+      allOf:
+        - properties:
+            name:
+              type: string
+          required: [name]
+        - $ref: "#/components/schemas/task_descriptor"
+    
+    job_descriptor:
+      title: Job Descriptor
+      type: object
+      properties:
+        id:
+          type: string
+        proc_id:
+          type: string
+        descriptor:
+          oneOf:
+            - $ref: "#/components/schemas/task_descriptor" 
+            - $ref: "#/components/schemas/workflow_descriptor"
+      
+    job_status:
+      title: Job status
+      type: object
+      properties:
+        status:
+          type: string
+      additionalProperties: true
+        
