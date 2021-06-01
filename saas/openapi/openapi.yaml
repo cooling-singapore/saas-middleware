@@ -1,16 +1,23 @@
 openapi: 3.0.0
 info:
-  description: SaaS Middleware
-  version: 0.0.1
-  title: OpenAPI SaaS Middleware
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  description: "This is the API specification for the SaaS Middleware. Note that the initial version of the SaaS
+  Middleware is under active development and the specification will change. Versioning follows the Semantic Versioning
+  2.0 (https://semver.org/spec/v2.0.0.html)."
+  version: 0.1.0
+  title: Simulation-as-a-Service (SaaS) Middleware API
+#  license:
+#    name: Apache 2.0
+#    url: https://www.apache.org/licenses/LICENSE-2.0.html
 paths:
   /repository:
     get:
+      description: "Searches the DOR for data objects with tags that match the key criterion and the value criterion.
+      Data objects can be tagged with an arbitrary number of `key=value` pairs. The key and value criteria are applied
+      to the `key` and `value` element of the tag, respectively. For example, assume two tags: `project=P1` and
+      `project=P2`. A search with key criterion `project` would return both tags whereas a search with value criterion
+      `P1` would only return the first tag."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: query
           name: key_criterion
@@ -29,14 +36,19 @@ paths:
                 type: object
                 properties:
                   objects:
-                    description: Object IDs
+                    description: Data Object IDs
                     type: array
                     items:
                       type: string
                     uniqueItems: true
     post:
+      description: "Adds a new data object to the DOR and returns the id for this data object. Data objects can be
+      regular data objects (i.e., data) or processors data objects (e.g., source code). Depending on the case, a
+      corresponding descriptor (either `Data Object Descriptor` or a `Processor Descriptor`) has to be provided. In
+      addition, the public key of the data object owner has to be provided. The content of the data object itself is
+      uploaded as an attachment (binary). There is no restriction as to the nature or size of the content."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       requestBody:
         required: true
         content:
@@ -62,8 +74,11 @@ paths:
 
   /repository/{obj_id}:
     delete:
+      description: "Deletes an existing data object with a given `obj_id` from the DOR. This action can only be carried
+      out by the owner of the data object. If deletion was successful, the descriptor (either data object descriptor
+      or processor descriptor) of the deleted data object is returned."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -85,8 +100,10 @@ paths:
 
   /repository/{obj_id}/content:
     get:
+      description: "Requests to download the content of a data object with a given `obj_id`. This action can only be
+      carried out by the owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -111,8 +128,9 @@ paths:
 
   /repository/{obj_id}/descriptor:
     get:
+      description: "Requests to download the descriptor a data object with a given `obj_id`."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -134,8 +152,9 @@ paths:
 
   /repository/{obj_id}/access:
     get:
+      description: "Requests a list of identities that have access to a data object with a given `obj_id`."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -151,14 +170,16 @@ paths:
                 type: object
                 properties:
                   access:
-                    description: Key IDs
+                    description: IDs of identities that have been granted access to the data object.
                     type: array
                     items:
                       type: string
                     uniqueItems: True
     post:
+      description: "Grants access for a data object with a given `obj_id` to an identity with a given `public_key`.
+      This action can only be carried out by the owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -173,8 +194,10 @@ paths:
               type: object
               properties:
                 public_key:
+                  description: "The public key of the identity that should be granted access to the data object."
                   type: string
                 permission:
+                  description: "Reserved for future use."
                   type: string
               required:
                 - public_key
@@ -188,8 +211,10 @@ paths:
                 type: string
                 example: Access granted.
     delete:
+      description: "Revokes access for a data object with a given `obj_id` to an identity with a given `public_key`.
+      This action can only be carried out by the owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -207,8 +232,9 @@ paths:
 
   /repository/{obj_id}/owner:
     get:
+      description: "Requests a the ID and the public key of the identity that owns a data object with a given `obj_id`."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -235,8 +261,10 @@ paths:
                 type: string
                 example: Data object {obj_id} not found.
     put:
+      description: "Updates the ownership of a data object with a given `obj_id` to a new owner with a given
+      `public_key`. This action can only be carried out by the current owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -251,6 +279,7 @@ paths:
               type: object
               properties:
                 new_owner_public_key:
+                  description: "The public key of the new owner."
                   type: string
               required: [new_owner_public_key]
       responses:
@@ -264,8 +293,9 @@ paths:
 
   /repository/{obj_id}/tags:
     get:
+      description: "Requests a list of tags for a data object with a given `obj_id`."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -280,14 +310,16 @@ paths:
               schema:
                 type: object
                 properties:
-                  tag:
+                  tags:
                     description: Tags
                     type: array
                     items:
                       type: string
     put:
+      description: "Adds a new tag for a data object with a given `obj_id`. A tag comes in the form of a `key=value`
+      pair. This action can only be carried out by the owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -320,8 +352,10 @@ paths:
                 type: string
                 example: Tags updated.
     delete:
+      description: "Removes a number of tags from a data object with a given `obj_id`. This action can only be carried
+      out by the owner of the data object."
       tags:
-        - DOR
+        - DOR (Data Object Repository)
       parameters:
         - in: path
           name: obj_id
@@ -333,7 +367,7 @@ paths:
         content:
           application/json:
             schema:
-              description: Tags
+              description: "Tags to be removed (i.e., the `key` values of the tags)."
               type: array
               items:
                 type: string
@@ -348,6 +382,7 @@ paths:
 
   /nodedb/node:
     get:
+      description: "Requests information about the node."
       tags:
         - NodeDB
       responses:
@@ -360,6 +395,7 @@ paths:
     
   /nodedb/network:
     get:
+      description: "Requests information about all peers known to the node."
       tags:
         - NodeDB
       responses:
@@ -372,6 +408,7 @@ paths:
   
   /nodedb/identities:
     get:
+      description: "Requests information about all identities known to the node."
       tags:
         - NodeDB
       responses:
@@ -384,8 +421,9 @@ paths:
   
   /processor:
     get:
+      description: "Request a list of all processors deployed by that node."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       responses:
         "200":
           description: OK
@@ -395,7 +433,7 @@ paths:
                 type: object
                 properties:
                   deployed:
-                    description: Processor IDs
+                    description: "IDs of deployed processors."
                     type: array
                     items:
                       type: string
@@ -403,11 +441,16 @@ paths:
     
   /processor/{proc_id}:
     post:
+      description: "Requests the node to deploy an instance of a specific processor with a given `proc_id`. Processors
+      are treated like data objects, i.e., they have to be uploaded using the corresponding DOR functionality. Once
+      available in a DOR, processors can be selectively deployed on nodes by the RTI."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
+          description: "The ID of the processor to be deployed. Note: this ID is equal to the dID obtained when adding
+          the processor to the DOR."
           schema:
             type: string
           required: true
@@ -429,8 +472,9 @@ paths:
                 type: string
                 example: Processor {proc_id} not found.
     delete:
+      description: "Requests the node to undeploy an instance of a specific processor with a given `proc_id`."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
@@ -455,8 +499,9 @@ paths:
   
   /processor/{proc_id}/descriptor:
     get:
+      description: "Requests the descriptor for a processor with a given `proc_id`."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
@@ -483,8 +528,10 @@ paths:
   
   /processor/{proc_id}/jobs:
     get:
+      description: "Requests a list of all jobs currently being executed by a deployed processor with a given
+      `proc_id`."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
@@ -511,8 +558,12 @@ paths:
                 type: string
                 example: Processor {proc_id} not deployed.
     post:
+      description: "Submits a new job to the RTI for a specific processor instance, given by its `proc_id`. For this
+      purpose the type of the job needs to be specified, which can be either a `task` or `workflow`. In addition,
+      depending on the case, a corresponding descriptor (i.e., either a `Task Descriptor` or a `Workflow Descriptor`)
+      needs to be provided as well."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
@@ -545,8 +596,12 @@ paths:
   
   /processor/{proc_id}/jobs/{job_id}:
     get:
+      description: "Requests information about a job with a given `job_id` that is (or has been) processed by a
+      deployed instance of a processor with a given `proc_id`. If a job is found for the given `proc_id` and `job_id`
+      then the descriptor of the job (i.e., either `Task Descriptor` or `Workflow Descriptor`) is returned as well as
+      the status of the job."
       tags:
-        - RTI
+        - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
