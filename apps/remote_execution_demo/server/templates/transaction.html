@@ -44,7 +44,7 @@
 
     <div>
         <h2 align="left">Identity and Tasks</h2>
-        You are logged in as <b id="id_name"></b> (<b id="id_email"></b>).
+        <div id="id_info"></div>
         <div id="tasks"></div>
     </div>
 
@@ -59,14 +59,18 @@ me_iid = ""
 tx_id = {{ tx_id }}
 agent_address = "{{ agent_address }}"
 
+const dp_color = "#4DAA59"
+const ap_color = "#2E6CB5"
+
 function update_identity() {
     const url="http://{{ app_address }}/api/v1/user/identity"
     fetch(url)
         .then((resp) => resp.json())
         .then(function(data) {
             me_iid = data.id
-            document.getElementById('id_name').innerHTML = data.name
-            document.getElementById('id_email').innerHTML = data.email
+            me_name = data.name
+            me_email = data.email
+            update_transaction()
         })
         .catch(function(error) {
             console.log(error)
@@ -84,8 +88,8 @@ function update_tasks(data) {
 
                 if(!(item.name in data.transaction.in_obj_ids)) {
                     html +=
-                        "<p><table style=\"border:1px solid black; width:500px\">" +
-                        "    <tr><td><b>Upload Input Data Object '"+item.name+"'</b></td></tr>" +
+                        "<p><table style=\"border:2px solid black; border-color:"+color+"; width:500px\">" +
+                        "    <tr><td><b style=\"color:"+color+";\">Upload Input Data Object '"+item.name+"'</b></td></tr>" +
                         "    <tr></tr>" +
                         "    <tr><td><form enctype=\"multipart/form-data\" action=\"http://{{ app_address }}/api/v1/user/upload_input\" method=\"POST\">" +
                         "        <input type=\"HIDDEN\" name=\"tx_id\" value=\""+tx_id+"\"/>" +
@@ -103,8 +107,8 @@ function update_tasks(data) {
 
         if (data.transaction.status == 'ready') {
             html +=
-                "<p><table style=\"border:1px solid black; width:500px\">" +
-                "    <tr><td><b>Run the Processor</b></td></tr>" +
+                "<p><table style=\"border:2px solid black; border-color:"+color+"; width:500px\">" +
+                "    <tr><td><b style=\"color:"+color+";\">Run the Processor</b></td></tr>" +
                 "    <tr></tr>" +
                 "    <tr><td>Click the 'Start' button in order to begin with the data processing by running the processor.</td></tr>" +
                 "    <tr><td>" +
@@ -119,8 +123,8 @@ function update_tasks(data) {
 
         // if (data.transaction.review_algorithm && data.transaction.proc_id != null) {
         //     html +=
-        //         "<p><table style=\"border:1px solid black; width:500px\">" +
-        //         "    <tr><td colspan=\"2\"><b>Review Data Processor</b></td></tr>" +
+        //         "<p><table style=\"border:2px solid black; width:500px\">" +
+        //         "    <tr><td colspan=\"2\"><b style=\"color:"+color+";\">Review Data Processor</b></td></tr>" +
         //         "    <tr></tr>" +
         //         "    <tr><td>Processor:</td><td><a href>Download</a></td></tr>" +
         //         "    <tr><td>Comments:</td><td></td></tr>" +
@@ -135,8 +139,8 @@ function update_tasks(data) {
                 if (obj_name in data.transaction.review) continue;
 
                 html +=
-                    "<p><table style=\"border:1px solid black; width:500px\">" +
-                    "    <tr><td colspan=\"2\"><b>Review Output Data Object '"+obj_name+"'</b></td></tr>" +
+                    "<p><table style=\"border:2px solid black; border-color:"+color+"; width:500px\">" +
+                    "    <tr><td colspan=\"2\"><b style=\"color:"+color+";\">Review Output Data Object '"+obj_name+"'</b></td></tr>" +
                     "    <tr></tr>" +
                     "    <tr><td colspan=\"2\">Output Data Object: <a href=\"http://"+agent_address+"/api/v1/agent/download/"+tx_id+"/out/"+obj_name+"\">Download</a></td></tr>" +
                     "    <tr><td colspan=\"2\"><form enctype=\"multipart/form-data\" action=\"http://{{ app_address }}/api/v1/user/review\" method=\"POST\">" +
@@ -156,8 +160,8 @@ function update_tasks(data) {
     if (me_iid == data.consumer.id) {
         if (data.transaction.proc_id == null) {
             html +=
-                "<p><table style=\"border:1px solid black; width:500px\">" +
-                "    <tr><td><b>Deploy Data Processor</b></td></tr>" +
+                "<p><table style=\"border:2px solid black; border-color:"+color+"; width:500px\">" +
+                "    <tr><td><b style=\"color:"+color+";\">Deploy Data Processor</b></td></tr>" +
                 "    <tr></tr>" +
                 "    <tr><td><form enctype=\"multipart/form-data\" action=\"http://{{ app_address }}/api/v1/user/deploy_processor\" method=\"POST\">" +
                 "        <input type=\"HIDDEN\" name=\"tx_id\" value=\""+tx_id+"\"/>" +
@@ -184,6 +188,19 @@ function update_transaction() {
     fetch(url)
         .then((resp) => resp.json())
         .then(function(data) {
+            color = "#000000"
+            if (me_iid == data.provider.id) {
+                color = dp_color
+            }
+            else if(me_iid == data.consumer.id) {
+                color = ap_color
+            }
+
+            document.getElementById('id_info').innerHTML =
+                "You are logged in as " +
+                "<b style=\"color:"+color+";\" id=\"id_name\">"+me_name+"</b> " +
+                "(<b style=\"color:"+color+";\" id=\"id_email\">"+me_email+"</b>)."
+
             html =
                 "<table>" +
                 "    <colgroup>" +
@@ -331,9 +348,8 @@ function update_navigation() {
 
 document.getElementById('tx_header').innerHTML = "Transaction #"+tx_id
 
-update_identity()
-update_transaction()
 update_navigation()
+update_identity()
 
 </script>
 </html>
