@@ -1,7 +1,6 @@
 import logging
 
 from flask import Blueprint, jsonify
-from flask_cors import CORS
 
 from saas.rest.proxy import EndpointProxy
 from saas.utilities.blueprint_helpers import request_manager
@@ -38,7 +37,6 @@ class RTIBlueprint:
         self._node = node
 
     def blueprint(self):
-        # create the blueprint and allow CORS for the processor route
         blueprint = Blueprint('processor', __name__, url_prefix=endpoint_prefix)
         blueprint.add_url_rule('', self.get_deployed.__name__, self.get_deployed, methods=['GET'])
         blueprint.add_url_rule('/<proc_id>', self.deploy.__name__, self.deploy, methods=['POST'])
@@ -47,7 +45,6 @@ class RTIBlueprint:
         blueprint.add_url_rule('/<proc_id>/jobs', self.submit_job.__name__, self.submit_job, methods=['POST'])
         blueprint.add_url_rule('/<proc_id>/jobs', self.get_jobs.__name__, self.get_jobs, methods=['GET'])
         blueprint.add_url_rule('/<proc_id>/jobs/<job_id>', self.get_job_info.__name__, self.get_job_info, methods=['GET'])
-        CORS(blueprint)
         return blueprint
 
     @request_manager.authentication_required
