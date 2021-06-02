@@ -17,19 +17,30 @@
     <div id="navigation"></div>
 
     <div>
+        <h2 align="left">Identity and Tasks</h2>
+        <div id="id_info"></div>
+        <div id="tasks"></div>
+    </div>
+
+    <div>
+        <h2 align="left">Details</h2>
+        <div id="tx_summary_data_objects"></div>
+        <div id="tx_summary_processor"></div>
+    </div>
+    <div>
         <h2 align="left" id="tx_header">Transaction</h2>
-        This transaction is between the following two parties:<br>
+        This transaction is between the following two parties:
         <p><table>
             <colgroup>
                <col span="1" style="width: 120px;">
                <col span="1" style="width: 800px;">
             </colgroup>
             <tbody>
-                <tr><td>Data Provider:</td><td><b id="provider_info"></b><br><div id="provider_id"></div></td></tr>
-                <tr><td>Data Consumer:</td><td><b id="consumer_info"></b><br><div id="consumer_id"></div></td></tr>
+                <tr><td>Data Provider:</td><td id="provider_info"></td></tr>
+                <tr><td>Data Consumer:</td><td id="consumer_info"></td></tr>
             </tbody>
         </table></p>
-        The transaction has the following information:<br>
+        The transaction has the following information:
         <p><table>
             <colgroup>
                <col span="1" style="width: 120px;">
@@ -40,18 +51,6 @@
             <tr><td>Description:</td><td id="tx_description"></td></tr>
             </tbody>
         </table></p>
-    </div>
-
-    <div>
-        <h2 align="left">Identity and Tasks</h2>
-        <div id="id_info"></div>
-        <div id="tasks"></div>
-    </div>
-
-    <div>
-        <h2 align="left">Details</h2>
-        <div id="tx_summary_data_objects"></div>
-        <div id="tx_summary_processor"></div>
     </div>
 </body>
 <script>
@@ -315,9 +314,7 @@ function update_transaction() {
             document.getElementById('tx_name').innerHTML = data.transaction.name
             document.getElementById('tx_description').innerHTML = data.transaction.description
 
-            document.getElementById('provider_id').innerHTML = data.provider.id
             document.getElementById('provider_info').innerHTML = data.provider.name+" ("+data.provider.email+")"
-            document.getElementById('consumer_id').innerHTML = data.consumer.id
             document.getElementById('consumer_info').innerHTML = data.consumer.name+" ("+data.consumer.email+")"
 
 
@@ -341,12 +338,11 @@ function update_navigation() {
         "       <td>Navigate: </td>" +
         "       <td><input type=button onClick=\"location.reload();location.href='"+tx_url+"'\" value='Refresh'><td>" +
         "       <td><input type=button onClick=\"location.reload();location.href='"+home_url+"'\" value='Go Back'><td>" +
-        // "       <td><input type=button onClick=\"parent.open(home_url)\" value='Go Back'><td>" +
         "    </tr>" +
         "</table>"
 }
 
-document.getElementById('tx_header').innerHTML = "Transaction #"+tx_id
+document.getElementById('tx_header').innerHTML = "Summary for Transaction #"+tx_id
 
 update_navigation()
 update_identity()
