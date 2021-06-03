@@ -368,7 +368,9 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
-                example: {'project': 'Hello World', 'dept': 'D001'}
+                example:
+                  project: 'Hello World'
+                  dept: 'D001'
     put:
       description: "Adds a new tag for a data object with a given `obj_id`. A tag comes in the form of a `key=value`
       pair. This action can only be carried out by the owner of the data object."
@@ -391,7 +393,9 @@ paths:
               type: object
               additionalProperties:
                 type: string
-              example: {'project': 'Hello World', 'dept': 'D001'}
+              example:
+                  project: 'Hello World'
+                  dept: 'D001'
               
       responses:
         "200":
