@@ -2,6 +2,7 @@ import logging
 import threading
 
 from flask import Flask
+from flask_cors import CORS
 from werkzeug.serving import make_server
 
 from saas.utilities.blueprint_helpers import request_manager
@@ -31,6 +32,7 @@ class RESTService:
         self._node = node
         self._address = address
         self._app = Flask(__name__)
+        CORS(self._app, resources={r"/api/*": {"origins": "*"}})
         request_manager.init_app(self._app, self._node)
 
         self._thread = None
