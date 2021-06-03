@@ -366,10 +366,8 @@ paths:
               schema:
                 description: A dictionary of key-value-style tags associated with the data object.
                 type: object
-                properties:
-                  additionalProperties: true
-                  tags:
-                    type: object
+                additionalProperties:
+                  type: string
                 example: {'project': 'Hello World', 'dept': 'D001'}
     put:
       description: "Adds a new tag for a data object with a given `obj_id`. A tag comes in the form of a `key=value`
@@ -391,11 +389,10 @@ paths:
             schema:
               description: A dictionary of key-value-style tags associated with the data object.
               type: object
-              properties:
-                  tags:
-                      type: string
+              additionalProperties:
+                type: string
               example: {'project': 'Hello World', 'dept': 'D001'}
-              additionalProperties: true
+              
       responses:
         "200":
           description: OK
