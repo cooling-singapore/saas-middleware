@@ -76,6 +76,9 @@ paths:
                 attachment:
                   type: string
                   format: binary
+              required:
+                - body
+                - attachment
       responses:
         "201":
           description: OK
