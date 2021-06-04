@@ -61,6 +61,13 @@ class StatusLogger:
         """
         return self.content[key] if key else self.content
 
+    def remove(self, key):
+        """
+        Removes an entry (if they exists)
+        """
+        self.content.pop(key, None)
+        dump_json_to_file(self.content, self.path)
+
     def remove_all(self, keys):
         """
         Removes multiple entries (if they exists) using a list of key.
