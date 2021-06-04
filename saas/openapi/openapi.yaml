@@ -954,8 +954,7 @@ components:
                   - name
                   - type
               - oneOf:
-                  - reference_item:
-                    title: "Reference"
+                  - title: "Reference"
                     type: object
                     properties:
                       obj_id:
@@ -965,8 +964,7 @@ components:
                     required:
                       - obj_id
 
-                  - value_item:
-                    title: "Value"
+                  - title: "Value"
                     type: object
                     properties:
                       value:
