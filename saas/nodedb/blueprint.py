@@ -3,7 +3,6 @@ import logging
 from saas.rest.proxy import EndpointProxy
 
 from flask import Blueprint, jsonify
-from flask_cors import CORS
 
 
 logger = logging.getLogger('nodedb.blueprint')
@@ -15,12 +14,10 @@ class NodeDBBlueprint:
         self._node = node
 
     def blueprint(self):
-        # create the blueprint and allow CORS for the processor route
         blueprint = Blueprint('nodedb', __name__, url_prefix=endpoint_prefix)
         blueprint.add_url_rule('/node', self.get_node.__name__, self.get_node, methods=['GET'])
         blueprint.add_url_rule('/network', self.get_network.__name__, self.get_network, methods=['GET'])
         blueprint.add_url_rule('/identities', self.get_identities.__name__, self.get_identities, methods=['GET'])
-        CORS(blueprint)
         return blueprint
 
     def get_node(self):

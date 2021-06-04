@@ -2,7 +2,6 @@ import logging
 import os
 
 from flask import Blueprint, request, send_from_directory, jsonify
-from flask_cors import CORS
 
 from saas.schemas import data_object_descriptor_schema, processor_descriptor_schema
 from saas.rest.proxy import EndpointProxy
@@ -96,7 +95,6 @@ class DORBlueprint:
         self._node = node
 
     def blueprint(self):
-        # create the blueprint and allow CORS for the processor route
         blueprint = Blueprint('repository', __name__, url_prefix=endpoint_prefix)
         blueprint.add_url_rule('', self.search.__name__, self.search, methods=['GET'])
         blueprint.add_url_rule('', self.add.__name__, self.add, methods=['POST'])
@@ -111,8 +109,6 @@ class DORBlueprint:
         blueprint.add_url_rule('/<obj_id>/tags', self.get_tags.__name__, self.get_tags, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/tags', self.update_tags.__name__, self.update_tags, methods=['PUT'])
         blueprint.add_url_rule('/<obj_id>/tags', self.remove_tags.__name__, self.remove_tags, methods=['DELETE'])
-
-        CORS(blueprint)
         return blueprint
 
     @request_manager.authentication_required
