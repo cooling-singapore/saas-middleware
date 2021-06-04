@@ -20,9 +20,10 @@ class MessengerException(Exception):
     """
     MessengerException is the base class for all messenger-related exception classes.
     """
-    def __init__(self, info):
+    def __init__(self, info, status=None):
         super().__init__()
         self.info = info
+        self.status = status
 
 
 class MessengerRuntimeError(MessengerException):
@@ -218,21 +219,13 @@ class SecureMessenger:
         reply = self.receive()
 
         if not all_in_dict(['status', 'content'], reply):
-            raise MessengerInvalidUseException(f"malformed reply: {reply}")
-
-        elif reply['status'] == 400:
-            raise MessengerInvalidUseException(reply['content'])
-
-        elif reply['status'] == 500:
-            raise MessengerInvalidUseException(f"error during request: {request_message}")
-
-        elif reply['status'] == 501:
-            raise MessengerRuntimeError(reply['content'], reply['status'])
+            raise MessengerException(f"malformed reply: {reply}")
 
         elif not reply['status'] == 200:
-            raise MessengerRuntimeError(reply['content'], reply['status'])
+            raise MessengerException(reply['content'], reply['status'])
 
-        return reply['content']
+        else
+            return reply['content']
 
     def reply_ok(self, reply_content=None):
         """
