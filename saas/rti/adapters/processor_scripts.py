@@ -77,7 +77,6 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                         log_path = os.path.join(log_dir, f'script_{script_name}_log.txt')
                         with open(log_path, 'ab') as f:
                             f.write(result.stdout)
-                            f.write(result.stderr)
 
                 except subprocess.CalledProcessError as e:
                     # Print output of script
