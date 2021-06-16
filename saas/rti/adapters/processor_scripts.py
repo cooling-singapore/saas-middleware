@@ -57,13 +57,16 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
         for script_relpath in install_scripts:
             script_path = os.path.join(local_git_path, script_relpath)
             if os.path.exists(script_path):
-                with open(script_path, 'rb') as f:
-                    script_contents = f.read()
+                # with open(script_path, 'rb') as f:
+                #     script_contents = f.read()
 
                 _, script_name = os.path.split(script_path)
                 print(f"Running install script {script_name}")
-                result = subprocess.run(script_contents, shell=True, capture_output=True, check=True)
-
+                subprocess.run(['chmod', '+x', script_path], check=True)
+                # FIXME: Using shell is insecure
+                result = subprocess.run(script_path, shell=True, capture_output=True, check=True)
+                for line in (result.stdout.decode("utf-8") ).split('\\n'):
+                    print(line)
                 if log_dir:
                     # Save script output as log file
                     log_path = os.path.join(log_dir, f'script_{script_name}_log.txt')
