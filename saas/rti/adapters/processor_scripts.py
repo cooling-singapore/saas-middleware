@@ -61,7 +61,7 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                 #     script_contents = f.read()
 
                 _, script_name = os.path.split(script_path)
-                print(f"Running install script {script_name}")
+                print(f"Running install script `{script_name}`")
 
                 try:
                     subprocess.run(['chmod', '+x', script_path], check=True)
@@ -69,14 +69,13 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                     # FIXME: Using shell is insecure
                     result = subprocess.run(script_path, shell=True, capture_output=True, check=True, cwd=local_git_path)
 
-                    # Print output of script
-                    for line in (result.stdout.decode("utf-8")).split('\\n'):
-                        print(line)
                     if log_dir:
                         # Save script output as log file
                         log_path = os.path.join(log_dir, f'script_{script_name}_log.txt')
                         with open(log_path, 'ab') as f:
                             f.write(result.stdout)
+
+                    print(f"`{script_name}` successfully installed")
 
                 except subprocess.CalledProcessError as e:
                     # Print output of script
@@ -89,7 +88,7 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                             f.write(e.output)
 
             else:
-                print(f"Install script {script_relpath} not found")
+                print(f"Install script `{script_relpath}` not found")
 
     # Create venv
     venv_path = os.path.join(local_git_path, 'venv')
