@@ -64,10 +64,10 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                 print(f"Running install script {script_name}")
                 subprocess.run(['chmod', '+x', script_path], check=True)
                 # FIXME: Using shell is insecure
-                result = subprocess.run(script_path, shell=True, capture_output=True, check=True)
+                result = subprocess.run(script_path, shell=True, capture_output=True, check=True, cwd=local_git_path)
 
                 # Print output of script
-                for line in (result.stdout.decode("utf-8") ).split('\\n'):
+                for line in (result.stdout.decode("utf-8")).split('\\n'):
                     print(line)
                 for line in (result.stderr.decode("utf-8")).split('\\n'):
                     print(line)
