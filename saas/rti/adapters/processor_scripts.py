@@ -65,8 +65,14 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
                 subprocess.run(['chmod', '+x', script_path], check=True)
                 # FIXME: Using shell is insecure
                 result = subprocess.run(script_path, shell=True, capture_output=True, check=True)
+
+                # Print output of script
                 for line in (result.stdout.decode("utf-8") ).split('\\n'):
                     print(line)
+                if result.stderr:
+                    for line in (result.stderr.decode("utf-8")).split('\\n'):
+                        print(line)
+                        
                 if log_dir:
                     # Save script output as log file
                     log_path = os.path.join(log_dir, f'script_{script_name}_log.txt')
