@@ -60,8 +60,7 @@ class RuntimeInfrastructureService:
     def get_job_wd(self, job_id=None):
         return os.path.join(self._jobs_path, job_id) if job_id else self._jobs_path
 
-    # FIXME: Remove default value
-    def deploy(self, proc_id, deployment='native'):
+    def deploy(self, proc_id, deployment):
         with self._mutex:
             # is the processor already deployed?
             descriptor_path = self._node.dor.obj_descriptor_path(proc_id, cache=True)
@@ -93,6 +92,8 @@ class RuntimeInfrastructureService:
                                                                                                     descriptor,
                                                                                                     content_path,
                                                                                                     self._node)
+            else:
+                raise ValueError('Deployment type is either invalid or unspecified.')
 
             self._deployed_processors[proc_id].start()
 

@@ -1,23 +1,19 @@
 import json
 import logging
 import os
-import shutil
-import tempfile
 import time
 import unittest
+
 import pip
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.rti.adapters.adapters import import_with_auto_install
+from saas.rti.adapters.workflow import TaskWrapper
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.rti.adapters.workflow import TaskWrapper
 from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
 from tests.base_testcase import TestCaseBase
-from tools.create_template import create_folder_structure
-
-from tools.package_processor import package_docker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -26,30 +22,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def create_dummy_docker_processor(dummy_processor_path):
-    temp_dir = tempfile.TemporaryDirectory()
-    output_path = os.path.join(temp_dir.name, 'dummy_processor')
-    processor_path = os.path.join(output_path, 'processor.py')
-    descriptor_path = os.path.join(output_path, 'descriptor.json')
-    image_path = os.path.join(output_path, 'builds', 'docker', 'dummy_image.tar.gz')
-
-    create_folder_structure(output_path)
-    shutil.copy(dummy_processor_path, processor_path)
-
-    with open('descriptor_dummy_script.json') as f:
-        _dummy_script_descriptor = json.load(f)
-
-    _dummy_script_descriptor['type'] = 'docker'
-    with open(descriptor_path, 'w') as f:
-        json.dump(_dummy_script_descriptor, f)
-
-    package_docker(output_path, image_output_name='dummy_image')
-
-    logger.info(f"image_path: {image_path}, descriptor_path: {descriptor_path}")
-
-    return image_path, descriptor_path, temp_dir.cleanup
 
 
 def create_test_processor(output_directory):
@@ -111,13 +83,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
-    def deploy_test_processor(self):
+    def deploy_test_processor(self, deployment="native"):
         proxy = DORProxy(self.node.rest.address(), self.node.identity())
 
         git_spec_path, descriptor = create_test_processor(self.wd_path)
 
         proc_id = proxy.add_processor(git_spec_path, self.keys[1], descriptor)
-        self.proxy.deploy(proc_id)
+        self.proxy.deploy(proc_id, deployment)
         return proc_id
 
     def add_dummy_data_object(self, owner):
@@ -132,14 +104,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         created_by = 'heiko'
 
         return test_obj_id, proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
-
-    def add_docker_processor(self, owner, image_path, descriptor_path):
-        proxy = DORProxy(self.node.rest.address(), self.node.identity())
-
-        with open(descriptor_path) as f:
-            descriptor = json.load(f)
-
-        return proxy.add_processor(image_path, owner, descriptor)
 
     def wait_for_job(self, proc_id, job_id):
         while True:
@@ -441,20 +405,18 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('workflow' in deployed)
 
     def test_docker_processor_execution_value(self):
-        image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
-
         deployed = self.proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
         assert('workflow' in deployed)
 
-        proc_id = self.add_docker_processor(self.keys[1], image_path, descriptor_path)
+        proc_id = self.deploy_test_processor("docker")
         logger.info(f"proc_id={proc_id}")
-        cleanup_func()
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
 
         deployed = self.proxy.get_deployed()
         logger.info(f"deployed={deployed}")

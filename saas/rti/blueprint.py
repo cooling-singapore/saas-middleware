@@ -31,6 +31,14 @@ job_body_specification = {
     'required': ['type', 'descriptor']
 }
 
+deployment_specification = {
+    'type': 'object',
+    'properties': {
+        'deployment': {'type': 'string', 'enum': ['native', 'docker']},
+    },
+    'required': ['deployment']
+}
+
 
 class RTIBlueprint:
     def __init__(self, node):
@@ -54,9 +62,12 @@ class RTIBlueprint:
         }), 200
 
     @request_manager.authentication_required
+    @request_manager.verify_request_body(deployment_specification)
     def deploy(self, proc_id):
         # TODO: this should require authorisation - only whose authorisation?
-        descriptor = self._node.rti.deploy(proc_id)
+        body = request_manager.get_request_variable('body')
+        deployment = body['deployment']
+        descriptor = self._node.rti.deploy(proc_id, deployment)
         if descriptor:
             return jsonify({
                 'descriptor': descriptor
@@ -130,8 +141,12 @@ class RTIProxy(EndpointProxy):
         r = self.get(f"")
         return r['reply']['deployed'] if 'deployed' in r['reply'] else None
 
-    def deploy(self, proc_id):
-        r = self.post(f"/{proc_id}")
+    def deploy(self, proc_id, deployment="native"):
+        body = {
+            'deployment': deployment,
+        }
+
+        r = self.post(f"/{proc_id}", body=body)
         return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
 
     def undeploy(self, proc_id):
