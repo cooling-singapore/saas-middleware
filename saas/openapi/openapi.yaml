@@ -21,26 +21,27 @@ paths:
     get:
       description: "Searches the DOR for data objects with tags that match the key criterion and the value criterion.
       Data objects can be tagged with an arbitrary number of `key=value` pairs. The key and value criteria are applied
-      to the `key` and `value` element of the tag, respectively. For example, assume two tags: `project=P1` and
-      `project=P2`. A search with key criterion `project` would return both tags whereas a search with value criterion
-      `P1` would only return the first tag."
+      to the `key` and `value` element of the tag, respectively. SQL-style wildcard characters '%' (zero or more
+      characters) and '_' (single character) may be used as well. For example, assume three tags: `project-id=P1`,
+      `project-id=P2` and `project-name=hello world`. A search with key criterion `project-%` would return all three
+      tags whereas a search with `project-__` would only return the two tags with `project-id` as key.
       tags:
         - DOR (Data Object Repository)
       parameters:
         - in: query
-          description: "The key criterion. May SQL-style wildcard characters: '%' representing zero or more characters;
+          description: "The key criterion. May use SQL-style wildcard characters: '%' representing zero or more characters;
           and '_' representing a single character."
           name: key_criterion
           schema:
             type: string
-            example: "ke%"
+            example: "project-%"
         - in: query
-          description: "The value criterion. May SQL-style wildcard characters: '%' representing zero or more characters;
+          description: "The value criterion. May use SQL-style wildcard characters: '%' representing zero or more characters;
           and '_' representing a single character."
           name: value_criterion
           schema:
             type: string
-            example: "valu_"
+            example: "P_"
       responses:
         "200":
           description: OK
