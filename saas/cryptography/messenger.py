@@ -224,7 +224,7 @@ class SecureMessenger:
         elif not reply['status'] == 200:
             raise MessengerException(reply['content'], reply['status'])
 
-        else
+        else:
             return reply['content']
 
     def reply_ok(self, reply_content=None):
