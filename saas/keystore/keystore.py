@@ -14,9 +14,9 @@ logging.basicConfig(
 logger = logging.getLogger('Keystore.Keystore')
 
 
-def sign_identity_record(key, name, email, nonce):
-    record = f"{key.iid}:{name}:{email}:{nonce}"
-    signature = key.sign(record.encode('utf-8'))
+def sign_identity_record(key_s, key_e, name, email, nonce):
+    record = f"{key_s.iid}:{key_e.iid}:{name}:{email}:{nonce}"
+    signature = key_s.sign(record.encode('utf-8'))
     return record, signature
 
 
@@ -30,17 +30,21 @@ class Keystore:
         self.path = path
         self.master = master
         self.content = content
-        self.identity = ECKeyPair.from_private_key_string(self.content['identity']['key'])
+        self.identity_s = ECKeyPair.from_private_key_string(self.content['identity']['S-key'])
+        self.identity_e = ECKeyPair.from_private_key_string(self.content['identity']['E-key'])
 
     @classmethod
     def create(cls, path, name, email, password):
-        # create new identity key pair
-        identity = ECKeyPair.create_new()
-        logger.info(f"keystore identity created: id={identity.iid} public_key={identity.public_as_string()}")
+        # create new identity keys: s-key for signatures, and e-key for encryption
+        identity_s = ECKeyPair.create_new()
+        identity_e = RSAKeyPair.create_new()
+        logger.info(f"keystore identity created:"
+                    f" id[S]={identity_s.iid} public_key[S]={identity_s.public_as_string()}"
+                    f" id[E]={identity_e.iid} public_key[E]={identity_e.public_as_string()}")
 
         # create new master key and write to file
         master = RSAKeyPair.create_new()
-        master.write_private(os.path.join(path, f"{identity.iid}.master"), password)
+        master.write_private(os.path.join(path, f"{identity_s.iid}.master"), password)
         logger.info(f"keystore master key created: id={master.iid} public_key={master.public_as_string()}")
 
         # write content
@@ -49,13 +53,14 @@ class Keystore:
                 'name': name,
                 'email': email,
                 'nonce': 1,
-                'key': identity.private_as_string()
+                'S-key': identity_s.private_as_string(),
+                'E-key': identity_e.private_as_string()
             },
             'object_keys': {}
         }
 
         # create keystore
-        keystore_path = os.path.join(path, f"{identity.iid}.keystore")
+        keystore_path = os.path.join(path, f"{identity_s.iid}.keystore")
         keystore = Keystore(keystore_path, master, content)
         keystore.sync_to_disk()
 
@@ -116,13 +121,10 @@ class Keystore:
 
         self.sync_to_disk()
 
-        return sign_identity_record(self.identity, self.name(), self.email(), self.nonce())
+        return sign_identity_record(self.identity_s, self.identity_e, self.name(), self.email(), self.nonce())
 
     def id(self, truncate=False):
-        return self.identity.short_iid if truncate else self.identity.iid
-
-    def public_key_as_string(self):
-        return self.identity.public_as_string()
+        return self.identity_s.short_iid if truncate else self.identity_s.iid
 
     def name(self):
         return self.content['identity']['name']
