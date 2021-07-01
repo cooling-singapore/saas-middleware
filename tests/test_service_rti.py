@@ -165,10 +165,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
-        logger.info(f"descriptor={descriptor}")
-        assert(descriptor is not None)
-
         descriptor = self.proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
@@ -198,8 +194,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
 
         deployed = self.proxy.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -267,8 +264,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
 
         deployed = self.proxy.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -338,8 +336,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         proc_id = self.deploy_test_processor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
 
         deployed = self.proxy.get_deployed()
         logger.info(f"deployed={deployed}")
