@@ -18,6 +18,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         self.processor_path = None
         self.processor_descriptor = None
 
+    # TODO: Move function out to processor_scripts.py
     @staticmethod
     def _read_git_spec(git_spec_path):
         with open(git_spec_path, 'rb') as f:
