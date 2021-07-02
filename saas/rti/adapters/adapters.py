@@ -200,6 +200,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
             # verify that the input data type and format matches the object data type and format
             obj_descriptor = load_json_from_file(f"{input_content_path}.descriptor")
+            # FIXME: Needs to handle possible key error where job inputs do not match input interface
             proc_in_descriptor = self._input_interface[input_descriptor['name']]
             if proc_in_descriptor['data_type'] != obj_descriptor['data_type'] or \
                     proc_in_descriptor['data_format'] != obj_descriptor['data_format']:
