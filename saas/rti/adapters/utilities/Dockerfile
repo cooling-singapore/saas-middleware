@@ -16,8 +16,8 @@ COPY --from=clone /processor_repo /processor_repo
 COPY processor_scripts.py .
 RUN python processor_scripts.py --repo-path /processor_repo
 
-ARG PROCESSOR_NAME=dummy
-WORKDIR /processor_repo/processor_$PROCESSOR_NAME
+ARG PROCESSOR_PATH=processor_dummy
+WORKDIR /processor_repo/$PROCESSOR_PATH
 
 RUN mkdir /working_directory
 ENTRYPOINT ["../venv/bin/python", "processor.py", "/working_directory"]
