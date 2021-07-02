@@ -136,6 +136,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         self._input_interface = {}
         self._output_interface = {}
 
+    # FIXME: Should this be in `pre_execute`? without needing to call it explicitly in `startup` of adapters
     def parse_io_interface(self, descriptor):
         for item in descriptor['input']:
             self._input_interface[item['name']] = item
