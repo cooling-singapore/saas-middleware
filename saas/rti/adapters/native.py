@@ -5,7 +5,7 @@ import subprocess
 from jsonschema import validate
 
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
-from saas.rti.adapters.processor_scripts import deploy_git_processor, get_processor
+from saas.rti.adapters.utilities.processor_scripts import deploy_git_processor, get_processor
 from saas.schemas import git_specification_schema
 
 
