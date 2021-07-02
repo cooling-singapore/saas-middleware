@@ -28,7 +28,7 @@ def create_test_processor(output_directory):
     git_spec_path = os.path.join(output_directory, f"git_spec.json")
     dump_json_to_file({
         'source': 'https://github.com/cooling-singapore/saas-processor-template',
-        'commit_id': '09d00d6',
+        'commit_id': '876b082',
         'path': 'processor_dummy',
         'descriptor': {
             "name": "test",
