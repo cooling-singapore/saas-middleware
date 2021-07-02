@@ -1,14 +1,12 @@
 import json
 import logging
-import tempfile
 import unittest
-from io import BytesIO
 
 from flask import jsonify, Flask
 
-from saas.app import create_node_instance
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.utilities.blueprint_helpers import request_manager, create_authentication
+from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -20,22 +18,24 @@ logger = logging.getLogger(__name__)
 
 
 def init_test_app():
-    with open('../config/testing-config.json', 'rb') as f:
-        test_config = json.load(f).get('test-node-config')
-
     app = Flask(__name__)
     app.config['TESTING'] = True
-    node = create_node_instance(test_config)
+
+    test_class = TestCaseBase()
+    test_class.initialise()
+    node = test_class.get_node('node', enable_rest=False)
+
     request_manager.init_app(app, node)
 
-    return app, node
+    return test_class, app, node
 
 
 class AuthenticationTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        app, node = init_test_app()
+        test_class, app, node = init_test_app()
 
+        cls.test_class = test_class
         cls.client = app.test_client()
         cls.key = ECKeyPair.create_new()
         cls.node = node
@@ -47,7 +47,7 @@ class AuthenticationTestCases(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.node.stop_server()
+        cls.test_class.cleanup()
 
     def test_no_authentication(self):
         response = self.client.get('/test')
@@ -76,8 +76,9 @@ class AuthenticationTestCases(unittest.TestCase):
 class BodyVerificationTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        app, node = init_test_app()
+        test_class, app, node = init_test_app()
 
+        cls.test_class = test_class
         cls.client = app.test_client()
         cls.key = ECKeyPair.create_new()
         cls.node = node
@@ -97,7 +98,7 @@ class BodyVerificationTestCases(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.node.stop_server()
+        cls.test_class.cleanup()
 
     def get_response(self, body):
         authentication = create_authentication('GET:/test', self.key, body)
