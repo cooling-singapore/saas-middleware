@@ -9,7 +9,7 @@ from saas.cryptography.hashing import hash_json_object
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
 from saas.schemas import git_specification_schema
 
-logger = logging.getLogger('rti.docker')
+logger = logging.getLogger('rti.adapters.docker')
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
@@ -62,6 +62,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                                                  f"/processor_repo/{self.git_spec['path']}/descriptor.json"],
                                      remove=True)
         descriptor = json.loads(logs.decode('utf-8'))
+        logger.debug(f"{self.proc_id} descriptor: {descriptor}")
         client.close()
 
         return descriptor
@@ -71,8 +72,6 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
         processor_descriptor = self.get_processor_descriptor()
         self.parse_io_interface(processor_descriptor)
-
-        logger.info(f"[{self.__class__.__name__}] startup: started processor '{self.proc_id}'")
 
     def execute(self, task_descriptor, working_directory, status_logger):
         try:
