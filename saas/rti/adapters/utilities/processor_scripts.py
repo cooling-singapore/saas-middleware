@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import subprocess
@@ -116,3 +117,11 @@ def install_dependencies(local_git_path: str, log_dir: str = None):
 def deploy_git_processor(local_git_path: str, git_spec: dict, log_dir: str = None):
     clone_repo(local_git_path, git_spec)
     install_dependencies(local_git_path, log_dir)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo-path", required=True)
+    args = parser.parse_args()
+
+    install_dependencies(args.repo_path)
