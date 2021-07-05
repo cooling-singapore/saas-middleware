@@ -48,6 +48,7 @@ class UserAgent:
 
         # create and register blueprint
         blueprint = Blueprint('user', __name__, url_prefix=endpoint_prefix)
+        blueprint.add_url_rule('/', self.view_home.__name__, self.view_home, methods=['GET'])
         blueprint.add_url_rule('/view_home', self.view_home.__name__, self.view_home, methods=['GET'])
         blueprint.add_url_rule('/view_transaction/<tx_id>', self.view_transaction.__name__, self.view_transaction, methods=['GET'])
         blueprint.add_url_rule('/identity', self.get_identity.__name__, self.get_identity, methods=['GET'])
