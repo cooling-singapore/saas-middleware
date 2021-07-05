@@ -184,7 +184,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_snapshot(self):
         nodes = self.create_nodes(3, perform_join=False)
-        extras = self.create_identities(len(nodes))
+        extras = self.create_keystores(len(nodes))
 
         # each node should know about 1 identity (its own)
         for node in nodes:
@@ -228,7 +228,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_join_protocol(self):
         nodes = self.create_nodes(3, perform_join=True)
-        extras = self.create_identities(len(nodes))
+        extras = self.create_keystores(len(nodes))
 
         # each node should know about 3 identities
         for node in nodes:

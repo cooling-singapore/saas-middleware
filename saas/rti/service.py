@@ -173,8 +173,8 @@ class RuntimeInfrastructureService:
 
     def get_job_info(self, job_id):
         with self._mutex:
-            descriptor_path = os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
-            status_path = os.path.join(self._jobs_path, job_id, 'job_status.json')
+            descriptor_path = os.path.join(self._jobs_path, str(job_id), 'job_descriptor.json')
+            status_path = os.path.join(self._jobs_path, str(job_id), 'job_status.json')
 
             if not os.path.exists(descriptor_path) or not os.path.exists(status_path):
                 return None

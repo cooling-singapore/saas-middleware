@@ -97,7 +97,7 @@ io_variable_schema = {
     'properties': {
         'name': {'type': 'string'},
         'data_type': {'type': 'string'},
-        'data_format': {'type': 'string', 'enum': ['json', 'hdf5']}
+        'data_format': {'type': 'string', 'enum': ['csv', 'json', 'hdf5']}
     },
     'required': ['name', 'data_type', 'data_format']
 }
