@@ -56,7 +56,7 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_simple_get(self):
         node = self.get_node(f"node_0", enable_rest=True)
-        proxy = TestProxy(node.rest.address(), node.identity())
+        proxy = TestProxy(node.rest.address(), node)
 
         bp = TestBlueprint()
         node.rest.add(bp.blueprint())
