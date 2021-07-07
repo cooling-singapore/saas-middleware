@@ -2,13 +2,14 @@ import logging
 
 from operator import and_
 
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.keystore.keystore import verify_identity_record
+from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.keystore.keystore import Identity
 
 logger = logging.getLogger('nodedb.service')
 
@@ -23,7 +24,7 @@ class DORObject(Base):
     owner_iid = Column(String(64), nullable=False)
     access_restricted = Column(Boolean, nullable=False)
     content_encrypted = Column(Boolean, nullable=False)
-    expiration = Column(BigInteger)
+    content_key = Column(Text, nullable=True)
 
 
 class DORTag(Base):
@@ -40,10 +41,12 @@ class DORPermission(Base):
     permission = Column(String, nullable=False)
 
 
-class Identity(Base):
+class IdentityRecord(Base):
     __tablename__ = 'identity'
     iid = Column(String(64), primary_key=True)
     public_key = Column(String, nullable=False)
+    s_public_key = Column(String, nullable=True)
+    e_public_key = Column(String, nullable=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     nonce = Column(Integer, nullable=False)
@@ -125,59 +128,55 @@ class NodeDBService:
                 result.append(permission.key_iid)
             return result
 
-    def has_access(self, obj_id, key):
-        return self.get_permission(obj_id, key) is not None
+    def has_access(self, obj_id, identity):
+        return self.get_permission(obj_id, identity) is not None
 
-    def get_permission(self, obj_id, key):
+    def get_permission(self, obj_id, identity):
         with self._Session() as session:
-            permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=key.iid).first()
+            permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
             return permission
 
-    def grant_access(self, obj_id, public_key, permission):
+    def grant_access(self, obj_id, identity, permission):
         # resolve the identity of the public key
-        identity = self.resolve_identity(public_key)
+        # identity = self.get_identity(iid=identity.id())
 
         with self._Session() as session:
-            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.iid).first()
+            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
             if item:
                 item.permission = permission
             else:
-                session.add(DORPermission(obj_id=obj_id, key_iid=identity.iid, permission=permission))
+                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id(), permission=permission))
 
             session.commit()
-            return identity.iid
+            return identity.id()
 
-    def revoke_access(self, obj_id, public_key=None):
+    def revoke_access(self, obj_id, identity=None):
         with self._Session() as session:
-            if not public_key:
+            if not identity:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
                 return '*'
             else:
                 # resolve the identity of the public key
-                identity = self.resolve_identity(public_key)
-                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.iid).delete()
+                # identity = self.get_identity(public_key=public_key)
+                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).delete()
                 session.commit()
-                return identity.iid
+                return identity.id()
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_public_key,
-                        access_restricted, content_encrypted, expiration):
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid, access_restricted, content_encrypted, content_key):
         with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
-                # resolve the identity of the owner
-                owner = self.resolve_identity(owner_public_key)
-
                 # add a new data object record
-                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner.iid,
+                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
                                       access_restricted=access_restricted, content_encrypted=content_encrypted,
-                                      expiration=expiration))
+                                      content_key=content_key))
                 session.commit()
 
     def remove_data_object(self, obj_id):
         with self._Session() as session:
             session.query(DORObject).filter_by(obj_id=obj_id).delete()
             session.commit()
-
+  
     def get_object_by_id(self, obj_id):
         with self._Session() as session:
             return session.query(DORObject).filter_by(obj_id=obj_id).first()
@@ -186,106 +185,125 @@ class NodeDBService:
         with self._Session() as session:
             return session.query(DORObject).filter_by(c_hash=c_hash).all()
 
+    def get_content_key(self, obj_id):
+        with self._Session() as session:
+            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            return record.content_key if record else None
+
+    def delete_content_key(self, obj_id):
+        with self._Session() as session:
+            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            if record.content_key is not None:
+                content_key = record.content_key
+                record.content_key = None
+                session.commit()
+                return content_key
+            else:
+                return None
+
     def get_owner(self, obj_id):
         with self._Session() as session:
             item = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if item:
-                return self.get_public_key(item.owner_iid)
+                return self.get_identity(iid=item.owner_iid)
             else:
                 return None
 
-    def get_owner_record(self, obj_id):
+    def update_ownership(self, obj_id, new_owner_public_key, content_key=None):
         with self._Session() as session:
-            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if item:
-                return self.get_identity_record(item.owner_iid)
-            else:
-                return None
-
-    def update_ownership(self, obj_id, new_owner_public_key):
-        with self._Session() as session:
-            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if item:
+            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
+            if record:
                 # resolve the identity of the owner
-                new_owner = self.resolve_identity(new_owner_public_key)
+                new_owner = self.get_identity(public_key=new_owner_public_key)
 
-                #
-                # key = ECKeyPair.from_public_key_string(new_owner_public_key)
-                # self.update_public_key(key.iid, key.public_as_string())
-
-                item.owner_iid = new_owner.iid
+                # update the record
+                record.owner_iid = new_owner.id()
+                record.content_key = content_key
                 session.commit()
-
-    def resolve_identity(self, public_key_as_string):
-        # if we don't have the identity already in the table, then we create a record to allow for mapping of
-        # idd's to public keys. the record will indicate identity as 'unknown'. if we ever get an identity
-        # update, the record will be amended accordingly.
-        identity = ECKeyPair.from_public_key_string(public_key_as_string)
-        if not self.get_public_key(identity.iid):
-            self.update_identity(public_key_as_string, 'unknown', 'unknown', 0, propagate=False)
-
-        return identity
 
     # END: things that do NOT require synchronisation/propagation
 
     # BEGIN: things that DO require synchronisation/propagation: Identity, NetworkNode
 
-    def update_identity(self, public_key_as_string, name, email, nonce, signature=None, propagate=True):
-        # get the key and check the signature (if any)
-        public_key = ECKeyPair.from_public_key_string(public_key_as_string)
-        has_valid_signature = verify_identity_record(public_key, name, email, nonce, signature) if signature else False
-
+    def get_identity(self, iid=None, public_key=None):
         with self._Session() as session:
-            # do we have the identity already on record? only update if either the record does not exist yet OR if
-            # the information provided is valid and more recent, i.e., if the nonce is greater than the one on record.
-            record = session.query(Identity).filter_by(iid=public_key.iid).first()
+            if iid is not None:
+                record = session.query(IdentityRecord).filter_by(iid=iid).first()
+            elif public_key is not None:
+                record = session.query(IdentityRecord).filter_by(public_key=public_key).first()
+            else:
+                record = None
+
+            if record is not None:
+                return Identity(RSAKeyPair.from_public_key_string(record.public_key),
+                                record.name, record.email, record.nonce,
+                                ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
+                                RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None)
+
+            else:
+                return None
+
+    def get_all_identities(self):
+        result = {}
+        with self._Session() as session:
+            for record in session.query(IdentityRecord).all():
+                result[record.iid] = Identity(RSAKeyPair.from_public_key_string(record.public_key),
+                                              record.name, record.email, record.nonce,
+                                              ECKeyPair.from_public_key_string(record.s_public_key),
+                                              RSAKeyPair.from_public_key_string(record.e_public_key))
+
+        return result
+
+    def update_identity(self, identity, signature, propagate=True):
+        # deserialise
+        identity = Identity.deserialise(identity)
+
+        # verify the signature
+        if not identity.verify(signature):
+            logger.warning(f"ignoring identity update (invalid signature): "
+                           f"identity={identity.serialise()} "
+                           f"signature={signature}")
+            return False
+
+        # update the db
+        with self._Session() as session:
+            # do we have the identity already on record?
+            # only perform update if either the record does not exist yet OR if the information provided is valid
+            # and more recent, i.e., if the nonce is greater than the one on record.
+            record = session.query(IdentityRecord).filter_by(iid=identity.id()).first()
             if record is None:
-                session.add(Identity(iid=public_key.iid, public_key=public_key.public_as_string(), name=name,
-                                     email=email, nonce=nonce, signature=signature))
+                session.add(IdentityRecord(iid=identity.id(), public_key=identity.public_key().public_as_string(),
+                                           s_public_key=identity.signing_public_key().public_as_string(),
+                                           e_public_key=identity.encryption_public_key().public_as_string(),
+                                           name=identity.name(), email=identity.email(), nonce=identity.nonce(),
+                                           signature=signature))
                 session.commit()
 
             else:
-                # is the update valid (i.e., does the signature match)?
-                if not has_valid_signature:
-                    logger.warning(f"ignoring identity update (no signature or invalid signature): "
-                                   f"public_key={public_key.public_as_string()} name={name} email={email} "
-                                   f"nonce={nonce} signature={signature}")
-                    return
-
-                elif nonce > record.nonce:
-                    record.name = name
-                    record.email = email
-                    record.nonce = nonce
+                if identity.nonce() > record.nonce:
+                    record.s_key = identity.signing_public_key().public_as_string()
+                    record.e_key = identity.encryption_public_key().public_as_string()
+                    record.name = identity.name()
+                    record.email = identity.email()
+                    record.nonce = identity.nonce()
                     record.signature = signature
                     session.commit()
 
                 else:
                     logger.debug(f"ignoring identity update (more recent nonce={record.nonce} on record): "
-                                 f"public_key={public_key.public_as_string()} name={name} email={email} nonce={nonce} "
+                                 f"identity={identity.serialise()} "
                                  f"signature={signature}")
+                    return False
 
-        # propagate only if flag is set AND there is a valid signature
-        if propagate and has_valid_signature:
+        # propagate only if flag is set
+        if propagate:
             self.protocol.broadcast_update('update_identity', {
-                'public_key_as_string': public_key.public_as_string(),
-                'name': name,
-                'email': email,
-                'nonce': nonce,
+                'identity': identity.serialise(),
                 'signature': signature,
                 'propagate': False
             })
 
-    def get_public_key(self, iid):
-        identity = self.get_identity_record(iid)
-        return ECKeyPair.from_public_key_string(identity.public_key) if identity else None
-
-    def get_identity_record(self, iid=None):
-        with self._Session() as session:
-            if iid:
-                return session.query(Identity).filter_by(iid=iid).first()
-
-            else:
-                return session.query(Identity).all()
+        return True
 
     def update_network_node(self, node_iid, last_seen, p2p_address, rest_address=None, propagate=True):
         with self._Session() as session:
@@ -318,7 +336,7 @@ class NodeDBService:
 
     def get_network_node(self, node_iid):
         with self._Session() as session:
-            return session.query(Identity).filter_by(iid=node_iid).first()
+            return session.query(IdentityRecord).filter_by(iid=node_iid).first()
 
     def get_network(self):
         with self._Session() as session:
@@ -335,12 +353,16 @@ class NodeDBService:
         identity_items = []
         network_node_items = []
         with self._Session() as session:
-            for item in session.query(Identity).all():
+            for item in session.query(IdentityRecord).all():
                 identity_items.append({
-                    'public_key_as_string': item.public_key,
-                    'name': item.name,
-                    'email': item.email,
-                    'nonce': item.nonce,
+                    'identity': {
+                        'public_key': item.public_key,
+                        'name': item.name,
+                        'email': item.email,
+                        'nonce': item.nonce,
+                        's_public_key': item.s_public_key,
+                        'e_public_key': item.e_public_key
+                    },
                     'signature': item.signature,
                     'propagate': False
                   })
