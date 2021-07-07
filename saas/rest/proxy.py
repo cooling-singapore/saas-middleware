@@ -92,7 +92,7 @@ class EndpointProxy:
 
         if with_authentication:
             authentication = create_authentication(f"{action}:{self._auth_url(endpoint, parameters)}",
-                                                   self._sender, body=body, attachment=attachment)
+                                                   self._sender.signing_key(), body=body, attachment=attachment)
             content['authentication'] = json.dumps(authentication)
 
         if with_authorisation_by:
