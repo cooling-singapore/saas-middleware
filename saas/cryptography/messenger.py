@@ -5,6 +5,8 @@ import base64
 import socket
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.keystore.keystore import Identity
 from saas.utilities.general_helpers import all_in_dict
 
 from cryptography.hazmat.primitives import hashes
@@ -70,12 +72,12 @@ class SecureMessenger:
             peer_socket = socket.create_connection(peer_address)
             messenger = SecureMessenger(peer_socket)
             peer = messenger.handshake(self_node)
-            logger.info(f"connected to peer '{peer.iid}'")
+            logger.info(f"connected to peer '{peer.id()}'")
 
             # if we have an expected peer iid, do a comparison if it matches with what the peer is telling us
-            if expected_peer_iid and not expected_peer_iid == peer.iid:
+            if expected_peer_iid and not expected_peer_iid == peer.id():
                 logger.warning(f"unexpected iid for peer at address {peer_address}: "
-                               f"expected={expected_peer_iid} idd_as_per_peer={peer.iid}")
+                               f"expected={expected_peer_iid} idd_as_per_peer={peer.id()}")
 
             return peer, messenger
 
@@ -111,8 +113,13 @@ class SecureMessenger:
 
         # exchange public keys. note that this is not strictly speaking part of the handshake. it is merely for the
         # benefit of the peers to know who their counterparty is.
-        self.send({'public_key': node.identity().public_as_string()})
-        self.peer = ECKeyPair.from_public_key_string(self.receive()['public_key'])
+        # self.send({'public_key': node.public_key().public_as_string()})
+        # self.peer = RSAKeyPair.from_public_key_string(self.receive()['public_key'])
+
+        self.send(node.identity().serialise())
+
+        msg = self.receive()
+        self.peer = Identity.deserialise(msg)
 
         return self.peer
 

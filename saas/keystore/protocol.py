@@ -89,7 +89,6 @@ class KeystoreP2PProtocol(P2PProtocol):
 
         # check if the requesting user has an access permission
 
-
         # check if we have an access key for this object
         obj_id = message['obj_id']
         key = self._keystore.get_object_key(obj_id)
