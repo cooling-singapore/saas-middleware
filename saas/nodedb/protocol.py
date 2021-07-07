@@ -15,7 +15,7 @@ class NodeDBP2PProtocol(P2PProtocol):
             'leave': self.handle_leave,
 
             'update': self.handle_update,
-            'snapshot': self.handle_snapshot
+            'snapshot': self.handle_snapshot,
         })
 
     def send_join(self, peer_address):
@@ -54,7 +54,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         self.broadcast_message(self.prepare_message("leave"))
 
     def handle_leave(self, message, messenger):
-        self.node.db.remove_network_node(messenger.peer.iid)
+        self.node.db.remove_network_node(messenger.peer.id())
 
     def broadcast_update(self, method, args):
         self.broadcast_message(self.prepare_message('update', {
@@ -75,4 +75,3 @@ class NodeDBP2PProtocol(P2PProtocol):
             method = getattr(self.node.db, method_name)
             for args in message[method_name]:
                 method(**args)
-
