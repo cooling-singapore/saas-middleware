@@ -1,35 +1,15 @@
 import logging
+import os
 
 from flask import Blueprint, jsonify
 
 from saas.rest.proxy import EndpointProxy
 from saas.utilities.blueprint_helpers import request_manager
-from saas.schemas import task_descriptor_schema, workflow_descriptor_schema
-from saas.utilities.general_helpers import all_in_dict
+from saas.schemas import task_descriptor_schema
+from saas.utilities.general_helpers import all_in_dict, load_json_from_file
 
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
-
-job_body_specification = {
-    'type': 'object',
-    'properties': {
-        'type': {'type': 'string', 'enum': ['workflow', 'task']},
-    },
-    'if': {
-        'properties': {'type': {'const': 'workflow'}}
-    },
-    'then': {
-        'properties': {
-            'descriptor': workflow_descriptor_schema
-        }
-    },
-    'else': {
-        'properties': {
-            'descriptor': task_descriptor_schema
-        }
-    },
-    'required': ['type', 'descriptor']
-}
 
 
 class RTIBlueprint:
@@ -55,18 +35,16 @@ class RTIBlueprint:
 
     @request_manager.authentication_required
     def deploy(self, proc_id):
-        # TODO: this should require authorisation - only whose authorisation?
+        # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         descriptor = self._node.rti.deploy(proc_id)
         if descriptor:
-            return jsonify({
-                'descriptor': descriptor
-            }), 201
+            return jsonify(descriptor), 201
         else:
             return jsonify(f"Processor {proc_id} not found."), 404
 
     @request_manager.authentication_required
     def undeploy(self, proc_id):
-        # TODO: this should require authorisation - only whose authorisation?
+        # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         if self._node.rti.undeploy(proc_id):
             return jsonify(f"Processor {proc_id} undeployed."), 200
         else:
@@ -74,25 +52,19 @@ class RTIBlueprint:
 
     @request_manager.authentication_required
     def get_descriptor(self, proc_id):
-        try:
-            descriptor = self._node.rti.get_descriptor(proc_id)
-            return jsonify({
-                'descriptor': descriptor
-            }), 200
-        except FileNotFoundError:
-            pass
+        descriptor_path = self._node.rti.proc_descriptor_path(proc_id)
+        if os.path.isfile(descriptor_path):
+            return jsonify(load_json_from_file(descriptor_path)), 200
 
-        return jsonify(f"Processor {proc_id} not found."), 404
+        else:
+            return jsonify(f"Processor {proc_id} not found."), 404
 
     @request_manager.authentication_required
-    @request_manager.verify_request_body(job_body_specification)
+    @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id):
-        body = request_manager.get_request_variable('body')
+        task_descriptor = request_manager.get_request_variable('body')
 
-        # determine processor descriptor and id, then submit the job
-        descriptor = body['descriptor']
-        proc_id = descriptor['processor_id'] if body['type'] == 'task' else 'workflow'
-        job_id = self._node.rti.submit(proc_id, descriptor)
+        job_id = self._node.rti.submit(proc_id, task_descriptor)
         if job_id is not None:
             return jsonify({
                 'job_id': job_id
@@ -132,7 +104,7 @@ class RTIProxy(EndpointProxy):
 
     def deploy(self, proc_id):
         r = self.post(f"/{proc_id}")
-        return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
+        return r['reply']
 
     def undeploy(self, proc_id):
         r = self.delete(f"/{proc_id}")
@@ -140,49 +112,14 @@ class RTIProxy(EndpointProxy):
 
     def get_descriptor(self, proc_id):
         r = self.get(f"/{proc_id}/descriptor")
-        return r['reply']['descriptor']
+        return r['reply']
 
-    def submit_job(self, proc_id, proc_input, output_owner):
+    def submit_job(self, proc_id, job_input, job_output, user):
         body = {
-            'type': 'task',
-            'descriptor': {
-                'processor_id': proc_id,
-                'input': proc_input,
-                'output': {
-                    'owner_public_key': output_owner.public_as_string()
-                }
-            }
-        }
-
-        r = self.post(f"/{proc_id}/jobs", body=body)
-        return r['reply']['job_id'] if 'job_id' in r['reply'] else None
-
-    def submit_workflow(self, name, tasks):
-        body = {
-            'type': 'workflow',
-            'descriptor': {
-                'name': name,
-                'tasks': tasks
-            }
-        }
-
-        r = self.post(f"/workflow/jobs", body=body)
-        return r['reply']['job_id'] if 'job_id' in r['reply'] else None
-
-    def submit_task(self, proc_id, input_descriptor, owner):
-        input_descriptor_array = []
-        for item in input_descriptor.items():
-            input_descriptor_array.append(item[1])
-
-        body = {
-            'type': 'task',
-            'descriptor': {
-                'processor_id': proc_id,
-                'input': input_descriptor_array,
-                'output': {
-                    'owner_public_key': owner.public_as_string()
-                }
-            }
+            'processor_id': proc_id,
+            'input': job_input,
+            'output': job_output,
+            'user_iid': user.id()
         }
 
         r = self.post(f"/{proc_id}/jobs", body=body)
