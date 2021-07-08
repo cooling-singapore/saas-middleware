@@ -111,15 +111,10 @@ class SecureMessenger:
         # initialise the cipher used to encrypt/decrypt messages
         self.cipher = Fernet(base64.urlsafe_b64encode(session_key))
 
-        # exchange public keys. note that this is not strictly speaking part of the handshake. it is merely for the
+        # exchange identities. note that this is not strictly speaking part of the handshake. it is merely for the
         # benefit of the peers to know who their counterparty is.
-        # self.send({'public_key': node.public_key().public_as_string()})
-        # self.peer = RSAKeyPair.from_public_key_string(self.receive()['public_key'])
-
         self.send(node.identity().serialise())
-
-        msg = self.receive()
-        self.peer = Identity.deserialise(msg)
+        self.peer = Identity.deserialise(self.receive())
 
         return self.peer
 
