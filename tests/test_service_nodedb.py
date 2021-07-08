@@ -24,143 +24,143 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
+        self.node = self.get_node('node', enable_rest=True)
+        self.proxy = NodeDBProxy(self.node.rest.address(), self.node)
+
+        # create extra keystores and make them known to the node
+        self.extras = self.create_keystores(2)
+        for extra in self.extras:
+            signature = extra.update()
+            identity = extra.identity()
+            self.proxy.update_identity(identity, signature)
+
     def tearDown(self):
         self.cleanup()
 
     def test_node_self_awareness(self):
-        node = self.get_node('node')
+        identities = self.node.db.get_all_identities()
+        assert(len(identities) == 1 + len(self.extras))
+        assert(identities[self.node.identity().id()].name() == 'node')
 
-        identities = node.db.get_all_identities()
-        assert(len(identities) == 1)
-        assert(identities[node.identity().id()].name() == 'node')
-
-        network = node.db.get_network()
+        network = self.node.db.get_network()
         assert(len(network) == 1)
-        assert(network[0].iid == node.identity().id())
+        assert(network[0].iid == self.node.identity().id())
 
     def test_add_update_remove_tags(self):
-        node = self.get_node('node')
-
-        tags = node.db.get_tags('aaa')
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 0)
 
-        node.db.update_tags('aaa', [
+        self.node.db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v0'}
         ])
 
-        tags = node.db.get_tags('aaa')
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 1)
         assert('k0' in tags)
 
-        node.db.update_tags('aaa', [
+        self.node.db.update_tags('aaa', [
             {'key': 'k1', 'value': 'v1'},
             {'key': 'k2', 'value': 'v2'}
         ])
 
-        tags = node.db.get_tags('aaa')
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
-        node.db.update_tags('aaa', [
+        self.node.db.update_tags('aaa', [
             {'key': 'k0', 'value': '999'}
         ])
 
-        tags = node.db.get_tags('aaa')
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 3)
         assert(tags['k0'] == '999')
 
-        node.db.remove_tags('aaa', ['k3'])
-        tags = node.db.get_tags('aaa')
+        self.node.db.remove_tags('aaa', ['k3'])
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
-        node.db.remove_tags('bbb', ['k2'])
-        tags = node.db.get_tags('aaa')
+        self.node.db.remove_tags('bbb', ['k2'])
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 3)
 
-        node.db.remove_tags('aaa', ['k2'])
-        tags = node.db.get_tags('aaa')
+        self.node.db.remove_tags('aaa', ['k2'])
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 2)
 
-        node.db.remove_tags('aaa', ['k0', 'k1'])
-        tags = node.db.get_tags('aaa')
+        self.node.db.remove_tags('aaa', ['k0', 'k1'])
+        tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 0)
 
     def test_find_data_objects(self):
-        node = self.get_node('node')
-
-        node.db.update_tags('aaa', [
+        self.node.db.update_tags('aaa', [
             {'key': 'k0', 'value': 'v00'},
             {'key': 'k1', 'value': 'v1'}
         ])
 
-        node.db.update_tags('bbb', [
+        self.node.db.update_tags('bbb', [
             {'key': 'k0', 'value': 'v01'},
             {'key': 'k2', 'value': 'v2'}
         ])
 
-        obj_ids = node.db.find_data_objects('k0')
+        obj_ids = self.node.db.find_data_objects('k0')
         assert(len(obj_ids) == 2)
         assert('aaa' in obj_ids)
         assert('bbb' in obj_ids)
 
-        obj_ids = node.db.find_data_objects('k1')
+        obj_ids = self.node.db.find_data_objects('k1')
         assert(len(obj_ids) == 1)
         assert('aaa' in obj_ids)
 
-        obj_ids = node.db.find_data_objects('k2')
+        obj_ids = self.node.db.find_data_objects('k2')
         assert(len(obj_ids) == 1)
         assert('bbb' in obj_ids)
 
-        obj_ids = node.db.find_data_objects('k3')
+        obj_ids = self.node.db.find_data_objects('k3')
         assert(len(obj_ids) == 0)
 
-        obj_ids = node.db.find_data_objects('k0', 'v00')
+        obj_ids = self.node.db.find_data_objects('k0', 'v00')
         assert(len(obj_ids) == 1)
         assert('aaa' in obj_ids)
 
-        obj_ids = node.db.find_data_objects('k0', 'v02')
+        obj_ids = self.node.db.find_data_objects('k0', 'v02')
         assert(len(obj_ids) == 0)
 
-        obj_ids = node.db.find_data_objects('k0', 'v0%')
+        obj_ids = self.node.db.find_data_objects('k0', 'v0%')
         assert(len(obj_ids) == 2)
 
-        obj_ids = node.db.find_data_objects(value_criterion='v1')
+        obj_ids = self.node.db.find_data_objects(value_criterion='v1')
         assert(len(obj_ids) == 1)
         assert('aaa' in obj_ids)
 
     def test_grant_revoke_permissions(self):
-        node = self.get_node('node')
-        keystores = self.create_keystores(2)
-
-        result = node.db.get_access_list('aaa')
+        result = self.node.db.get_access_list('aaa')
         assert(len(result) == 0)
 
-        result = node.db.has_access('aaa', keystores[0].identity())
+        result = self.node.db.has_access('aaa', self.extras[0].identity())
         assert(not result)
 
-        result = node.db.has_access('aaa', keystores[1].identity())
+        result = self.node.db.has_access('aaa', self.extras[1].identity())
         assert(not result)
 
-        node.db.grant_access('aaa', keystores[0].identity(), 'permission1')
+        self.node.db.grant_access('aaa', self.extras[0].identity(), 'permission1')
 
-        result = node.db.get_access_list('aaa')
+        result = self.node.db.get_access_list('aaa')
         assert(len(result) == 1)
-        assert(keystores[0].identity().id() in result)
+        assert(self.extras[0].identity().id() in result)
 
-        node.db.revoke_access('aaa', keystores[1].identity())
+        self.node.db.revoke_access('aaa', self.extras[1].identity())
 
-        result = node.db.get_access_list('aaa')
+        result = self.node.db.get_access_list('aaa')
         assert(len(result) == 1)
-        assert(keystores[0].identity().id() in result)
+        assert(self.extras[0].identity().id() in result)
 
-        node.db.revoke_access('aaa', keystores[0].identity())
+        self.node.db.revoke_access('aaa', self.extras[0].identity())
 
-        result = node.db.get_access_list('aaa')
+        result = self.node.db.get_access_list('aaa')
         assert(len(result) == 0)
 
     def test_update_identity(self):
-        nodes = self.create_nodes(3)
-
         # check identities known to nodes (they should all know of each other)
+        nodes = self.create_nodes(3, perform_join=True)
         for node in nodes:
             ids = node.db.get_all_identities()
             print(ids)

@@ -137,9 +137,6 @@ class NodeDBService:
             return permission
 
     def grant_access(self, obj_id, identity, permission):
-        # resolve the identity of the public key
-        # identity = self.get_identity(iid=identity.id())
-
         with self._Session() as session:
             item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
             if item:
@@ -156,8 +153,6 @@ class NodeDBService:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
                 return '*'
             else:
-                # resolve the identity of the public key
-                # identity = self.get_identity(public_key=public_key)
                 session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).delete()
                 session.commit()
                 return identity.id()
@@ -209,13 +204,10 @@ class NodeDBService:
             else:
                 return None
 
-    def update_ownership(self, obj_id, new_owner_public_key, content_key=None):
+    def update_ownership(self, obj_id, new_owner, content_key=None):
         with self._Session() as session:
             record = session.query(DORObject).filter_by(obj_id=obj_id).first()
             if record:
-                # resolve the identity of the owner
-                new_owner = self.get_identity(public_key=new_owner_public_key)
-
                 # update the record
                 record.owner_iid = new_owner.id()
                 record.content_key = content_key
