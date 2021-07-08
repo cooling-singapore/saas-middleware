@@ -7,12 +7,11 @@ import time
 import unittest
 import pip
 
-from saas.cryptography.eckeypair import ECKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.adapters.adapters import import_with_auto_install
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.rti.adapters.workflow import TaskWrapper
 from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
 from tests.base_testcase import TestCaseBase
 from tools.create_template import create_folder_structure
@@ -52,44 +51,6 @@ def create_dummy_docker_processor(dummy_processor_path):
     return image_path, descriptor_path, temp_dir.cleanup
 
 
-def create_test_processor(output_directory):
-    git_spec_path = os.path.join(output_directory, f"git_spec.json")
-    dump_json_to_file({
-        'source': 'https://github.com/cooling-singapore/saas-processor-template',
-        'commit_id': '09d00d6',
-        'path': 'processor_dummy',
-        'descriptor': {
-            "name": "test",
-            "input": [
-                {
-                    "name": "a",
-                    "data_type": "JSONObject",
-                    "data_format": "json"
-                },
-                {
-                    "name": "b",
-                    "data_type": "JSONObject",
-                    "data_format": "json"
-                }
-            ],
-            "output": [
-                {
-                    "name": "c",
-                    "data_type": "JSONObject",
-                    "data_format": "json"
-                }
-            ]
-        }
-    }, git_spec_path)
-
-    descriptor = {
-        'created_t': get_timestamp_now(),
-        'created_by': 'test_user'
-    }
-
-    return git_spec_path, descriptor
-
-
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def __init__(self, method_name='runTest'):
         unittest.TestCase.__init__(self, method_name)
@@ -99,30 +60,62 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.proxy = RTIProxy(self.node.rest.address(), self.node.identity())
+        self.dor_proxy = DORProxy(self.node.rest.address(), self.node)
+        self.rti_proxy = RTIProxy(self.node.rest.address(), self.node)
+        self.db_proxy = NodeDBProxy(self.node.rest.address(), self.node)
 
-        self.keys = []
-        for i in range(3):
-            self.keys.append(ECKeyPair.create_new())
-        logger.info(f"keys[0].iid={self.keys[0].iid}")
-        logger.info(f"keys[1].iid={self.keys[1].iid}")
-        logger.info(f"keys[2].iid={self.keys[2].iid}")
+        # create extra keystores and make them known to the node
+        self.extras = self.create_keystores(3)
+        for extra in self.extras:
+            signature = extra.update()
+            identity = extra.identity()
+            self.db_proxy.update_identity(identity, signature)
 
     def tearDown(self):
         self.cleanup()
 
-    def deploy_test_processor(self):
-        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+    def add_test_processor_to_dor(self):
+        git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
+        dump_json_to_file({
+            'source': 'https://github.com/cooling-singapore/saas-processor-template',
+            'commit_id': '09d00d6',
+            'path': 'processor_dummy',
+            'descriptor': {
+                "name": "test",
+                "input": [
+                    {
+                        "name": "a",
+                        "data_type": "JSONObject",
+                        "data_format": "json"
+                    },
+                    {
+                        "name": "b",
+                        "data_type": "JSONObject",
+                        "data_format": "json"
+                    }
+                ],
+                "output": [
+                    {
+                        "name": "c",
+                        "data_type": "JSONObject",
+                        "data_format": "json"
+                    }
+                ]
+            }
+        }, git_proc_pointer_path)
 
-        git_spec_path, descriptor = create_test_processor(self.wd_path)
+        data_type = 'Git-Processor-Pointer'
+        data_format = 'json'
+        created_t = get_timestamp_now()
+        created_by = 'test_user'
 
-        proc_id = proxy.add_processor(git_spec_path, self.keys[1], descriptor)
-        self.proxy.deploy(proc_id)
+        proc_id, _ = self.dor_proxy.add_data_object(git_proc_pointer_path, self.extras[1].identity(),
+                                                    False, False, None,
+                                                    data_type, data_format, created_by, created_t)
+
         return proc_id
 
-    def add_dummy_data_object(self, owner):
-        proxy = DORProxy(self.node.rest.address(), self.node.identity())
-
+    def add_dummy_data_object(self, owner, access_restricted):
         test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
         test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
 
@@ -131,89 +124,128 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         created_t = 21342342
         created_by = 'heiko'
 
-        return test_obj_id, proxy.add_data_object(test_file_path, owner, data_type, data_format, created_by, created_t)
+        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, owner.identity(),
+                                                   access_restricted, False, None,
+                                                   data_type, data_format, created_by, created_t)
 
-    def add_docker_processor(self, owner, image_path, descriptor_path):
-        proxy = DORProxy(self.node.rest.address(), self.node.identity())
+        return test_obj_id, obj_id
 
-        with open(descriptor_path) as f:
-            descriptor = json.load(f)
+    def submit_job_and_wait(self, proc_id, a_obj_id, user, generate_valid_signature):
+        rti_node_info = self.db_proxy.get_node()
+        if generate_valid_signature:
+            a_access_token = f"{rti_node_info['iid']}:{a_obj_id}"
+            a_signature = user.signing_key().sign(a_access_token.encode('utf-8'))
 
-        return proxy.add_processor(image_path, owner, descriptor)
+        else:
+            a_access_token = f"invalid content"
+            a_signature = user.signing_key().sign(a_access_token.encode('utf-8'))
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'reference',
+                'obj_id': a_obj_id,
+                'user_signature': a_signature
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[1].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, user.identity())
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 1)
+
+        result = self.wait_for_job(proc_id, job_id)
+        return job_id, result
 
     def wait_for_job(self, proc_id, job_id):
         while True:
             time.sleep(5)
-            descriptor, status = self.proxy.get_job_info(proc_id, job_id)
+            descriptor, status = self.rti_proxy.get_job_info(proc_id, job_id)
             if descriptor and status:
                 logger.info(f"descriptor={descriptor}")
                 logger.info(f"status={status}")
 
                 state = State.from_string(status['state'])
                 if state == State.SUCCESSFUL:
-                    break
+                    return True
                 elif state == State.FAILED:
-                    raise RuntimeError('Job failed')
+                    return False
 
     def test_deployment_undeployment(self):
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-        proc_id = self.deploy_test_processor()
+        proc_id = self.add_test_processor_to_dor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.rti_proxy.deploy(proc_id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
-        descriptor = self.proxy.get_descriptor(proc_id)
+        descriptor = self.rti_proxy.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
-        deployed = self.proxy.get_deployed()
-        logger.info(f"deployed={deployed}")
-        assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert('workflow' in deployed)
-        assert(proc_id in deployed)
-
-        self.proxy.undeploy(proc_id)
-
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(proc_id in deployed)
+
+        self.rti_proxy.undeploy(proc_id)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
 
     def test_processor_execution_value(self):
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = self.rti_proxy.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
-        assert('workflow' in deployed)
-
-        proc_id = self.deploy_test_processor()
-        logger.info(f"proc_id={proc_id}")
-
-        descriptor = self.proxy.deploy(proc_id)
-        logger.info(f"descriptor={descriptor}")
-
-        deployed = self.proxy.get_deployed()
-        logger.info(f"deployed={deployed}")
-        assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert('workflow' in deployed)
         assert(proc_id in deployed)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        proc_input = [
+        job_input = [
             {
                 'name': 'a',
                 'type': 'value',
@@ -230,18 +262,27 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = self.proxy.submit_job(proc_id, proc_input, self.keys[1])
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[2].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, self.extras[1].identity())
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
         self.wait_for_job(proc_id, job_id)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
@@ -249,44 +290,46 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        self.proxy.undeploy(proc_id)
+        self.rti_proxy.undeploy(proc_id)
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-    def test_processor_execution_reference(self):
-        deployed = self.proxy.get_deployed()
+    def test_processor_execution_reference_unrestricted(self):
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-        proc_id = self.deploy_test_processor()
+        proc_id = self.add_test_processor_to_dor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.rti_proxy.deploy(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 1)
         assert(proc_id in deployed)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(self.keys[1])
+        owner = self.extras[1]
+        user = self.extras[2]
+
+        # add data object
+        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(owner, False)
         logger.info(f"a_obj_id={a_obj_id}")
         assert a_obj_id == a_obj_id_ref
 
-        proc_input = [
+        job_input = [
             {
                 'name': 'a',
                 'type': 'reference',
@@ -301,18 +344,28 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = self.proxy.submit_job(proc_id, proc_input, self.keys[1])
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[1].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, user.identity())
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        self.wait_for_job(proc_id, job_id)
+        result = self.wait_for_job(proc_id, job_id)
+        assert(result is True)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
@@ -320,151 +373,107 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
-        self.proxy.undeploy(proc_id)
+        self.rti_proxy.undeploy(proc_id)
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-    def test_processor_workflow(self):
-        deployed = self.proxy.get_deployed()
+    def test_processor_execution_reference_restricted(self):
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-        proc_id = self.deploy_test_processor()
+        proc_id = self.add_test_processor_to_dor()
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.rti_proxy.deploy(proc_id)
         logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
 
-        deployed = self.proxy.get_deployed()
-        logger.info(f"deployed={deployed}")
-        assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert('workflow' in deployed)
-        assert(proc_id in deployed)
-
-        jobs = self.proxy.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 0)
-
-        a_obj_id_ref, obj_id_a = self.add_dummy_data_object(self.keys[1])
-        logger.info(f"obj_id_a={obj_id_a}")
-        assert obj_id_a == a_obj_id_ref
-
-        tasks = [
-            {
-                'name': 'task0',
-                'processor_id': proc_id,
-                'input': [
-                    {
-                        'name': 'a',
-                        'type': 'reference',
-                        'obj_id': obj_id_a
-                    },
-                    {
-                        'name': 'b',
-                        'type': 'value',
-                        'value': {
-                            'v': 2
-                        }
-                    }
-                ],
-                'output': {
-                    'owner_public_key': self.keys[1].public_as_string()
-                }
-            },
-            {
-                'name': 'task1',
-                'processor_id': proc_id,
-                'input': [
-                    {
-                        'name': 'a',
-                        'type': 'reference',
-                        'obj_id': obj_id_a
-                    },
-                    {
-                        'name': 'b',
-                        'type': 'value',
-                        'value': {
-                            'v': 2
-                        }
-                    }
-                ],
-                'output': {
-                    'owner_public_key': self.keys[1].public_as_string()
-                }
-            },
-            {
-                'name': 'task2',
-                'processor_id': proc_id,
-                'input': [
-                    {
-                        'name': 'a',
-                        'type': 'reference',
-                        'obj_id': 'label:task0:c'
-                    },
-                    {
-                        'name': 'b',
-                        'type': 'reference',
-                        'obj_id': 'label:task1:c'
-                    }
-                ],
-                'output': {
-                    'owner_public_key': self.keys[1].public_as_string()
-                }
-            }
-
-        ]
-
-        job_id = self.proxy.submit_workflow('c = ((a+b) + (a+b))', tasks)
-        logger.info(f"job_id={job_id}")
-        assert job_id is not None
-
-        self.wait_for_job(proc_id, job_id)
-
-        jobs = self.proxy.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 0)
-
-        self.proxy.undeploy(proc_id)
-
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(proc_id in deployed)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        owner = self.extras[1]
+        user = self.extras[2]
+
+        # add data object
+        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(owner, True)
+        logger.info(f"a_obj_id={a_obj_id}")
+        assert a_obj_id == a_obj_id_ref
+
+        # valid signature but no access rights
+        job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, user, True)
+        assert(result is False)
+
+        # grant access
+        access = self.dor_proxy.grant_access(a_obj_id, owner.signing_key(), user.identity())
+        assert(access is not None)
+        assert(access[a_obj_id] == user.identity().id())
+
+        # invalid signature
+        job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, user, False)
+        assert(result is False)
+
+        # valid signature
+        job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, user, True)
+        assert(result is True)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
+        assert(os.path.isfile(output_path))
+
+        self.rti_proxy.undeploy(proc_id)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
 
     def test_docker_processor_execution_value(self):
         image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
-        proc_id = self.add_docker_processor(self.keys[1], image_path, descriptor_path)
+        data_type = 'Processor'
+        data_format = 'Docker Image'
+        created_t = 21342342
+        created_by = 'heiko'
+
+        proc_id, _ = self.dor_proxy.add_data_object(image_path, self.extras[1].identity(),
+                                                    False, False, None,
+                                                    data_type, data_format, created_by, created_t)
+
         logger.info(f"proc_id={proc_id}")
         cleanup_func()
 
-        descriptor = self.proxy.deploy(proc_id)
+        descriptor = self.rti_proxy.deploy(proc_id)
         logger.info(f"descriptor={descriptor}")
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 1)
         assert(proc_id in deployed)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
@@ -486,18 +495,18 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = self.proxy.submit_job(proc_id, proc_input, self.keys[1])
+        job_id = self.rti_proxy.submit_job(proc_id, proc_input, self.extras[1].identity())
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
         self.wait_for_job(proc_id, job_id)
 
-        jobs = self.proxy.get_jobs(proc_id)
+        jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
@@ -505,13 +514,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        self.proxy.undeploy(proc_id)
+        self.rti_proxy.undeploy(proc_id)
 
-        deployed = self.proxy.get_deployed()
+        deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
-        assert(len(deployed) == 1)
-        assert('workflow' in deployed)
+        assert(len(deployed) == 0)
 
     def test_import_dependency(self):
         try:
@@ -528,98 +536,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         except Exception as e:
             logger.error(e)
             assert False
-
-
-class WorkflowTestCase(unittest.TestCase, TestCaseBase):
-    def __init__(self, method_name='runTest'):
-        unittest.TestCase.__init__(self, method_name)
-        TestCaseBase.__init__(self)
-
-    def setUp(self):
-        self.initialise()
-
-        self.node = self.get_node('node', enable_rest=True)
-        self.rti_proxy = RTIProxy(self.node.rest.address(), self.node.identity())
-        self.dor_proxy = DORProxy(self.node.rest.address(), self.node.identity())
-        self.owner = ECKeyPair.create_new()
-
-    def tearDown(self):
-        self.cleanup()
-
-    # FIXME: Looks like duplicated code
-    def deploy_dummy_processor(self):
-        proxy = DORProxy(self.node.rest.address(), self.node.identity())
-
-        git_spec_path, descriptor = create_test_processor(self.wd_path)
-
-        proc_id = proxy.add_processor(git_spec_path, self.owner, descriptor)
-        return proc_id, self.rti_proxy.deploy(proc_id)
-
-    def test_deploy_dummy_processor(self):
-        proc_id, descriptor = self.deploy_dummy_processor()
-        print(proc_id)
-        print(descriptor)
-        assert(proc_id is not None)
-        assert(descriptor is not None)
-
-        deployed = self.rti_proxy.get_deployed()
-        print(deployed)
-        assert(deployed is not None)
-        assert(len(deployed) == 2)
-        assert(proc_id in deployed)
-
-    def test_task_wrapper(self):
-        proc_id, descriptor = self.deploy_dummy_processor()
-        print(proc_id)
-        print(descriptor)
-        assert(proc_id is not None)
-        assert(descriptor is not None)
-
-        task_descriptor = {
-            'name': 'test',
-            'processor_id': proc_id,
-            'input': [
-                {
-                    'name': 'a',
-                    'type': 'value',
-                    'value': {'v': 1.0}
-                },
-                {
-                    'name': 'b',
-                    'type': 'value',
-                    'value': {'v': 2.0}
-                }
-            ],
-            'output': {
-                'owner_public_key': self.owner.public_as_string()
-            }
-        }
-
-        task = TaskWrapper(self.node, task_descriptor)
-        task.start()
-
-        while not task.is_done:
-            time.sleep(1)
-
-        assert(task.is_successful is True)
-
-        outputs = task.get_outputs()
-        print(outputs)
-        assert(outputs is not None)
-        assert('c' in outputs)
-
-        descriptor = self.dor_proxy.get_descriptor(outputs['c'])
-        print(descriptor)
-        assert(descriptor is not None)
-
-        obj_path = os.path.join(self.wd_path, outputs['c'])
-        self.dor_proxy.get_content(outputs['c'], self.owner, obj_path)
-        with open(obj_path, 'r') as f:
-            obj = json.loads(f.read())
-            print(obj)
-            assert(obj is not None)
-            assert('v' in obj)
-            assert(obj['v'] == 3.0)
 
 
 if __name__ == '__main__':
