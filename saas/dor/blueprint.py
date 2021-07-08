@@ -3,67 +3,37 @@ import os
 
 from flask import Blueprint, request, send_from_directory, jsonify
 
-from saas.schemas import data_object_descriptor_schema, processor_descriptor_schema
+from saas.schemas import data_object_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.utilities.blueprint_helpers import request_manager
-from saas.utilities.general_helpers import get_timestamp_now
+from saas.utilities.general_helpers import get_timestamp_now, load_json_from_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
 
-security_specification = {
+add_body_specification = {
     'type': 'object',
     'properties': {
+        'owner_iid': {'type': 'string'},
+        'descriptor': data_object_descriptor_schema,
         'access_restricted': {'type': 'boolean'},
-        'content_encrypted': {'type': 'boolean'}
+        'content_encrypted': {'type': 'boolean'},
+        'content_key': {'type': 'string'}
     },
-    'required': ['access_restricted', 'content_encrypted']
-}
-
-data_body_specification = {
-    'type': 'object',
-    'properties': {
-        'type': {'type': 'string', 'enum': ['data_object', 'processor']},
-        'security': security_specification,
-        'owner_public_key': {'type': 'string'}
-    },
-    'if': {
-        'properties': {'type': {'const': 'data_object'}}
-    },
-    'then': {
-        'properties': {
-            'descriptor': data_object_descriptor_schema
-        }
-    },
-    'else': {
-        'properties': {
-            'descriptor': processor_descriptor_schema
-        }
-    },
-    'required': ['type', 'security', 'owner_public_key', 'descriptor']
+    'required': ['owner_iid', 'descriptor', 'access_restricted', 'content_encrypted']
 }
 
 grant_access_body_specification = {
     'type': 'object',
     'properties': {
-        'public_key': {'type': 'string'},
         'permission': {'type': 'string'}
     },
-    'required': ['public_key', 'permission']
+    'required': ['permission']
 }
 
-revoke_access_body_specification = {
-    'type': 'object',
-    'properties': {
-        'public_key': {'type': 'string'}
-    },
-    'required': ['public_key']
-}
-
-owner_key_body_specification = {
-    'new_owner_public_key': {
-        'type': 'string'
-    }
+transfer_ownership_body_specification = {
+    'new_owner_iid': {'type': 'string'},
+    'content_key': {'type': 'string'}
 }
 
 tags_body_specification = {
@@ -101,9 +71,11 @@ class DORBlueprint:
         blueprint.add_url_rule('/<obj_id>', self.delete.__name__, self.delete, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/descriptor', self.get_descriptor.__name__, self.get_descriptor, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/content', self.get_content.__name__, self.get_content, methods=['GET'])
+        blueprint.add_url_rule('/<obj_id>/key', self.get_content_key.__name__, self.get_content_key, methods=['GET'])
+        blueprint.add_url_rule('/<obj_id>/key', self.delete_content_key.__name__, self.delete_content_key, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/access', self.get_access.__name__, self.get_access, methods=['GET'])
-        blueprint.add_url_rule('/<obj_id>/access', self.grant_access.__name__, self.grant_access, methods=['POST'])
-        blueprint.add_url_rule('/<obj_id>/access', self.revoke_access.__name__, self.revoke_access, methods=['DELETE'])
+        blueprint.add_url_rule('/<obj_id>/access/<iid>', self.grant_access.__name__, self.grant_access, methods=['POST'])
+        blueprint.add_url_rule('/<obj_id>/access/<iid>', self.revoke_access.__name__, self.revoke_access, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/owner', self.get_owner.__name__, self.get_owner, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/owner', self.transfer_ownership.__name__, self.transfer_ownership, methods=['PUT'])
         blueprint.add_url_rule('/<obj_id>/tags', self.get_tags.__name__, self.get_tags, methods=['GET'])
@@ -121,14 +93,21 @@ class DORBlueprint:
         }), 200
 
     @request_manager.authentication_required
-    @request_manager.verify_request_body(data_body_specification)
+    @request_manager.verify_request_body(add_body_specification)
     @request_manager.verify_request_files(['attachment'])
     def add(self):
         body = request_manager.get_request_variable('body')
         files = request_manager.get_request_variable('files')
 
-        status, result = self._node.dor.add(body['owner_public_key'], body['security'],
-                                            body['descriptor'], files['attachment'])
+        owner_iid = body['owner_iid']
+        descriptor = body['descriptor']
+        access_restricted = body['access_restricted']
+        content_encrypted = body['content_encrypted']
+        content_key = body['content_key'] if 'content_key' in body else None
+        content_path = files['attachment']
+
+        status, result = self._node.dor.add(owner_iid, descriptor, content_path,
+                                            access_restricted, content_encrypted, content_key)
         return jsonify(result), status
 
     @request_manager.authentication_required
@@ -139,8 +118,30 @@ class DORBlueprint:
 
     @request_manager.authentication_required
     def get_descriptor(self, obj_id):
-        status, result = self._node.dor.get_descriptor(obj_id)
-        return jsonify(result), status
+        descriptor_path = self._node.dor.obj_descriptor_path(obj_id)
+        if os.path.isfile(descriptor_path):
+            descriptor = load_json_from_file(descriptor_path)
+            return jsonify(descriptor), 200
+
+        return jsonify(f"Data object {obj_id} not found."), 404
+
+    @request_manager.authentication_required
+    @request_manager.verify_authorisation_by_owner('obj_id')
+    def get_content_key(self, obj_id):
+        content_key = self._node.db.get_content_key(obj_id)
+        if content_key:
+            return jsonify(content_key), 200
+        else:
+            return jsonify(f"Data object '{obj_id}' not found or no content key found."), 404
+
+    @request_manager.authentication_required
+    @request_manager.verify_authorisation_by_owner('obj_id')
+    def delete_content_key(self, obj_id):
+        content_key = self._node.db.delete_content_key(obj_id)
+        if content_key:
+            return jsonify(content_key), 200
+        else:
+            return jsonify(f"Data object '{obj_id}' not found or no content key found."), 404
 
     @request_manager.authentication_required
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -167,52 +168,63 @@ class DORBlueprint:
     @request_manager.authentication_required
     @request_manager.verify_request_body(grant_access_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def grant_access(self, obj_id):
+    def grant_access(self, obj_id, iid):
+        body = request_manager.get_request_variable('body')
+
         if not self._node.db.get_object_by_id(obj_id):
-            return jsonify(f"{obj_id} not found"), 404
+            return jsonify(f"data object (id={obj_id}) not found"), 404
 
-        else:
-            body = request_manager.get_request_variable('body')
-            user_iid = self._node.db.grant_access(obj_id, body['public_key'], body['permission'])
+        identity = self._node.db.get_identity(iid)
+        if identity is None:
+            return jsonify(f"identity (iid={iid}) not found"), 404
 
-            return jsonify({
-                obj_id: user_iid
-            }), 200
+        return jsonify({
+            obj_id: self._node.db.grant_access(obj_id, identity, body['permission'])
+        }), 200
 
     @request_manager.authentication_required
-    @request_manager.verify_request_body(revoke_access_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def revoke_access(self, obj_id):
+    def revoke_access(self, obj_id, iid):
         if not self._node.db.get_object_by_id(obj_id):
-            return jsonify(f"{obj_id} not found"), 404
+            return jsonify(f"data object (id={obj_id}) not found"), 404
 
-        else:
-            body = request_manager.get_request_variable('body')
-            user_iid = self._node.db.revoke_access(obj_id, body['public_key'])
+        identity = self._node.db.get_identity(iid)
+        if identity is None:
+            return jsonify(f"identity (iid={iid}) not found"), 404
 
-            return jsonify({
-                obj_id: user_iid
-            }), 200
+        return jsonify({
+            obj_id: self._node.db.revoke_access(obj_id, identity)
+        }), 200
 
     @request_manager.authentication_required
     def get_owner(self, obj_id):
         owner = self._node.db.get_owner(obj_id)
         if owner:
             return jsonify({
-                "owner_iid": owner.iid,
-                "owner_public_key": owner.public_as_string()
+                "obj_id": obj_id,
+                "owner_iid": owner.id()
             }), 200
         else:
             return jsonify(f"Data object '{obj_id}' not found."), 404
 
     @request_manager.authentication_required
-    @request_manager.verify_request_body(owner_key_body_specification)
+    @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def transfer_ownership(self, obj_id):
-        body = request_manager.get_request_variable('body')
-        self._node.db.update_ownership(obj_id, body['new_owner_public_key'])
+        # get the record for this data object
+        record = self._node.db.get_object_by_id(obj_id)
+        if record is None:
+            return jsonify(f"Data object '{obj_id}' not found."), 404
 
-        return jsonify(f"Ownership of data object '{obj_id}' transferred to '{body['new_owner_public_key']}'."), 200
+        body = request_manager.get_request_variable('body')
+        new_owner = self._node.db.get_identity(body['new_owner_iid'])
+        if new_owner is None:
+            return jsonify(f"New owner identity (iid='{body['new_owner_iid']}') not found."), 404
+
+        content_key = body['content_key'] if 'content_key' in body else None
+
+        self._node.db.update_ownership(obj_id, new_owner, content_key)
+        return jsonify(f"Ownership of data object '{obj_id}' transferred to '{new_owner.id()}'."), 200
 
     @request_manager.authentication_required
     def get_tags(self, obj_id):
@@ -259,22 +271,22 @@ class DORProxy(EndpointProxy):
             'output_name': output_name
         }
 
-    def add_data_object(self, content_path, owner, access_restricted, content_encrypted,
+    def add_data_object(self, content_path, owner, access_restricted, content_encrypted, content_key,
                         data_type, data_format, created_by, created_t=None, recipe=None):
         body = {
-            'type': 'data_object',
-            'owner_public_key': owner.public_as_string(),
-            'security': {
-                'access_restricted': access_restricted,
-                'content_encrypted': content_encrypted
-            },
+            'owner_iid': owner.id(),
             'descriptor': {
                 'data_type': data_type,
                 'data_format': data_format,
                 'created_t': created_t if created_t else get_timestamp_now(),
                 'created_by': created_by
-            }
+            },
+            'access_restricted': access_restricted,
+            'content_encrypted': content_encrypted
         }
+
+        if content_key is not None:
+            body['content_key'] = content_key
 
         if recipe is not None:
             body['descriptor']['recipe'] = recipe
@@ -282,66 +294,62 @@ class DORProxy(EndpointProxy):
         r = self.post('', body=body, attachment=content_path)
         return (r['reply']['data_object_id'], r['reply']['descriptor']) if 'data_object_id' in r['reply'] else None
 
-    def add_processor(self, content_path, owner, descriptor):
-        body = {
-            'type': 'processor',
-            'owner_public_key': owner.public_as_string(),
-            'descriptor': descriptor
-        }
-
-        r = self.post('', body=body, attachment=content_path)
-        return r['reply']['data_object_id'] if 'data_object_id' in r['reply'] else None
-
-    def delete_data_object(self, obj_id, owner):
-        r = self.delete(f"/{obj_id}", with_authorisation_by=owner)
-        return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
+    def delete_data_object(self, obj_id, authorisation_key):
+        r = self.delete(f"/{obj_id}", with_authorisation_by=authorisation_key)
+        return r['reply']
 
     def get_descriptor(self, obj_id):
         r = self.get(f"/{obj_id}/descriptor")
-        return r['reply']['descriptor'] if 'descriptor' in r['reply'] else None
+        return r['reply']
 
-    def get_content(self, obj_id, owner, download_path):
-        r = self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=owner)
+    def get_content(self, obj_id, authorisation_key, download_path):
+        r = self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=authorisation_key)
         return r
+
+    def get_content_key(self, obj_id, authorisation_key):
+        r = self.get(f"/{obj_id}/key", with_authorisation_by=authorisation_key)
+        return r['reply']
+
+    def delete_content_key(self, obj_id, authorisation_key):
+        r = self.delete(f"/{obj_id}/key", with_authorisation_by=authorisation_key)
+        return r['reply']
 
     def get_access_list(self, obj_id):
         r = self.get(f"/{obj_id}/access")
         return r['reply'] if 'reply' in r else []
 
-    def grant_access(self, obj_id, owner, key, permission=""):
+    def grant_access(self, obj_id, authorisation_key, identity, permission=""):
         body = {
-            'public_key': key.public_as_string(),
             'permission': permission
         }
 
-        r = self.post(f"/{obj_id}/access", body=body, with_authorisation_by=owner)
+        r = self.post(f"/{obj_id}/access/{identity.id()}", body=body, with_authorisation_by=authorisation_key)
         return r['reply']
 
-    def revoke_access(self, obj_id, owner, key):
-        body = {
-            'public_key': key.public_as_string()
-        }
-
-        r = self.delete(f"/{obj_id}/access", body=body, with_authorisation_by=owner)
+    def revoke_access(self, obj_id, authorisation_key, identity):
+        r = self.delete(f"/{obj_id}/access/{identity.id()}", with_authorisation_by=authorisation_key)
         return r['reply']
 
     def get_owner(self, obj_id):
         r = self.get(f"/{obj_id}/owner")
         return r['reply']
 
-    def transfer_ownership(self, obj_id, current_owner, new_owner):
+    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key=None):
         body = {
-            'new_owner_public_key': new_owner.public_as_string()
+            'new_owner_iid': new_owner.id(),
         }
 
-        r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=current_owner)
+        if content_key is not None:
+            body['content_key'] = content_key
+
+        r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=authorisation_key)
         return r['reply']
 
     def get_tags(self, obj_id):
         r = self.get(f"/{obj_id}/tags")
         return r['reply']['tags']
 
-    def update_tags(self, obj_id, owner, tags):
+    def update_tags(self, obj_id, authorisation_key, tags):
         body = {'tags': []}
         for key in tags:
             value = tags[key]
@@ -351,14 +359,13 @@ class DORProxy(EndpointProxy):
                 'value': value
             })
 
-        r = self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=owner)
+        r = self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=authorisation_key)
         return r['reply']
 
-    def remove_tags(self, obj_id, owner, keys):
+    def remove_tags(self, obj_id, authorisation_key, keys):
         body = {
             'keys': keys
         }
 
-        r = self.delete(f"/{obj_id}/tags", body=body, with_authorisation_by=owner)
+        r = self.delete(f"/{obj_id}/tags", body=body, with_authorisation_by=authorisation_key)
         return r['reply']
-

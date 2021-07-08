@@ -1,19 +1,10 @@
-"""
-This module contains the code for the Data Object Repository P2P protocol.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
 import os
 import logging
 import json
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.messenger import MessengerRuntimeError, SecureMessenger
+from saas.cryptography.messenger import SecureMessenger
 from saas.p2p.protocol import P2PProtocol
-from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
+from saas.utilities.general_helpers import dump_json_to_file
 
 logger = logging.getLogger('dor.protocol')
 
@@ -23,82 +14,137 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
 
     def __init__(self, node):
         super().__init__(node, DataObjectRepositoryP2PProtocol.id, {
-            'fetch': self.handle_fetch
+            'lookup': self.handle_lookup,
+            'fetch': self.handle_fetch,
         })
 
-    def send_fetch(self, peer_address, obj_id):
-        # connect to peer
+    def send_lookup(self, peer_address, object_ids, user):
+        """
+        Check with a given peer if it has data objects and if the user has access to them.
+        :param peer_address: the address of the peer
+        :param object_ids: a list of object ids
+        :param user: the identity of the user
+        :return:
+        """
         peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
-        logger.info(f"connected to peer '{peer.iid}'")
+        if peer and messenger:
+            reply = messenger.request(self.prepare_message('lookup', {
+                'object_ids': object_ids,
+                'user_iid': user.id()
+            }))
+            messenger.close()
+            return reply
 
-        # send 'fetch' message and receive the data object descriptor and content from the peer
-        try:
-            key = self.node.identity()
-            timestamp = get_timestamp_now()
-            signature = key.sign(f"{obj_id}:{timestamp}".encode('utf-8'))
+        else:
+            return {}
 
+    def handle_lookup(self, message, messenger):
+        """
+        Handles the lookup request: checks if the node has the data objects and if the given user has access.
+        :param message:
+        :param messenger:
+        :return:
+        """
+        user = self.node.db.get_identity(iid=message['user_iid'])
+        result = {}
+        for obj_id in message['object_ids']:
+            record = self.node.db.get_object_by_id(obj_id)
+            if record is not None:
+                result[obj_id] = {
+                    'custodian_address': self.node.p2p.address(),
+                    'access_restricted': record.access_restricted,
+                    'content_encrypted': record.content_encrypted,
+                    'user_has_permission': self.node.db.has_access(obj_id, user) if user else False
+                }
+
+        messenger.reply_ok(result)
+        messenger.close()
+
+    def send_fetch(self, peer_address, obj_id, destination_descriptor_path, destination_content_path,
+                   user_iid=None, user_signature=None):
+        """
+        Attempts to fetch a data object from a peer. If successful, the data object descriptor and content is
+        stored at the specified locations.
+        :param peer_address:
+        :param obj_id:
+        :param destination_descriptor_path:
+        :param destination_content_path:
+        :param user_iid:
+        :param user_signature:
+        :return: the 'c_hash' of the data object if successful or None otherwise.
+        """
+
+        peer, messenger = SecureMessenger.connect_to_peer(peer_address, self.node)
+        if peer and messenger:
             reply = messenger.request(self.prepare_message("fetch", {
                 'object_id': obj_id,
-                'timestamp': timestamp,
-                'public_key': key.public_as_string(),
-                'signature': signature
+                'user_iid': user_iid,
+                'user_signature': user_signature
             }))
-            c_hash = reply['c_hash']
 
-            destination_descriptor_path = self.node.dor.obj_descriptor_path(obj_id, cache=True)
-            dump_json_to_file(reply['descriptor'], destination_descriptor_path)
+            if reply['code'] == 200:
+                dump_json_to_file(reply['descriptor'], destination_descriptor_path)
+                messenger.receive_attachment(destination_content_path)
 
-            destination_content_path = self.node.dor.obj_content_path(c_hash, cache=True)
-            messenger.receive_attachment(destination_content_path)
-            messenger.close()
-            return reply['c_hash']
-
-        except MessengerRuntimeError as e:
-            if not e.status == 404:
-                logger.error(f"runtime error during send_fetch: {e.status} {e.info}")
+            else:
+                logger.info(f"fetching of data object failed (code={reply['code']}). reason: {reply['reason']}")
 
             messenger.close()
-            return None
+            return reply
+
+        else:
+            logger.info(f"fetching of data object failed. reason: peer ({peer_address}) cannot be reached.")
+            return {
+                'code': 503,
+                'reason': f"peer ({peer_address}) cannot be reached."
+            }
 
     def handle_fetch(self, message, messenger):
+        """
+        Handles a fetch request by performing a number of checks (data object available? access permission exists?
+        access permission valid?). If successful, returns the c_hash and descriptor of the data object, followed by
+        the data object content as a attachment.
+        :param message:
+        :param messenger:
+        :return:
+        """
         # check if we have that data object
         obj_id = message['object_id']
         obj_record = self.node.db.get_object_by_id(obj_id)
         if not obj_record:
-            messenger.reply_error(404, f"{obj_id} not found")
+            messenger.reply_ok({'code': 404, 'reason': f"data object (id={obj_id}) not found."})
             messenger.close()
             return
 
         # check if the data object access is restricted and (if so) if the user has the required permission
         if obj_record.access_restricted:
-            public_key = message['public_key']
-            key = ECKeyPair.from_public_key_string(public_key)
-
-            # check if there is a permission for this key
-            permission = self.node.db.get_permission(obj_id, key)
-            if permission is None:
-                messenger.reply_error(403, f"access to {obj_id} not permitted for {key.iid}")
+            # get the identity of the user
+            user = self.node.db.get_identity(iid=message['user_iid'])
+            if user is None:
+                messenger.reply_ok({'code': 404, 'reason': f"identity of user (iid={message['user_iid']}) not found."})
                 messenger.close()
                 return
 
-            # check the age of the request (if it's older than 2 seconds, reject it)
-            timestamp = message['timestamp']
-            if get_timestamp_now() > timestamp + 2*1000:
-                messenger.reply_error(408, f"request timestamp {timestamp} is too old")
+            # check if the user has permission to access this data object
+            permission = self.node.db.get_permission(obj_id, user)
+            if permission is None:
+                messenger.reply_ok({'code': 403, 'reason': f"user (iid={message['user_iid']}) does not have access "
+                                                           f"to data object (id={obj_id})."})
                 messenger.close()
                 return
 
             # verify the access request
-            signature = message['signature']
-            if not key.verify(f"{obj_id}:{timestamp}".encode('utf-8'), signature):
-                messenger.reply_error(403, f"access request cannot be verified for {key.iid}")
+            token = f"{messenger.peer.id()}:{obj_id}".encode('utf-8')
+            if not user.signing_public_key().verify(token, message['user_signature']):
+                messenger.reply_ok({'code': 403, 'reason': f"access authorisation failed "
+                                                           f"(user_iid={user.id()}, obj_id={obj_id})."})
                 messenger.close()
                 return
 
         # we send the descriptor in the reply and stream the contents of the data object
         descriptor_path = self.node.dor.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
-            messenger.reply_error(500, f"descriptor expected but not found for data object {obj_id}")
+            messenger.reply_ok({'code': 404, 'reason': f"descriptor for data object (obj_id={obj_id}) not found."})
             messenger.close()
             return
 
@@ -110,13 +156,18 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         c_hash = obj_record.c_hash
         content_path = self.node.dor.obj_content_path(c_hash)
         if not os.path.isfile(content_path):
-            messenger.reply_error(500, f"content {c_hash} expected but not found for data object {obj_id}.")
+            messenger.reply_ok({'code': 404, 'reason': f"content (c_hash={c_hash}) for data object (obj_id={obj_id}) "
+                                                       f"not found."})
             messenger.close()
             return
 
+        # if all is good, send a reply followed by the data object content as attachment
         messenger.reply_ok({
+            'code': 200,
             'c_hash': c_hash,
             'descriptor': descriptor
         })
         messenger.send_attachment(content_path)
         messenger.close()
+
+
