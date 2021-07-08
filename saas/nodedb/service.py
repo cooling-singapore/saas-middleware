@@ -24,7 +24,6 @@ class DORObject(Base):
     owner_iid = Column(String(64), nullable=False)
     access_restricted = Column(Boolean, nullable=False)
     content_encrypted = Column(Boolean, nullable=False)
-    # content_key = Column(Text, nullable=True)
 
 
 class DORTag(Base):
