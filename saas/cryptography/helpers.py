@@ -1,3 +1,6 @@
+import os
+import shutil
+
 from cryptography.fernet import Fernet
 
 
@@ -13,11 +16,17 @@ def symmetric_decrypt(content, key):
     return cipher.decrypt(content)
 
 
-def encrypt_file(source, destination, key=None, chunk_size=1024*1024):
+def encrypt_file(source, destination=None, key=None, protect_key_with=None, delete_source=False, chunk_size=1024*1024):
+    # if no key is provided, generate one
     if key is None:
         key = Fernet.generate_key()
+
+    # determine the (temporary) location
+    location = destination if destination else os.path.join(source, '.enc')
+
+    # create the cipher and encrypt the source file
     cipher = Fernet(key)
-    with open(destination, 'wb') as f_out:
+    with open(location, 'wb') as f_out:
         with open(source, 'rb') as f_in:
             chunk = f_in.read(chunk_size)
             while chunk:
@@ -29,6 +38,19 @@ def encrypt_file(source, destination, key=None, chunk_size=1024*1024):
                 f_out.write(chunk)
 
                 chunk = f_in.read(chunk_size)
+
+    # replace the source file?
+    if destination is None:
+        os.remove(source)
+        shutil.move(location, source)
+
+    # delete the source file (if flag is set)
+    elif delete_source:
+        os.remove(source)
+
+    # do we need to protect the key?
+    if protect_key_with is not None:
+        key = protect_key_with.encrypt(key, base64_encoded=True).decode('utf-8')
 
     return key
 
