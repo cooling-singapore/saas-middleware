@@ -13,7 +13,9 @@ def symmetric_decrypt(content, key):
     return cipher.decrypt(content)
 
 
-def encrypt_file(source, destination, key, chunk_size=1024*1024):
+def encrypt_file(source, destination, key=None, chunk_size=1024*1024):
+    if key is None:
+        key = Fernet.generate_key()
     cipher = Fernet(key)
     with open(destination, 'wb') as f_out:
         with open(source, 'rb') as f_in:
@@ -27,6 +29,8 @@ def encrypt_file(source, destination, key, chunk_size=1024*1024):
                 f_out.write(chunk)
 
                 chunk = f_in.read(chunk_size)
+
+    return key
 
 
 def decrypt_file(source, destination, key):
