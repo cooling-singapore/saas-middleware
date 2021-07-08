@@ -71,9 +71,8 @@ class DORBlueprint:
         blueprint.add_url_rule('/<obj_id>', self.delete.__name__, self.delete, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/descriptor', self.get_descriptor.__name__, self.get_descriptor, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/content', self.get_content.__name__, self.get_content, methods=['GET'])
-        blueprint.add_url_rule('/<obj_id>/key', self.get_content_key.__name__, self.get_content_key, methods=['GET'])
-        blueprint.add_url_rule('/<obj_id>/key', self.delete_content_key.__name__, self.delete_content_key, methods=['DELETE'])
-        blueprint.add_url_rule('/<obj_id>/access', self.get_access.__name__, self.get_access, methods=['GET'])
+        blueprint.add_url_rule('/<obj_id>/access', self.get_access_overview.__name__, self.get_access_overview, methods=['GET'])
+        blueprint.add_url_rule('/<obj_id>/access/<iid>', self.get_access_permission.__name__, self.get_access_permission, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/access/<iid>', self.grant_access.__name__, self.grant_access, methods=['POST'])
         blueprint.add_url_rule('/<obj_id>/access/<iid>', self.revoke_access.__name__, self.revoke_access, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/owner', self.get_owner.__name__, self.get_owner, methods=['GET'])
@@ -103,7 +102,7 @@ class DORBlueprint:
         descriptor = body['descriptor']
         access_restricted = body['access_restricted']
         content_encrypted = body['content_encrypted']
-        content_key = body['content_key'] if 'content_key' in body else None
+        content_key = body['content_key'] if 'content_key' in body else "no-content-key"
         content_path = files['attachment']
 
         status, result = self._node.dor.add(owner_iid, descriptor, content_path,
@@ -127,24 +126,6 @@ class DORBlueprint:
 
     @request_manager.authentication_required
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def get_content_key(self, obj_id):
-        content_key = self._node.db.get_content_key(obj_id)
-        if content_key:
-            return jsonify(content_key), 200
-        else:
-            return jsonify(f"Data object '{obj_id}' not found or no content key found."), 404
-
-    @request_manager.authentication_required
-    @request_manager.verify_authorisation_by_owner('obj_id')
-    def delete_content_key(self, obj_id):
-        content_key = self._node.db.delete_content_key(obj_id)
-        if content_key:
-            return jsonify(content_key), 200
-        else:
-            return jsonify(f"Data object '{obj_id}' not found or no content key found."), 404
-
-    @request_manager.authentication_required
-    @request_manager.verify_authorisation_by_owner('obj_id')
     def get_content(self, obj_id):
         # get the content hash for the data object
         record = self._node.db.get_object_by_id(obj_id)
@@ -156,13 +137,31 @@ class DORBlueprint:
         return send_from_directory(head, tail, as_attachment=True)
 
     @request_manager.authentication_required
-    def get_access(self, obj_id):
+    def get_access_overview(self, obj_id):
         if not self._node.db.get_object_by_id(obj_id):
             return jsonify(f"{obj_id} not found"), 404
 
         else:
             return jsonify(
                 self._node.db.get_access_list(obj_id)
+            ), 200
+
+    @request_manager.authentication_required
+    def get_access_permission(self, obj_id, iid):
+        if not self._node.db.get_object_by_id(obj_id):
+            return jsonify(f"{obj_id} not found"), 404
+
+        identity = self._node.db.get_identity(iid)
+        if identity is None:
+            return jsonify(f"identity (iid={iid}) not found"), 404
+
+        record = self._node.db.get_permission(obj_id, identity)
+        if record is None:
+            return jsonify(f"no permission found for identity (iid={iid}) and data object (obj_id={obj_id})"), 404
+
+        else:
+            return jsonify(
+                record.permission
             ), 200
 
     @request_manager.authentication_required
@@ -306,17 +305,13 @@ class DORProxy(EndpointProxy):
         r = self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=authorisation_key)
         return r
 
-    def get_content_key(self, obj_id, authorisation_key):
-        r = self.get(f"/{obj_id}/key", with_authorisation_by=authorisation_key)
-        return r['reply']
-
-    def delete_content_key(self, obj_id, authorisation_key):
-        r = self.delete(f"/{obj_id}/key", with_authorisation_by=authorisation_key)
-        return r['reply']
-
-    def get_access_list(self, obj_id):
+    def get_access_overview(self, obj_id):
         r = self.get(f"/{obj_id}/access")
         return r['reply'] if 'reply' in r else []
+
+    def get_access_permission(self, obj_id, identity):
+        r = self.get(f"/{obj_id}/access/{identity.id()}")
+        return r['reply'] if 'reply' in r else None
 
     def grant_access(self, obj_id, authorisation_key, identity, permission=""):
         body = {
@@ -334,13 +329,11 @@ class DORProxy(EndpointProxy):
         r = self.get(f"/{obj_id}/owner")
         return r['reply']
 
-    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key=None):
+    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key="no-content-key"):
         body = {
             'new_owner_iid': new_owner.id(),
+            'content_key': content_key
         }
-
-        if content_key is not None:
-            body['content_key'] = content_key
 
         r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=authorisation_key)
         return r['reply']
