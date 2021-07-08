@@ -116,6 +116,9 @@ def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None)
     if not owner:
         raise AuthorisationFailedError(404, f"Owner for data object '{obj_id}' not found.")
 
+    if not owner.signing_public_key():
+        raise AuthorisationFailedError(404, f"No signing key found for owner of data object '{obj_id}'.")
+
     # check if authentication is available
     form = request_content.form.to_dict()
     if 'authentication' not in form:
@@ -123,7 +126,7 @@ def verify_authorisation_by_owner(request_content, obj_id, node, url, body=None)
 
     # verify the the request using the owner public key
     authorisation = json.loads(form['authorisation'])
-    if not owner.verify_authorisation_token(authorisation['signature'], url, body):
+    if not owner.signing_public_key().verify_authorisation_token(authorisation['signature'], url, body):
         raise AuthorisationFailedError(401, "Authorisation failed.")
 
     return owner
@@ -169,7 +172,7 @@ def create_signed_response(node, url, status_code, reply=None):
     :param reply: the reply, i.e., the content of the response (in JSON)
     :return: a signed response
     """
-    signature = node.identity().sign_authentication_token(url, reply)
+    signature = node.signing_key().sign_authentication_token(url, reply)
     reply_body = {
         'signature': signature
     }
