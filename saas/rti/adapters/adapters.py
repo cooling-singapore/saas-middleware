@@ -132,11 +132,12 @@ class RTIProcessorAdapter(Thread):
                 content_key = None
 
                 if content_encrypted:
-                    enc_output_content_path = os.path.join(output_content_path, '.enc')
-                    content_key = content_enc, content_key = encrypt_file(output_content_path, enc_output_content_path)
-                    content_key = owner.encryption_public_key().encrypt(
-                        content_key, base64_encoded=True).decode('utf-8')
+                    # encrypt the content and set the content key
+                    content_key = encrypt_file(output_content_path,
+                                               protect_key_with=owner.encryption_public_key(),
+                                               delete_source=True)
 
+                # upload the data object to the DOR
                 proxy = DORProxy(self._node.rest.address(), self._node)
                 obj_id, _ = proxy.add_data_object(output_content_path, owner,
                                                   restricted_access, content_encrypted, content_key,
