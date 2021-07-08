@@ -90,9 +90,11 @@ class DataObjectRepositoryService:
             logger.info(f"no identity found for owner '{owner_iid}'. not adding to DOR.")
             return 404, {'owner_iid': owner_iid}
 
-        # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(), access_restricted, content_encrypted,
-                                     content_key)
+        # add data object to database
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(), access_restricted, content_encrypted)
+
+        # grant permission to access this data object to the owner, using the content key (if any)
+        self.node.db.grant_access(obj_id, owner, content_key)
 
         return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
 

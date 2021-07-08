@@ -88,26 +88,26 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
-        permissions = self.dor_proxy.get_access_list(obj_id)
+        permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 0
+        assert len(permissions) == 1
 
         reply = self.dor_proxy.grant_access(obj_id, self.extras[0].signing_key(),
                                             self.extras[2].identity(), 'permission')
         assert reply == 'Authorisation failed.'
 
-        permissions = self.dor_proxy.get_access_list(obj_id)
+        permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 0
+        assert len(permissions) == 1
 
         reply = self.dor_proxy.grant_access(obj_id, self.extras[1].signing_key(),
                                             self.extras[2].identity(), 'permission')
         assert reply is not None
         assert reply[obj_id] == self.extras[2].identity().id()
 
-        permissions = self.dor_proxy.get_access_list(obj_id)
+        permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
+        assert len(permissions) == 2
         assert self.extras[2].identity().id() in permissions
 
         reply = self.dor_proxy.revoke_access(obj_id, self.extras[1].signing_key(),
@@ -115,9 +115,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert reply is not None
         assert reply[obj_id] == self.extras[2].identity().id()
 
-        permissions = self.dor_proxy.get_access_list(obj_id)
+        permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
-        assert len(permissions) == 0
+        assert len(permissions) == 1
 
         descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1].signing_key())
         logger.info(f"descriptor={descriptor}")
@@ -238,7 +238,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"descriptor={descriptor}")
 
         # only the CURRENT owner can get the content key
-        protected_content_key = self.dor_proxy.get_content_key(obj_id, key1s)
+        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[1].identity())
         logger.info(f"protected_content_key={protected_content_key}")
         assert(protected_content_key == protected_content_key1)
 
@@ -251,11 +251,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.transfer_ownership(obj_id, key1s, self.extras[2].identity(), protected_content_key2)
 
         # the old owner cannot get the content key (or content) any longer
-        protected_content_key = self.dor_proxy.get_content_key(obj_id, key1s)
-        assert(protected_content_key == 'Authorisation failed.')
+        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[1].identity())
+        assert(protected_content_key is None)
 
         # only the NEW owner can get the content key
-        protected_content_key = self.dor_proxy.get_content_key(obj_id, key2s)
+        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[2].identity())
         logger.info(f"protected_content_key={protected_content_key}")
         assert(protected_content_key == protected_content_key2)
 

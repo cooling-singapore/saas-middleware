@@ -24,7 +24,7 @@ class DORObject(Base):
     owner_iid = Column(String(64), nullable=False)
     access_restricted = Column(Boolean, nullable=False)
     content_encrypted = Column(Boolean, nullable=False)
-    content_key = Column(Text, nullable=True)
+    # content_key = Column(Text, nullable=True)
 
 
 class DORTag(Base):
@@ -133,8 +133,8 @@ class NodeDBService:
 
     def get_permission(self, obj_id, identity):
         with self._Session() as session:
-            permission = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
-            return permission
+            record = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
+            return record
 
     def grant_access(self, obj_id, identity, permission):
         with self._Session() as session:
@@ -151,20 +151,20 @@ class NodeDBService:
         with self._Session() as session:
             if not identity:
                 session.query(DORPermission).filter_by(obj_id=obj_id).delete()
+                session.commit()
                 return '*'
             else:
                 session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).delete()
                 session.commit()
                 return identity.id()
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid, access_restricted, content_encrypted, content_key):
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid, access_restricted, content_encrypted):
         with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
                 # add a new data object record
                 session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
-                                      access_restricted=access_restricted, content_encrypted=content_encrypted,
-                                      content_key=content_key))
+                                      access_restricted=access_restricted, content_encrypted=content_encrypted))
                 session.commit()
 
     def remove_data_object(self, obj_id):
@@ -206,12 +206,23 @@ class NodeDBService:
 
     def update_ownership(self, obj_id, new_owner, content_key=None):
         with self._Session() as session:
+            # get the record for the data object
             record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if record:
-                # update the record
-                record.owner_iid = new_owner.id()
-                record.content_key = content_key
-                session.commit()
+            if record is None:
+                return False
+
+            # update ownership
+            record.owner_iid = new_owner.id()
+            session.commit()
+
+            # revoke all access to this data object
+            self.revoke_access(obj_id)
+
+            # grant access to the new owner
+            self.grant_access(obj_id, new_owner, content_key)
+
+            return True
+
 
     # END: things that do NOT require synchronisation/propagation
 
