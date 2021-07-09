@@ -1,6 +1,6 @@
 import unittest
 
-from saas.utilities.general_helpers import prompt
+from saas.helpers import prompt
 from tests.base_testcase import TestCaseBase
 
 

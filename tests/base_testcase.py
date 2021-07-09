@@ -7,7 +7,7 @@ from multiprocessing import Lock
 
 from saas.keystore.keystore import Keystore
 from saas.node import Node
-from saas.utilities.general_helpers import get_timestamp_now
+from saas.helpers import get_timestamp_now
 
 logger = logging.getLogger('tests.base_testcase')
 

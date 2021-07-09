@@ -5,7 +5,7 @@ from saas.rest.proxy import EndpointProxy
 
 from flask import Blueprint, jsonify
 
-from saas.utilities.blueprint_helpers import request_manager
+from saas.rest.request_manager import request_manager
 
 logger = logging.getLogger('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
@@ -68,14 +68,12 @@ class NodeDBBlueprint:
         else:
             return jsonify(f"No identity with id {iid} found."), 404
 
-    @request_manager.authentication_required
     @request_manager.verify_request_body(update_identity_body_specification)
     def update_identity(self):
         body = request_manager.get_request_variable('body')
         identity = body['identity']
         signature = body['signature']
 
-        # update the node db
         if self._node.db.update_identity(identity, signature):
             return jsonify(identity), 200
 
@@ -88,20 +86,20 @@ class NodeDBProxy(EndpointProxy):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender)
 
     def get_node(self):
-        r = self.get("/node")
-        return r['reply']
+        code, r = self.get("/node")
+        return r
 
     def get_network(self):
-        r = self.get("/network")
-        return r['reply']
+        code, r = self.get("/network")
+        return r
 
     def get_identities(self):
-        r = self.get("/identity")
-        return r['reply']
+        code, r = self.get("/identity")
+        return r
 
     def get_identity(self, iid):
-        r = self.get(f"/identity/{iid}")
-        return r['reply']
+        code, r = self.get(f"/identity/{iid}")
+        return r
 
     def update_identity(self, identity, signature):
         body = {
@@ -109,5 +107,5 @@ class NodeDBProxy(EndpointProxy):
             'signature': signature
         }
 
-        r = self.post('/identity', body=body)
-        return r['reply'] if 'reply' in r else r
+        code, r = self.post('/identity', body=body)
+        return r

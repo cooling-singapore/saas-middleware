@@ -2,7 +2,7 @@ import logging
 
 from operator import and_
 
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -221,7 +221,6 @@ class NodeDBService:
             self.grant_access(obj_id, new_owner, content_key)
 
             return True
-
 
     # END: things that do NOT require synchronisation/propagation
 

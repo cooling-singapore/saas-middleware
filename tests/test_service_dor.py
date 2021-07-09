@@ -6,7 +6,7 @@ from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
-from saas.utilities.general_helpers import object_to_ordered_list
+from saas.helpers import object_to_ordered_list
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
@@ -147,11 +147,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert owner_info['owner_iid'] == self.extras[1].identity().id()
 
         reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[0].signing_key(), self.extras[2].identity())
-        assert reply == 'Authorisation failed.'
+        assert reply is None
 
         reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[1].signing_key(), self.extras[2].identity())
         logger.info(f"reply={reply}")
-        assert reply == f"Ownership of data object '{obj_id}' transferred to '{self.extras[2].identity().id()}'."
+        assert reply is not None
+        assert obj_id in reply
+        assert reply[obj_id] == self.extras[2].identity().id()
 
         owner_info = self.dor_proxy.get_owner(obj_id)
         logger.info(f"owner_info={owner_info}")
@@ -159,7 +161,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1].signing_key())
         logger.info(f"descriptor={descriptor}")
-        assert descriptor == 'Authorisation failed.'
+        assert descriptor is None
 
         descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[2].signing_key())
         logger.info(f"descriptor={descriptor}")
@@ -192,11 +194,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         destination = os.path.join(self.wd_path, 'test_copy.dat')
         reply = self.dor_proxy.get_content(obj_id, self.extras[0].signing_key(), destination)
-        assert reply == 401
+        assert reply is None
         assert not os.path.exists(destination)
 
         reply = self.dor_proxy.get_content(obj_id, self.extras[1].signing_key(), destination)
-        assert reply == 200
+        assert reply is not None
+        assert reply == destination
         assert os.path.isfile(destination)
 
         descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1].signing_key())
@@ -363,11 +366,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert tags == {}
 
         # update tags for that data object
-        self.dor_proxy.update_tags(obj_id, self.extras[1].signing_key(), {
+        tags = self.dor_proxy.update_tags(obj_id, self.extras[1].signing_key(), {
             'a': '123',
             'b': '567'
         })
-        tags = self.dor_proxy.get_tags(obj_id)
         logger.info(f"tags={tags}")
         assert len(tags) == 2
         assert 'a' in tags
@@ -375,10 +377,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert tags['a'] == '123'
 
         # update tags for that data object
-        self.dor_proxy.update_tags(obj_id, self.extras[1].signing_key(), {
+        tags = self.dor_proxy.update_tags(obj_id, self.extras[1].signing_key(), {
             'a': '567'
         })
-        tags = self.dor_proxy.get_tags(obj_id)
         logger.info(f"tags={tags}")
         assert len(tags) == 2
         assert 'a' in tags
@@ -386,8 +387,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert tags['a'] == '567'
 
         # remove a tag
-        self.dor_proxy.remove_tags(obj_id, self.extras[1].signing_key(), ['b'])
-        tags = self.dor_proxy.get_tags(obj_id)
+        tags = self.dor_proxy.remove_tags(obj_id, self.extras[1].signing_key(), ['b'])
         logger.info(f"tags={tags}")
         assert len(tags) == 1
         assert 'a' in tags

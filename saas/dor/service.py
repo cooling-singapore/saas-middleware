@@ -4,7 +4,7 @@ import subprocess
 import json
 
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.helpers import dump_json_to_file
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logger = logging.getLogger('dor.service')
