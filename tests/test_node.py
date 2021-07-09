@@ -18,9 +18,12 @@ class NodeTestCase(unittest.TestCase, TestCaseBase):
         self.cleanup()
 
     def test_send_simple_email(self):
-        sender = prompt("from:")
-        receiver = prompt("to:")
-        account = prompt("SMTP account:")
+        # sender = prompt("from:")
+        # receiver = prompt("to:")
+        # account = prompt("SMTP account:")
+        sender = "aydt@arch.ethz.ch"
+        receiver = "aydt@arch.ethz.ch"
+        account = "aydth@ethz.ch"
         password = prompt("SMTP password:", hidden=True)
 
         self.node.enable_email_support(('mail.ethz.ch', 587), account, password)
