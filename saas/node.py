@@ -149,7 +149,7 @@ class Node:
 
     def send_email(self, sender, receiver, subject, body):
         try:
-            self._smtp.sendmail(sender, receiver, f"From: {sender}\nSubject: {subject}\n\n{body}")
+            self._smtp.sendmail(sender, receiver, f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{body}")
             return True
 
         except smtplib.SMTPException as e:
