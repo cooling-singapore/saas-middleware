@@ -2,7 +2,7 @@ import logging
 import time
 import cryptography.hazmat.primitives.serialization as serialization
 
-from saas.cryptography.hashing import hash_file_content, hash_json_object, hash_string_object, hash_bytes_object
+from saas.cryptography.hashing import hash_json_object, hash_string_object, hash_bytes_object
 
 logger = logging.getLogger('KeyPair')
 
@@ -112,90 +112,6 @@ class KeyPair:
 
     def decrypt(self, message, base64_encoded=False):
         pass
-
-    # TODO: Reconsider the sign/verify authentication/authorisation methods, i.e., the way they work, how they are
-    #       supposed to be used and what parameters they need.
-    def sign_authentication_token(self, url, body=None, files=None):
-        """
-        Signs an authentication token using the private key. A authentication token includes a series of information
-        that MUST be known to both - sender and receiver of a message - at the time a request is made. The information
-        should very specific to the context and not known in advance (to avoid an attack whereby signatures are created
-        in advance). For this purpose, the authentication token is based on a url, body and (optional) files contents.
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param files: files that may be part of the request (e.g., attachment for a POST request)
-        :return: the signature
-        """
-        file_hashes = []
-        if files:
-            for file in files:
-                file_hashes.append(hash_file_content(file))
-            file_hashes.sort()
-
-        # logger.info("sign_authentication_token\turl={}".format(url))
-        # logger.info("sign_authentication_token\tbody={}".format(body))
-        # logger.info("sign_authentication_token\tfiles={}".format(files))
-        #
-        # logger.info("sign_authentication_token\tH(url)={}".format(hash_string_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        # logger.info("sign_authentication_token\tH(public_key)={}".format(hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(self.public_as_string()).hex()
-
-        if body:
-            # logger.info("sign_authentication_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        for file_hash in file_hashes:
-            # logger.info("sign_authentication_token\tH(file_hash)={}".format(file_hash.hex()))
-            token += file_hash.hex()
-
-        token = hash_string_object(token)
-        # logger.info("sign_authentication_token\ttoken={}".format(token.hex()))
-
-        return self.sign(token)
-
-    def verify_authentication_token(self, signature, url, body=None, files=None):
-        """
-        Verifies the signature of an authentication token. This method should be called by the receiver of a request.
-        The information needed to create the authentication token should be known to the receiver of the request at
-        the time the request is made in order to recreate the exact same token that has been used by the sender.
-        :param signature: the signature that is to be verified
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param files: files that may be part of the request (e.g., attachment for a POST request)
-        :return: True of False depending on whether the signature is valid
-        """
-        file_hashes = []
-        if files:
-            for label in files:
-                file_hashes.append(hash_file_content(files[label]))
-            file_hashes.sort()
-
-        # logger.info("verify_authentication_token\turl={}".format(url))
-        # logger.info("verify_authentication_token\tbody={}".format(body))
-        # logger.info("verify_authentication_token\tfiles={}".format(files))
-        #
-        # logger.info("verify_authentication_token\tH(url)={}".format(hash_string_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        # logger.info("verify_authentication_token\tH(public_key)={}".format(hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(self.public_as_string()).hex()
-
-        if body:
-            # logger.info("verify_authentication_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        for file_hash in file_hashes:
-            # logger.info("verify_authentication_token\tH(file_hash)={}".format(file_hash.hex()))
-            token += file_hash.hex()
-
-        token = hash_string_object(token)
-        # logger.info("verify_authentication_token\ttoken={}".format(token.hex()))
-
-        return self.verify(token, signature)
 
     def sign_authorisation_token(self, url, body=None, precision=5):
         """

@@ -6,7 +6,6 @@ import time
 from threading import Lock
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.protocol import KeystoreP2PProtocol
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.dor.service import DataObjectRepositoryService
@@ -17,7 +16,7 @@ from saas.nodedb.service import NodeDBService
 import saas.dor.blueprint as dor_blueprint
 import saas.rti.blueprint as rti_blueprint
 import saas.nodedb.blueprint as nodedb_blueprint
-from saas.utilities.general_helpers import get_timestamp_now
+from saas.helpers import get_timestamp_now
 
 logger = logging.getLogger('Node')
 
@@ -108,9 +107,9 @@ class Node:
         logger.info("starting DOR service.")
         self.rti = RuntimeInfrastructureService(self)
 
-    def start_keystore_service(self):
-        logger.info("starting keystore service.")
-        self.p2p.add(KeystoreP2PProtocol(self, self._keystore))
+    # def start_keystore_service(self):
+    #     logger.info("starting keystore service.")
+    #     self.p2p.add(KeystoreP2PProtocol(self, self._keystore))
 
     def update_identity(self, s_key=None, e_key=None, name=None, email=None, propagate=True):
         with self._mutex:

@@ -2,7 +2,6 @@ import unittest
 import logging
 import time
 
-from saas.cryptography.eckeypair import ECKeyPair
 from saas.keystore.keystore import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase

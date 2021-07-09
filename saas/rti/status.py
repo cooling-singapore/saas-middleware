@@ -1,7 +1,7 @@
 import logging
 
 from enum import Enum
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.helpers import dump_json_to_file
 
 logger = logging.getLogger('rti.status')
 

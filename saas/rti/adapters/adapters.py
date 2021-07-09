@@ -11,7 +11,7 @@ from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rti.status import State
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, generate_random_string
+from saas.helpers import dump_json_to_file, load_json_from_file, generate_random_string
 
 logger = logging.getLogger('rti.adapters')
 

@@ -14,7 +14,7 @@ from saas.rti.status import StatusLogger, State
 
 from jsonschema import validate, ValidationError
 
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
+from saas.helpers import dump_json_to_file, load_json_from_file
 
 logger = logging.getLogger('RTI')
 

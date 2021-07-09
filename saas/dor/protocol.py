@@ -4,7 +4,7 @@ import json
 
 from saas.cryptography.messenger import SecureMessenger
 from saas.p2p.protocol import P2PProtocol
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.helpers import dump_json_to_file
 
 logger = logging.getLogger('dor.protocol')
 
