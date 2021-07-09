@@ -1,5 +1,7 @@
 import os
 import logging
+import smtplib
+import ssl
 import time
 from threading import Lock
 
@@ -29,6 +31,7 @@ class Node:
         self._mutex = Lock()
         self._datastore_path = datastore_path
         self._keystore = keystore
+        self._smtp = None
         self.db = None
         self.p2p = None
         self.rest = None
@@ -128,6 +131,31 @@ class Node:
                                     f"{p2p_address[0]}:{p2p_address[1]}",
                                     f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
                                     propagate=propagate)
+
+    def enable_email_support(self, server_address, account, password):
+        context = ssl.create_default_context()
+
+        try:
+            self._smtp = smtplib.SMTP(server_address[0], server_address[1])
+            self._smtp.ehlo()
+            self._smtp.starttls(context=context)
+            self._smtp.ehlo()
+            self._smtp.login(account, password)
+            logger.error(f"SMTP enabled: {server_address} {account}")
+            return True
+
+        except smtplib.SMTPException as e:
+            logger.error(f"failed to enable SMTP: {e}")
+            return False
+
+    def send_email(self, sender, receiver, subject, body):
+        try:
+            self._smtp.sendmail(sender, receiver, f"From: {sender}\nSubject: {subject}\n\n{body}")
+            return True
+
+        except smtplib.SMTPException as e:
+            logger.error(f"failed to send email: {e}")
+            return False
 
     @classmethod
     def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None, enable_dor=False, enable_rti=False):

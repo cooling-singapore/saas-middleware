@@ -42,6 +42,7 @@ class RuntimeInfrastructureService:
         self._node = node
         self._deployed_processors = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
+        self._content_keys = {}
 
         # initialise directories
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
@@ -177,3 +178,11 @@ class RuntimeInfrastructureService:
                 'job_descriptor': descriptor,
                 'status': status
             }
+
+    def put_permission(self, req_id, content_key):
+        with self._mutex:
+            self._content_keys[req_id] = content_key
+
+    def pop_permission(self, req_id):
+        with self._mutex:
+            return self._content_keys.pop(req_id, None)

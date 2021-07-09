@@ -1,15 +1,17 @@
 import importlib
+import json
 import logging
 import os
 import subprocess
 import time
 from threading import Lock, Thread
 
-from saas.cryptography.helpers import encrypt_file
+from saas.cryptography.helpers import encrypt_file, decrypt_file
+from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rti.status import State
-from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file
+from saas.utilities.general_helpers import dump_json_to_file, load_json_from_file, generate_random_string
 
 logger = logging.getLogger('rti.adapters')
 
@@ -129,13 +131,8 @@ class RTIProcessorAdapter(Thread):
             if item['name'] == output_name:
                 restricted_access = item['restricted_access']
                 content_encrypted = item['content_encrypted']
-                content_key = None
-
-                if content_encrypted:
-                    # encrypt the content and set the content key
-                    content_key = encrypt_file(output_content_path,
-                                               protect_key_with=owner.encryption_public_key(),
-                                               delete_source=True)
+                content_key = encrypt_file(output_content_path, protect_key_with=owner.encryption_public_key(),
+                                           delete_source=True) if content_encrypted else None
 
                 # upload the data object to the DOR
                 proxy = DORProxy(self._node.rest.address(), self._node)
@@ -180,7 +177,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove('input_status')
         return True
 
-    def _fetch_reference_input_data_objects(self, task_descriptor, working_directory, status):
+    def _fetch_reference_input_data_objects(self, ephemeral_key, pending_list, task_descriptor, working_directory, status):
         status.update('input_status', f"fetching data objects")
 
         # get the user identity
@@ -253,15 +250,104 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                                          destination_descriptor_path, destination_content_path,
                                          user_iid=user.id(), user_signature=item['user_signature'])
 
-            # if we the result is None, something went wrong...
+            # if the result is None, something went wrong...
             if result['code'] != 200:
                 error = f"attempt to fetch data object {obj_id} failed. reason: {result['reason']}"
                 logger.error(error)
                 status.update('error', error)
                 return False
 
+            # is the data object content encrypted? if yes, then we need to request the content key
+            if result['record']['content_encrypted']:
+                # get the owner identity
+                owner = self._node.db.get_identity(result['record']['owner_iid'])
+                if owner is None:
+                    error = f"could not find owner identity for data object: " \
+                            f"iid={result['record']['owner_iid']} " \
+                            f"obj_id={obj_id}"
+                    logger.error(error)
+                    status.update('error', error)
+                    return False
+
+                # create the request content and encrypt it using the owners key
+                req_id = generate_random_string(16)
+                node_address = self._node.rest.address()
+                request = json.dumps({
+                    'req_id': req_id,
+                    'obj_id': obj_id,
+                    'ephemeral_public_key': ephemeral_key.public_as_string(),
+                    'user_name': user.name(),
+                    'user_email': user.email(),
+                    'node_id': self._node.identity().id(),
+                    'node_address': node_address
+                })
+                request = owner.encryption_public_key().encrypt(
+                    request.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+                # send an email to the owner
+                if not self._send_content_key_request(owner, obj_id, user, node_address, request):
+                    error = f"sending content key request failed."
+                    logger.error(error)
+                    status.update('error', error)
+                    return False
+
+                pending_list.append({
+                    'req_id': req_id,
+                    'obj_id': obj_id,
+                    'path': destination_content_path
+                })
+
         status.remove('input_status')
         return True
+
+    def _decrypt_reference_input_data_objects(self, ephemeral_key, pending_list, status):
+        # wait for pending content keys (if any)
+        status.update('input_status', f"decrypt input data objects")
+        while len(pending_list) > 0:
+            need_sleep = True
+            for item in pending_list:
+                # have we received the permission for this request?
+                permission = self._node.rti.pop_permission(item['req_id'])
+                if permission is not None:
+                    need_sleep = False
+
+                    # decrypt the content key
+                    content_key = ephemeral_key.decrypt(permission.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+                    # decrypt the data object using the
+                    decrypt_file(item['path'], content_key)
+
+                    pending_list.remove(item)
+                    break
+
+            if need_sleep:
+                time.sleep(2)
+
+        status.remove('input_status')
+        return True
+
+    def _send_content_key_request(self, owner, obj_id, user, address, request):
+        subject = f"Request for Content Key"
+
+        body = f"Dear {owner.name()},\n\n" \
+               f"You have a pending request for the content key of one of your data objects. This request has been " \
+               f"auto-generated by an RTI instance on behalf of a user who wants to process the contents of your data " \
+               f"object.\n" \
+               f"- Data Object Id: {obj_id}\n" \
+               f"- Requesting User: {user.name()} <{user.email()}>\n" \
+               f"- RTI Address: {address}\n\n"
+
+        body += f"Use the SaaS CLI to accept or reject this request. Carefully review and follow the instructions" \
+                f"provided by the SaaS CLI:\n" \
+                f"saas_cli request\n\n"
+
+        body += f"Request Content (when asked by the CLI, simply copy and paste the following):\n" \
+                f"{request}\n\n" \
+
+        body += f"Thank you!"
+
+        return self._node.send_email(user.email(), owner.email(), subject, body)
+
 
     def _verify_input_data_objects_types_and_formats(self, task_descriptor, working_directory, status):
         for item in task_descriptor['input']:
@@ -296,11 +382,17 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         return True
 
     def pre_execute(self, task_descriptor, working_directory, status):
-        # first, store 'value' input data objects to disk
+        # store 'value' input data objects to disk
         self._store_value_input_data_objects(task_descriptor, working_directory, status)
 
-        # second, lookup 'reference' input data objects
-        if not self._fetch_reference_input_data_objects(task_descriptor, working_directory, status):
+        # fetch 'reference' input data objects
+        ephemeral_key = RSAKeyPair.create_new()
+        pending_list = []
+        if not self._fetch_reference_input_data_objects(ephemeral_key, pending_list,
+                                                        task_descriptor, working_directory, status):
+            return False
+
+        if not self._decrypt_reference_input_data_objects(ephemeral_key, pending_list, status):
             return False
 
         # third, verify that data types of input data objects match

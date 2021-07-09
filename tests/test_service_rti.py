@@ -5,14 +5,18 @@ import shutil
 import tempfile
 import time
 import unittest
+from threading import Thread
+
 import pip
 
+from saas.cryptography.helpers import encrypt_file
+from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.adapters.adapters import import_with_auto_install
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now
+from saas.utilities.general_helpers import dump_json_to_file, get_timestamp_now, prompt
 from tests.base_testcase import TestCaseBase
 from tools.create_template import create_folder_structure
 
@@ -74,6 +78,22 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
+    def prompt_for_request(self, owner_k, content_key):
+        request = prompt("Copy and paste the request received by email")
+
+        # we should be able to decrypt it
+        request = owner_k.encryption_key().decrypt(request.encode('utf-8'), base64_encoded=True).decode('utf-8')
+        request = json.loads(request)
+        print(request)
+
+        # get the ephemeral key and encrypt the content key with the ephemeral key
+        key = RSAKeyPair.from_public_key_string(request['ephemeral_public_key'])
+        content_key = owner_k.encryption_key().decrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+        content_key = key.encrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+        # submit the content key
+        self.rti_proxy.put_permission(request['req_id'], content_key)
+
     def add_test_processor_to_dor(self):
         git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
         dump_json_to_file({
@@ -130,6 +150,22 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         return test_obj_id, obj_id
 
+    def add_encrypted_dummy_data_object(self, owner):
+        test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
+
+        data_type = 'JSONObject'
+        data_format = 'json'
+        created_t = 21342342
+        created_by = 'heiko'
+
+        content_key = encrypt_file(test_file_path, protect_key_with=owner.encryption_public_key(), delete_source=True)
+
+        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, owner,
+                                                   True, True, content_key,
+                                                   data_type, data_format, created_by, created_t)
+
+        return obj_id, content_key
+
     def submit_job_and_wait(self, proc_id, a_obj_id, user, generate_valid_signature):
         rti_node_info = self.db_proxy.get_node()
         if generate_valid_signature:
@@ -174,13 +210,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        result = self.wait_for_job(proc_id, job_id)
+        result = self.wait_for_job(job_id)
         return job_id, result
 
-    def wait_for_job(self, proc_id, job_id):
+    def wait_for_job(self, job_id):
         while True:
             time.sleep(5)
-            descriptor, status = self.rti_proxy.get_job_info(proc_id, job_id)
+            descriptor, status = self.rti_proxy.get_job_info(job_id)
             if descriptor and status:
                 logger.info(f"descriptor={descriptor}")
                 logger.info(f"status={status}")
@@ -280,7 +316,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        self.wait_for_job(proc_id, job_id)
+        self.wait_for_job(job_id)
 
         jobs = self.rti_proxy.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
@@ -362,7 +398,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        result = self.wait_for_job(proc_id, job_id)
+        result = self.wait_for_job(job_id)
         assert(result is True)
 
         jobs = self.rti_proxy.get_jobs(proc_id)
@@ -427,6 +463,66 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # valid signature
         job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, user, True)
+        assert(result is True)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
+        assert(os.path.isfile(output_path))
+
+        self.rti_proxy.undeploy(proc_id)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+    def test_processor_execution_reference_encrypted(self):
+        # email = prompt("email address:")
+        email = "aydt@arch.ethz.ch"
+        keystores = self.create_keystores(2)
+
+        # create an owner identity
+        owner_signature = keystores[0].update(name="Foo Bar", email=email)
+        owner = keystores[0].identity()
+        self.db_proxy.update_identity(owner, owner_signature)
+
+        # create a user identity
+        user_signature = keystores[1].update(name="John Doe", email=email)
+        user = keystores[1].identity()
+        self.db_proxy.update_identity(user, user_signature)
+
+        # enable SMTP
+        # account = prompt("SMTP account:")
+        account = "aydth@ethz.ch"
+        password = prompt("SMTP password:", hidden=True)
+        self.node.enable_email_support(('mail.ethz.ch', 587), account, password)
+
+        # add and deploy test processor
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+        descriptor = self.rti_proxy.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        # add data object
+        a_obj_id, a_content_key = self.add_encrypted_dummy_data_object(owner)
+        logger.info(f"a_obj_id={a_obj_id}")
+
+        # grant access
+        access = self.dor_proxy.grant_access(a_obj_id, keystores[0].signing_key(), user, permission=a_content_key)
+        assert(access is not None)
+        assert(access[a_obj_id] == user.id())
+
+        # start a separate thread to
+        thread = Thread(target=self.prompt_for_request, args=[keystores[0], a_content_key])
+        thread.start()
+
+        # valid signature
+        job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, keystores[1], True)
         assert(result is True)
 
         jobs = self.rti_proxy.get_jobs(proc_id)

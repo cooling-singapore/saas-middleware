@@ -153,19 +153,25 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             descriptor = json.load(f)
 
         # we should have the data object content in our local DOR
-        c_hash = obj_record.c_hash
-        content_path = self.node.dor.obj_content_path(c_hash)
+        content_path = self.node.dor.obj_content_path(obj_record.c_hash)
         if not os.path.isfile(content_path):
-            messenger.reply_ok({'code': 404, 'reason': f"content (c_hash={c_hash}) for data object (obj_id={obj_id}) "
-                                                       f"not found."})
+            messenger.reply_ok({'code': 404, 'reason': f"content (c_hash={obj_record.c_hash}) for "
+                                                       f"data object (obj_id={obj_id}) not found."})
             messenger.close()
             return
 
         # if all is good, send a reply followed by the data object content as attachment
         messenger.reply_ok({
             'code': 200,
-            'c_hash': c_hash,
-            'descriptor': descriptor
+            'descriptor': descriptor,
+            'record': {
+                'obj_id': obj_record.obj_id,
+                'c_hash': obj_record.c_hash,
+                'd_hash': obj_record.d_hash,
+                'owner_iid': obj_record.owner_iid,
+                'access_restricted': obj_record.access_restricted,
+                'content_encrypted': obj_record.content_encrypted
+            }
         })
         messenger.send_attachment(content_path)
         messenger.close()
