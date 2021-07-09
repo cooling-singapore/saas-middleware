@@ -22,7 +22,7 @@ def encrypt_file(source, destination=None, key=None, protect_key_with=None, dele
         key = Fernet.generate_key()
 
     # determine the (temporary) location
-    location = destination if destination else os.path.join(source, '.enc')
+    location = destination if destination else f"{source}.enc"
 
     # create the cipher and encrypt the source file
     cipher = Fernet(key)
@@ -55,9 +55,13 @@ def encrypt_file(source, destination=None, key=None, protect_key_with=None, dele
     return key
 
 
-def decrypt_file(source, destination, key):
+def decrypt_file(source, key, destination=None, delete_source=False):
     cipher = Fernet(key)
-    with open(destination, 'wb') as f_out:
+
+    # determine the (temporary) location
+    location = destination if destination else f"{source}.dec"
+
+    with open(location, 'wb') as f_out:
         with open(source, 'rb') as f_in:
             while True:
                 length_bytes = f_in.read(4)
@@ -69,3 +73,12 @@ def decrypt_file(source, destination, key):
                 chunk = cipher.decrypt(chunk)
 
                 f_out.write(chunk)
+
+    # replace the source file?
+    if destination is None:
+        os.remove(source)
+        shutil.move(location, source)
+
+    # delete the source file (if flag is set)
+    elif delete_source:
+        os.remove(source)

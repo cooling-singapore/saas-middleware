@@ -11,6 +11,10 @@ from saas.utilities.general_helpers import all_in_dict, load_json_from_file
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
+put_permission_body_schema = {
+    'permission': {'type': 'string'}
+}
+
 
 class RTIBlueprint:
     def __init__(self, node):
@@ -24,7 +28,8 @@ class RTIBlueprint:
         blueprint.add_url_rule('/<proc_id>/descriptor', self.get_descriptor.__name__, self.get_descriptor, methods=['GET'])
         blueprint.add_url_rule('/<proc_id>/jobs', self.submit_job.__name__, self.submit_job, methods=['POST'])
         blueprint.add_url_rule('/<proc_id>/jobs', self.get_jobs.__name__, self.get_jobs, methods=['GET'])
-        blueprint.add_url_rule('/<proc_id>/jobs/<job_id>', self.get_job_info.__name__, self.get_job_info, methods=['GET'])
+        blueprint.add_url_rule('/job/<job_id>', self.get_job_info.__name__, self.get_job_info, methods=['GET'])
+        blueprint.add_url_rule('/permission/<req_id>', self.put_permission.__name__, self.put_permission, methods=['POST'])
         return blueprint
 
     @request_manager.authentication_required
@@ -83,7 +88,7 @@ class RTIBlueprint:
             return jsonify(f"Processor {proc_id} not deployed."), 404
 
     @request_manager.authentication_required
-    def get_job_info(self, proc_id, job_id):
+    def get_job_info(self, job_id):
         job_info = self._node.rti.get_job_info(job_id)
         if job_info:
             return jsonify({
@@ -92,6 +97,14 @@ class RTIBlueprint:
             }), 200
         else:
             return jsonify(f"No job with id {job_id}."), 404
+
+    @request_manager.authentication_required
+    @request_manager.verify_request_body(put_permission_body_schema)
+    def put_permission(self, req_id):
+        body = request_manager.get_request_variable('body')
+        self._node.rti.put_permission(req_id, body['permission'])
+
+        return jsonify("Ok."), 201
 
 
 class RTIProxy(EndpointProxy):
@@ -129,9 +142,17 @@ class RTIProxy(EndpointProxy):
         r = self.get(f"/{proc_id}/jobs")
         return r['reply']['jobs'] if 'jobs' in r['reply'] else None
 
-    def get_job_info(self, proc_id, job_id):
-        r = self.get(f"/{proc_id}/jobs/{job_id}")
+    def get_job_info(self, job_id):
+        r = self.get(f"/job/{job_id}")
         if not all_in_dict(['job_descriptor', 'status'], r['reply']):
             return None
 
         return r['reply']['job_descriptor'], r['reply']['status']
+
+    def put_permission(self, req_id, permission):
+        body = {
+            'permission': permission,
+        }
+
+        r = self.post(f"/permission/{req_id}", body=body)
+        return r['reply']
