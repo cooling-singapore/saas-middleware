@@ -24,6 +24,9 @@ class ECKeyPair(KeyPair):
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
 
+    def info(self):
+        return f"ECC/{self.private_key.curve.name}/{self.private_key.curve.key_size}/{self.iid}"
+
     @classmethod
     def create_new(cls):
         """

@@ -20,6 +20,9 @@ class KeyPair:
         self.iid = hash_bytes_object(self.public_as_bytes()).hex()
         self.short_iid = f"{self.iid[:4]}...{self.iid[-4:]}"
 
+    def info(self):
+        pass
+
     def private_as_bytes(self, password=None):
         """
         Serialises the private key and returns it as byte array (or None in case this KeyPair instance does not
