@@ -62,7 +62,7 @@ class DataObjectRepositoryService:
             # or not. question is whether this matters or not. the important point is that after calling
             # 'add' the data object is in the DOR.
             logger.info(f"data object '{obj_id}' already exists. not adding to DOR.")
-            return 200, {'data_object_id': obj_id}
+            return 200, {'data_object_id': obj_id, 'descriptor': descriptor}
 
         # check if there are already data objects with the same content
         if self.node.db.get_objects_by_content_hash(c_hash):

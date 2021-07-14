@@ -1,7 +1,5 @@
 import logging
 
-from operator import and_
-
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
@@ -98,25 +96,32 @@ class NodeDBService:
                 result[tag.key] = tag.value
             return result
 
-    def find_data_objects(self, key_criterion=None, value_criterion=None):
-        # if no criterion is specified, then simply return an empty list.
-        # another option could be to return *all* data object ids but that's a potential issue with size and
-        # confidentiality
-        result = []
-        if key_criterion or value_criterion:
-            with self._Session() as session:
-                if key_criterion and value_criterion:
-                    arg = and_(DORTag.key.like(key_criterion), DORTag.value.like(value_criterion))
-                elif key_criterion:
-                    arg = DORTag.key.like(key_criterion)
-                else:
-                    arg = DORTag.value.like(value_criterion)
+    def find_data_objects(self, patterns, owner_iid=None):
+        with self._Session() as session:
+            # first, get all the potential object records
+            if owner_iid is not None:
+                object_records = session.query(DORObject).filter_by(owner_iid=owner_iid).all()
+            else:
+                object_records = session.query(DORObject).all()
 
-                tags = session.query(DORTag).filter(arg).all()
-                for tag in tags:
-                    result.append(tag.obj_id)
+            # second, find all data objects that have tags which contain any of the patterns
+            result = []
+            for obj_record in object_records:
+                tag_records = session.query(DORTag).filter_by(obj_id=obj_record.obj_id).all()
+                for tag_record in tag_records:
+                    # does the key or the value contain any of the patterns?
+                    hit = False
+                    for pattern in patterns:
+                        if pattern in tag_record.key or pattern in tag_record.value:
+                            result.append(obj_record.obj_id)
+                            hit = True
+                            break
 
-        return result
+                    # if we already had a hit, no need to continue with this data object
+                    if hit:
+                        break
+
+            return result
 
     def get_access_list(self, obj_id):
         with self._Session() as session:
