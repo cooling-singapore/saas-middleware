@@ -82,8 +82,8 @@ class NodeDBBlueprint:
 
 
 class NodeDBProxy(EndpointProxy):
-    def __init__(self, remote_address, sender):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender)
+    def __init__(self, remote_address):
+        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_node(self):
         code, r = self.get("/node")
