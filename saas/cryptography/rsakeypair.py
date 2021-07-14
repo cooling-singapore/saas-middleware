@@ -26,6 +26,9 @@ class RSAKeyPair(KeyPair):
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
 
+    def info(self):
+        return f"RSA/{self.private_key.key_size}/{self.iid}"
+
     @classmethod
     def create_new(cls, key_size=4096):
         private_key = rsa.generate_private_key(
