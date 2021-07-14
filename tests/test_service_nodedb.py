@@ -24,7 +24,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.proxy = NodeDBProxy(self.node.rest.address(), self.node)
+        self.proxy = NodeDBProxy(self.node.rest.address())
 
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(2)
@@ -88,47 +88,6 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         self.node.db.remove_tags('aaa', ['k0', 'k1'])
         tags = self.node.db.get_tags('aaa')
         assert(len(tags) == 0)
-
-    def test_find_data_objects(self):
-        self.node.db.update_tags('aaa', [
-            {'key': 'k0', 'value': 'v00'},
-            {'key': 'k1', 'value': 'v1'}
-        ])
-
-        self.node.db.update_tags('bbb', [
-            {'key': 'k0', 'value': 'v01'},
-            {'key': 'k2', 'value': 'v2'}
-        ])
-
-        obj_ids = self.node.db.find_data_objects('k0')
-        assert(len(obj_ids) == 2)
-        assert('aaa' in obj_ids)
-        assert('bbb' in obj_ids)
-
-        obj_ids = self.node.db.find_data_objects('k1')
-        assert(len(obj_ids) == 1)
-        assert('aaa' in obj_ids)
-
-        obj_ids = self.node.db.find_data_objects('k2')
-        assert(len(obj_ids) == 1)
-        assert('bbb' in obj_ids)
-
-        obj_ids = self.node.db.find_data_objects('k3')
-        assert(len(obj_ids) == 0)
-
-        obj_ids = self.node.db.find_data_objects('k0', 'v00')
-        assert(len(obj_ids) == 1)
-        assert('aaa' in obj_ids)
-
-        obj_ids = self.node.db.find_data_objects('k0', 'v02')
-        assert(len(obj_ids) == 0)
-
-        obj_ids = self.node.db.find_data_objects('k0', 'v0%')
-        assert(len(obj_ids) == 2)
-
-        obj_ids = self.node.db.find_data_objects(value_criterion='v1')
-        assert(len(obj_ids) == 1)
-        assert('aaa' in obj_ids)
 
     def test_grant_revoke_permissions(self):
         result = self.node.db.get_access_list('aaa')
@@ -269,9 +228,9 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         iid0 = nodes[0].identity().id()
 
-        proxy0 = NodeDBProxy(nodes[0].rest.address(), nodes[0])
-        proxy1 = NodeDBProxy(nodes[1].rest.address(), nodes[0])
-        proxy2 = NodeDBProxy(nodes[2].rest.address(), nodes[0])
+        proxy0 = NodeDBProxy(nodes[0].rest.address())
+        proxy1 = NodeDBProxy(nodes[1].rest.address())
+        proxy2 = NodeDBProxy(nodes[2].rest.address())
 
         result = proxy0.get_node()
         print(result)
