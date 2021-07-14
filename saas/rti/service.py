@@ -4,10 +4,11 @@ import subprocess
 import json
 
 from threading import Lock
+from time import sleep
 
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.rti.adapters.adapters import RTIProcessorAdapter
+from saas.rti.adapters.adapters import RTIProcessorAdapter, ProcessorState
 from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.status import StatusLogger, State
@@ -65,11 +66,11 @@ class RuntimeInfrastructureService:
 
             # is the processor already deployed?
             if proc_id in self._deployed_processors:
-                return load_json_from_file(descriptor_path)
+                return self._deployed_processors[proc_id].descriptor()
 
             # does any node in the network have the processor data object?
             for network_node in self._node.db.get_network():
-                proxy = DORProxy(network_node.rest_address.split(":"), self._node)
+                proxy = DORProxy(network_node.rest_address.split(":"))
 
                 descriptor = proxy.get_descriptor(proc_id)
                 if descriptor:
@@ -80,15 +81,20 @@ class RuntimeInfrastructureService:
                     # create an RTI adapter instance
                     if deployment == 'native':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTINativeProcessorAdapter(proc_id, descriptor, content_path, self._node)
+                            RTINativeProcessorAdapter(proc_id, content_path, self._node)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTIDockerProcessorAdapter(proc_id, descriptor, content_path, self._node)
+                            RTIDockerProcessorAdapter(proc_id, content_path, self._node)
 
-                    self._deployed_processors[proc_id].start()
+                    # start the processor and wait until it is deployed
+                    processor = self._deployed_processors[proc_id]
+                    processor.start()
+                    while processor.state() == ProcessorState.UNINITIALISED or \
+                            processor.state() == ProcessorState.STARTING:
+                        sleep(0.5)
 
-                    return descriptor
+                    return self._deployed_processors[proc_id].descriptor()
 
             return None
 
@@ -116,6 +122,10 @@ class RuntimeInfrastructureService:
     def get_deployed(self):
         with self._mutex:
             return [*self._deployed_processors]
+
+    def get_descriptor(self, proc_id):
+        with self._mutex:
+            return self._deployed_processors[proc_id].descriptor() if proc_id in self._deployed_processors else None
 
     def submit(self, proc_id, descriptor):
         with self._mutex:
