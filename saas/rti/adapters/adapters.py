@@ -1,9 +1,8 @@
-import importlib
 import json
 import logging
 import os
-import subprocess
 import time
+from enum import Enum
 from threading import Lock, Thread
 
 from saas.cryptography.helpers import encrypt_file, decrypt_file
@@ -16,16 +15,13 @@ from saas.helpers import dump_json_to_file, load_json_from_file, generate_random
 logger = logging.getLogger('rti.adapters')
 
 
-def import_with_auto_install(package):
-    try:
-        return importlib.import_module(package)
-
-    except ImportError:
-        # pip.main doesn't seem to work on a GCE instance, call python3 directly instead
-        # pip.main(['install', package])
-        subprocess.check_output(['python3', '-m', 'pip', 'install', package])
-
-    return importlib.import_module(package)
+class ProcessorState(Enum):
+    UNINITIALISED = 'uninitialised'
+    STARTING = 'starting'
+    WAITING = 'waiting'
+    BUSY = 'busy'
+    STOPPING = 'stopping'
+    STOPPED = 'stopped'
 
 
 class RTIProcessorAdapter(Thread):
@@ -36,7 +32,13 @@ class RTIProcessorAdapter(Thread):
         self._proc_id = proc_id
         self._mutex = Lock()
         self._pending = []
-        self._is_active = True
+        self._state = ProcessorState.UNINITIALISED
+
+    def state(self):
+        return self._state
+
+    def descriptor(self):
+        return None
 
     def startup(self):
         return True
@@ -55,7 +57,7 @@ class RTIProcessorAdapter(Thread):
 
     def add(self, job_descriptor, status):
         with self._mutex:
-            if self._is_active:
+            if self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
                 self._pending.append((job_descriptor, status))
                 return True
             else:
@@ -67,13 +69,13 @@ class RTIProcessorAdapter(Thread):
 
     def stop(self):
         logger.info(f"adapter {self._proc_id} received stop signal.")
-        self._is_active = False
+        self._state = ProcessorState.STOPPING
 
     def _wait_for_pending_job(self):
         while True:
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
-                if not self._is_active:
+                if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
                     return None
 
                 # if there is a job, return it
@@ -85,15 +87,19 @@ class RTIProcessorAdapter(Thread):
 
     def run(self):
         logger.info(f"adapter {self._proc_id} starting up...")
+        self._state = ProcessorState.STARTING
         self.startup()
 
         logger.info(f"adapter {self._proc_id} started up.")
-        while self._is_active:
+        while self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
             # wait for a pending job (or for adapter to become inactive)
+            self._state = ProcessorState.WAITING
             result = self._wait_for_pending_job()
             if not result:
                 break
 
+            # process a job
+            self._state = ProcessorState.BUSY
             job_descriptor = result[0]
             status = result[1]
 
@@ -117,9 +123,11 @@ class RTIProcessorAdapter(Thread):
             status.update_state(State.SUCCESSFUL)
 
         logger.info(f"adapter {self._proc_id} shutting down...")
+        self._state = ProcessorState.STOPPING
         self.shutdown()
 
         logger.info(f"adapter {self._proc_id} shut down.")
+        self._state = ProcessorState.STOPPED
 
     def push_output_data_object(self, output_descriptor, output_content_path, owner, task_descriptor):
         output_name = output_descriptor['name']
@@ -135,11 +143,14 @@ class RTIProcessorAdapter(Thread):
                                            delete_source=True) if content_encrypted else None
 
                 # upload the data object to the DOR
-                proxy = DORProxy(self._node.rest.address(), self._node)
+                proxy = DORProxy(self._node.rest.address())
                 obj_id, _ = proxy.add_data_object(output_content_path, owner,
                                                   restricted_access, content_encrypted, content_key,
                                                   data_type, data_format, created_by,
-                                                  recipe=proxy.create_recipe(task_descriptor, output_name))
+                                                  recipe={
+                                                      'task_descriptor': task_descriptor,
+                                                      'output_name': output_name
+                                                  })
 
                 return obj_id
 
@@ -177,7 +188,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove('input_status')
         return True
 
-    def _fetch_reference_input_data_objects(self, ephemeral_key, pending_list, task_descriptor, working_directory, status):
+    def _fetch_reference_input_data_objects(self, ephemeral_key, pending_list, task_descriptor, working_directory,
+                                            status):
         status.update('input_status', f"fetching data objects")
 
         # get the user identity
@@ -273,6 +285,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 req_id = generate_random_string(16)
                 node_address = self._node.rest.address()
                 request = json.dumps({
+                    'type': 'request_content_key',
                     'req_id': req_id,
                     'obj_id': obj_id,
                     'ephemeral_public_key': ephemeral_key.public_as_string(),
@@ -331,8 +344,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
         body = f"Dear {owner.name()},\n\n" \
                f"You have a pending request for the content key of one of your data objects. This request has been " \
-               f"auto-generated by an RTI instance on behalf of a user who wants to process the contents of your data " \
-               f"object.\n" \
+               f"auto-generated by an RTI instance on behalf of a user who wants to process the contents of your " \
+               f"data object.\n" \
                f"- Data Object Id: {obj_id}\n" \
                f"- Requesting User: {user.name()} <{user.email()}>\n" \
                f"- RTI Address: {address}\n\n"
@@ -347,7 +360,6 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         body += f"Thank you!"
 
         return self._node.send_email(user.email(), owner.email(), subject, body)
-
 
     def _verify_input_data_objects_types_and_formats(self, task_descriptor, working_directory, status):
         for item in task_descriptor['input']:

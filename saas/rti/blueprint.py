@@ -51,9 +51,9 @@ class RTIBlueprint:
             return jsonify(proc_id), 404
 
     def get_descriptor(self, proc_id):
-        descriptor_path = self._node.rti.proc_descriptor_path(proc_id)
-        if os.path.isfile(descriptor_path):
-            return jsonify(load_json_from_file(descriptor_path)), 200
+        descriptor = self._node.rti.get_descriptor(proc_id)
+        if descriptor:
+            return jsonify(descriptor), 200
 
         else:
             return jsonify(proc_id), 404
@@ -94,8 +94,8 @@ class RTIBlueprint:
 
 
 class RTIProxy(EndpointProxy):
-    def __init__(self, remote_address, sender):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender)
+    def __init__(self, remote_address):
+        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_deployed(self):
         code, r = self.get(f"")
@@ -111,7 +111,7 @@ class RTIProxy(EndpointProxy):
 
     def get_descriptor(self, proc_id):
         code, r = self.get(f"/{proc_id}/descriptor")
-        return r
+        return r if code == 200 else None
 
     def submit_job(self, proc_id, job_input, job_output, user):
         body = {
@@ -130,7 +130,10 @@ class RTIProxy(EndpointProxy):
 
     def get_job_info(self, job_id):
         code, r = self.get(f"/job/{job_id}")
-        return r['job_descriptor'], r['status'] if code == 200 else None
+        if code == 200:
+            return r['job_descriptor'], r['status']
+        else:
+            return None, None
 
     def put_permission(self, req_id, permission):
         code, r = self.post(f"/permission/{req_id}", body=permission)
