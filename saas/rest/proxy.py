@@ -3,10 +3,9 @@ import requests
 
 
 class EndpointProxy:
-    def __init__(self, endpoint_prefix, remote_address, sender):
+    def __init__(self, endpoint_prefix, remote_address):
         self._endpoint_prefix = endpoint_prefix
         self._remote_address = remote_address
-        self._sender = sender
 
     def url(self, endpoint, parameters=None):
         return f"http://{self._remote_address[0]}:{self._remote_address[1]}{self._auth_url(endpoint, parameters)}"
