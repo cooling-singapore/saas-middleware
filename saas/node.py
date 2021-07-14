@@ -140,7 +140,7 @@ class Node:
             self._smtp.starttls(context=context)
             self._smtp.ehlo()
             self._smtp.login(account, password)
-            logger.error(f"SMTP enabled: {server_address} {account}")
+            logger.info(f"SMTP enabled: {server_address} {account}")
             return True
 
         except smtplib.SMTPException as e:
