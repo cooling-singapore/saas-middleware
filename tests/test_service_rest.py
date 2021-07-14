@@ -35,8 +35,8 @@ class TestBlueprint:
 
 
 class TestProxy(EndpointProxy):
-    def __init__(self, remote_address, sender):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender)
+    def __init__(self, remote_address):
+        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_info(self):
         code, r = self.get("/info", body="test")
@@ -56,7 +56,7 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_simple_get(self):
         node = self.get_node(f"node_0", enable_rest=True)
-        proxy = TestProxy(node.rest.address(), node)
+        proxy = TestProxy(node.rest.address())
 
         bp = TestBlueprint()
         node.rest.add(bp.blueprint())

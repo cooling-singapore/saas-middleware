@@ -1,7 +1,6 @@
 import unittest
 
-from saas.cryptography.messenger import SecureMessenger, MessengerRuntimeError, MessengerInvalidUseException, \
-    MessengerException
+from saas.cryptography.messenger import SecureMessenger, MessengerException
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol

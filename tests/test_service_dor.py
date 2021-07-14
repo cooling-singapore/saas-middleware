@@ -27,8 +27,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.dor_proxy = DORProxy(self.node.rest.address(), self.node)
-        self.db_proxy = NodeDBProxy(self.node.rest.address(), self.node)
+        self.dor_proxy = DORProxy(self.node.rest.address())
+        self.db_proxy = NodeDBProxy(self.node.rest.address())
 
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(3)
@@ -411,8 +411,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # create some test data
         test_file_path0 = self.generate_random_file('test000.dat', 1024*1024)
         test_file_path1 = self.generate_random_file('test001.dat', 1024*1024)
+        test_file_path2 = self.generate_random_file('test002.dat', 1024*1024)
 
-        # create the data object
+        # create the data object 0
         obj_id0, _ = self.dor_proxy.add_data_object(test_file_path0, self.extras[1].identity(),
                                                     False, False, None,
                                                     data_type, data_format, created_by, created_t)
@@ -446,53 +447,54 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"tags1={tags1}")
         assert len(tags1) == 3
 
+        # create the data object 2
+        obj_id2, _ = self.dor_proxy.add_data_object(test_file_path2, self.extras[2].identity(),
+                                                    False, False, None,
+                                                    data_type, data_format, created_by, created_t)
+        logger.info(f"obj_id2: {obj_id2}")
+        assert obj_id2 is not None
+
+        # update tags for that data object
+        self.dor_proxy.update_tags(obj_id2, self.extras[2].signing_key(), {
+            'hello': '789',
+            'world': '5675',
+            'a': '56756'
+        })
+        tags2 = self.dor_proxy.get_tags(obj_id2)
+        logger.info(f"tags2={tags2}")
+        assert len(tags2) == 3
+
         # search for data objects
-        result = self.dor_proxy.search_by_tags("hello")
+        result = self.dor_proxy.search(["hellox"])
         logger.info(f"result={result}")
         assert len(result) == 1
-        assert obj_id1 in result
+        assert obj_id0 in result
 
-        result = self.dor_proxy.search_by_tags("hello%")
+        result = self.dor_proxy.search(["hello"])
+        logger.info(f"result={result}")
+        assert len(result) == 3
+        assert obj_id0 in result
+        assert obj_id1 in result
+        assert obj_id2 in result
+
+        # the case where the owner is restricted
+        result = self.dor_proxy.search(["hello"], owner_iid=self.extras[2].identity().id())
+        logger.info(f"result={result}")
+        assert len(result) == 1
+        assert obj_id2 in result
+
+        result = self.dor_proxy.search(["o"])
+        logger.info(f"result={result}")
+        assert len(result) == 3
+        assert obj_id0 in result
+        assert obj_id1 in result
+        assert obj_id2 in result
+
+        result = self.dor_proxy.search(["whazzup", "124"])
         logger.info(f"result={result}")
         assert len(result) == 2
         assert obj_id0 in result
         assert obj_id1 in result
-
-        result = self.dor_proxy.search_by_tags("hel%")
-        logger.info(f"result={result}")
-        assert len(result) == 2
-        assert obj_id0 in result
-        assert obj_id1 in result
-
-        result = self.dor_proxy.search_by_tags("whazzup")
-        logger.info(f"result={result}")
-        assert len(result) == 1
-        assert obj_id0 in result
-
-        result = self.dor_proxy.search_by_tags("whazzup_")
-        logger.info(f"result={result}")
-        assert len(result) == 0
-
-        result = self.dor_proxy.search_by_tags("a", "123")
-        logger.info(f"result={result}")
-        assert len(result) == 1
-        assert obj_id0 in result
-
-        result = self.dor_proxy.search_by_tags("a", "124")
-        logger.info(f"result={result}")
-        assert len(result) == 1
-        assert obj_id1 in result
-
-        result = self.dor_proxy.search_by_tags("a", "12%")
-        logger.info(f"result={result}")
-        assert len(result) == 2
-        assert obj_id0 in result
-        assert obj_id1 in result
-
-        # test the case where no criteria are given
-        result = self.dor_proxy.search_by_tags()
-        logger.info(f"result={result}")
-        assert len(result) == 0
 
         # delete the data object 0
         descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1].signing_key())
@@ -504,6 +506,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
+        # delete the data object 2
+        descriptor2 = self.dor_proxy.delete_data_object(obj_id2, self.extras[2].signing_key())
+        logger.info(f"descriptor2={descriptor2}")
+        assert descriptor2 is not None
+
         tags0 = self.dor_proxy.get_tags(obj_id0)
         logger.info(f"tags0={tags0}")
         assert len(tags0) == 0
@@ -511,6 +518,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         tags1 = self.dor_proxy.get_tags(obj_id1)
         logger.info(f"tags1={tags1}")
         assert len(tags1) == 0
+
+        tags2 = self.dor_proxy.get_tags(obj_id2)
+        logger.info(f"tags2={tags2}")
+        assert len(tags2) == 0
 
 
 if __name__ == '__main__':

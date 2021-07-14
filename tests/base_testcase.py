@@ -5,6 +5,7 @@ import logging
 
 from multiprocessing import Lock
 
+from saas.cryptography.helpers import encrypt_file
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.helpers import get_timestamp_now

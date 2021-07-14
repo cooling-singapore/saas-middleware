@@ -7,13 +7,10 @@ import time
 import unittest
 from threading import Thread
 
-import pip
-
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
-from saas.rti.adapters.adapters import import_with_auto_install
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
 from saas.helpers import dump_json_to_file, get_timestamp_now, prompt
@@ -64,9 +61,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.dor_proxy = DORProxy(self.node.rest.address(), self.node)
-        self.rti_proxy = RTIProxy(self.node.rest.address(), self.node)
-        self.db_proxy = NodeDBProxy(self.node.rest.address(), self.node)
+        self.dor_proxy = DORProxy(self.node.rest.address())
+        self.rti_proxy = RTIProxy(self.node.rest.address())
+        self.db_proxy = NodeDBProxy(self.node.rest.address())
 
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(3)
@@ -629,22 +626,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     #     logger.info(f"deployed={deployed}")
     #     assert(deployed is not None)
     #     assert(len(deployed) == 0)
-
-    def test_import_dependency(self):
-        try:
-            package = 'h5py'
-            pip.main(['uninstall', '-y', package])
-
-            import_with_auto_install(package)
-            import h5py
-
-            output_path = os.path.join(self.wd_path, 'test.hdf5')
-            f = h5py.File(output_path, "w")
-            f.close()
-
-        except Exception as e:
-            logger.error(e)
-            assert False
 
 
 if __name__ == '__main__':
