@@ -135,25 +135,40 @@ class Keystore:
 
     @classmethod
     def load(cls, path, keystore_id, password):
-        # load master key
-        master_path = os.path.join(path, f"{keystore_id}.master")
-        master = RSAKeyPair.from_private_key_file(master_path, password)
+        try:
+            # load master key
+            master_path = os.path.join(path, f"{keystore_id}.master")
+            master = RSAKeyPair.from_private_key_file(master_path, password)
 
-        # load keystore contents
-        keystore_path = os.path.join(path, f"{keystore_id}.keystore")
-        with open(keystore_path, 'rb') as f:
-            content_enc = f.read()
-            content_enc = master.decrypt(content_enc).decode('utf-8')
-            content = json.loads(content_enc)
+            # load keystore contents
+            keystore_path = os.path.join(path, f"{keystore_id}.keystore")
+            with open(keystore_path, 'rb') as f:
+                content_enc = f.read()
+                content_enc = master.decrypt(content_enc).decode('utf-8')
+                content = json.loads(content_enc)
 
-        # create keystore
-        keystore = Keystore(keystore_path, master, content)
+            # create keystore
+            keystore = Keystore(keystore_path, master, content)
 
-        logger.info(f"keystore loaded: id={keystore.identity().id()} "
-                    f"s_key={keystore._s_key.public_as_string()} "
-                    f"e_key={keystore._e_key.public_as_string()}")
+            logger.info(f"keystore loaded: id={keystore.identity().id()} "
+                        f"s_key={keystore._s_key.public_as_string()} "
+                        f"e_key={keystore._e_key.public_as_string()}")
 
-        return keystore
+            return keystore
+
+        except ValueError as e:
+            logger.error(f"keystore could not be loaded. reason: {e}")
+            return None
+
+    @classmethod
+    def delete(cls, path, keystore_id):
+        if Keystore.is_valid(path, keystore_id):
+            os.remove(os.path.join(path, f"{keystore_id}.master"))
+            os.remove(os.path.join(path, f"{keystore_id}.keystore"))
+            return True
+
+        else:
+            return False
 
     @classmethod
     def is_valid(cls, path, keystore_id):
@@ -215,6 +230,10 @@ class Keystore:
 
     def encryption_key(self):
         return self._e_key
+
+    def object_keys(self):
+        with self._mutex:
+            return list(self._content['object_keys'].keys())
 
     def add_object_key(self, object_id, key):
         with self._mutex:
