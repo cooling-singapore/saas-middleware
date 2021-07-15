@@ -1,3 +1,4 @@
+import json
 import logging
 
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean
@@ -7,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.helpers import generate_random_string
 from saas.keystore.keystore import Identity
 
 logger = logging.getLogger('nodedb.service')
@@ -35,7 +37,6 @@ class DORPermission(Base):
     __tablename__ = 'dor_permission'
     obj_id = Column(String(64), primary_key=True)
     key_iid = Column(String(64), primary_key=True)
-    permission = Column(String, nullable=False)
 
 
 class IdentityRecord(Base):
@@ -59,7 +60,8 @@ class NetworkNode(Base):
 
 
 class NodeDBService:
-    def __init__(self, db_path, protocol):
+    def __init__(self, node, db_path, protocol):
+        self._node = node
         self.protocol = protocol
         self._engine = create_engine(db_path)
         Base.metadata.create_all(self._engine)
@@ -125,29 +127,21 @@ class NodeDBService:
 
     def get_access_list(self, obj_id):
         with self._Session() as session:
-            permissions = session.query(DORPermission).filter_by(obj_id=obj_id).all()
-
             result = []
-            for permission in permissions:
-                result.append(permission.key_iid)
+            records = session.query(DORPermission).filter_by(obj_id=obj_id).all()
+            for record in records:
+                result.append(record.key_iid)
             return result
 
     def has_access(self, obj_id, identity):
-        return self.get_permission(obj_id, identity) is not None
-
-    def get_permission(self, obj_id, identity):
         with self._Session() as session:
-            record = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
-            return record
+            return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first() is not None
 
-    def grant_access(self, obj_id, identity, permission):
+    def grant_access(self, obj_id, identity):
         with self._Session() as session:
             item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
-            if item:
-                item.permission = permission
-            else:
-                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id(), permission=permission))
-
+            if item is None:
+                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id()))
             session.commit()
             return identity.id()
 
@@ -208,7 +202,10 @@ class NodeDBService:
             else:
                 return None
 
-    def update_ownership(self, obj_id, new_owner, content_key=None):
+    def update_ownership(self, obj_id, new_owner, content_key):
+        # get the current owner (=previous owner to be)
+        prev_owner = self.get_owner(obj_id)
+
         with self._Session() as session:
             # get the record for the data object
             record = session.query(DORObject).filter_by(obj_id=obj_id).first()
@@ -217,14 +214,53 @@ class NodeDBService:
 
             # update ownership
             record.owner_iid = new_owner.id()
-            session.commit()
+
+            # do we need to send a request?
+            if content_key is not None:
+                # create the request content and encrypt it using the owners key
+                req_id = generate_random_string(16)
+                request = json.dumps({
+                    'type': 'import_content_key',
+                    'req_id': req_id,
+                    'obj_id': obj_id,
+                    'content_key': content_key,
+                    'prev_owner_iid': prev_owner.id(),
+                    'prev_owner_name': prev_owner.name(),
+                    'prev_owner_email': prev_owner.email(),
+                    'node_id': self._node.identity().id(),
+                    'node_address': self._node.rest.address()
+
+                })
+                request = new_owner.encryption_public_key().encrypt(
+                    request.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+            else:
+                request = None
+
+            # send an email to the owner
+            if not self._node.email.send_ownership_transfer_notification_to_new_owner(new_owner, prev_owner, obj_id,
+                                                                                      self._node.rest.address(),
+                                                                                      request):
+                error = f"sending content key request failed."
+                logger.error(error)
+
+                # if it failed, we need to change the ownership record back
+                record.owner_iid = prev_owner.id()
+
+                session.commit()
+                return False
+
+            # send email to the previous owner
+            self._node.email.send_ownership_transfer_notification_to_prev_owner(new_owner, prev_owner, obj_id,
+                                                                                self._node.rest.address())
 
             # revoke all access to this data object
             self.revoke_access(obj_id)
 
             # grant access to the new owner
-            self.grant_access(obj_id, new_owner, content_key)
+            self.grant_access(obj_id, new_owner)
 
+            session.commit()
             return True
 
     # END: things that do NOT require synchronisation/propagation

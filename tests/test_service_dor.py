@@ -6,7 +6,7 @@ from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
-from saas.helpers import object_to_ordered_list
+from saas.helpers import object_to_ordered_list, prompt
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
@@ -92,16 +92,14 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
 
-        reply = self.dor_proxy.grant_access(obj_id, self.extras[0].signing_key(),
-                                            self.extras[2].identity(), 'permission')
+        reply = self.dor_proxy.grant_access(obj_id, self.extras[0].signing_key(), self.extras[2].identity())
         assert reply == 'Authorisation failed.'
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
 
-        reply = self.dor_proxy.grant_access(obj_id, self.extras[1].signing_key(),
-                                            self.extras[2].identity(), 'permission')
+        reply = self.dor_proxy.grant_access(obj_id, self.extras[1].signing_key(), self.extras[2].identity())
         assert reply is not None
         assert reply[obj_id] == self.extras[2].identity().id()
 
@@ -124,46 +122,60 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert descriptor is not None
 
     def test_transfer_ownership(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
+        # enable SMTP
+        # account = prompt("SMTP account:")
+        email = "aydt@arch.ethz.ch"
+        account = "aydth@ethz.ch"
+        password = prompt("SMTP password:", hidden=True)
+        self.node.update_identity(name="Heiko Aydt", email=email)
+        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
 
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
+        owner0_k = self.extras[0]
+        owner0_signature = owner0_k.update(name="User0", email=email)
+        owner0 = owner0_k.identity()
+        self.db_proxy.update_identity(owner0, owner0_signature)
+
+        owner1_k = self.extras[1]
+        owner1_signature = owner1_k.update(name="User1", email=email)
+        owner1 = owner1_k.identity()
+        self.db_proxy.update_identity(owner1, owner1_signature)
 
         # create the data object
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity(),
+        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
+        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, owner0,
                                                    False, False, None,
-                                                   data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
+                                                   'map', 'json', owner0.name(), 21342342)
+        logger.info(f"obj_id={obj_id}")
         assert obj_id is not None
-        assert obj_id == ref_obj_id
 
+        # check the ownership
         owner_info = self.dor_proxy.get_owner(obj_id)
         logger.info(f"owner_info={owner_info}")
-        assert owner_info['owner_iid'] == self.extras[1].identity().id()
+        assert owner_info['owner_iid'] == owner0.id()
 
-        reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[0].signing_key(), self.extras[2].identity())
+        # perform TRANSFER w/ non-owner auth key
+        reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[2].signing_key(), owner1)
         assert reply is None
 
-        reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[1].signing_key(), self.extras[2].identity())
+        # perform TRANSFER
+        reply = self.dor_proxy.transfer_ownership(obj_id, owner0_k.signing_key(), owner1)
         logger.info(f"reply={reply}")
         assert reply is not None
         assert obj_id in reply
-        assert reply[obj_id] == self.extras[2].identity().id()
+        assert reply[obj_id] == owner1.id()
 
+        # check the ownership
         owner_info = self.dor_proxy.get_owner(obj_id)
         logger.info(f"owner_info={owner_info}")
-        assert owner_info['owner_iid'] == self.extras[2].identity().id()
+        assert owner_info['owner_iid'] == owner1.id()
 
-        descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1].signing_key())
+        # perform DELETE w/ wrong owner
+        descriptor = self.dor_proxy.delete_data_object(obj_id, owner0_k.signing_key())
         logger.info(f"descriptor={descriptor}")
         assert descriptor is None
 
-        descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[2].signing_key())
+        # perform DELETE w/ correct owner
+        descriptor = self.dor_proxy.delete_data_object(obj_id, owner1_k.signing_key())
         logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
@@ -208,10 +220,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_content_encryption(self):
-        key1s = self.extras[1].signing_key()
-        key2s = self.extras[2].signing_key()
-        key1e = self.extras[1].encryption_key()
-        key2e = self.extras[1].encryption_key()
+        # enable SMTP
+        # account = prompt("SMTP account:")
+        email = "aydt@arch.ethz.ch"
+        account = "aydth@ethz.ch"
+        password = prompt("SMTP password:", hidden=True)
+        self.node.update_identity(name="Heiko Aydt", email=email)
+        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
 
         # create content for the data object and encrypt it
         content_plain = "my little secret..."
@@ -221,53 +236,32 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"content_key={content_key}")
         content_enc_path = self.create_file_with_content('content.enc', content_enc.decode('utf-8'))
 
-        # protect the content key
-        protected_content_key1 = key1e.encrypt(content_key, base64_encoded=True).decode('utf-8')
-        protected_content_key2 = key2e.encrypt(content_key, base64_encoded=True).decode('utf-8')
-        logger.info(f"protected_content_key1={protected_content_key1}")
-        logger.info(f"protected_content_key2={protected_content_key2}")
-
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
         # add data object with the encrypted content
-        obj_id, descriptor = self.dor_proxy.add_data_object(content_enc_path, self.extras[1].identity(),
+        owner_k1 = self.extras[1]
+        owner1 = self.extras[1].identity()
+        protected_content_key1 = owner1.encryption_public_key().encrypt(
+            content_key, base64_encoded=True).decode('utf-8')
+        obj_id, descriptor = self.dor_proxy.add_data_object(content_enc_path, owner1,
                                                             False, True, protected_content_key1,
-                                                            data_type, data_format, created_by, created_t)
+                                                            'map', 'json', owner1.name())
         assert obj_id is not None
         assert descriptor is not None
         logger.info(f"descriptor={descriptor}")
 
-        # only the CURRENT owner can get the content key
-        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[1].identity())
-        logger.info(f"protected_content_key={protected_content_key}")
-        assert(protected_content_key == protected_content_key1)
-
-        # we should be able to use this content key to decrypt the content
-        unprotected_content_key = key1e.decrypt(protected_content_key.encode('utf-8'), base64_encoded=True)
-        unprotected_content = symmetric_decrypt(content_enc, unprotected_content_key).decode('utf-8')
-        assert(unprotected_content == content_plain)
-
         # transfer ownership now
-        self.dor_proxy.transfer_ownership(obj_id, key1s, self.extras[2].identity(), protected_content_key2)
-
-        # the old owner cannot get the content key (or content) any longer
-        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[1].identity())
-        assert(protected_content_key is None)
-
-        # only the NEW owner can get the content key
-        protected_content_key = self.dor_proxy.get_access_permission(obj_id, self.extras[2].identity())
-        logger.info(f"protected_content_key={protected_content_key}")
-        assert(protected_content_key == protected_content_key2)
+        owner_k2 = self.extras[2]
+        owner2 = self.extras[2].identity()
+        protected_content_key2 = owner2.encryption_public_key().encrypt(
+            content_key, base64_encoded=True).decode('utf-8')
+        self.dor_proxy.transfer_ownership(obj_id, owner_k1.signing_key(), owner2, protected_content_key2)
 
         # we should be able to use this content key to decrypt the content
-        unprotected_content_key = key2e.decrypt(protected_content_key.encode('utf-8'), base64_encoded=True)
+        unprotected_content_key = owner_k2.encryption_key().decrypt(protected_content_key2.encode('utf-8'),
+                                                                    base64_encoded=True)
         unprotected_content = symmetric_decrypt(content_enc, unprotected_content_key).decode('utf-8')
         assert(unprotected_content == content_plain)
 
-        descriptor = self.dor_proxy.delete_data_object(obj_id, key2s)
+        descriptor = self.dor_proxy.delete_data_object(obj_id, owner_k2.signing_key())
         assert descriptor is not None
         logger.info(f"descriptor={descriptor}")
 

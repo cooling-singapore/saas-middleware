@@ -702,11 +702,11 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         node, dor_proxy, rti_proxy, db_proxy = self.create_node_and_proxies()
         address = node.rest.address()
 
-        # enable SMTP
-        # account = prompt("SMTP account:")
+        email = "aydt@arch.ethz.ch"
         account = "aydth@ethz.ch"
         password = prompt("SMTP password:", hidden=True)
-        node.enable_email_support(('mail.ethz.ch', 587), account, password)
+        node.update_identity(name="Heiko Aydt", email=email)
+        node.start_email_service(('mail.ethz.ch', 587), account, password)
 
         # create keystore and identity (note: need to use a real user here otherwise SMTP won't work)
         keystore, identity = self.create_keystore_and_make_identity_known(db_proxy,

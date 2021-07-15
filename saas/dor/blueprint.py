@@ -35,17 +35,13 @@ add_body_specification = {
     'required': ['owner_iid', 'descriptor', 'access_restricted', 'content_encrypted']
 }
 
-grant_access_body_specification = {
+transfer_ownership_body_specification = {
     'type': 'object',
     'properties': {
-        'permission': {'type': 'string'}
+        'new_owner_iid': {'type': 'string'},
+        'content_key': {'type': 'string'}
     },
-    'required': ['permission']
-}
-
-transfer_ownership_body_specification = {
-    'new_owner_iid': {'type': 'string'},
-    'content_key': {'type': 'string'}
+    'required': ['new_owner_iid']
 }
 
 tags_body_specification = {
@@ -80,7 +76,6 @@ class DORBlueprint:
         blueprint.add_url_rule('/<obj_id>/descriptor', self.get_descriptor.__name__, self.get_descriptor, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/content', self.get_content.__name__, self.get_content, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/access', self.get_access_overview.__name__, self.get_access_overview, methods=['GET'])
-        blueprint.add_url_rule('/<obj_id>/access/<iid>', self.get_access_permission.__name__, self.get_access_permission, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/access/<iid>', self.grant_access.__name__, self.grant_access, methods=['POST'])
         blueprint.add_url_rule('/<obj_id>/access/<iid>', self.revoke_access.__name__, self.revoke_access, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/owner', self.get_owner.__name__, self.get_owner, methods=['GET'])
@@ -148,28 +143,8 @@ class DORBlueprint:
                 self._node.db.get_access_list(obj_id)
             ), 200
 
-    def get_access_permission(self, obj_id, iid):
-        if not self._node.db.get_object_by_id(obj_id):
-            return jsonify(f"{obj_id} not found"), 404
-
-        identity = self._node.db.get_identity(iid)
-        if identity is None:
-            return jsonify(f"identity (iid={iid}) not found"), 404
-
-        record = self._node.db.get_permission(obj_id, identity)
-        if record is None:
-            return jsonify(f"no permission found for identity (iid={iid}) and data object (obj_id={obj_id})"), 404
-
-        else:
-            return jsonify(
-                record.permission
-            ), 200
-
-    @request_manager.verify_request_body(grant_access_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id, iid):
-        body = request_manager.get_request_variable('body')
-
         if not self._node.db.get_object_by_id(obj_id):
             return jsonify(f"data object (id={obj_id}) not found"), 404
 
@@ -178,7 +153,7 @@ class DORBlueprint:
             return jsonify(f"identity (iid={iid}) not found"), 404
 
         return jsonify({
-            obj_id: self._node.db.grant_access(obj_id, identity, body['permission'])
+            obj_id: self._node.db.grant_access(obj_id, identity)
         }), 200
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -299,16 +274,8 @@ class DORProxy(EndpointProxy):
         code, r = self.get(f"/{obj_id}/access")
         return r
 
-    def get_access_permission(self, obj_id, identity):
-        code, r = self.get(f"/{obj_id}/access/{identity.id()}")
-        return r if code == 200 else None
-
-    def grant_access(self, obj_id, authorisation_key, identity, permission=""):
-        body = {
-            'permission': permission
-        }
-
-        code, r = self.post(f"/{obj_id}/access/{identity.id()}", body=body, with_authorisation_by=authorisation_key)
+    def grant_access(self, obj_id, authorisation_key, identity):
+        code, r = self.post(f"/{obj_id}/access/{identity.id()}", with_authorisation_by=authorisation_key)
         return r
 
     def revoke_access(self, obj_id, authorisation_key, identity):
@@ -319,11 +286,13 @@ class DORProxy(EndpointProxy):
         code, r = self.get(f"/{obj_id}/owner")
         return r
 
-    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key="no-content-key"):
+    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key=None):
         body = {
-            'new_owner_iid': new_owner.id(),
-            'content_key': content_key
+            'new_owner_iid': new_owner.id()
         }
+
+        if content_key is not None:
+            body['content_key'] = content_key
 
         code, r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=authorisation_key)
         return r if code == 200 else None

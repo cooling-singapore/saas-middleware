@@ -126,8 +126,8 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 return
 
             # check if the user has permission to access this data object
-            permission = self.node.db.get_permission(obj_id, user)
-            if permission is None:
+            has_access = self.node.db.has_access(obj_id, user)
+            if not has_access:
                 messenger.reply_ok({'code': 403, 'reason': f"user (iid={message['user_iid']}) does not have access "
                                                            f"to data object (id={obj_id})."})
                 messenger.close()
