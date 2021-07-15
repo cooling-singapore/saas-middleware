@@ -1,11 +1,10 @@
 import os
 import logging
-import smtplib
-import ssl
 import time
 from threading import Lock
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.email.service import EmailService
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.dor.service import DataObjectRepositoryService
@@ -30,12 +29,12 @@ class Node:
         self._mutex = Lock()
         self._datastore_path = datastore_path
         self._keystore = keystore
-        self._smtp = None
         self.db = None
         self.p2p = None
         self.rest = None
         self.dor = None
         self.rti = None
+        self.email = None
 
     def identity(self):
         return self._keystore.identity()
@@ -56,7 +55,7 @@ class Node:
 
         logger.info("starting NodeDB service.")
         protocol = NodeDBP2PProtocol(self)
-        self.db = NodeDBService(f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
+        self.db = NodeDBService(self, f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
         self.p2p.add(protocol)
 
         self.update_identity(propagate=False)
@@ -107,9 +106,10 @@ class Node:
         logger.info("starting DOR service.")
         self.rti = RuntimeInfrastructureService(self)
 
-    # def start_keystore_service(self):
-    #     logger.info("starting keystore service.")
-    #     self.p2p.add(KeystoreP2PProtocol(self, self._keystore))
+    def start_email_service(self, server_address, account, password):
+        logger.info("starting email service.")
+        self.email = EmailService(self)
+        self.email.startup(server_address, account, password)
 
     def update_identity(self, s_key=None, e_key=None, name=None, email=None, propagate=True):
         with self._mutex:
@@ -131,33 +131,9 @@ class Node:
                                     f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
                                     propagate=propagate)
 
-    def enable_email_support(self, server_address, account, password):
-        context = ssl.create_default_context()
-
-        try:
-            self._smtp = smtplib.SMTP(server_address[0], server_address[1])
-            self._smtp.ehlo()
-            self._smtp.starttls(context=context)
-            self._smtp.ehlo()
-            self._smtp.login(account, password)
-            logger.info(f"SMTP enabled: {server_address} {account}")
-            return True
-
-        except smtplib.SMTPException as e:
-            logger.error(f"failed to enable SMTP: {e}")
-            return False
-
-    def send_email(self, sender, receiver, subject, body):
-        try:
-            self._smtp.sendmail(sender, receiver, f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{body}")
-            return True
-
-        except smtplib.SMTPException as e:
-            logger.error(f"failed to send email: {e}")
-            return False
-
     @classmethod
-    def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None, enable_dor=False, enable_rti=False):
+    def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None,
+               enable_dor=False, enable_rti=False):
         node = Node(keystore, storage_path)
 
         node.startup(p2p_address, boot_node_address)

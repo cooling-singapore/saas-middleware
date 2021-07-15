@@ -18,19 +18,17 @@ class NodeTestCase(unittest.TestCase, TestCaseBase):
         self.cleanup()
 
     def test_send_simple_email(self):
-        # sender = prompt("from:")
-        # receiver = prompt("to:")
-        # account = prompt("SMTP account:")
-        sender = "aydt@arch.ethz.ch"
-        receiver = "aydt@arch.ethz.ch"
+        server_address = ('mail.ethz.ch', 587)
         account = "aydth@ethz.ch"
         password = prompt("SMTP password:", hidden=True)
 
-        self.node.enable_email_support(('mail.ethz.ch', 587), account, password)
-        # service = EmailService(from_address, account, ('mail.ethz.ch', 587), password)
-        # service = EmailService('aydt@arch.ethz.ch', ('smtp.gmail.com', 587), password)
+        name = "Heiko Aydt"
+        sender = "aydt@arch.ethz.ch"
+        receiver = "aydt@arch.ethz.ch"
 
-        result = self.node.send_email(sender, receiver, "Test Email", "This is a test email.")
+        self.node.start_email_service(server_address, account, password)
+        self.node.update_identity(name=name, email=sender)
+        result = self.node.email.send_test_email(receiver)
         assert(result is True)
 
 
