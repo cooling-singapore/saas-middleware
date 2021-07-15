@@ -91,7 +91,9 @@ class DataObjectRepositoryService:
             return 404, {'owner_iid': owner_iid}
 
         # add data object to database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(), access_restricted, content_encrypted)
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(),
+                                     access_restricted, content_encrypted,
+                                     descriptor['data_type'], descriptor['data_format'])
 
         # grant permission to access this data object to the owner, using the content key (if any)
         self.node.db.grant_access(obj_id, owner)
