@@ -24,6 +24,8 @@ class DORObject(Base):
     owner_iid = Column(String(64), nullable=False)
     access_restricted = Column(Boolean, nullable=False)
     content_encrypted = Column(Boolean, nullable=False)
+    data_type = Column(String(64), nullable=False)
+    data_format = Column(String(64), nullable=False)
 
 
 class DORTag(Base):
@@ -156,13 +158,16 @@ class NodeDBService:
                 session.commit()
                 return identity.id()
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid, access_restricted, content_encrypted):
+    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid,
+                        access_restricted, content_encrypted,
+                        data_type, data_format):
         with self._Session() as session:
             item = session.query(DORObject).get(obj_id)
             if not item:
                 # add a new data object record
                 session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
-                                      access_restricted=access_restricted, content_encrypted=content_encrypted))
+                                      access_restricted=access_restricted, content_encrypted=content_encrypted,
+                                      data_type=data_type, data_format=data_format))
                 session.commit()
 
     def remove_data_object(self, obj_id):
