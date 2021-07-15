@@ -94,7 +94,7 @@ class DataObjectRepositoryService:
         self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(), access_restricted, content_encrypted)
 
         # grant permission to access this data object to the owner, using the content key (if any)
-        self.node.db.grant_access(obj_id, owner, content_key)
+        self.node.db.grant_access(obj_id, owner)
 
         return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
 

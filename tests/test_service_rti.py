@@ -489,8 +489,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 0)
 
     def test_processor_execution_reference_encrypted(self):
-        # email = prompt("email address:")
         email = "aydt@arch.ethz.ch"
+        account = "aydth@ethz.ch"
+        password = prompt("SMTP password:", hidden=True)
+        self.node.update_identity(name="Heiko Aydt", email=email)
+        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
+
         keystores = self.create_keystores(2)
 
         # create an owner identity
@@ -502,12 +506,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         user_signature = keystores[1].update(name="John Doe", email=email)
         user = keystores[1].identity()
         self.db_proxy.update_identity(user, user_signature)
-
-        # enable SMTP
-        # account = prompt("SMTP account:")
-        account = "aydth@ethz.ch"
-        password = prompt("SMTP password:", hidden=True)
-        self.node.enable_email_support(('mail.ethz.ch', 587), account, password)
 
         # add and deploy test processor
         proc_id = self.add_test_processor_to_dor()
@@ -521,7 +519,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"a_obj_id={a_obj_id}")
 
         # grant access
-        access = self.dor_proxy.grant_access(a_obj_id, keystores[0].signing_key(), user, permission=a_content_key)
+        access = self.dor_proxy.grant_access(a_obj_id, keystores[0].signing_key(), user)
         assert(access is not None)
         assert(access[a_obj_id] == user.id())
 

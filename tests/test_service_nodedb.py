@@ -99,7 +99,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         result = self.node.db.has_access('aaa', self.extras[1].identity())
         assert(not result)
 
-        self.node.db.grant_access('aaa', self.extras[0].identity(), 'permission1')
+        self.node.db.grant_access('aaa', self.extras[0].identity())
 
         result = self.node.db.get_access_list('aaa')
         assert(len(result) == 1)
