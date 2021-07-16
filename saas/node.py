@@ -64,6 +64,9 @@ class Node:
         if boot_node_address:
             self.join_network(boot_node_address)
 
+        if self._keystore.has_smtp_information():
+            self.email = EmailService(self._keystore)
+
     def shutdown(self):
         self.leave_network()
 
@@ -105,11 +108,6 @@ class Node:
     def start_rti_service(self):
         logger.info("starting DOR service.")
         self.rti = RuntimeInfrastructureService(self)
-
-    def start_email_service(self, server_address, account, password):
-        logger.info("starting email service.")
-        self.email = EmailService(self)
-        self.email.startup(server_address, account, password)
 
     def update_identity(self, s_key=None, e_key=None, name=None, email=None, propagate=True):
         with self._mutex:
