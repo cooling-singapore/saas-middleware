@@ -77,7 +77,7 @@ class RequestManager:
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                body = json.loads(request.values['body'])
+                body = json.loads(request.values['body']) if 'body' in request.values else {}
 
                 try:
                     validate(instance=body, schema=body_specification)

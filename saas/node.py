@@ -17,7 +17,7 @@ import saas.rti.blueprint as rti_blueprint
 import saas.nodedb.blueprint as nodedb_blueprint
 from saas.helpers import get_timestamp_now
 
-logger = logging.getLogger('Node')
+logger = logging.getLogger('node')
 
 
 class Node:
