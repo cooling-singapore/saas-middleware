@@ -19,8 +19,7 @@ search_body_specification = {
             'type': 'array',
             'items': {'type': 'string'}
         }
-    },
-    'required': ['patterns']
+    }
 }
 
 add_body_specification = {
@@ -88,7 +87,7 @@ class DORBlueprint:
     @request_manager.verify_request_body(search_body_specification)
     def search(self):
         body = request_manager.get_request_variable('body')
-        patterns = body['patterns']
+        patterns = body['patterns'] if 'patterns' in body else None
         owner_iid = body['owner_iid'] if 'owner_iid' in body else None
 
         return jsonify(self._node.db.find_data_objects(patterns, owner_iid)), 200
@@ -224,10 +223,11 @@ class DORProxy(EndpointProxy):
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
-    def search(self, patterns, owner_iid=None):
-        body = {
-            'patterns': patterns,
-        }
+    def search(self, patterns=None, owner_iid=None):
+        body = {}
+
+        if patterns is not None and len(patterns) > 0:
+            body['patterns'] = patterns
 
         if owner_iid is not None:
             body['owner_iid'] = owner_iid
