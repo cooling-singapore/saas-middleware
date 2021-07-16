@@ -114,8 +114,8 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         else:
             return result_keystore, result_identity
 
-    def create_node_and_proxies(self):
-        node = self.get_node('node', enable_rest=True)
+    def create_node_and_proxies(self, use_credentials=False):
+        node = self.get_node('node', use_credentials=use_credentials, enable_rest=True)
         dor_proxy = DORProxy(node.rest.address())
         rti_proxy = RTIProxy(node.rest.address())
         db_proxy = NodeDBProxy(node.rest.address())
@@ -699,18 +699,13 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
 
     def test_cmd_handle_content_key_request(self):
         # create node and proxies
-        node, dor_proxy, rti_proxy, db_proxy = self.create_node_and_proxies()
+        node, dor_proxy, rti_proxy, db_proxy = self.create_node_and_proxies(use_credentials=True)
         address = node.rest.address()
-
-        email = "aydt@arch.ethz.ch"
-        account = "aydth@ethz.ch"
-        password = prompt("SMTP password:", hidden=True)
-        node.update_identity(name="Heiko Aydt", email=email)
-        node.start_email_service(('mail.ethz.ch', 587), account, password)
 
         # create keystore and identity (note: need to use a real user here otherwise SMTP won't work)
         keystore, identity = self.create_keystore_and_make_identity_known(db_proxy,
-                                                                          name='Heiko Aydt', email='aydt@arch.ethz.ch')
+                                                                          name=node.identity().name(),
+                                                                          email=node.identity().email())
 
         # add and deploy test processor
         proc_id = self.add_test_processor_to_dor(identity, dor_proxy)

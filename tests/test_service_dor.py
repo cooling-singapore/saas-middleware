@@ -6,7 +6,7 @@ from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
-from saas.helpers import object_to_ordered_list, prompt
+from saas.helpers import object_to_ordered_list
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
@@ -26,7 +26,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        self.node = self.get_node('node', enable_rest=True)
+        self.node = self.get_node('node', use_credentials=True, enable_rest=True)
         self.dor_proxy = DORProxy(self.node.rest.address())
         self.db_proxy = NodeDBProxy(self.node.rest.address())
 
@@ -122,21 +122,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert descriptor is not None
 
     def test_transfer_ownership(self):
-        # enable SMTP
-        # account = prompt("SMTP account:")
-        email = "aydt@arch.ethz.ch"
-        account = "aydth@ethz.ch"
-        password = prompt("SMTP password:", hidden=True)
-        self.node.update_identity(name="Heiko Aydt", email=email)
-        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
-
         owner0_k = self.extras[0]
-        owner0_signature = owner0_k.update(name="User0", email=email)
+        owner0_signature = owner0_k.update(name="User0", email=self.node.identity().email())
         owner0 = owner0_k.identity()
         self.db_proxy.update_identity(owner0, owner0_signature)
 
         owner1_k = self.extras[1]
-        owner1_signature = owner1_k.update(name="User1", email=email)
+        owner1_signature = owner1_k.update(name="User1", email=self.node.identity().email())
         owner1 = owner1_k.identity()
         self.db_proxy.update_identity(owner1, owner1_signature)
 
@@ -220,14 +212,6 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
     def test_content_encryption(self):
-        # enable SMTP
-        # account = prompt("SMTP account:")
-        email = "aydt@arch.ethz.ch"
-        account = "aydth@ethz.ch"
-        password = prompt("SMTP password:", hidden=True)
-        self.node.update_identity(name="Heiko Aydt", email=email)
-        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
-
         # create content for the data object and encrypt it
         content_plain = "my little secret..."
         content_enc, content_key = symmetric_encrypt(content_plain.encode('utf-8'))
