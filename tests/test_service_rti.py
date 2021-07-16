@@ -60,7 +60,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        self.node = self.get_node('node', enable_rest=True)
+        self.node = self.get_node('node', use_credentials=True, enable_rest=True)
         self.dor_proxy = DORProxy(self.node.rest.address())
         self.rti_proxy = RTIProxy(self.node.rest.address())
         self.db_proxy = NodeDBProxy(self.node.rest.address())
@@ -489,21 +489,15 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(deployed) == 0)
 
     def test_processor_execution_reference_encrypted(self):
-        email = "aydt@arch.ethz.ch"
-        account = "aydth@ethz.ch"
-        password = prompt("SMTP password:", hidden=True)
-        self.node.update_identity(name="Heiko Aydt", email=email)
-        self.node.start_email_service(('mail.ethz.ch', 587), account, password)
-
         keystores = self.create_keystores(2)
 
         # create an owner identity
-        owner_signature = keystores[0].update(name="Foo Bar", email=email)
+        owner_signature = keystores[0].update(name="Foo Bar", email=self.node.identity().email())
         owner = keystores[0].identity()
         self.db_proxy.update_identity(owner, owner_signature)
 
         # create a user identity
-        user_signature = keystores[1].update(name="John Doe", email=email)
+        user_signature = keystores[1].update(name="John Doe", email=self.node.identity().email())
         user = keystores[1].identity()
         self.db_proxy.update_identity(user, user_signature)
 
