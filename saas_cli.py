@@ -97,12 +97,8 @@ def load_keystore(args):
         print("Loading keystore failed!")
 
     else:
-        identity = keystore.identity()
         print(f"Keystore loaded!")
-        print(f"- Identity: {identity.name()}/{identity.email()}/{identity.id()}")
-        print(f"- Signing Key: {keystore.signing_key().info()}")
-        print(f"- Encryption Key: {keystore.encryption_key().info()}")
-        print(f"- Object Keys: {keystore.object_keys()}")
+        print(keystore.info())
 
     return keystore
 
@@ -123,7 +119,16 @@ def add_cmd_identity(subparsers):
     remove_parser.add_argument('--confirm', dest="confirm", action='store_const', const=True,
                                help=f"do not require user confirmation to delete keystore")
 
-    subparsers.add_parser('list', help='lists all identities found in the keystore directory')
+    subparsers.add_parser('info', help='shows detailed information about a keystore')
+    subparsers.add_parser('smtp', help='updates the SMTP information associated with a keystore')
+
+    list_parser = subparsers.add_parser('list', help='lists all identities found in the keystore directory')
+    list_parser.add_argument('--address', dest='address', action='store', required=False,
+                              help=f"the address (host:port) of the node")
+
+    push_parser = subparsers.add_parser('push', help='pushes an identity update to a node')
+    push_parser.add_argument('--address', dest='address', action='store', required=True,
+                              help=f"the address (host:port) of the node")
 
     discover_parser = subparsers.add_parser('discover', help='retrieves a list of all identities known to a node')
     discover_parser.add_argument('--address', dest='address', action='store',
@@ -173,7 +178,32 @@ def exec_cmd_identity(args):
 
         return None
 
+    elif args['command2'] == 'info':
+        keystore = load_keystore(args)
+        return keystore is not None
+
+    elif args['command2'] == 'smtp':
+        keystore = load_keystore(args)
+        if keystore is not None:
+            server = prompt("Enter SMTP server address (host:port):")
+            account = prompt("Enter SMTP account name:")
+            password = None
+            while password is None:
+                pwd1 = prompt(f"Enter SMTP account password:", hidden=True)
+                pwd2 = prompt(f"Re-enter SMTP account password:", hidden=True)
+                if pwd1 == pwd2:
+                    password = pwd1
+                else:
+                    print("Password do not match! Try again.")
+
+            keystore.update_smtp(server, account, password)
+            print("SMTP information updated!")
+            return True
+
+        return False
+
     elif args['command2'] == 'list':
+        # get local identities
         available = get_available_keystores(args['keystore'])
         if len(available) > 0:
             print(f"Found {len(available)} keystores in '{args['keystore']}':")
@@ -181,6 +211,38 @@ def exec_cmd_identity(args):
                 print(f"[{i}] {available[i]}")
         else:
             print(f"No keystores found in '{args['keystore']}':")
+
+        # check with remote node?
+        if 'address' in args and args['address'] is not None:
+            proxy = NodeDBProxy(args['address'].split(":"))
+            identities = proxy.get_identities()
+            print(f"Found {len(identities)} identities on node at '{args['address']}':")
+            for _, record in identities.items():
+                identity = Identity.deserialise(record)
+                print(f"[{'*' if identity.id() in available else ' '}] {identity.id()}/{identity.name()}/{identity.email()}")
+
+        return None
+
+    elif args['command2'] == 'push':
+        # display remote identities
+        proxy = NodeDBProxy(args['address'].split(":"))
+        identities = proxy.get_identities()
+        print(f"Found {len(identities)} identities on node at '{args['address']}':")
+        for _, record in identities.items():
+            identity = Identity.deserialise(record)
+            print(
+                f"- {identity.id()}/{identity.name()}/{identity.email()}")
+
+        # load the keystore
+        print("")
+        keystore = load_keystore(args)
+        if keystore is not None:
+            print(f"Pushing update to node...")
+            signature = keystore.update()
+            identity = keystore.identity()
+
+            proxy = NodeDBProxy(args['address'].split(":"))
+            proxy.update_identity(identity, signature)
 
         return None
 
@@ -258,7 +320,7 @@ def add_cmd_dor(subparsers):
     # create the parser(s)
     parser = subparsers.add_parser('dor', help='interact with a node\'s Data Object Repository (DOR)')
     parser.add_argument('--address', dest='address', action='store',
-                        help=f"the address (host:port) of the node")
+                        help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
 
     subparsers = parser.add_subparsers(title='Available commands',
                                        metavar='command', dest='command2', required=True)
@@ -474,7 +536,7 @@ def add_cmd_rti(subparsers):
     # create the parser(s)
     parser = subparsers.add_parser('rti', help='interact with a node\'s Runtime Infrastructure (RTI)')
     parser.add_argument('--address', dest='address', action='store',
-                        help=f"the address (host:port) of the node")
+                        help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
 
     subparsers = parser.add_subparsers(title='Available commands',
                                        metavar='command', dest='command2', required=True)
