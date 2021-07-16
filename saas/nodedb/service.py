@@ -61,6 +61,14 @@ class NetworkNode(Base):
     rest_address = Column(String(21), nullable=True)
 
 
+def tags_match_patterns(tag_records, patterns):
+    for tag_record in tag_records:
+        for pattern in patterns:
+            if pattern in tag_record.key or pattern in tag_record.value:
+                return True
+    return False
+
+
 class NodeDBService:
     def __init__(self, node, db_path, protocol):
         self._node = node
@@ -108,22 +116,18 @@ class NodeDBService:
             else:
                 object_records = session.query(DORObject).all()
 
-            # second, find all data objects that have tags which contain any of the patterns
-            result = []
+            # second, find all data objects and filter by patterns (if any)
+            result = {}
             for obj_record in object_records:
+                # get the tags for this object
                 tag_records = session.query(DORTag).filter_by(obj_id=obj_record.obj_id).all()
-                for tag_record in tag_records:
-                    # does the key or the value contain any of the patterns?
-                    hit = False
-                    for pattern in patterns:
-                        if pattern in tag_record.key or pattern in tag_record.value:
-                            result.append(obj_record.obj_id)
-                            hit = True
-                            break
 
-                    # if we already had a hit, no need to continue with this data object
-                    if hit:
-                        break
+                # any patterns to match?
+                if patterns is None or tags_match_patterns(tag_records, patterns):
+                    tags = []
+                    for tag in tag_records:
+                        tags.append(f"{tag.key}={tag.value}")
+                    result[obj_record.obj_id] = tags
 
             return result
 
