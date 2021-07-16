@@ -1,10 +1,13 @@
 import os
 import logging
 import json
+import smtplib
+import ssl
 from threading import Lock
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.email.service import SMTPWrapper
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -124,6 +127,7 @@ class Keystore:
                 's-key': s_key.private_as_string(),
                 'e-key': e_key.private_as_string()
             },
+            'smtp_info': None,
             'object_keys': {}
         })
 
@@ -192,6 +196,19 @@ class Keystore:
 
         return True
 
+    def info(self):
+        smtp_info = self._content['smtp_info']
+        smtp = 'not available' if smtp_info is None else f"{smtp_info['server']}/{smtp_info['account']}"
+        return f"{self.identity().id()}:\n" \
+               f"- Identity: {self.identity().name()}/{self.identity().email()}/{self.identity().id()}\n" \
+               f"- Signing Key: {self.signing_key().info()}\n" \
+               f"- Encryption Key: {self.encryption_key().info()}\n" \
+               f"- Object Keys: {self.object_keys()}\n" \
+               f"- SMTP Information: {smtp}"
+
+    def has_smtp_information(self):
+        return self._content['smtp_info'] is not None
+
     def update(self, s_key=None, e_key=None, name=None, email=None):
         with self._mutex:
             is_dirty = False
@@ -221,6 +238,37 @@ class Keystore:
                 self._refresh_identity()
 
             return self._identity.sign(self._master)
+
+    def update_smtp(self, server, account, password):
+        with self._mutex:
+            self._content['smtp_info'] = {
+                'server': server,
+                'account': account,
+                'password': password
+            }
+            self._sync_to_disk()
+            self._refresh_identity()
+
+    def smtp(self):
+        smtp_info = self._content['smtp_info']
+        if smtp_info is None:
+            logger.info("failed to establish SMTP session: no login information found")
+            return None
+
+        try:
+            address = smtp_info['server'].split(":")
+            context = ssl.create_default_context()
+            smtp = smtplib.SMTP(address[0], address[1])
+            smtp.ehlo()
+            smtp.starttls(context=context)
+            smtp.ehlo()
+            smtp.login(smtp_info['account'], smtp_info['password'])
+            logger.info(f"SMTP session established: {smtp_info['server']} {smtp_info['account']}")
+            return SMTPWrapper(smtp)
+
+        except smtplib.SMTPException as e:
+            logger.error(f"failed to establish SMTP session: {e}")
+            return None
 
     def identity(self):
         return self._identity

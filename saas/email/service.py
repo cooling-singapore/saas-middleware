@@ -1,38 +1,40 @@
 import logging
 import smtplib
-import ssl
 
 logger = logging.getLogger('email.service')
 
 
-class EmailService:
-    def __init__(self, node):
-        self._node = node
-        self._smtp = None
+class SMTPWrapper:
+    def __init__(self, smtp):
+        self._smtp = smtp
 
-    def startup(self, server_address, account, password):
+    def send(self, sender, receiver, subject, body):
         try:
-            context = ssl.create_default_context()
-            self._smtp = smtplib.SMTP(server_address[0], server_address[1])
-            self._smtp.ehlo()
-            self._smtp.starttls(context=context)
-            self._smtp.ehlo()
-            self._smtp.login(account, password)
-            logger.info(f"SMTP enabled: {server_address} {account}")
-            return True
-
-        except smtplib.SMTPException as e:
-            logger.error(f"failed to enable SMTP: {e}")
-            return False
-
-    def _send_email(self, receiver, subject, body):
-        try:
-            sender = self._node.identity().email()
             self._smtp.sendmail(sender, receiver, f"From: {sender}\nTo: {receiver}\nSubject: {subject}\n\n{body}")
             return True
 
         except smtplib.SMTPException as e:
             logger.error(f"failed to send email: {e}")
+            return False
+
+    def close(self):
+        self._smtp.close()
+
+
+class EmailService:
+    def __init__(self, keystore):
+        self._keystore = keystore
+
+    def _send_email(self, receiver, subject, body):
+        # get smtp session
+        smtp = self._keystore.smtp()
+        if smtp is not None:
+            sender = self._keystore.identity().email()
+            result = smtp.send(sender, receiver, subject, body)
+            smtp.close()
+            return result
+        else:
+            logger.error(f"failed to send email: no SMTP session")
             return False
 
     def send_ownership_transfer_notification_to_prev_owner(self, new_owner, prev_owner, obj_id, address):
