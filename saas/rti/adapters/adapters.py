@@ -49,7 +49,7 @@ class RTIProcessorAdapter(Thread):
     def pre_execute(self, task_or_wf_descriptor, working_directory, status):
         return True
 
-    def post_execute(self, task_or_wf_descriptor, working_directory, status):
+    def post_execute(self, task_or_wf_descriptor, working_directory, job_id, status):
         return True
 
     def execute(self, job_descriptor, working_directory, status):
@@ -104,8 +104,9 @@ class RTIProcessorAdapter(Thread):
             status = result[1]
 
             # perform pre-execute routine
+            job_id = str(job_descriptor['id'])
             task_or_wf_descriptor = job_descriptor['descriptor']
-            wd_path = self._node.rti.get_job_wd(str(job_descriptor['id']))
+            wd_path = self._node.rti.get_job_wd(job_id)
             if not self.pre_execute(task_or_wf_descriptor, wd_path, status):
                 status.update_state(State.FAILED)
                 continue
@@ -116,7 +117,7 @@ class RTIProcessorAdapter(Thread):
                 continue
 
             # perform post-execute routine
-            if not self.post_execute(task_or_wf_descriptor, wd_path, status):
+            if not self.post_execute(task_or_wf_descriptor, wd_path, job_id, status):
                 status.update_state(State.FAILED)
                 continue
 
@@ -129,11 +130,11 @@ class RTIProcessorAdapter(Thread):
         logger.info(f"adapter {self._proc_id} shut down.")
         self._state = ProcessorState.STOPPED
 
-    def push_output_data_object(self, output_descriptor, output_content_path, owner, task_descriptor):
+    def push_output_data_object(self, output_descriptor, output_content_path, owner, task_descriptor, job_id):
         output_name = output_descriptor['name']
         data_type = output_descriptor['data_type']
         data_format = output_descriptor['data_format']
-        created_by = owner.id()
+        created_by = self._node.identity().id()
 
         for item in task_descriptor['output']:
             if item['name'] == output_name:
@@ -142,15 +143,25 @@ class RTIProcessorAdapter(Thread):
                 content_key = encrypt_file(output_content_path, protect_key_with=owner.encryption_public_key(),
                                            delete_source=True) if content_encrypted else None
 
-                # upload the data object to the DOR
+                # upload the data object to the DOR (the owner is the node for now
+                # so we can update tags in the next step)
                 proxy = DORProxy(self._node.rest.address())
-                obj_id, _ = proxy.add_data_object(output_content_path, owner,
+                obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
                                                   restricted_access, content_encrypted, content_key,
                                                   data_type, data_format, created_by,
                                                   recipe={
                                                       'task_descriptor': task_descriptor,
                                                       'output_name': output_name
                                                   })
+
+                # update tags with information from the job
+                proxy.update_tags(obj_id, self._node.signing_key(), {
+                    'name': f"{item['name']}",
+                    'job_id': job_id
+                })
+
+                # transfer ownership to the new owner
+                proxy.transfer_ownership(obj_id, self._node.signing_key(), owner)
 
                 return obj_id
 
@@ -395,14 +406,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
         return True
 
-    def post_execute(self, task_descriptor, working_directory, status):
+    def post_execute(self, task_descriptor, working_directory, job_id, status):
         # push output data objects to DOR
-        if not self._push_output_data_objects(task_descriptor, working_directory, status):
+        if not self._push_output_data_objects(task_descriptor, working_directory, job_id, status):
             return False
 
         return True
 
-    def _push_output_data_objects(self, task_descriptor, working_directory, status):
+    def _push_output_data_objects(self, task_descriptor, working_directory, job_id, status):
         status.update('stage', 'push output data objects')
 
         # map the output items in the task descriptor
@@ -440,7 +451,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 break
 
             # push the output data object to the DOR
-            obj_id = self.push_output_data_object(output_descriptor, output_content_path, owner, task_descriptor)
+            obj_id = self.push_output_data_object(output_descriptor, output_content_path, owner,
+                                                  task_descriptor, job_id)
             if not obj_id:
                 error = f"worker[{self.name}]: failed to add data object '{output_descriptor['name']}'to DOR."
                 logger.error(error)
