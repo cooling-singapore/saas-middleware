@@ -396,6 +396,15 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
             'dor', '--address', f"{address[0]}:{address[1]}",
+            'search'
+        ]
+        tags = parse_args(args)
+        assert(len(tags) == len(obj_ids))
+
+        args = [
+            '--keystore', self.wd_path, '--temp-dir', self.wd_path,
+            '--keystore-id', identity.id(), '--password', self.password,
+            'dor', '--address', f"{address[0]}:{address[1]}",
             'search', '--own', 'key'
         ]
         tags = parse_args(args)
