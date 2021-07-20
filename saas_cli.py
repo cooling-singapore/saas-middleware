@@ -8,13 +8,13 @@ import traceback
 import logging
 import subprocess
 
-from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.email.service import EmailService
 from saas.keystore.keystore import Keystore, Identity
 from saas.node import Node
-from saas.helpers import prompt, get_address_from_string, load_json_from_file
+from saas.helpers import prompt, get_address_from_string, load_json_from_file, dump_json_to_file, remove_path
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
 
@@ -101,6 +101,124 @@ def load_keystore(args):
         print(keystore.info())
 
     return keystore
+
+
+def select_eligible_data_object(proxy, keystore, multi_selection=False):
+    print(f"List of all eligible data objects found on node:")
+    objects = proxy.search(owner_iid=keystore.identity().id())
+    lookup = {}
+    i = 0
+    for obj_id, tags in objects.items():
+        print(f"[{i}] {obj_id} {tags}")
+        lookup[i] = [obj_id, tags]
+        i += 1
+
+    selection = prompt("Select data object:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
+    if multi_selection:
+        result = []
+        for i in selection:
+            result.append(lookup[i])
+        return result
+    else:
+        return lookup[selection]
+
+
+def select_gpp_data_object(proxy, multi_selection=False):
+    # get a list of all GPP objects
+    objects = proxy.search(patterns=['is_gpp', 'true'])
+    if len(objects) == 0:
+        print("No GPP data objects found on node.")
+        return None
+
+    # show list
+    print(f"List of all GPP data objects found on node:")
+    lookup = {}
+    i = 0
+    for obj_id, tags in objects.items():
+        print(f"[{i}] {obj_id} {tags}")
+        lookup[i] = [obj_id, tags]
+        i += 1
+
+    # allow user to select gpp data object
+    selection = prompt("Select data object:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
+    if multi_selection:
+        result = []
+        for i in selection:
+            result.append(lookup[i])
+        return result
+    else:
+        return lookup[selection]
+
+
+def select_known_identity(proxy, multi_selection=False):
+    print(f"List of identities known to the node:")
+    identities = proxy.get_identities()
+    lookup = {}
+    i = 0
+    for iid, record in identities.items():
+        identity = Identity.deserialise(record)
+        print(f"[{i}] {identity.id()}{identity.name()}/{identity.email()}")
+        lookup[i] = identity
+        i += 1
+
+    selection = prompt("Select identity:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
+    if multi_selection:
+        result = []
+        for i in selection:
+            result.append(lookup[i])
+        return result
+    else:
+        return lookup[selection]
+
+
+def select_identity_from_access_list(dor_proxy, db_proxy, obj_id, multi_selection=False):
+    print(f"List of identities that have access to data object {obj_id}:")
+    identities = dor_proxy.get_access_overview(obj_id)
+    lookup = {}
+    i = 0
+    for iid in identities:
+        record = db_proxy.get_identity(iid)
+        identity = Identity.deserialise(record)
+        print(f"[{i}] {identity.id()}{identity.name()}/{identity.email()}")
+        lookup[i] = identity
+        i += 1
+
+    selection = prompt("Select identity:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
+    if multi_selection:
+        result = []
+        for i in selection:
+            result.append(lookup[i])
+        return result
+    else:
+        return lookup[selection]
+
+
+def select_from_deployed_processors(rti_proxy, multi_selection=False):
+    # get the list of deployed processors
+    deployed = rti_proxy.get_deployed()
+    if len(deployed) == 0:
+        print("No deployed processors found on node.")
+        return None
+
+    # shot the list
+    print(f"List of all deployed processors found on node:")
+    deployed = rti_proxy.get_deployed()
+    lookup = {}
+    i = 0
+    for proc_id in deployed:
+        print(f"[{i}] {proc_id}")
+        lookup[i] = proc_id
+        i += 1
+
+    # allow user to select
+    selection = prompt("Select processor id:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
+    if multi_selection:
+        result = []
+        for i in selection:
+            result.append(lookup[i])
+        return result
+    else:
+        return lookup[selection]
 
 
 def add_cmd_identity(subparsers):
@@ -196,8 +314,14 @@ def exec_cmd_identity(args):
                 else:
                     print("Password do not match! Try again.")
 
+            # update smtp information
             keystore.update_smtp(server, account, password)
-            print("SMTP information updated!")
+            if prompt("SMTP information updated! Send test email?", ['y', 'n']) == 'y':
+                receiver = prompt("Receiver email address:")
+                service = EmailService(keystore)
+                service.send_test_email(receiver)
+                print("Test email sent! Please check your inbox.")
+
             return True
 
         return False
@@ -339,9 +463,20 @@ def add_cmd_dor(subparsers):
                             help="the content of the data object (if more than one file is specified, the files will "
                                  "be archived into a single file with --format set to 'archive(tar.gz)')")
 
+    add_proc_parser = subparsers.add_parser('add-proc', help='adds a Processor Git Pointer data object')
+
+    add_proc_parser.add_argument('--url', dest='url', action='store',
+                                 help=f"the URL where to find the git repository that contains the processor")
+
+    add_proc_parser.add_argument('--commit-id', dest='commit-id', action='store',
+                                 help=f"the commit id to be used (default: most recent commit of the repository)")
+
+    add_proc_parser.add_argument('--path', dest='path', action='store',
+                                 help=f"the relative path inside the repository where to find the processor")
+
     remove_parser = subparsers.add_parser('remove', help='removes a data object')
 
-    remove_parser.add_argument('obj-ids', metavar='obj-ids', type=str, nargs='+',
+    remove_parser.add_argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
                                help="the ids of the data object that are to be deleted")
 
     tag_parser = subparsers.add_parser('tag', help='adds tags to a data object')
@@ -366,25 +501,25 @@ def add_cmd_dor(subparsers):
                                help=f"limits the search to data objects owned by the identity used (refer to "
                                     f"--keystore-id)")
 
-    search_parser.add_argument('patterns', metavar='patterns', type=str, nargs='+',
+    search_parser.add_argument('patterns', metavar='patterns', type=str, nargs='*',
                                help="limits the search to data objects whose tag (key or value) contains any "
                                     "of the patterns")
 
     grant_parser = subparsers.add_parser('grant', help='grants access to one or more data objects')
 
-    grant_parser.add_argument('--iid', dest='iid', action='store',
+    grant_parser.add_argument('--iid', dest='iid', action='store', required=False,
                               help=f"the id of the identity who will be granted access to the data objects")
 
-    grant_parser.add_argument('obj-ids', metavar='obj-id', type=str, nargs='+',
+    grant_parser.add_argument('obj-ids', metavar='obj-id', type=str, nargs='*',
                               help="the ids of the data objects to which access will be granted")
 
-    revoke_parser = subparsers.add_parser('revoke', help='revokes access to one or more data objects')
+    revoke_parser = subparsers.add_parser('revoke', help='revokes access to a data object')
 
-    revoke_parser.add_argument('--iid', dest='iid', action='store',
-                               help=f"the id of the identity whose access will be revoked from the data objects")
+    revoke_parser.add_argument('--iid', dest='iid', action='store', required=False,
+                               help=f"the id of the identity whose access will be revoked from the data object")
 
-    revoke_parser.add_argument('obj-ids', metavar='obj-id', type=str, nargs='+',
-                               help="the ids of the data objects to which access will be revoked")
+    revoke_parser.add_argument('--obj-id', dest='obj-id', action='store', required=False,
+                               help="the id of the data objects to which access will be revoked")
 
 
 def exec_cmd_dor(args, keystore):
@@ -433,6 +568,11 @@ def exec_cmd_dor(args, keystore):
                                                    restrict_access, content_encrypted, protected_content_key,
                                                    args['data-type'], args['data-format'], keystore.identity().name())
 
+        # do some simple tagging
+        proxy.update_tags(obj_id, keystore.signing_key(), {
+            'name': os.path.basename(files[0])+("" if len(files) == 1 else " + ...")
+        })
+
         # if we used encryption, store the content key
         if content_encrypted:
             keystore.add_object_key(obj_id, content_key)
@@ -443,9 +583,63 @@ def exec_cmd_dor(args, keystore):
         print(f"Data object added: id={obj_id} descriptor={descriptor}")
         return obj_id
 
+    if args['command2'] == 'add-proc':
+        repo_name = args['url'].split("/")[-1]
+        repo_path = os.path.join(args['temp-dir'], repo_name)
+
+        # clone the repository in the temp directory
+        print(f"Cloning the repository '{args['url']}'")
+        remove_path(repo_path)
+        subprocess.check_output(['git', 'clone', args['url'], repo_path])
+
+        # checkout to commit id
+        print(f"Checkout commit it '{args['commit-id']}'")
+        subprocess.check_output(['git', 'checkout', args['commit-id'], repo_path], cwd=repo_path)
+
+        # load the descriptor
+        descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
+        descriptor = load_json_from_file(descriptor_path)
+
+        # generate git proc pointer file
+        obj_path = os.path.join(args['temp-dir'], 'git-proc-pointer.json')
+        remove_path(obj_path)
+        dump_json_to_file({
+            'source': args['url'],
+            'commit_id': args['commit-id'],
+            'path': args['path'],
+            'descriptor': descriptor
+        }, obj_path)
+
+        # connect to the DOR and add the data object
+        obj_id, descriptor = proxy.add_data_object(obj_path, keystore.identity(),
+                                                   False, False, None,
+                                                   'Git-Processor-Pointer', 'json', keystore.identity().name())
+
+        # do some simple tagging
+        proxy.update_tags(obj_id, keystore.signing_key(), {
+            'name': repo_name,
+            'is_gpp': 'true'
+        })
+
+        # clean up
+        remove_path(repo_path)
+        remove_path(obj_path)
+
+        print(f"Data object added: id={obj_id} descriptor={descriptor}")
+        return obj_id
+
     elif args['command2'] == 'remove':
         result = {}
-        for obj_id in args['obj-ids']:
+
+        # do we have object ids?
+        removal = args['obj-ids']
+        if len(removal) == 0:
+            removal = []
+            for item in select_eligible_data_object(proxy, keystore, multi_selection=True):
+                removal.append(item[0])
+
+        # remove objects
+        for obj_id in removal:
             result[obj_id] = proxy.delete_data_object(obj_id, keystore.signing_key())
 
         print(f"Data object(s) removal result: {result}")
@@ -479,57 +673,71 @@ def exec_cmd_dor(args, keystore):
             result = proxy.search(args['patterns'])
 
         print(f"All data objects that match the criteria:")
-        for obj_id in result:
-            print(f"- {obj_id}:")
-            tags = proxy.get_tags(obj_id)
-            for key, value in tags.items():
-                print(f"\t{key} : {value}")
+        for obj_id, tags in result.items():
+            print(f"- {obj_id}: {tags if len(tags) > 0 else 'no tags found'}")
 
         return result
 
     elif args['command2'] == 'grant':
-        # is the identity known to the node?
-        record = db_proxy.get_identity(args['iid'])
-        if record is None:
-            print(f"Identity '{args['iid']}' is not known to the node. Cannot proceed.")
-            return None
+        # do we need to interactively ask for an object id?
+        obj_ids = args['obj-ids']
+        if len(obj_ids) == 0:
+            obj_ids = [select_eligible_data_object(proxy, keystore)[0]]
+
+        # do we need to interactively ask for the identity id?
+        iid = args['iid']
+        if iid is None:
+            identity = select_known_identity(db_proxy)
+
+        else:
+            # is the identity known to the node?
+            record = db_proxy.get_identity(iid)
+            if record is None:
+                print(f"Identity '{iid}' is not known to the node. Cannot proceed.")
+                return None
+
+            identity = Identity.deserialise(record)
 
         # grant access to the data objects
-        identity = Identity.deserialise(record)
         result = []
-        for obj_id in args['obj-ids']:
+        for obj_id in obj_ids:
             r = proxy.grant_access(obj_id, keystore.signing_key(), identity)
             if r[obj_id] == identity.id():
                 result.append(obj_id)
 
         # print results
-        print(f"Access granted to '{identity.id()}':")
+        print(f"Access granted to {identity.id()}/{identity.name()}/{identity.email()}:")
         for obj_id in result:
             print(f"- {obj_id}")
 
         return result
 
     elif args['command2'] == 'revoke':
-        # is the identity known to the node?
-        record = db_proxy.get_identity(args['iid'])
-        if record is None:
-            print(f"Identity '{args['iid']}' is not known to the node. Cannot proceed.")
-            return None
+        # do we need to interactively ask for an object id?
+        obj_id = args['obj-id']
+        if obj_id is None:
+            obj_id = select_eligible_data_object(proxy, keystore)[0]
 
-        # grant access to the data objects
-        identity = Identity.deserialise(record)
-        result = []
-        for obj_id in args['obj-ids']:
-            r = proxy.revoke_access(obj_id, keystore.signing_key(), identity)
-            if r[obj_id] == identity.id():
-                result.append(obj_id)
+        # do we need to interactively ask for the identity id?
+        iid = args['iid']
+        if iid is None:
+            identity = select_identity_from_access_list(proxy, db_proxy, obj_id)
+
+        else:
+            # is the identity known to the node?
+            record = db_proxy.get_identity(iid)
+            if record is None:
+                print(f"Identity '{iid}' is not known to the node. Cannot proceed.")
+                return None
+
+            identity = Identity.deserialise(record)
+
+        # revoke access from the data objects
+        proxy.revoke_access(obj_id, keystore.signing_key(), identity)
 
         # print results
-        print(f"Access revoked from '{identity.id()}':")
-        for obj_id in result:
-            print(f"- {obj_id}")
-
-        return result
+        print(f"Access to '{obj_id}' revoked from '{identity.id()}':")
+        return obj_id
 
 
 def add_cmd_rti(subparsers):
@@ -543,7 +751,7 @@ def add_cmd_rti(subparsers):
 
     deploy_parser = subparsers.add_parser('deploy', help='deploys a processor to the node')
 
-    deploy_parser.add_argument('--proc-id', dest='proc-id', action='store',
+    deploy_parser.add_argument('--proc-id', dest='proc-id', action='store', required=False,
                                help=f"the id of the processor to be deployed to the node")
 
     undeploy_parser = subparsers.add_parser('undeploy', help='undeploys a processor from the node')
@@ -578,10 +786,22 @@ def add_cmd_rti(subparsers):
 
 def exec_cmd_rti(args, keystore):
     proxy = RTIProxy(args['address'].split(":"))
+    dor_proxy = DORProxy(args['address'].split(":"))
     db_proxy = NodeDBProxy(args['address'].split(":"))
 
     if args['command2'] == 'deploy':
-        descriptor = proxy.deploy(args['proc-id'])
+        # do we have a processor id?
+        proc_id = args['proc-id']
+        if proc_id is None:
+            proc_id = select_gpp_data_object(dor_proxy)
+            proc_id = proc_id[0] if proc_id else None
+
+        # do we have a processor id now?
+        if proc_id is None:
+            return None
+
+        # perform the deployment
+        descriptor = proxy.deploy(proc_id)
         if descriptor is not None:
             print(f"Processor (id={args['proc-id']}) successfully deployed: \n{descriptor}")
 
@@ -591,12 +811,15 @@ def exec_cmd_rti(args, keystore):
         return descriptor
 
     elif args['command2'] == 'undeploy':
-        proc_id = proxy.deploy(args['proc-id'])
-        if proc_id is not None:
-            print(f"Processor (id={args['proc-id']}) successfully undeployed.")
+        # do we have a processor id?
+        proc_id = args['proc-id']
+        if proc_id is None:
+            proc_id = select_from_deployed_processors(proxy)
 
-        else:
-            print(f"Could not undeploy processor. Was the processor deployed in the first place?")
+        # perform the undeploy
+        proc_id = proxy.undeploy(proc_id)
+        if proc_id is not None:
+            print(f"Processor (id={proc_id}) successfully undeployed.")
 
         return proc_id
 
@@ -714,6 +937,7 @@ def exec_cmd_rti(args, keystore):
             return None
 
         job_id = proxy.submit_job(args['proc-id'], job_input, job_output, keystore.identity())
+        print(f"Job submitted: id={job_id}")
         return job_id
 
     elif args['command2'] == 'status':
@@ -777,7 +1001,7 @@ def exec_cmd_request(args, keystore):
 
 def parse_args(args):
     default_keystore = os.path.join(os.environ['HOME'], '.keystore')
-    default_temp_dir = os.path.join(default_keystore)
+    default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
 
     parser = argparse.ArgumentParser(description='SaaS Middleware command line interface (CLI)')
 
