@@ -159,8 +159,8 @@ data consumed and output data produced by the processor, respectively. An item h
 data type and data format:
 ```json
 {
-  "name": ...
-  "data_type": ...
+  "name": ...,
+  "data_type": ...,
   "data_format": ...
 }
 ```
