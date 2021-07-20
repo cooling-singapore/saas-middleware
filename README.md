@@ -149,9 +149,9 @@ the descriptor of the processor. A processor descriptor specifies the name and i
 interfaces of the processor. It is structured as follows:
 ```json
 {
-  'name': ...,
-  'input': [ ... ],
-  'output': [ ... ]
+  "name": ...,
+  "input": [ ... ],
+  "output": [ ... ]
 }
 ```
 The input and output interfaces (`input` and `output`) are lists of items that specify the input 
@@ -159,9 +159,9 @@ data consumed and output data produced by the processor, respectively. An item h
 data type and data format:
 ```json
 {
-  'name': ...
-  'data_type': ...
-  'data_format': ...
+  "name": ...
+  "data_type": ...
+  "data_format": ...
 }
 ```
 Both, input and output interface, can have an arbitrary number of items. For example, the
