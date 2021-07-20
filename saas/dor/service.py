@@ -76,7 +76,7 @@ class DataObjectRepositoryService:
 
             # move the content to its destination and make read-only
             destination_path = self.obj_content_path(c_hash)
-            subprocess.check_output(['mv', content_path, destination_path])
+            subprocess.check_output(['mv', '-f', content_path, destination_path])
             subprocess.check_output(['chmod', 'ugo-w', destination_path])
 
         # create descriptor file
