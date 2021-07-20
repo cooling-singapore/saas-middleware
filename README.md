@@ -6,7 +6,7 @@ of a loosely-coupled federation of models.
 ## Install
 Install the following dependencies:
 ```
-pip3 install cryptography canonicaljson flask flask_cors requests jsonschema sqlalchemy
+pip3 install cryptography canonicaljson flask flask_cors requests jsonschema sqlalchemy docker
 ```
 
 ## Usage
