@@ -332,6 +332,11 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         assert(record.obj_id == obj_id)
         assert(record.owner_iid == identity.id())
 
+        # what tags do we have now? some tags may be set automatically when adding a data object
+        tags = node.db.get_tags(obj_id)
+        print(tags)
+        n_tags = len(tags)
+
         # tag the data object
         args = [
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
@@ -340,7 +345,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             'tag', '--obj-id', obj_id, 'key1=value1', 'key2=value2'
         ]
         tags = parse_args(args)
-        assert(len(tags) == 2)
+        assert(len(tags) == n_tags + 2)
         assert('key1' in tags)
         assert('key2' in tags)
         assert(tags['key1'] == 'value1')
@@ -354,7 +359,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             'untag', '--obj-id', obj_id, 'key1', 'key_doesnt_exist'
         ]
         tags = parse_args(args)
-        assert(len(tags) == 1)
+        assert(len(tags) == n_tags + 1)
         assert('key2' in tags)
         assert(tags['key2'] == 'value2')
 
@@ -380,6 +385,11 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             assert(obj_id is not None)
             obj_ids.append(obj_id)
 
+            # what tags do we have now? some tags may be set automatically when adding a data object
+            tags = node.db.get_tags(obj_id)
+            print(tags)
+            n_tags = len(tags)
+
             # tag the data object
             args = [
                 '--keystore', self.wd_path, '--temp-dir', self.wd_path,
@@ -388,7 +398,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
                 'tag', '--obj-id', obj_id, f"key={i}"
             ]
             tags = parse_args(args)
-            assert (len(tags) == 1)
+            assert (len(tags) == n_tags + 1)
             assert ('key' in tags)
             assert (tags['key'] == f"{i}")
 
@@ -464,7 +474,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identities[0].id(), '--password', self.password,
             'dor', '--address', f"{address[0]}:{address[1]}",
-            'revoke', '--iid', identities[1].id(), obj_id
+            'revoke', '--iid', identities[1].id(), '--obj-id', obj_id
         ]
         granted = parse_args(args)
         assert(obj_id in granted)
@@ -492,7 +502,8 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         address = node.rest.address()
 
         # create keystore and identity
-        keystore, identity = self.create_keystore_and_make_identity_known(db_proxy)
+        keystore, identity = self.create_keystore_and_make_identity_known(db_proxy, name="test",
+                                                                          email=node.identity().email())
 
         # add test processor
         proc_id = self.add_test_processor_to_dor(identity, dor_proxy)
@@ -560,7 +571,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
 
     def test_cmd_rti_submit_status(self):
         # create node and proxies
-        node, dor_proxy, rti_proxy, db_proxy = self.create_node_and_proxies()
+        node, dor_proxy, rti_proxy, db_proxy = self.create_node_and_proxies(use_credentials=True)
         address = node.rest.address()
 
         # create keystore and identity
@@ -760,7 +771,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         args = [
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
-            'handle', request
+            'handle', '--confirm', request
         ]
         result = parse_args(args)
         assert (result is True)
