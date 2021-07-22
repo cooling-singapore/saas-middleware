@@ -80,6 +80,7 @@ class Node:
     def join_network(self, boot_node_address):
         logger.info(f"joining network via boot node '{boot_node_address}'.")
         self.db.protocol.send_join(boot_node_address)
+        return True
 
     def leave_network(self):
         logger.info(f"leaving network.")
