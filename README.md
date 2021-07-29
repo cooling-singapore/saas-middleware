@@ -96,8 +96,7 @@ boot node. For more options, use:
 One of the two core modules of a SaaS Node is the Data Object Repository (DOR). It stores data
 objects and makes them available across the domain for jobs that are executed by a Runtime 
 Infrastructure (RTI). The content of a data object can be virtually anything so as long as it
-comes as a file. If a data object consists of multiple files, the CLI will archive (e.g., using
-tar gz) them and use the archive as data object content.
+comes as a file.
 
 When adding a new data object to a DOR, the user needs to specify the data type and format of
 the data object. In addition, the user may use optional flags to indicate if access to the data 
@@ -109,6 +108,12 @@ object before uploading it to the DOR. Example:
 ```shell
 ./saas_cli.py dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'JSONObject' --data-format 'json' $HOME/Desktop/data_object_a.json 
 ```
+
+If a data object consists of multiple files, the CLI will archive (e.g., using tar.gz) them and 
+use the archive as data object content. Example: 
+```shell
+./saas_cli.py dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'JSONObject' --data-format 'json' $HOME/Desktop/data_object_a.json $HOME/Desktop/data_object_b.json
+``` 
 
 Data objects can only be removed by their owner. Example:
 ```shell
