@@ -5,7 +5,8 @@ import base64
 import socket
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.utilities.general_helpers import all_in_dict
+from saas.keystore.keystore import Identity
+from saas.helpers import all_in_dict
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -20,9 +21,10 @@ class MessengerException(Exception):
     """
     MessengerException is the base class for all messenger-related exception classes.
     """
-    def __init__(self, info):
+    def __init__(self, info, status=None):
         super().__init__()
         self.info = info
+        self.status = status
 
 
 class MessengerRuntimeError(MessengerException):
@@ -69,12 +71,12 @@ class SecureMessenger:
             peer_socket = socket.create_connection(peer_address)
             messenger = SecureMessenger(peer_socket)
             peer = messenger.handshake(self_node)
-            logger.info(f"connected to peer '{peer.iid}'")
+            logger.info(f"connected to peer '{peer.id()}'")
 
             # if we have an expected peer iid, do a comparison if it matches with what the peer is telling us
-            if expected_peer_iid and not expected_peer_iid == peer.iid:
+            if expected_peer_iid and not expected_peer_iid == peer.id():
                 logger.warning(f"unexpected iid for peer at address {peer_address}: "
-                               f"expected={expected_peer_iid} idd_as_per_peer={peer.iid}")
+                               f"expected={expected_peer_iid} idd_as_per_peer={peer.id()}")
 
             return peer, messenger
 
@@ -108,10 +110,10 @@ class SecureMessenger:
         # initialise the cipher used to encrypt/decrypt messages
         self.cipher = Fernet(base64.urlsafe_b64encode(session_key))
 
-        # exchange public keys. note that this is not strictly speaking part of the handshake. it is merely for the
+        # exchange identities. note that this is not strictly speaking part of the handshake. it is merely for the
         # benefit of the peers to know who their counterparty is.
-        self.send({'public_key': node.identity().public_as_string()})
-        self.peer = ECKeyPair.from_public_key_string(self.receive()['public_key'])
+        self.send(node.identity().serialise())
+        self.peer = Identity.deserialise(self.receive())
 
         return self.peer
 
@@ -218,21 +220,13 @@ class SecureMessenger:
         reply = self.receive()
 
         if not all_in_dict(['status', 'content'], reply):
-            raise MessengerInvalidUseException(f"malformed reply: {reply}")
-
-        elif reply['status'] == 400:
-            raise MessengerInvalidUseException(reply['content'])
-
-        elif reply['status'] == 500:
-            raise MessengerInvalidUseException(f"error during request: {request_message}")
-
-        elif reply['status'] == 501:
-            raise MessengerRuntimeError(reply['content'], reply['status'])
+            raise MessengerException(f"malformed reply: {reply}")
 
         elif not reply['status'] == 200:
-            raise MessengerRuntimeError(reply['content'], reply['status'])
+            raise MessengerException(reply['content'], reply['status'])
 
-        return reply['content']
+        else:
+            return reply['content']
 
     def reply_ok(self, reply_content=None):
         """

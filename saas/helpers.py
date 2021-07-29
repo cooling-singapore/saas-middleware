@@ -7,6 +7,7 @@ __email__ = "heiko.aydt@gmail.com"
 __status__ = "development"
 
 import os
+import shutil
 import time
 import logging
 import json
@@ -17,6 +18,19 @@ import string
 from getpass import getpass
 
 logger = logging.getLogger('Utilities.general_helpers')
+
+
+def remove_path(path):
+    """
+    Removes a filesystem element (file or directory) including all its contents
+    (in case of a directory)
+    :param path:
+    :return:
+    """
+    if os.path.isdir(path):
+        shutil.rmtree(path)
+    elif os.path.isfile(path):
+        os.remove(path)
 
 
 def get_timestamp_now():
@@ -78,10 +92,31 @@ def create_symbolic_link(source_path, destination_path):
     subprocess.check_output(['ln', '-s', source_path, destination_path])
 
 
-def prompt(question, valid_answers=None, hidden=False):
+def prompt(question, valid_answers=None, valid_range=None, hidden=False, multi_selection=False):
     f = getpass if hidden else input
     while True:
-        if valid_answers:
+        if valid_range:
+            answer = f(f"{question} ({valid_range[0]}:{valid_range[1]}) ")
+            answer.strip()
+
+            if multi_selection:
+                result = []
+                for item in answer.split(","):
+                    if item.isdigit():
+                        item = int(item)
+                        if valid_range[0] <= item <= valid_range[1]:
+                            result.append(item)
+
+                if len(result) > 0:
+                    return result
+
+            else:
+                if answer.isdigit():
+                    answer = int(answer)
+                    if valid_range[0] <= answer <= valid_range[1]:
+                        return answer
+
+        elif valid_answers:
             joined_answers = "|".join(valid_answers)
             answer = f(f"{question} ({joined_answers}) ")
 
