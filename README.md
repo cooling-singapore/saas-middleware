@@ -16,8 +16,12 @@ commands also allow interactive use of the CLI in which case the user is prompte
 The following sections explains how to use of the CLI for common use-cases.
 
 ### Create Identity
-If you are using the SaaS Middleware for the first time, you need to create an identity. This is
-needed in order to run SaaS node instance or interact with remote instances:
+If you are using the SaaS Middleware for the first time, you need to create an identity. In
+addition to a name and contact (e.g., email), an identity is also associated with a set of
+keys for signing and encryption purposes. Identities are used across the SaaS system for
+authentication/authorisation purposes as well for managing ownership and access rights to
+data objects. An identity is required to operate SaaS node instances or to interact with 
+remote instances:
 ```shell
 ./saas_cli.py identity create
 ```
