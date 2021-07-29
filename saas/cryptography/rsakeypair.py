@@ -1,3 +1,4 @@
+import base64
 import logging
 import math
 import cryptography.hazmat.primitives.serialization as serialization
@@ -24,6 +25,9 @@ class RSAKeyPair(KeyPair):
 
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
+
+    def info(self):
+        return f"RSA/{self.private_key.key_size}/{self.iid}"
 
     @classmethod
     def create_new(cls, key_size=4096):
@@ -133,9 +137,10 @@ class RSAKeyPair(KeyPair):
         except InvalidSignature:
             return False
 
-    def encrypt(self, message):
+    def encrypt(self, message, base64_encoded=False):
         """
         Encrypts a message using the public key.
+        :param base64_encoded:
         :param message: the unencrypted message
         :return: encrypted message
         """
@@ -153,14 +158,20 @@ class RSAKeyPair(KeyPair):
             )
             result += bytearray(chunk)
 
-        return bytes(result)
+        if base64_encoded:
+            return base64.b64encode(bytes(result))
+        else:
+            return bytes(result)
 
-    def decrypt(self, message):
+    def decrypt(self, message, base64_encoded=False):
         """
         Decrypts a message using the private key.
+        :param base64_encoded:
         :param message: the encrypted message
         :return: unencrypted message
         """
+        message = base64.b64decode(message) if base64_encoded else message
+
         chunk_size = int(self.public_key.key_size / 8)
         n_chunks = int(len(message) / chunk_size)
         result = bytearray()

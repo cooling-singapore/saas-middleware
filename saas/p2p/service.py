@@ -85,7 +85,7 @@ class P2PService:
                 # create messenger and perform handshake
                 messenger = SecureMessenger(peer_socket)
                 peer = messenger.handshake(self._node)
-                logger.info(f"connected by peer '{peer.iid}'")
+                logger.info(f"connected by peer '{peer.id()}'")
 
                 # start handling the client requests
                 threading.Thread(target=self._handle_client, args=(peer, messenger)).start()
@@ -110,7 +110,7 @@ class P2PService:
         :param messenger: the messenger that facilitates communication between the node and the peer
         :return: None
         """
-        logger.info(f"begin serving client '{peer.short_iid}'")
+        logger.info(f"begin serving client '{peer.id()}'")
 
         # based on the first message received, determine the protocol and let the protocol handle all
         # further message exchanges
@@ -139,7 +139,7 @@ class P2PService:
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.error(f"error while serving client '{peer.short_iid}': {e}\n{trace}")
+            logger.error(f"error while serving client '{peer.id()}': {e}\n{trace}")
 
         messenger.close()
-        logger.info(f"done serving client '{peer.short_iid}'")
+        logger.info(f"done serving client '{peer.id()}'")

@@ -1,5 +1,4 @@
 import logging
-import time
 import cryptography.hazmat.primitives.serialization as serialization
 
 from saas.cryptography.keypair import KeyPair
@@ -24,6 +23,9 @@ class ECKeyPair(KeyPair):
 
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
+
+    def info(self):
+        return f"ECC/{self.private_key.curve.name}/{self.private_key.curve.key_size}/{self.iid}"
 
     @classmethod
     def create_new(cls):
@@ -168,163 +170,3 @@ class ECKeyPair(KeyPair):
             return True
         except InvalidSignature:
             return False
-
-    # TODO: Reconsider the sign/verify authentication/authorisation methods, i.e., the way they work, how they are
-    #       supposed to be used and what parameters they need.
-    def sign_authentication_token(self, url, body=None, files=None):
-        """
-        Signs an authentication token using the private key. A authentication token includes a series of information
-        that MUST be known to both - sender and receiver of a message - at the time a request is made. The information
-        should very specific to the context and not known in advance (to avoid an attack whereby signatures are created
-        in advance). For this purpose, the authentication token is based on a url, body and (optional) files contents.
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param files: files that may be part of the request (e.g., attachment for a POST request)
-        :return: the signature
-        """
-        file_hashes = []
-        if files:
-            for file in files:
-                file_hashes.append(hash_file_content(file))
-            file_hashes.sort()
-
-        # logger.info("sign_authentication_token\turl={}".format(url))
-        # logger.info("sign_authentication_token\tbody={}".format(body))
-        # logger.info("sign_authentication_token\tfiles={}".format(files))
-        #
-        # logger.info("sign_authentication_token\tH(url)={}".format(hash_string_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        # logger.info("sign_authentication_token\tH(public_key)={}".format(hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(self.public_as_string()).hex()
-
-        if body:
-            # logger.info("sign_authentication_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        for file_hash in file_hashes:
-            # logger.info("sign_authentication_token\tH(file_hash)={}".format(file_hash.hex()))
-            token += file_hash.hex()
-
-        token = hash_string_object(token)
-        # logger.info("sign_authentication_token\ttoken={}".format(token.hex()))
-
-        return self.sign(token)
-
-    def verify_authentication_token(self, signature, url, body=None, files=None):
-        """
-        Verifies the signature of an authentication token. This method should be called by the receiver of a request.
-        The information needed to create the authentication token should be known to the receiver of the request at
-        the time the request is made in order to recreate the exact same token that has been used by the sender.
-        :param signature: the signature that is to be verified
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param files: files that may be part of the request (e.g., attachment for a POST request)
-        :return: True of False depending on whether the signature is valid
-        """
-        file_hashes = []
-        if files:
-            for label in files:
-                file_hashes.append(hash_file_content(files[label]))
-            file_hashes.sort()
-
-        # logger.info("verify_authentication_token\turl={}".format(url))
-        # logger.info("verify_authentication_token\tbody={}".format(body))
-        # logger.info("verify_authentication_token\tfiles={}".format(files))
-        #
-        # logger.info("verify_authentication_token\tH(url)={}".format(hash_string_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        # logger.info("verify_authentication_token\tH(public_key)={}".format(hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(self.public_as_string()).hex()
-
-        if body:
-            # logger.info("verify_authentication_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        for file_hash in file_hashes:
-            # logger.info("verify_authentication_token\tH(file_hash)={}".format(file_hash.hex()))
-            token += file_hash.hex()
-
-        token = hash_string_object(token)
-        # logger.info("verify_authentication_token\ttoken={}".format(token.hex()))
-
-        return self.verify(token, signature)
-
-    def sign_authorisation_token(self, url, body=None, precision=5):
-        """
-        Signs an authorisation token using the private key. An authorisation token includes a series of information
-        that MUST be known to both - sender and receiver of a message - at the time a request is made. The information
-        should very specific to the context and not known in advance (to avoid an attack whereby signatures are created
-        in advance). For this purpose, the authentication token is based on a url and body. In addition, a timeslot is
-        determined. A timeslot is basically a timestamp with a certain precision (e.g., 5 seconds).
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param precision: the length of a duration in seconds (default: 5)
-        :return: the signature
-        """
-        slot = int(time.time() / precision)
-
-        # logger.info("sign_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        if body:
-            # logger.info("sign_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        # logger.info("sign_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-        token += hash_bytes_object(bytes(slot)).hex()
-
-        # logger.info("sign_authorisation_token\tH(self.public_as_string())={}".format(hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(self.public_as_string()).hex()
-
-        token = hash_string_object(token)
-        # logger.info("sign_authorisation_token\ttoken={}".format(token.hex()))
-
-        return self.sign(token)
-
-    def verify_authorisation_token(self, signature, url, body=None, precision=5):
-        """
-        Verifies the signature of an authorisation token. This method should be called by the receiver of a request.
-        The information needed to create the authentication token should be known to the receiver of the request at
-        the time the request is made in order to recreate the exact same token that has been used by the sender. The
-        authorisation token is tied to a timeslot. For verification, the current time slot +/- 1 is considered as
-        acceptable.
-        :param signature: the signature that is to be verified
-        :param url: a string (e.g., representing the REST API endpoint used for the request)
-        :param body: a json object containing additional information (e.g., parameters used for making the request)
-        endpoint)
-        :param precision: the length of a duration in seconds (default: 5)
-        :return: True of False depending on whether the signature is valid for the current (+/- 1) time slot
-        """
-        # determine time slots (we allow for some variation before and after)
-        ref = int(time.time() / precision)
-        slots = [ref - 1, ref, ref + 1]
-
-        # generate the token for each time slot and check if for one the signature is valid.
-        for slot in slots:
-            # logger.info("verify_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-            token = hash_string_object(url).hex()
-
-            if body:
-                # logger.info("verify_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-                token += hash_json_object(body).hex()
-
-            # logger.info("verify_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-            token += hash_bytes_object(bytes(slot)).hex()
-
-            # logger.info("verify_authorisation_token\tH(self.public_as_string())={}".format(
-            #     hash_string_object(self.public_as_string()).hex()))
-            token += hash_string_object(self.public_as_string()).hex()
-
-            token = hash_string_object(token)
-            # logger.info("verify_authorisation_token\ttoken={}".format(token.hex()))
-
-            if self.verify(token, signature):
-                return True
-
-        # no valid signature for any of the eligible timeslots
-        return False

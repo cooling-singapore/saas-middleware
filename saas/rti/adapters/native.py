@@ -10,13 +10,12 @@ from saas.schemas import git_specification_schema
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
+    def __init__(self, proc_id, content_path, node):
         super().__init__(proc_id, node)
-        self.local_git_path = os.path.join(node.datastore(), '_git_repos', proc_id)
-        self.git_spec = self._read_git_spec(content_path)
-
-        self.processor_path = None
-        self.processor_descriptor = None
+        self._local_git_path = os.path.join(node.datastore(), '_git_repos', proc_id)
+        self._git_spec = self._read_git_spec(content_path)
+        self._processor_path = None
+        self._processor_descriptor = None
 
     # TODO: Move function out to processor_scripts.py
     @staticmethod
@@ -33,16 +32,19 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             os.mkdir(log_dir)
         return log_dir
 
+    def descriptor(self):
+        return self._processor_descriptor
+
     def startup(self):
-        deploy_git_processor(self.local_git_path, self.git_spec, self.log_dir)
+        deploy_git_processor(self._local_git_path, self._git_spec, self.log_dir)
 
-        processor_path, processor_descriptor = get_processor(self.local_git_path, self.git_spec)
-        self.processor_path = processor_path
-        self.processor_descriptor = processor_descriptor
+        processor_path, processor_descriptor = get_processor(self._local_git_path, self._git_spec)
+        self._processor_path = processor_path
+        self._processor_descriptor = processor_descriptor
 
-        self.parse_io_interface(self.processor_descriptor)
+        self.parse_io_interface(self._processor_descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
-        venv_py_path = os.path.join(self.local_git_path, 'venv', 'bin', 'python')
-        subprocess.run([venv_py_path, self.processor_path, working_directory], check=True)
+        venv_py_path = os.path.join(self._local_git_path, 'venv', 'bin', 'python')
+        subprocess.run([venv_py_path, self._processor_path, working_directory], check=True)
         return True
