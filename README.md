@@ -112,7 +112,7 @@ object before uploading it to the DOR. Example:
 If a data object consists of multiple files, the CLI will archive (e.g., using tar.gz) them and 
 use the archive as data object content. Example: 
 ```shell
-./saas_cli.py dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'JSONObject' --data-format 'json' $HOME/Desktop/data_object_a.json $HOME/Desktop/data_object_b.json
+./saas_cli.py dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'AB-JSONObject' $HOME/Desktop/data_object_a.json $HOME/Desktop/data_object_b.json
 ``` 
 
 Data objects can only be removed by their owner. Example:
