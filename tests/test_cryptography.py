@@ -86,31 +86,6 @@ class ECKeyPairTestCases(unittest.TestCase, TestCaseBase):
         assert(self.key.verify(message0, signature0))
         assert(not self.key.verify(message1, signature0))
 
-    def test_authentication(self):
-        url = "/repository/345345345lk3j45345ef3f34r3984r"
-        body = {
-            'a': 'asdasdas',
-            'f': 2343
-        }
-
-        file_path = self.generate_random_file('data.dat', 1e6)
-
-        # case 1: no body, no files
-        signature = self.key.sign_authentication_token(url)
-        assert self.key.verify_authentication_token(signature, url)
-
-        # case 2: body, no files
-        signature = self.key.sign_authentication_token(url, body)
-        assert self.key.verify_authentication_token(signature, url, body)
-
-        # case 3: no body, files
-        signature = self.key.sign_authentication_token(url, files=[file_path])
-        assert self.key.verify_authentication_token(signature, url, files={'label': file_path})
-
-        # case 4: body, files
-        signature = self.key.sign_authentication_token(url, body, [file_path])
-        assert self.key.verify_authentication_token(signature, url, body, {'label': file_path})
-
     def test_authorisation(self):
         url = "/repository/345345345lk3j45345ef3f34r3984r"
         body = {

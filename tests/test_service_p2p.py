@@ -1,6 +1,6 @@
 import unittest
 
-from saas.cryptography.messenger import SecureMessenger, MessengerRuntimeError, MessengerInvalidUseException
+from saas.cryptography.messenger import SecureMessenger, MessengerException
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol
@@ -72,11 +72,8 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
             messenger.request(message)
             assert False
 
-        except MessengerInvalidUseException as e:
+        except MessengerException as e:
             assert(e.info == 'malformed message')
-
-        except Exception:
-            assert False
 
         finally:
             messenger.close()
@@ -91,11 +88,8 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
             messenger.request(message)
             assert False
 
-        except MessengerRuntimeError as e:
+        except MessengerException as e:
             assert(e.info == 'protocol not supported')
-
-        except Exception:
-            assert False
 
         finally:
             messenger.close()
@@ -109,11 +103,8 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
             messenger.request(message)
             assert False
 
-        except MessengerRuntimeError as e:
+        except MessengerException as e:
             assert(e.info == 'message type not supported')
-
-        except Exception:
-            assert False
 
         finally:
             messenger.close()

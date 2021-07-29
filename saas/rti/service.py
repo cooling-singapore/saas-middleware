@@ -1,23 +1,21 @@
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
 import os
 import logging
 import subprocess
 import json
 
 from threading import Lock
+from time import sleep
 
-from saas.rti.adapters.adapters import RTIProcessorAdapter
+from saas.dor.blueprint import DORProxy
+from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.rti.adapters.adapters import RTIProcessorAdapter, ProcessorState
 from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
-from saas.rti.adapters.workflow import RTIWorkflowProcessorAdapter
 from saas.rti.status import StatusLogger, State
 
 from jsonschema import validate, ValidationError
 
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.helpers import dump_json_to_file, load_json_from_file
 
 logger = logging.getLogger('RTI')
 
@@ -32,27 +30,28 @@ def validate_json(instance, schema):
 
 
 class RuntimeInfrastructureService:
-    workflow_proc_id = 'workflow'
+    infix_path = 'rti'
 
-    def __init__(self, node, support_workflows=True):
+    def proc_content_path(self, c_hash):
+        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
+
+    def proc_descriptor_path(self, obj_id):
+        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
+
+    def __init__(self, node):
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
-
-        # create working directories
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
+        self._content_keys = {}
+
+        # initialise directories
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
+        subprocess.check_output(['mkdir', '-p', os.path.join(self._node.datastore(),
+                                                             RuntimeInfrastructureService.infix_path)])
 
         # initialise job id counter
         self._next_job_id = 0
-
-        if support_workflows:
-            # start the workflow adapter
-            adapter: RTIProcessorAdapter = RTIWorkflowProcessorAdapter(node)
-            self._deployed_processors = {
-                RuntimeInfrastructureService.workflow_proc_id: adapter
-            }
-            adapter.start()
 
     def rest_address(self):
         return self._node.rest.address()
@@ -63,40 +62,41 @@ class RuntimeInfrastructureService:
     # FIXME: Remove default value
     def deploy(self, proc_id, deployment='native'):
         with self._mutex:
+            descriptor_path = self.proc_descriptor_path(proc_id)
+
             # is the processor already deployed?
-            descriptor_path = self._node.dor.obj_descriptor_path(proc_id, cache=True)
             if proc_id in self._deployed_processors:
-                # load the descriptor
-                with open(descriptor_path) as f:
-                    descriptor = json.load(f)
-                    return descriptor
+                return self._deployed_processors[proc_id].descriptor()
 
-            # do we have a processor image/package?
-            c_hash = self._node.dor.fetch(proc_id)
-            if not c_hash:
-                return None
+            # does any node in the network have the processor data object?
+            for network_node in self._node.db.get_network():
+                proxy = DORProxy(network_node.rest_address.split(":"))
 
-            # load the descriptor
-            with open(descriptor_path) as f:
-                descriptor = json.load(f)
+                descriptor = proxy.get_descriptor(proc_id)
+                if descriptor:
+                    content_path = self.proc_content_path(descriptor['c_hash'])
+                    protocol = DataObjectRepositoryP2PProtocol(self._node)
+                    protocol.send_fetch(network_node.p2p_address.split(":"), proc_id, descriptor_path, content_path)
 
-            # create an RTI adapter
-            content_path = self._node.dor.obj_content_path(c_hash, cache=True)
-            if deployment == 'native':
-                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTINativeProcessorAdapter(proc_id,
-                                                                                                    descriptor,
-                                                                                                    content_path,
-                                                                                                    self._node)
+                    # create an RTI adapter instance
+                    if deployment == 'native':
+                        self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                            RTINativeProcessorAdapter(proc_id, content_path, self._node)
 
-            elif deployment == 'docker':
-                self._deployed_processors[proc_id]: RTIProcessorAdapter = RTIDockerProcessorAdapter(proc_id,
-                                                                                                    descriptor,
-                                                                                                    content_path,
-                                                                                                    self._node)
+                    elif deployment == 'docker':
+                        self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                            RTIDockerProcessorAdapter(proc_id, content_path, self._node)
 
-            self._deployed_processors[proc_id].start()
+                    # start the processor and wait until it is deployed
+                    processor = self._deployed_processors[proc_id]
+                    processor.start()
+                    while processor.state() == ProcessorState.UNINITIALISED or \
+                            processor.state() == ProcessorState.STARTING:
+                        sleep(0.5)
 
-            return descriptor
+                    return self._deployed_processors[proc_id].descriptor()
+
+            return None
 
     def undeploy(self, proc_id, force=False):
         with self._mutex:
@@ -124,9 +124,8 @@ class RuntimeInfrastructureService:
             return [*self._deployed_processors]
 
     def get_descriptor(self, proc_id):
-        descriptor_path = self._node.dor.obj_descriptor_path(proc_id, cache=True)
-        with open(descriptor_path) as f:
-            return json.load(f)
+        with self._mutex:
+            return self._deployed_processors[proc_id].descriptor() if proc_id in self._deployed_processors else None
 
     def submit(self, proc_id, descriptor):
         with self._mutex:
@@ -189,3 +188,11 @@ class RuntimeInfrastructureService:
                 'job_descriptor': descriptor,
                 'status': status
             }
+
+    def put_permission(self, req_id, content_key):
+        with self._mutex:
+            self._content_keys[req_id] = content_key
+
+    def pop_permission(self, req_id):
+        with self._mutex:
+            return self._content_keys.pop(req_id, None)

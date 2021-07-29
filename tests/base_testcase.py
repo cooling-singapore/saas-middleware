@@ -7,7 +7,7 @@ from multiprocessing import Lock
 
 from saas.keystore.keystore import Keystore
 from saas.node import Node
-from saas.utilities.general_helpers import get_timestamp_now
+from saas.helpers import get_timestamp_now, load_json_from_file
 
 logger = logging.getLogger('tests.base_testcase')
 
@@ -66,11 +66,11 @@ class TestCaseBase:
             self._next_rest_port += 1
             return address
 
-    def create_keystores(self, n, password=None):
+    def create_keystores(self, n):
         keystores = []
         for i in range(n):
             keystores.append(
-                Keystore.create(self.wd_path, f"identity_{i}", f"identity_{i}@somewhere.com", password if password else f"password_{i}")
+                Keystore.create(self.wd_path, f"keystore_{i}", f"keystore_{i}@somewhere.com", f"password_{i}")
             )
 
         return keystores
@@ -104,7 +104,7 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    def get_node(self, name, enable_rest=False):
+    def get_node(self, name, use_credentials=False, enable_rest=False):
         if name in self.nodes:
             return self.nodes[name]
 
@@ -115,15 +115,21 @@ class TestCaseBase:
             storage_path = os.path.join(self.wd_path, name)
             subprocess.check_output(['mkdir', '-p', storage_path])
 
-            logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path}")
+            if use_credentials:
+                credentials = load_json_from_file('credentials.json')
+                keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
+                logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
+                            f"using existing keystore (id={keystore.identity().id()})")
+            else:
+                logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
+                            f"using new (fake) keystore")
+                keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
 
-            keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
+            # create node and startup services
             node = Node(keystore, storage_path)
             node.startup(p2p_address)
-
             node.start_dor_service()
             node.start_rti_service()
-
             if enable_rest:
                 node.start_rest_service(rest_address)
 

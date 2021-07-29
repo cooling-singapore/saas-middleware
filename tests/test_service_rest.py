@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify
 from flask_cors import CORS
 
 from saas.rest.proxy import EndpointProxy
-from saas.utilities.blueprint_helpers import request_manager
+from saas.rest.request_manager import request_manager
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -27,7 +27,7 @@ class TestBlueprint:
         CORS(blueprint)
         return blueprint
 
-    @request_manager.authentication_required
+    @request_manager.verify_request_body({'type':'string'})
     def get_info(self):
         return jsonify({
             "message": "hello"
@@ -35,12 +35,12 @@ class TestBlueprint:
 
 
 class TestProxy(EndpointProxy):
-    def __init__(self, remote_address, sender):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address, sender)
+    def __init__(self, remote_address):
+        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_info(self):
-        r = self.get("/info")
-        return r['reply']['message']
+        code, r = self.get("/info", body="test")
+        return r['message'] if code == 200 else None
 
 
 class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -56,7 +56,7 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_simple_get(self):
         node = self.get_node(f"node_0", enable_rest=True)
-        proxy = TestProxy(node.rest.address(), node.identity())
+        proxy = TestProxy(node.rest.address())
 
         bp = TestBlueprint()
         node.rest.add(bp.blueprint())

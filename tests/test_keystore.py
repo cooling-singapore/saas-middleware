@@ -32,11 +32,12 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
     def test_create_and_load(self):
         keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
         assert(keystore is not None)
-        assert(keystore.identity is not None)
-        assert(keystore.name() == self.name)
-        assert(keystore.email() == self.email)
+        assert(keystore.signing_key() is not None)
+        assert(keystore.encryption_key() is not None)
+        assert(keystore.identity().name() == self.name)
+        assert(keystore.identity().email() == self.email)
 
-        keystore_id = keystore.id()
+        keystore_id = keystore.identity().id()
         master_path = os.path.join(self.wd_path, f"{keystore_id}.master")
         keystore_path = os.path.join(self.wd_path, f"{keystore_id}.keystore")
         assert(os.path.isfile(master_path))
@@ -46,34 +47,42 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
 
         keystore = Keystore.load(self.wd_path, keystore_id, self.password)
         assert(keystore is not None)
-        assert(keystore.identity is not None)
-        assert(keystore.id() == keystore_id)
-        assert(keystore.name() == self.name)
-        assert(keystore.email() == self.email)
+        assert(keystore.signing_key() is not None)
+        assert(keystore.encryption_key() is not None)
+        assert(keystore.identity().id() == keystore_id)
+        assert(keystore.identity().name() == self.name)
+        assert(keystore.identity().email() == self.email)
 
     def test_update(self):
         keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
-        keystore_id = keystore.id()
-        assert(keystore.name() == self.name)
-        assert(keystore.email() == self.email)
+        keystore_id = keystore.identity().id()
+        assert(keystore.identity().name() == self.name)
+        assert(keystore.identity().email() == self.email)
 
         name = 'name2'
         email = 'email2'
 
-        keystore.update(name, email)
-        assert(keystore.name() == name)
-        assert(keystore.email() == email)
+        # perform update
+        signature = keystore.update(name=name, email=email)
+        logger.info(f"signature={signature}")
+        assert(keystore.identity().name() == name)
+        assert(keystore.identity().email() == email)
+
+        # verify signature
+        result = keystore.identity().verify(signature)
+        assert(result is True)
 
         keystore = Keystore.load(self.wd_path, keystore_id, self.password)
         assert(keystore is not None)
-        assert(keystore.identity is not None)
-        assert(keystore.id() == keystore_id)
-        assert(keystore.name() == name)
-        assert(keystore.email() == email)
+        assert(keystore.signing_key() is not None)
+        assert(keystore.encryption_key() is not None)
+        assert(keystore.identity().id() == keystore_id)
+        assert(keystore.identity().name() == name)
+        assert(keystore.identity().email() == email)
 
     def test_add_get_object_key(self):
         keystore = Keystore.create(self.wd_path, self.name, self.email, self.password)
-        keystore_id = keystore.id()
+        keystore_id = keystore.identity().id()
 
         obj_id = 'obj1'
         obj_key = b'key1'

@@ -4,7 +4,7 @@ import subprocess
 import json
 
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
-from saas.utilities.general_helpers import dump_json_to_file, create_symbolic_link
+from saas.helpers import dump_json_to_file
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logger = logging.getLogger('dor.service')
@@ -37,7 +37,7 @@ class DataObjectRepositoryService:
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
                                                              DataObjectRepositoryService.infix_cache_path)])
 
-    def add(self, owner_public_key, descriptor, content_path, expiration=None):
+    def add(self, owner_iid, descriptor, content_path, access_restricted, content_encrypted, content_key):
         # calculate the hash for the data object content
         c_hash = hash_file_content(content_path)
 
@@ -62,7 +62,7 @@ class DataObjectRepositoryService:
             # or not. question is whether this matters or not. the important point is that after calling
             # 'add' the data object is in the DOR.
             logger.info(f"data object '{obj_id}' already exists. not adding to DOR.")
-            return 200, {'data_object_id': obj_id}
+            return 200, {'data_object_id': obj_id, 'descriptor': descriptor}
 
         # check if there are already data objects with the same content
         if self.node.db.get_objects_by_content_hash(c_hash):
@@ -76,7 +76,7 @@ class DataObjectRepositoryService:
 
             # move the content to its destination and make read-only
             destination_path = self.obj_content_path(c_hash)
-            subprocess.check_output(['mv', content_path, destination_path])
+            subprocess.check_output(['mv', '-f', content_path, destination_path])
             subprocess.check_output(['chmod', 'ugo-w', destination_path])
 
         # create descriptor file
@@ -84,10 +84,21 @@ class DataObjectRepositoryService:
         dump_json_to_file(descriptor, descriptor_path)
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
-        # update database
-        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner_public_key, expiration)
+        # try to resolve the owner identity
+        owner = self.node.db.get_identity(iid=owner_iid)
+        if owner is None:
+            logger.info(f"no identity found for owner '{owner_iid}'. not adding to DOR.")
+            return 404, {'owner_iid': owner_iid}
 
-        return 201, {'data_object_id': obj_id}
+        # add data object to database
+        self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id(),
+                                     access_restricted, content_encrypted,
+                                     descriptor['data_type'], descriptor['data_format'])
+
+        # grant permission to access this data object to the owner, using the content key (if any)
+        self.node.db.grant_access(obj_id, owner)
+
+        return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
 
     def delete(self, obj_id):
         # do we have a record for this data object?
@@ -119,54 +130,4 @@ class DataObjectRepositoryService:
             os.remove(content_path)
             logger.info(f"data object content '{record.c_hash}' for data object '{obj_id}' deleted.")
 
-        return 200, {'descriptor': descriptor}
-
-    def get_descriptor(self, obj_id):
-        # do we have a descriptor for this data object?
-        descriptor_path = self.obj_descriptor_path(obj_id)
-        if not os.path.isfile(descriptor_path):
-            return 404, f"Data object '{obj_id}' not found."
-
-        with open(descriptor_path, 'r') as f:
-            descriptor = json.loads(f.read())
-            return 200, {'descriptor': descriptor}
-
-    def fetch(self, obj_id, job_input_obj_content_path=None):
-        """
-        Attempts to fetch the descriptor and the content of the data object with the given object id. If successful,
-        the descriptor and content is stored in the DOR cache directory.
-        :param obj_id: the data object id
-        :return: content hash (c_hash) of the data object
-        """
-        # are we the custodian? in other words: do we have a record for this object?
-        record = self.node.db.get_object_by_id(obj_id)
-        if record:
-            source_descriptor_path = self.obj_descriptor_path(obj_id)
-            destination_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
-            create_symbolic_link(source_descriptor_path, destination_descriptor_path)
-
-            source_content_path = self.obj_content_path(record.c_hash)
-            destination_content_path = self.obj_content_path(record.c_hash, cache=True)
-            create_symbolic_link(source_content_path, destination_content_path)
-
-            if job_input_obj_content_path:
-                create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
-                create_symbolic_link(source_content_path, job_input_obj_content_path)
-
-            return record.c_hash
-
-        else:
-            # use P2P protocol to attempt fetching from all other nodes
-            protocol = DataObjectRepositoryP2PProtocol(self.node)
-            for item in self.node.registry.get(exclude_self=True).items():
-                c_hash = protocol.send_fetch(item[1]['address'], obj_id)
-                if c_hash:
-                    if job_input_obj_content_path:
-                        source_descriptor_path = self.obj_descriptor_path(obj_id, cache=True)
-                        source_content_path = self.obj_content_path(record.c_hash, cache=True)
-                        create_symbolic_link(source_content_path, job_input_obj_content_path)
-                        create_symbolic_link(source_descriptor_path, f"{job_input_obj_content_path}.descriptor")
-
-                    return c_hash
-
-            return None
+        return 200, descriptor
