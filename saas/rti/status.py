@@ -1,7 +1,7 @@
 import logging
 
 from enum import Enum
-from saas.utilities.general_helpers import dump_json_to_file
+from saas.helpers import dump_json_to_file
 
 logger = logging.getLogger('rti.status')
 
@@ -60,6 +60,13 @@ class StatusLogger:
         Returns the value for a given key.
         """
         return self.content[key] if key else self.content
+
+    def remove(self, key):
+        """
+        Removes an entry (if they exists)
+        """
+        self.content.pop(key, None)
+        dump_json_to_file(self.content, self.path)
 
     def remove_all(self, keys):
         """

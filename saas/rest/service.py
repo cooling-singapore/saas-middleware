@@ -5,7 +5,7 @@ from flask import Flask
 from flask_cors import CORS
 from werkzeug.serving import make_server
 
-from saas.utilities.blueprint_helpers import request_manager
+from saas.rest.request_manager import request_manager
 
 logger = logging.getLogger('rest.service')
 
