@@ -38,10 +38,11 @@ For a list of all commands concerning identities, use:
 ```
 
 ### Update SMTP Information
-Certain functionality of a SaaS Node requires the ability to send emails. There is no dedicated
-SaaS email service (yet). Instead, SaaS Nodes use SMTP credentials of existing email accounts.
-The keystore of the identity used by a node will have to provide these credentials. The CLI can
-be used to update this information interactively:
+Certain functionality (e.g., requesting object keys, notification of ownership transfer) of a SaaS 
+Node requires the ability to send emails. There is no dedicated SaaS email service (yet). Instead, 
+SaaS Nodes use SMTP credentials of existing email accounts. The keystore of the identity used by a 
+node will have to provide these credentials. The CLI can be used to update this information 
+interactively:
 ```shell
 ./saas_cli.py identity smtp
 ```
