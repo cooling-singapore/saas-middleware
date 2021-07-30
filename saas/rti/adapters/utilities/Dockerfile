@@ -2,8 +2,7 @@ FROM python:3-slim as clone
 ARG PROC_ID
 LABEL proc_id=$PROC_ID
 
-RUN apt-get -y update
-RUN apt-get -y install git
+RUN apt-get update && apt-get install -y git
 
 ARG GIT_REPO=https://github.com/cooling-singapore/saas-processor-template
 RUN git clone $GIT_REPO /processor_repo
