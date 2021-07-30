@@ -13,7 +13,7 @@ logger = logging.getLogger('rti.adapters.docker')
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
+    def __init__(self, proc_id, content_path, node):
         super().__init__(proc_id, node)
         self.proc_id = proc_id
         self.git_spec = self._read_git_spec(content_path)
