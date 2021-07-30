@@ -75,10 +75,10 @@ class TestCaseBase:
 
         return keystores
 
-    def create_nodes(self, n, offset=0, perform_join=True, enable_rest=False):
+    def create_nodes(self, n, offset=0, use_credentials=False, perform_join=True, enable_rest=False):
         nodes = []
         for i in range(n):
-            nodes.append(self.get_node(f"node_{i+offset}", enable_rest=enable_rest))
+            nodes.append(self.get_node(f"node_{i+offset}", use_credentials=use_credentials, enable_rest=enable_rest))
 
             if perform_join and i > 0:
                 nodes[i].join_network(nodes[0].p2p.address())

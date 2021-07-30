@@ -32,7 +32,8 @@ output_interface_schema = {
             'name': {'type': 'string'},
             'owner_iid': {'type': 'string'},
             'restricted_access': {'type': 'boolean'},
-            'content_encrypted': {'type': 'boolean'}
+            'content_encrypted': {'type': 'boolean'},
+            'target_node_iid': {'type': 'string'}
         },
         'required': ['name', 'owner_iid', 'restricted_access', 'content_encrypted']
     }

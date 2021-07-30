@@ -143,9 +143,18 @@ class RTIProcessorAdapter(Thread):
                 content_key = encrypt_file(output_content_path, protect_key_with=owner.encryption_public_key(),
                                            delete_source=True) if content_encrypted else None
 
+                # do we have a target node specified for storing the data object?
+                target_address = self._node.rest.address()
+                if 'target_node_iid' in item:
+                    # check with the node db to see if we know about this node
+                    node_record = self._node.db.get_network_node(item['target_node_iid'])
+
+                    # extract the rest address from that node record
+                    target_address = node_record.rest_address.split(":")
+
                 # upload the data object to the DOR (the owner is the node for now
                 # so we can update tags in the next step)
-                proxy = DORProxy(self._node.rest.address())
+                proxy = DORProxy(target_address)
                 obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
                                                   restricted_access, content_encrypted, content_key,
                                                   data_type, data_format, created_by,
