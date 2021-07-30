@@ -337,6 +337,95 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
+    def test_processor_execution_specific_target_node(self):
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = self.rti_proxy.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 1)
+        assert(proc_id in deployed)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        # create target node and join with the default node
+        target_node = self.get_node('target', use_credentials=True, enable_rest=True)
+        target_node.join_network(self.node.p2p.address())
+        time.sleep(2)
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[2].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False,
+                'target_node_iid': target_node.identity().id()
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, self.extras[1].identity())
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 1)
+
+        self.wait_for_job(job_id)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        # get job info and extract object id
+        descriptor, status = self.rti_proxy.get_job_info(job_id)
+        obj_id = status['output:c']
+
+        # the output data object should be with nodes[1]
+        proxy0 = self.dor_proxy
+        proxy1 = DORProxy(target_node.rest.address())
+
+        obj_descriptor0 = proxy0.get_descriptor(obj_id)
+        obj_descriptor1 = proxy1.get_descriptor(obj_id)
+        assert(obj_descriptor0 is None)
+        assert(obj_descriptor1 is not None)
+
+        result = self.rti_proxy.undeploy(proc_id)
+        assert result is not None
+        assert result == proc_id
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
     def test_processor_execution_reference_unrestricted(self):
         deployed = self.rti_proxy.get_deployed()
         logger.info(f"deployed={deployed}")
