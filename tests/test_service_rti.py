@@ -9,6 +9,7 @@ from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
 from saas.helpers import dump_json_to_file, get_timestamp_now, prompt
@@ -597,6 +598,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 0)
+
+        prune_image(proc_id)
 
 
 if __name__ == '__main__':
