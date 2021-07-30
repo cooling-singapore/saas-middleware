@@ -387,7 +387,7 @@ class NodeDBService:
 
     def get_network_node(self, node_iid):
         with self._Session() as session:
-            return session.query(IdentityRecord).filter_by(iid=node_iid).first()
+            return session.query(NetworkNode).filter_by(iid=node_iid).first()
 
     def get_network(self):
         with self._Session() as session:
