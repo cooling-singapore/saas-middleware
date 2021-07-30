@@ -15,9 +15,6 @@ from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
 from saas.helpers import dump_json_to_file, get_timestamp_now, prompt
 from tests.base_testcase import TestCaseBase
-from tools.create_template import create_folder_structure
-
-from tools.package_processor import package_docker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -26,30 +23,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def create_dummy_docker_processor(dummy_processor_path):
-    temp_dir = tempfile.TemporaryDirectory()
-    output_path = os.path.join(temp_dir.name, 'dummy_processor')
-    processor_path = os.path.join(output_path, 'processor.py')
-    descriptor_path = os.path.join(output_path, 'descriptor.json')
-    image_path = os.path.join(output_path, 'builds', 'docker', 'dummy_image.tar.gz')
-
-    create_folder_structure(output_path)
-    shutil.copy(dummy_processor_path, processor_path)
-
-    with open('descriptor_dummy_script.json') as f:
-        _dummy_script_descriptor = json.load(f)
-
-    _dummy_script_descriptor['type'] = 'docker'
-    with open(descriptor_path, 'w') as f:
-        json.dump(_dummy_script_descriptor, f)
-
-    package_docker(output_path, image_output_name='dummy_image')
-
-    logger.info(f"image_path: {image_path}, descriptor_path: {descriptor_path}")
-
-    return image_path, descriptor_path, temp_dir.cleanup
 
 
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
