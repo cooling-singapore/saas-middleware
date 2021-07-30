@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-import shutil
-import tempfile
 import time
 import unittest
 from threading import Thread
@@ -515,82 +513,90 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-    # def test_docker_processor_execution_value(self):
-    #     image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 0)
-    #
-    #     data_type = 'Processor'
-    #     data_format = 'Docker Image'
-    #     created_t = 21342342
-    #     created_by = 'heiko'
-    #
-    #     proc_id, _ = self.dor_proxy.add_data_object(image_path, self.extras[1].identity(),
-    #                                                 False, False, None,
-    #                                                 data_type, data_format, created_by, created_t)
-    #
-    #     logger.info(f"proc_id={proc_id}")
-    #     cleanup_func()
-    #
-    #     descriptor = self.rti_proxy.deploy(proc_id)
-    #     logger.info(f"descriptor={descriptor}")
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 1)
-    #     assert(proc_id in deployed)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 0)
-    #
-    #     proc_input = [
-    #         {
-    #             'name': 'a',
-    #             'type': 'value',
-    #             'value': {
-    #                 'v': 1
-    #             }
-    #         },
-    #         {
-    #             'name': 'b',
-    #             'type': 'value',
-    #             'value': {
-    #                 'v': 2
-    #             }
-    #         }
-    #     ]
-    #
-    #     job_id = self.rti_proxy.submit_job(proc_id, proc_input, self.extras[1].identity())
-    #     logger.info(f"job_id={job_id}")
-    #     assert(job_id is not None)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 1)
-    #
-    #     self.wait_for_job(proc_id, job_id)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 0)
-    #
-    #     output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
-    #     assert os.path.isfile(output_path)
-    #
-    #     self.rti_proxy.undeploy(proc_id)
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 0)
+    def test_docker_processor_execution_value(self):
+        import docker
+        try:  # Check if able to get docker. if not ignore test and pass
+            _ = docker.from_env()
+        except Exception as e:
+            logger.exception("Could not find docker on this machine")
+            return
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 0)
+
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = self.rti_proxy.deploy(proc_id, 'docker')
+        logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 1)
+        assert (proc_id in deployed)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 0)
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[2].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, self.extras[1].identity())
+        logger.info(f"job_id={job_id}")
+        assert (job_id is not None)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 1)
+
+        self.wait_for_job(job_id)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 0)
+
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
+
+        result = self.rti_proxy.undeploy(proc_id)
+        assert result is not None
+        assert result == proc_id
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 0)
 
 
 if __name__ == '__main__':
