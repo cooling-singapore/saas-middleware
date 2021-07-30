@@ -221,6 +221,15 @@ def select_from_deployed_processors(rti_proxy, multi_selection=False):
         return lookup[selection]
 
 
+def select_deployment_type():
+    lookup = ["native", "docker"]
+    for i, deployment in enumerate(lookup):
+        print(f"[{i}] {deployment}")
+
+    selection = prompt("Select deployment type:", valid_range=[0, len(lookup)-1])
+    return lookup[selection]
+
+
 def add_cmd_identity(subparsers):
     identity_parser = subparsers.add_parser('identity', help='create, remove and list identities')
 
@@ -753,6 +762,8 @@ def add_cmd_rti(subparsers):
 
     deploy_parser.add_argument('--proc-id', dest='proc-id', action='store', required=False,
                                help=f"the id of the processor to be deployed to the node")
+    deploy_parser.add_argument('--deployment', dest='deployment', action='store', required=False,
+                               help=f"how the processor should be deployed")
 
     undeploy_parser = subparsers.add_parser('undeploy', help='undeploys a processor from the node')
 
@@ -800,8 +811,12 @@ def exec_cmd_rti(args, keystore):
         if proc_id is None:
             return None
 
+        deployment = args['deployment']
+        if deployment is None:
+            deployment = select_deployment_type()
+
         # perform the deployment
-        descriptor = proxy.deploy(proc_id)
+        descriptor = proxy.deploy(proc_id, deployment)
         if descriptor is not None:
             print(f"Processor (id={args['proc-id']}) successfully deployed: \n{descriptor}")
 
