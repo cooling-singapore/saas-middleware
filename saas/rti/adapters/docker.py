@@ -21,6 +21,8 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         git_spec_hash = hash_json_object(self.git_spec).hex()[:10]
         self.docker_image_tag = f"{git_spec_hash}"
 
+        self._processor_descriptor = None
+
     @staticmethod
     def _read_git_spec(git_spec_path):
         with open(git_spec_path, 'rb') as f:
@@ -67,11 +69,14 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
         return descriptor
 
+    def descriptor(self):
+        return self._processor_descriptor
+
     def startup(self):
         self.build_docker_image()
 
-        processor_descriptor = self.get_processor_descriptor()
-        self.parse_io_interface(processor_descriptor)
+        self._processor_descriptor = self.get_processor_descriptor()
+        self.parse_io_interface(self._processor_descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
         try:
