@@ -5,11 +5,23 @@ import os
 import docker
 from jsonschema import validate
 
-from saas.cryptography.hashing import hash_json_object
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
 from saas.schemas import git_specification_schema
 
 logger = logging.getLogger('rti.adapters.docker')
+
+
+def get_image_tag(proc_id):
+    return proc_id[:10]
+
+
+def prune_image(proc_id):
+    client = docker.from_env()
+    # Remove image
+    client.images.remove(get_image_tag(proc_id), noprune=False)
+    # Remove any other intermediate images
+    client.images.prune({'label': f'proc_id={proc_id}'})
+    client.close()
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
@@ -18,8 +30,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         self.proc_id = proc_id
         self.git_spec = self._read_git_spec(content_path)
 
-        git_spec_hash = hash_json_object(self.git_spec).hex()[:10]
-        self.docker_image_tag = f"{git_spec_hash}"
+        self.docker_image_tag = get_image_tag(proc_id)
 
         self._processor_descriptor = None
 
@@ -35,9 +46,11 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
         client = docker.from_env()
         client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
                             tag=self.docker_image_tag,
+                            forcerm=True,  # remove intermediate containers
                             buildargs={"GIT_REPO": self.git_spec["source"],
                                        "COMMIT_ID": self.git_spec["commit_id"],
-                                       "PROCESSOR_PATH": self.git_spec["path"]})
+                                       "PROCESSOR_PATH": self.git_spec["path"],
+                                       "PROC_ID": self.proc_id})
         client.close()
 
     def run_docker_container(self, working_directory):

@@ -1,4 +1,6 @@
 FROM python:3-slim as clone
+ARG PROC_ID
+LABEL proc_id=$PROC_ID
 
 RUN apt-get -y update
 RUN apt-get -y install git
@@ -11,6 +13,8 @@ ARG COMMIT_ID=HEAD
 RUN git checkout $COMMIT_ID
 
 FROM python:3-slim as install
+ARG PROC_ID
+LABEL proc_id=$PROC_ID
 COPY --from=clone /processor_repo /processor_repo
 
 COPY processor_scripts.py .
