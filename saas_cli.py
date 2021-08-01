@@ -474,6 +474,9 @@ def add_cmd_dor(subparsers):
     add_proc_parser.add_argument('--path', dest='path', action='store',
                                  help=f"the relative path inside the repository where to find the processor")
 
+    add_proc_parser.add_argument('--config', dest='config', action='store',
+                                 help=f"the configuration to be used for installing and executing the processor")
+
     remove_parser = subparsers.add_parser('remove', help='removes a data object')
 
     remove_parser.add_argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
@@ -584,21 +587,21 @@ def exec_cmd_dor(args, keystore):
         return obj_id
 
     if args['command2'] == 'add-proc':
-        repo_name = args['url'].split("/")[-1]
-        repo_path = os.path.join(args['temp-dir'], repo_name)
+        # repo_name = args['url'].split("/")[-1]
+        # repo_path = os.path.join(args['temp-dir'], repo_name)
 
-        # clone the repository in the temp directory
-        print(f"Cloning the repository '{args['url']}'")
-        remove_path(repo_path)
-        subprocess.check_output(['git', 'clone', args['url'], repo_path])
-
-        # checkout to commit id
-        print(f"Checkout commit it '{args['commit-id']}'")
-        subprocess.check_output(['git', 'checkout', args['commit-id'], repo_path], cwd=repo_path)
-
-        # load the descriptor
-        descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
-        descriptor = load_json_from_file(descriptor_path)
+        # # clone the repository in the temp directory
+        # print(f"Cloning the repository '{args['url']}'")
+        # remove_path(repo_path)
+        # subprocess.check_output(['git', 'clone', args['url'], repo_path])
+        #
+        # # checkout to commit id
+        # print(f"Checkout commit it '{args['commit-id']}'")
+        # subprocess.check_output(['git', 'checkout', args['commit-id'], repo_path], cwd=repo_path)
+        #
+        # # load the descriptor
+        # descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
+        # descriptor = load_json_from_file(descriptor_path)
 
         # generate git proc pointer file
         obj_path = os.path.join(args['temp-dir'], 'git-proc-pointer.json')
@@ -606,8 +609,8 @@ def exec_cmd_dor(args, keystore):
         dump_json_to_file({
             'source': args['url'],
             'commit_id': args['commit-id'],
-            'path': args['path'],
-            'descriptor': descriptor
+            'proc-path': args['path'],
+            'proc-config': args['config']
         }, obj_path)
 
         # connect to the DOR and add the data object
@@ -616,13 +619,14 @@ def exec_cmd_dor(args, keystore):
                                                    'Git-Processor-Pointer', 'json', keystore.identity().name())
 
         # do some simple tagging
+        repo_name = args['url'].split("/")[-1]
         proxy.update_tags(obj_id, keystore.signing_key(), {
             'name': repo_name,
             'is_gpp': 'true'
         })
 
         # clean up
-        remove_path(repo_path)
+        # remove_path(repo_path)
         remove_path(obj_path)
 
         print(f"Data object added: id={obj_id} descriptor={descriptor}")

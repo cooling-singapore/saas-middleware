@@ -39,30 +39,9 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
         dump_json_to_file({
             'source': 'https://github.com/cooling-singapore/saas-processor-template',
-            'commit_id': '09d00d6',
-            'path': 'processor_dummy',
-            'descriptor': {
-                "name": "test",
-                "input": [
-                    {
-                        "name": "a",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    },
-                    {
-                        "name": "b",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    }
-                ],
-                "output": [
-                    {
-                        "name": "c",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    }
-                ]
-            }
+            'commit_id': '79cab85',
+            'proc-path': 'processor_test',
+            'proc-config': 'nscc'
         }, git_proc_pointer_path)
 
         data_type = 'Git-Processor-Pointer'
