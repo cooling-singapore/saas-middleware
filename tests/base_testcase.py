@@ -104,7 +104,15 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=False, enable_rest=False):
+    def has_ssh_credentials(self):
+        path = 'credentials.json'
+        if os.path.isfile(path):
+            credentials = load_json_from_file('credentials.json')
+            return 'ssh_auth' in credentials
+        else:
+            return False
+
+    def get_node(self, name, use_credentials=False, enable_rest=False, git_auth=None, use_ssh_auth=False):
         if name in self.nodes:
             return self.nodes[name]
 
@@ -115,11 +123,15 @@ class TestCaseBase:
             storage_path = os.path.join(self.wd_path, name)
             subprocess.check_output(['mkdir', '-p', storage_path])
 
+            ssh_auth = None
             if use_credentials:
                 credentials = load_json_from_file('credentials.json')
                 keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
                 logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
                             f"using existing keystore (id={keystore.identity().id()})")
+
+                if use_ssh_auth and 'ssh_auth' in credentials:
+                    ssh_auth = credentials['ssh_auth']
             else:
                 logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
                             f"using new (fake) keystore")
@@ -129,7 +141,7 @@ class TestCaseBase:
             node = Node(keystore, storage_path)
             node.startup(p2p_address)
             node.start_dor_service()
-            node.start_rti_service()
+            node.start_rti_service(git_auth=git_auth, ssh_auth=ssh_auth)
             if enable_rest:
                 node.start_rest_service(rest_address)
 

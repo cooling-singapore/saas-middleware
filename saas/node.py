@@ -106,9 +106,9 @@ class Node:
         self.dor = DataObjectRepositoryService(self)
         self.p2p.add(DataObjectRepositoryP2PProtocol(self))
 
-    def start_rti_service(self):
+    def start_rti_service(self, git_auth=None, ssh_auth=None):
         logger.info("starting DOR service.")
-        self.rti = RuntimeInfrastructureService(self)
+        self.rti = RuntimeInfrastructureService(self, git_auth=git_auth, ssh_auth=ssh_auth)
 
     def update_identity(self, s_key=None, e_key=None, name=None, email=None, propagate=True):
         with self._mutex:

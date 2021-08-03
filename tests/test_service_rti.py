@@ -60,7 +60,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        self.node = self.get_node('node', use_credentials=True, enable_rest=True)
+        self.node = self.get_node('node', use_credentials=True, enable_rest=True, use_ssh_auth=False)
         self.dor_proxy = DORProxy(self.node.rest.address())
         self.rti_proxy = RTIProxy(self.node.rest.address())
         self.db_proxy = NodeDBProxy(self.node.rest.address())
@@ -95,30 +95,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
         dump_json_to_file({
             'source': 'https://github.com/cooling-singapore/saas-processor-template',
-            'commit_id': '09d00d6',
-            'path': 'processor_dummy',
-            'descriptor': {
-                "name": "test",
-                "input": [
-                    {
-                        "name": "a",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    },
-                    {
-                        "name": "b",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    }
-                ],
-                "output": [
-                    {
-                        "name": "c",
-                        "data_type": "JSONObject",
-                        "data_format": "json"
-                    }
-                ]
-            }
+            'commit_id': '79cab85',
+            'proc_path': 'processor_test',
+            'proc_config': 'default'
         }, git_proc_pointer_path)
 
         data_type = 'Git-Processor-Pointer'
@@ -707,6 +686,185 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     #     logger.info(f"deployed={deployed}")
     #     assert(deployed is not None)
     #     assert(len(deployed) == 0)
+
+
+class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
+
+    def setUp(self):
+        self.initialise()
+
+        self.node = self.get_node('node', use_credentials=True, enable_rest=True, use_ssh_auth=True)
+        self.dor_proxy = DORProxy(self.node.rest.address())
+        self.rti_proxy = RTIProxy(self.node.rest.address())
+        self.db_proxy = NodeDBProxy(self.node.rest.address())
+
+        # create extra keystores and make them known to the node
+        self.extras = self.create_keystores(3)
+        for extra in self.extras:
+            signature = extra.update()
+            identity = extra.identity()
+            self.db_proxy.update_identity(identity, signature)
+
+    def tearDown(self):
+        self.cleanup()
+
+    def add_test_processor_to_dor(self):
+        git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
+        dump_json_to_file({
+            'source': 'https://github.com/cooling-singapore/saas-processor-template',
+            'commit_id': '79cab85',
+            'proc_path': 'processor_test',
+            'proc_config': 'nscc'
+        }, git_proc_pointer_path)
+
+        data_type = 'Git-Processor-Pointer'
+        data_format = 'json'
+        created_t = get_timestamp_now()
+        created_by = 'test_user'
+
+        proc_id, _ = self.dor_proxy.add_data_object(git_proc_pointer_path, self.extras[1].identity(),
+                                                    False, False, None,
+                                                    data_type, data_format, created_by, created_t)
+
+        return proc_id
+
+    def wait_for_job(self, job_id):
+        while True:
+            time.sleep(5)
+            descriptor, status = self.rti_proxy.get_job_info(job_id)
+            if descriptor and status:
+                logger.info(f"descriptor={descriptor}")
+                logger.info(f"status={status}")
+
+                state = State.from_string(status['state'])
+                if state == State.SUCCESSFUL:
+                    return True
+                elif state == State.FAILED:
+                    return False
+
+    def test_deployment_undeployment(self):
+        if not self.has_ssh_credentials():
+            logger.info("Cannot test NSCC remote execution without SSH credentials.")
+            return
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = self.rti_proxy.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        descriptor = self.rti_proxy.get_descriptor(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 1)
+        assert(proc_id in deployed)
+
+        result = self.rti_proxy.undeploy('false proc id')
+        assert result is None
+
+        result = self.rti_proxy.undeploy(proc_id)
+        assert result is not None
+        assert result == proc_id
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+    def test_processor_execution_value(self):
+        if not self.has_ssh_credentials():
+            logger.info("Cannot test NSCC remote execution without SSH credentials.")
+            return
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+        proc_id = self.add_test_processor_to_dor()
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = self.rti_proxy.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 1)
+        assert(proc_id in deployed)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': self.extras[2].identity().id(),
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, self.extras[1].identity())
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 1)
+
+        self.wait_for_job(job_id)
+
+        jobs = self.rti_proxy.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
+
+        result = self.rti_proxy.undeploy(proc_id)
+        assert result is not None
+        assert result == proc_id
+
+        deployed = self.rti_proxy.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
 
 
 if __name__ == '__main__':
