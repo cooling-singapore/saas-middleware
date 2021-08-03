@@ -118,9 +118,8 @@ git_proc_pointer_schema = {
     'properties': {
         'source': {'type': 'string'},
         'commit_id': {'type': 'string'},
-        'proc-path': {'type': 'string'},
-        'proc-config': {'type': 'string'}
-        # 'descriptor': processor_descriptor_schema
+        'proc_path': {'type': 'string'},
+        'proc_config': {'type': 'string'}
     },
-    'required': ['source', 'commit_id', 'proc-path', 'proc-config']
+    'required': ['source', 'commit_id', 'proc_path', 'proc_config']
 }

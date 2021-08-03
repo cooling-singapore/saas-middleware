@@ -609,8 +609,8 @@ def exec_cmd_dor(args, keystore):
         dump_json_to_file({
             'source': args['url'],
             'commit_id': args['commit-id'],
-            'proc-path': args['path'],
-            'proc-config': args['config']
+            'proc_path': args['path'],
+            'proc_config': args['config']
         }, obj_path)
 
         # connect to the DOR and add the data object
