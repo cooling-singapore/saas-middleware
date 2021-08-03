@@ -34,7 +34,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             validate(instance=self._gpp, schema=git_proc_pointer_schema)
 
         # set the processor path
-        self._processor_path = os.path.join(self._repo_home, self._gpp['proc-path'])
+        self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])
         self._descriptor = None
 
     def descriptor(self):
@@ -76,7 +76,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                         raise Exception(f"Failed to copy local:{local_path} -> remote:{working_directory}: {result}")
 
             # run execute script
-            result = self._execute_command(f"./execute.sh {self._gpp['proc-config']} {working_directory}",
+            result = self._execute_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
                                            cwd=self._processor_path)
             self._write_to_file(os.path.join(working_directory, "execute.sh.stdout"), result.stdout.decode('utf-8'))
             self._write_to_file(os.path.join(working_directory, "execute.sh.stderr"), result.stderr.decode('utf-8'))
@@ -158,7 +158,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 raise Exception(f"Could not make '{script}' script at {script_path} executable: {result}")
 
         # run install script
-        result = self._execute_command(f"./install.sh {self._gpp['proc-config']}", cwd=self._processor_path)
+        result = self._execute_command(f"./install.sh {self._gpp['proc_config']}", cwd=self._processor_path)
         self._write_to_file(os.path.join(self._processor_path, "install.sh.stdout"), result.stdout.decode('utf-8'))
         self._write_to_file(os.path.join(self._processor_path, "install.sh.stderr"), result.stderr.decode('utf-8'))
         if result.returncode != 0:
@@ -176,7 +176,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             raise Exception(f"Could not make script at {script_path} executable: {result}")
 
         # run script
-        result = self._execute_command(f"./{script_name} {self._gpp['proc-config']}"
+        result = self._execute_command(f"./{script_name} {self._gpp['proc_config']}"
                                        f"{args if args else ''}", cwd=self._processor_path)
         self._write_to_file(os.path.join(working_directory, f"{script_name}.stdout"), result.stdout.decode('utf-8'))
         self._write_to_file(os.path.join(working_directory, f"{script_name}.stderr"), result.stderr.decode('utf-8'))

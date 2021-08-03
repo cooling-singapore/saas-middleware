@@ -40,8 +40,8 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         dump_json_to_file({
             'source': 'https://github.com/cooling-singapore/saas-processor-template',
             'commit_id': '79cab85',
-            'proc-path': 'processor_test',
-            'proc-config': 'nscc'
+            'proc_path': 'processor_test',
+            'proc_config': 'nscc'
         }, git_proc_pointer_path)
 
         data_type = 'Git-Processor-Pointer'
