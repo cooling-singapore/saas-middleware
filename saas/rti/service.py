@@ -38,12 +38,14 @@ class RuntimeInfrastructureService:
     def proc_descriptor_path(self, obj_id):
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
 
-    def __init__(self, node):
+    def __init__(self, node, git_auth=None, ssh_auth=None):
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
         self._content_keys = {}
+        self._git_auth = git_auth
+        self._ssh_auth = ssh_auth
 
         # initialise directories
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
@@ -81,7 +83,8 @@ class RuntimeInfrastructureService:
                     # create an RTI adapter instance
                     if deployment == 'native':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTINativeProcessorAdapter(proc_id, content_path, self._node)
+                            RTINativeProcessorAdapter(proc_id, content_path, self._node,
+                                                      git_auth=self._git_auth, ssh_auth=self._ssh_auth)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \

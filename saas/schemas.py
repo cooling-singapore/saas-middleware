@@ -95,13 +95,31 @@ processor_descriptor_schema = {
     'required': ['name', 'input', 'output']
 }
 
-git_specification_schema = {
+git_auth_schema = {
+    'type': 'object',
+    'properties': {
+        'username': {'type': 'string'},
+        'password': {'type': 'string'}
+    },
+    'required': ['username', 'password']
+}
+
+ssh_auth_schema = {
+    'type': 'object',
+    'properties': {
+        'login': {'type': 'string'},
+        'key': {'type': 'string'}
+    },
+    'required': ['username', 'password']
+}
+
+git_proc_pointer_schema = {
     'type': 'object',
     'properties': {
         'source': {'type': 'string'},
         'commit_id': {'type': 'string'},
-        'path': {'type': 'string'},
-        'descriptor': processor_descriptor_schema
+        'proc_path': {'type': 'string'},
+        'proc_config': {'type': 'string'}
     },
-    'required': ['source', 'commit_id', 'path', 'descriptor']
+    'required': ['source', 'commit_id', 'proc_path', 'proc_config']
 }
