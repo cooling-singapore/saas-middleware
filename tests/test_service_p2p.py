@@ -27,7 +27,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         name = 'node'
-        self.keystore = Keystore.create(self.wd_path, name, f"{name}@somewhere.com", 'password')
+        self.keystore = Keystore.create(self.wd_path, name, "cs.dev.5506a266@gmail.com", 'password')
         self.node = Node(self.keystore, self.wd_path)
         self.p2p_address = self.generate_p2p_address()
         self.service = P2PService(self.node, self.p2p_address)

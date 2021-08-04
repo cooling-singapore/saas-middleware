@@ -66,7 +66,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
                 '--password', self.password,
                 'identity', 'create',
                 '--name', name if name is not None else f"name_{i}",
-                '--email', email if email is not None else f"email_{i}@internet.com"
+                '--email', email if email is not None else f"cs.dev.5506a266@gmail.com"
             ]
             keystore_id = parse_args(args)
             assert(keystore_id is not None)
@@ -113,7 +113,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path,
             '--password', self.password,
             'identity', 'create',
-            '--name', 'name', '--email', 'email@internet.com'
+            '--name', 'name', '--email', 'cs.dev.5506a266@gmail.com'
         ]
         keystore_id = parse_args(args)
         assert(keystore_id is not None)
@@ -153,7 +153,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path,
             '--password', self.password,
             'identity', 'create',
-            '--name', 'name', '--email', 'email@internet.com'
+            '--name', 'name', '--email', 'cs.dev.5506a266@gmail.com'
         ]
         keystore_id = parse_args(args)
         assert(keystore_id is not None)

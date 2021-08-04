@@ -70,7 +70,7 @@ class TestCaseBase:
         keystores = []
         for i in range(n):
             keystores.append(
-                Keystore.create(self.wd_path, f"keystore_{i}", f"keystore_{i}@somewhere.com", f"password_{i}")
+                Keystore.create(self.wd_path, f"keystore_{i}", f"cs.dev.5506a266@gmail.com", f"password_{i}")
             )
 
         return keystores
@@ -136,7 +136,7 @@ class TestCaseBase:
             else:
                 logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
                             f"using new (fake) keystore")
-                keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
+                keystore = Keystore.create(storage_path, name, f"cs.dev.5506a266@gmail.com", 'password')
 
             # create node and startup services
             node = Node(keystore, storage_path)
