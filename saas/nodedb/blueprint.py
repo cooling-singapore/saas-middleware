@@ -54,9 +54,12 @@ class NodeDBBlueprint:
         return jsonify(result), 200
 
     def get_identities(self):
-        result = {}
-        for iid, identity in self._node.db.get_all_identities().items():
-            result[iid] = identity.serialise()
+        result = []
+        for iid, info in self._node.db.get_all_identities().items():
+            result.append({
+                'iid': iid,
+                'identity': info.serialise()
+            })
 
         return jsonify(result), 200
 
@@ -66,7 +69,7 @@ class NodeDBBlueprint:
             return jsonify(identity.serialise()), 200
 
         else:
-            return jsonify(f"No identity with id {iid} found."), 404
+            return jsonify(f"Identity {iid} not found"), 404
 
     @request_manager.verify_request_body(update_identity_body_specification)
     def update_identity(self):
@@ -78,7 +81,7 @@ class NodeDBBlueprint:
             return jsonify(identity), 200
 
         else:
-            return jsonify(f"Identity not updated (either outdated record invalid signature)."), 405
+            return jsonify(f"Database not updated (either outdated record or invalid signature)."), 405
 
 
 class NodeDBProxy(EndpointProxy):
@@ -95,7 +98,11 @@ class NodeDBProxy(EndpointProxy):
 
     def get_identities(self):
         code, r = self.get("/identity")
-        return r
+        identities = {}
+        for record in r:
+            identity = Identity.deserialise(record['identity'])
+            identities[identity.id()] = identity
+        return identities
 
     def get_identity(self, iid):
         code, r = self.get(f"/identity/{iid}")

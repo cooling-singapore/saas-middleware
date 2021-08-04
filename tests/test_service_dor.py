@@ -101,7 +101,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         reply = self.dor_proxy.grant_access(obj_id, self.extras[1].signing_key(), self.extras[2].identity())
         assert reply is not None
-        assert reply[obj_id] == self.extras[2].identity().id()
+        assert reply == self.extras[2].identity().id()
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
@@ -111,7 +111,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         reply = self.dor_proxy.revoke_access(obj_id, self.extras[1].signing_key(),
                                              self.extras[2].identity())
         assert reply is not None
-        assert reply[obj_id] == self.extras[2].identity().id()
+        assert reply == self.extras[2].identity().id()
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
@@ -141,9 +141,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id is not None
 
         # check the ownership
-        owner_info = self.dor_proxy.get_owner(obj_id)
-        logger.info(f"owner_info={owner_info}")
-        assert owner_info['owner_iid'] == owner0.id()
+        owner_iid = self.dor_proxy.get_owner(obj_id)
+        logger.info(f"owner_iid={owner_iid}")
+        assert owner_iid == owner0.id()
 
         # perform TRANSFER w/ non-owner auth key
         reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[2].signing_key(), owner1)
@@ -153,13 +153,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         reply = self.dor_proxy.transfer_ownership(obj_id, owner0_k.signing_key(), owner1)
         logger.info(f"reply={reply}")
         assert reply is not None
-        assert obj_id in reply
-        assert reply[obj_id] == owner1.id()
+        assert reply == owner1.id()
 
         # check the ownership
-        owner_info = self.dor_proxy.get_owner(obj_id)
-        logger.info(f"owner_info={owner_info}")
-        assert owner_info['owner_iid'] == owner1.id()
+        owner_iid = self.dor_proxy.get_owner(obj_id)
+        logger.info(f"owner_iid={owner_iid}")
+        assert owner_iid == owner1.id()
 
         # perform DELETE w/ wrong owner
         descriptor = self.dor_proxy.delete_data_object(obj_id, owner0_k.signing_key())
@@ -299,7 +298,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # grant permission
         result = self.dor_proxy.grant_access(obj_id, self.extras[1].signing_key(), receiver_identity)
-        assert result[obj_id] == receiver_identity.id()
+        assert result == receiver_identity.id()
 
         # create user signature to delegate access rights
         token = f"{receiver_identity.id()}:{obj_id}"
@@ -378,7 +377,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         tags = self.dor_proxy.get_tags(obj_id)
         logger.info(f"tags={tags}")
-        assert len(tags) == 0
+        assert tags is None
 
     def test_add_tag_search_delete_data_object(self):
         data_type = 'map'
@@ -491,15 +490,15 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         tags0 = self.dor_proxy.get_tags(obj_id0)
         logger.info(f"tags0={tags0}")
-        assert len(tags0) == 0
+        assert tags0 is None
 
         tags1 = self.dor_proxy.get_tags(obj_id1)
         logger.info(f"tags1={tags1}")
-        assert len(tags1) == 0
+        assert tags1 is None
 
         tags2 = self.dor_proxy.get_tags(obj_id2)
         logger.info(f"tags2={tags2}")
-        assert len(tags2) == 0
+        assert tags2 is None
 
 
 if __name__ == '__main__':

@@ -258,15 +258,15 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = proxy0.get_identities()
         print(result)
-        assert(result[iid0]['name'] == 'updated_name')
+        assert(result[iid0].name() == 'updated_name')
 
         result = proxy1.get_identities()
         print(result)
-        assert(result[iid0]['name'] == 'updated_name')
+        assert(result[iid0].name() == 'updated_name')
 
         result = proxy2.get_identities()
         print(result)
-        assert(result[iid0]['name'] == 'updated_name')
+        assert(result[iid0].name() == 'updated_name')
 
 
 if __name__ == '__main__':

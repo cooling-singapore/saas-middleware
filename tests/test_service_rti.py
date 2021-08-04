@@ -529,7 +529,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # grant access
         access = self.dor_proxy.grant_access(a_obj_id, owner.signing_key(), user.identity())
         assert(access is not None)
-        assert(access[a_obj_id] == user.identity().id())
+        assert(access == user.identity().id())
 
         # invalid signature
         job_id, result = self.submit_job_and_wait(proc_id, a_obj_id, user, False)
@@ -583,7 +583,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # grant access
         access = self.dor_proxy.grant_access(a_obj_id, keystores[0].signing_key(), user)
         assert(access is not None)
-        assert(access[a_obj_id] == user.id())
+        assert(access == user.id())
 
         # start a separate thread to
         thread = Thread(target=self.prompt_for_request, args=[keystores[0], a_content_key])

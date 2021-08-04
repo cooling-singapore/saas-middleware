@@ -155,8 +155,7 @@ def select_known_identity(proxy, multi_selection=False):
     identities = proxy.get_identities()
     lookup = {}
     i = 0
-    for iid, record in identities.items():
-        identity = Identity.deserialise(record)
+    for identity in identities:
         print(f"[{i}] {identity.id()}{identity.name()}/{identity.email()}")
         lookup[i] = identity
         i += 1
@@ -341,8 +340,7 @@ def exec_cmd_identity(args):
             proxy = NodeDBProxy(args['address'].split(":"))
             identities = proxy.get_identities()
             print(f"Found {len(identities)} identities on node at '{args['address']}':")
-            for _, record in identities.items():
-                identity = Identity.deserialise(record)
+            for identity in identities:
                 print(f"[{'*' if identity.id() in available else ' '}] {identity.id()}/{identity.name()}/{identity.email()}")
 
         return None
@@ -352,8 +350,7 @@ def exec_cmd_identity(args):
         proxy = NodeDBProxy(args['address'].split(":"))
         identities = proxy.get_identities()
         print(f"Found {len(identities)} identities on node at '{args['address']}':")
-        for _, record in identities.items():
-            identity = Identity.deserialise(record)
+        for identity in identities:
             print(
                 f"- {identity.id()}/{identity.name()}/{identity.email()}")
 
@@ -375,8 +372,7 @@ def exec_cmd_identity(args):
         identities = proxy.get_identities()
         if len(identities) > 0:
             print("Identities known by node:")
-            for iid in identities:
-                identity = Identity.deserialise(identities[iid])
+            for identity in identities:
                 print(f"- {identity.id()}: {identity.name()}, {identity.email()}")
         else:
             print("No identities found.")
@@ -706,7 +702,7 @@ def exec_cmd_dor(args, keystore):
         result = []
         for obj_id in obj_ids:
             r = proxy.grant_access(obj_id, keystore.signing_key(), identity)
-            if r[obj_id] == identity.id():
+            if r == identity.id():
                 result.append(obj_id)
 
         # print results

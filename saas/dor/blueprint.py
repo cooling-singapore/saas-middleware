@@ -145,38 +145,44 @@ class DORBlueprint:
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id, iid):
         if not self._node.db.get_object_by_id(obj_id):
-            return jsonify(f"data object (id={obj_id}) not found"), 404
+            return jsonify(f"Data object {obj_id}) not found"), 404
 
         identity = self._node.db.get_identity(iid)
         if identity is None:
-            return jsonify(f"identity (iid={iid}) not found"), 404
+            return jsonify(f"Identity {iid} not found"), 404
 
-        return jsonify({
-            obj_id: self._node.db.grant_access(obj_id, identity)
-        }), 200
+        return jsonify(
+            self._node.db.grant_access(obj_id, identity)
+        ), 200
 
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id, iid):
         if not self._node.db.get_object_by_id(obj_id):
-            return jsonify(f"data object (id={obj_id}) not found"), 404
+            return jsonify(f"Data object {obj_id} not found"), 404
 
         identity = self._node.db.get_identity(iid)
         if identity is None:
-            return jsonify(f"identity (iid={iid}) not found"), 404
+            return jsonify(f"Identity {iid} not found"), 404
 
-        return jsonify({
-            obj_id: self._node.db.revoke_access(obj_id, identity)
-        }), 200
+        return jsonify(
+            self._node.db.revoke_access(obj_id, identity)
+        ), 200
 
     def get_owner(self, obj_id):
+        if not self._node.db.get_object_by_id(obj_id):
+            return jsonify(f"Data object {obj_id}) not found"), 404
+
         owner = self._node.db.get_owner(obj_id)
-        if owner:
-            return jsonify({
-                "obj_id": obj_id,
-                "owner_iid": owner.id()
-            }), 200
-        else:
-            return jsonify(f"Data object '{obj_id}' not found."), 404
+        return jsonify(
+            owner.id()
+        ), 200
+        # if owner:
+        #     return jsonify({
+        #         "obj_id": obj_id,
+        #         "owner_iid": owner.id()
+        #     }), 200
+        # else:
+        #     return jsonify(f"Data object {obj_id} not found."), 404
 
     @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -189,7 +195,7 @@ class DORBlueprint:
         body = request_manager.get_request_variable('body')
         new_owner = self._node.db.get_identity(body['new_owner_iid'])
         if new_owner is None:
-            return jsonify(f"New owner identity (iid='{body['new_owner_iid']}') not found."), 404
+            return jsonify(f"New owner identity {body['new_owner_iid']} not found."), 404
 
         content_key = body['content_key'] if 'content_key' in body else None
 
@@ -197,14 +203,24 @@ class DORBlueprint:
 
         # retrieve the owner of the data object
         owner = self._node.db.get_owner(obj_id)
-        return jsonify({obj_id: owner.id()}), 200
+        return jsonify(owner.id()), 200
 
     def get_tags(self, obj_id):
+        # get the record for this data object
+        record = self._node.db.get_object_by_id(obj_id)
+        if record is None:
+            return jsonify(f"Data object '{obj_id}' not found."), 404
+
         return jsonify(self._node.db.get_tags(obj_id)), 200
 
     @request_manager.verify_request_body(tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def update_tags(self, obj_id):
+        # get the record for this data object
+        record = self._node.db.get_object_by_id(obj_id)
+        if record is None:
+            return jsonify(f"Data object '{obj_id}' not found."), 404
+
         body = request_manager.get_request_variable('body')
         self._node.db.update_tags(obj_id, body)
 
@@ -299,7 +315,7 @@ class DORProxy(EndpointProxy):
 
     def get_tags(self, obj_id):
         code, r = self.get(f"/{obj_id}/tags")
-        return r
+        return r if code == 200 else None
 
     def update_tags(self, obj_id, authorisation_key, tags):
         body = []

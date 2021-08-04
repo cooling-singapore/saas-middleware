@@ -41,14 +41,14 @@ class RTIBlueprint:
         if descriptor:
             return jsonify(descriptor), 201
         else:
-            return jsonify(proc_id), 404
+            return jsonify(f"Processor {proc_id} not found"), 404
 
     def undeploy(self, proc_id):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         if self._node.rti.undeploy(proc_id):
             return jsonify(proc_id), 200
         else:
-            return jsonify(proc_id), 404
+            return jsonify(f"Processor {proc_id} not deployed"), 404
 
     def get_descriptor(self, proc_id):
         descriptor = self._node.rti.get_descriptor(proc_id)
@@ -56,7 +56,7 @@ class RTIBlueprint:
             return jsonify(descriptor), 200
 
         else:
-            return jsonify(proc_id), 404
+            return jsonify(f"Processor {proc_id} not deployed"), 404
 
     @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id):
@@ -66,14 +66,14 @@ class RTIBlueprint:
         if job_id is not None:
             return jsonify(job_id), 201
         else:
-            return jsonify(proc_id), 404
+            return jsonify(f"Processor {proc_id} not deployed"), 404
 
     def get_jobs(self, proc_id):
         jobs = self._node.rti.get_jobs(proc_id)
         if jobs is not None:
             return jsonify(jobs), 200
         else:
-            return jsonify(proc_id), 404
+            return jsonify(f"Processor {proc_id} not deployed"), 404
 
     def get_job_info(self, job_id):
         job_info = self._node.rti.get_job_info(job_id)
@@ -83,7 +83,7 @@ class RTIBlueprint:
                 'status': job_info['status']
             }), 200
         else:
-            return jsonify(job_id), 404
+            return jsonify(f"Job {job_id} not found"), 404
 
     @request_manager.verify_request_body(put_permission_body_schema)
     def put_permission(self, req_id):
