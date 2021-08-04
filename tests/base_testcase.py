@@ -112,7 +112,7 @@ class TestCaseBase:
         else:
             return False
 
-    def get_node(self, name, use_credentials=False, enable_rest=False, git_auth=None, use_ssh_auth=False):
+    def get_node(self, name, use_credentials=True, enable_rest=False, git_auth=None, use_ssh_auth=False):
         if name in self.nodes:
             return self.nodes[name]
 
@@ -127,6 +127,7 @@ class TestCaseBase:
             if use_credentials:
                 credentials = load_json_from_file('credentials.json')
                 keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
+                keystore.update(name=name)
                 logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
                             f"using existing keystore (id={keystore.identity().id()})")
 
