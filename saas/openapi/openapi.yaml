@@ -24,7 +24,7 @@ paths:
       to the `key` and `value` element of the tag, respectively. SQL-style wildcard characters '%' (zero or more
       characters) and '_' (single character) may be used as well. For example, assume three tags: `project-id=P1`,
       `project-id=P2` and `project-name=hello world`. A search with key criterion `project-%` would return all three
-      tags whereas a search with `project-__` would only return the two tags with `project-id` as key.
+      tags whereas a search with `project-__` would only return the two tags with `project-id` as key."
       tags:
         - DOR (Data Object Repository)
       parameters:
