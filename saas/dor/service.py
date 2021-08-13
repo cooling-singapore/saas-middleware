@@ -4,7 +4,7 @@ import subprocess
 import json
 
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
-from saas.helpers import dump_json_to_file
+from saas.helpers import write_json_to_file
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logger = logging.getLogger('dor.service')
@@ -81,7 +81,7 @@ class DataObjectRepositoryService:
 
         # create descriptor file
         descriptor_path = self.obj_descriptor_path(obj_id)
-        dump_json_to_file(descriptor, descriptor_path)
+        write_json_to_file(descriptor, descriptor_path)
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # try to resolve the owner identity

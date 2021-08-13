@@ -1,7 +1,7 @@
 import logging
 
 from enum import Enum
-from saas.helpers import dump_json_to_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('rti.status')
 
@@ -36,7 +36,7 @@ class StatusLogger:
 
     def update_state(self, state):
         self.content['state'] = state.value
-        dump_json_to_file(self.content, self.path)
+        write_json_to_file(self.content, self.path)
 
     def get_state(self):
         return State(self.content['state'])
@@ -46,14 +46,14 @@ class StatusLogger:
         Update the job status with a given key and value. The updated job status is synced to disk.
         """
         self.content[key] = value
-        dump_json_to_file(self.content, self.path)
+        write_json_to_file(self.content, self.path)
 
     def update_all(self, content):
         """
         Update the job status with given content (i.e., dictionary). The updated job status is synced to disk.
         """
         self.content.update(content)
-        dump_json_to_file(self.content, self.path)
+        write_json_to_file(self.content, self.path)
 
     def get(self, key=None):
         """
@@ -66,7 +66,7 @@ class StatusLogger:
         Removes an entry (if they exists)
         """
         self.content.pop(key, None)
-        dump_json_to_file(self.content, self.path)
+        write_json_to_file(self.content, self.path)
 
     def remove_all(self, keys):
         """
@@ -74,4 +74,4 @@ class StatusLogger:
         """
         for key in keys:
             self.content.pop(key, None)
-        dump_json_to_file(self.content, self.path)
+        write_json_to_file(self.content, self.path)
