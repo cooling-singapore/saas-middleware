@@ -10,7 +10,7 @@ from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rti.status import State
-from saas.helpers import dump_json_to_file, load_json_from_file, generate_random_string
+from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string
 
 logger = logging.getLogger('rti.adapters')
 
@@ -199,8 +199,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             # if it is a 'value' input then store it to the working directory
             if item['type'] == 'value':
                 input_content_path = os.path.join(working_directory, obj_name)
-                dump_json_to_file(item['value'], input_content_path)
-                dump_json_to_file({
+                write_json_to_file(item['value'], input_content_path)
+                write_json_to_file({
                     'data_type': 'JSONObject',
                     'data_format': 'json'
                 }, f"{input_content_path}.descriptor")
@@ -364,7 +364,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             obj_name = item['name']
 
             descriptor_path = os.path.join(working_directory, f"{obj_name}.descriptor")
-            d0 = load_json_from_file(descriptor_path)
+            d0 = read_json_from_file(descriptor_path)
             d1 = self._input_interface[obj_name]
 
             if d0['data_type'] != d1['data_type'] or d0['data_format'] != d1['data_format']:

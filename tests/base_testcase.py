@@ -7,7 +7,7 @@ from multiprocessing import Lock
 
 from saas.keystore.keystore import Keystore
 from saas.node import Node
-from saas.helpers import get_timestamp_now, load_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file
 
 logger = logging.getLogger('tests.base_testcase')
 
@@ -107,7 +107,7 @@ class TestCaseBase:
     def has_ssh_credentials(self):
         path = 'credentials.json'
         if os.path.isfile(path):
-            credentials = load_json_from_file('credentials.json')
+            credentials = read_json_from_file('credentials.json')
             return 'ssh_auth' in credentials
         else:
             return False
@@ -125,7 +125,7 @@ class TestCaseBase:
 
             ssh_auth = None
             if use_credentials:
-                credentials = load_json_from_file('credentials.json')
+                credentials = read_json_from_file('credentials.json')
                 keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
                 logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
                             f"using existing keystore (id={keystore.identity().id()})")

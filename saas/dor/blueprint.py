@@ -6,7 +6,7 @@ from flask import Blueprint, send_from_directory, jsonify
 from saas.schemas import data_object_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now, load_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -117,7 +117,7 @@ class DORBlueprint:
     def get_descriptor(self, obj_id):
         descriptor_path = self._node.dor.obj_descriptor_path(obj_id)
         if os.path.isfile(descriptor_path):
-            descriptor = load_json_from_file(descriptor_path)
+            descriptor = read_json_from_file(descriptor_path)
             return jsonify(descriptor), 200
 
         return jsonify(f"Data object {obj_id} not found."), 404

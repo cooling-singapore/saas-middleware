@@ -13,20 +13,9 @@ from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.status import StatusLogger, State
 
-from jsonschema import validate, ValidationError
-
-from saas.helpers import dump_json_to_file, load_json_from_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('RTI')
-
-
-def validate_json(instance, schema):
-    try:
-        validate(instance=instance, schema=schema)
-        return True
-
-    except ValidationError:
-        return False
 
 
 class RuntimeInfrastructureService:
@@ -154,7 +143,7 @@ class RuntimeInfrastructureService:
 
             # dump the job descriptor
             job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
-            dump_json_to_file(job_descriptor, job_descriptor_path)
+            write_json_to_file(job_descriptor, job_descriptor_path)
 
             # create status logger
             status_path = os.path.join(wd_path, 'job_status.json')

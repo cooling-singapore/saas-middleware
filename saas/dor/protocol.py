@@ -4,7 +4,7 @@ import json
 
 from saas.cryptography.messenger import SecureMessenger
 from saas.p2p.protocol import P2PProtocol
-from saas.helpers import dump_json_to_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('dor.protocol')
 
@@ -83,7 +83,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             }))
 
             if reply['code'] == 200:
-                dump_json_to_file(reply['descriptor'], destination_descriptor_path)
+                write_json_to_file(reply['descriptor'], destination_descriptor_path)
                 messenger.receive_attachment(destination_content_path)
 
             else:
