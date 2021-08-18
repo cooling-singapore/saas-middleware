@@ -24,8 +24,8 @@ class ECKeyPair(KeyPair):
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
 
-    def info(self):
-        return f"ECC/{self.private_key.curve.name}/{self.private_key.curve.key_size}/{self.iid}"
+    def info(self) -> str:
+        return f"EC/{self.private_key.curve.name}/{self.private_key.curve.key_size}/{self.iid}"
 
     @classmethod
     def create_new(cls):
@@ -150,7 +150,7 @@ class ECKeyPair(KeyPair):
             )
             return ECKeyPair.from_public_key(public_key)
 
-    def sign(self, message):
+    def sign(self, message: bytes) -> str:
         """
         Sign a message using the private key.
         :param message: the message that has to be signed
@@ -158,7 +158,7 @@ class ECKeyPair(KeyPair):
         """
         return self.private_key.sign(message, ec.ECDSA(hashes.SHA256())).hex()
 
-    def verify(self, message, signature):
+    def verify(self, message: bytes, signature: str) -> bool:
         """
         Verifies the signature for a given message using the public key.
         :param message: the message that has been used for signing

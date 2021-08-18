@@ -5,7 +5,7 @@ import base64
 import socket
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.keystore.keystore import Identity
+from saas.keystore.identity import Identity
 from saas.helpers import all_in_dict
 
 from cryptography.hazmat.primitives import hashes
@@ -71,12 +71,12 @@ class SecureMessenger:
             peer_socket = socket.create_connection(peer_address)
             messenger = SecureMessenger(peer_socket)
             peer = messenger.handshake(self_node)
-            logger.info(f"connected to peer '{peer.id()}'")
+            logger.info(f"connected to peer '{peer.id}'")
 
             # if we have an expected peer iid, do a comparison if it matches with what the peer is telling us
-            if expected_peer_iid and not expected_peer_iid == peer.id():
+            if expected_peer_iid and not expected_peer_iid == peer.id:
                 logger.warning(f"unexpected iid for peer at address {peer_address}: "
-                               f"expected={expected_peer_iid} idd_as_per_peer={peer.id()}")
+                               f"expected={expected_peer_iid} idd_as_per_peer={peer.id}")
 
             return peer, messenger
 
