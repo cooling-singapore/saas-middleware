@@ -1,9 +1,10 @@
 import logging
+from copy import copy
+
 import canonicaljson
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
-
 
 logger = logging.getLogger('hashing')
 
@@ -29,21 +30,30 @@ def hash_file_content(path):
     return result
 
 
-def hash_json_object(obj):
+def hash_json_object(obj: dict, exclusions: list = None):
     """
     Hash a given JSON object. Before hashing the JSON input is encoded as canonical RFC 7159 JSON.
+    :param exclusions:
     :param obj: the JSON object that is to be hashed
     :return: hash
     """
-    # use SHA256 for hashing
-    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
-    # encode the json input as RFC 7159 JSON as update the digest
+    obj = copy(obj)
+
+    # process exclusions (if any)
+    exclusions = [] if exclusions is None else exclusions
+    for exclusion in exclusions:
+        if exclusion in obj:
+            obj.pop(exclusion)
+
+    # encode the json input as RFC 7159 JSON
     json_input = canonicaljson.encode_canonical_json(obj)
-    digest.update(json_input)
 
-    # calculate the hash and return
+    # use SHA256 to calculate the hash
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
+    digest.update(json_input)
     result = digest.finalize()
+
     return result
 
 
