@@ -1,6 +1,7 @@
 import logging
 
-from saas.keystore.keystore import Identity
+from saas.keystore.identity import Identity
+from saas.keystore.schemas import identity_schema
 from saas.rest.proxy import EndpointProxy
 
 from flask import Blueprint, jsonify
@@ -9,15 +10,6 @@ from saas.rest.request_manager import request_manager
 
 logger = logging.getLogger('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
-
-update_identity_body_specification = {
-    'type': 'object',
-    'properties': {
-        'identity': Identity.specification,
-        'signature': {'type': 'string'}
-    },
-    'required': ['identity', 'signature']
-}
 
 
 class NodeDBBlueprint:
@@ -35,8 +27,8 @@ class NodeDBBlueprint:
 
     def get_node(self):
         return jsonify({
-            "iid": self._node.identity().id(),
-            "identity": self._node.identity().serialise(),
+            "iid": self._node.identity().id,
+            "identity": self._node.identity().serialise(as_json=True),
             "rest_service_address": self._node.rest.address(),
             "p2p_service_address": self._node.p2p.address()
         }), 200
@@ -56,26 +48,24 @@ class NodeDBBlueprint:
     def get_identities(self):
         result = {}
         for iid, identity in self._node.db.get_all_identities().items():
-            result[iid] = identity.serialise()
+            result[iid] = identity.serialise(as_json=True)
 
         return jsonify(result), 200
 
     def get_identity(self, iid):
         identity = self._node.db.get_identity(iid=iid)
         if identity is not None:
-            return jsonify(identity.serialise()), 200
+            return jsonify(identity.serialise(as_json=True)), 200
 
         else:
             return jsonify(f"No identity with id {iid} found."), 404
 
-    @request_manager.verify_request_body(update_identity_body_specification)
+    @request_manager.verify_request_body(identity_schema)
     def update_identity(self):
-        body = request_manager.get_request_variable('body')
-        identity = body['identity']
-        signature = body['signature']
+        identity_as_json = request_manager.get_request_variable('body')
 
-        if self._node.db.update_identity(identity, signature):
-            return jsonify(identity), 200
+        if self._node.db.update_identity(identity_as_json):
+            return jsonify(identity_as_json), 200
 
         else:
             return jsonify(f"Identity not updated (either outdated record invalid signature)."), 405
@@ -101,11 +91,6 @@ class NodeDBProxy(EndpointProxy):
         code, r = self.get(f"/identity/{iid}")
         return r
 
-    def update_identity(self, identity, signature):
-        body = {
-            'identity': identity.serialise(),
-            'signature': signature
-        }
-
-        code, r = self.post('/identity', body=body)
+    def update_identity(self, identity):
+        code, r = self.post('/identity', body=identity.serialise(as_json=True))
         return r

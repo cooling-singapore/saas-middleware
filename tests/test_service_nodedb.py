@@ -2,7 +2,7 @@ import unittest
 import logging
 import time
 
-from saas.keystore.keystore import Identity
+from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
 
@@ -29,9 +29,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(2)
         for extra in self.extras:
-            signature = extra.update()
-            identity = extra.identity()
-            self.proxy.update_identity(identity, signature)
+            self.proxy.update_identity(extra.identity)
 
     def tearDown(self):
         self.cleanup()
@@ -39,11 +37,11 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def test_node_self_awareness(self):
         identities = self.node.db.get_all_identities()
         assert(len(identities) == 1 + len(self.extras))
-        assert(identities[self.node.identity().id()].name() == 'node')
+        assert(identities[self.node.identity().id].name == 'node')
 
         network = self.node.db.get_network()
         assert(len(network) == 1)
-        assert(network[0].iid == self.node.identity().id())
+        assert(network[0].iid == self.node.identity().id)
 
     def test_add_update_remove_tags(self):
         tags = self.node.db.get_tags('aaa')
@@ -93,25 +91,25 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         result = self.node.db.get_access_list('aaa')
         assert(len(result) == 0)
 
-        result = self.node.db.has_access('aaa', self.extras[0].identity())
+        result = self.node.db.has_access('aaa', self.extras[0].identity)
         assert(not result)
 
-        result = self.node.db.has_access('aaa', self.extras[1].identity())
+        result = self.node.db.has_access('aaa', self.extras[1].identity)
         assert(not result)
 
-        self.node.db.grant_access('aaa', self.extras[0].identity())
+        self.node.db.grant_access('aaa', self.extras[0].identity)
 
         result = self.node.db.get_access_list('aaa')
         assert(len(result) == 1)
-        assert(self.extras[0].identity().id() in result)
+        assert(self.extras[0].identity.id in result)
 
-        self.node.db.revoke_access('aaa', self.extras[1].identity())
+        self.node.db.revoke_access('aaa', self.extras[1].identity)
 
         result = self.node.db.get_access_list('aaa')
         assert(len(result) == 1)
-        assert(self.extras[0].identity().id() in result)
+        assert(self.extras[0].identity.id in result)
 
-        self.node.db.revoke_access('aaa', self.extras[0].identity())
+        self.node.db.revoke_access('aaa', self.extras[0].identity)
 
         result = self.node.db.get_access_list('aaa')
         assert(len(result) == 0)
@@ -124,31 +122,33 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
             print(ids)
             assert(len(ids) == 3)
 
+        # get the starting nonce
+        node0_id = nodes[0].identity().id
+        nonce0_by0_before = nodes[0].db.get_identity(node0_id).nonce
+        nonce0_by1_before = nodes[1].db.get_identity(node0_id).nonce
+        nonce0_by2_before = nodes[2].db.get_identity(node0_id).nonce
+
         # update id of node0 but don't propagate
         nodes[0].update_identity(name='bob', propagate=False)
         time.sleep(1)
 
-        node0_id = nodes[0].identity().id()
-        identity0_by0 = nodes[0].db.get_identity(node0_id)
-        identity0_by1 = nodes[1].db.get_identity(node0_id)
-        identity0_by2 = nodes[2].db.get_identity(node0_id)
-
-        assert(identity0_by0.nonce() == 2)
-        assert(identity0_by1.nonce() == 1)
-        assert(identity0_by2.nonce() == 1)
+        nonce0_by0_after = nodes[0].db.get_identity(node0_id).nonce
+        nonce0_by1_after = nodes[1].db.get_identity(node0_id).nonce
+        nonce0_by2_after = nodes[2].db.get_identity(node0_id).nonce
+        assert(nonce0_by0_after == nonce0_by0_before + 1)
+        assert(nonce0_by1_before == nonce0_by1_after)
+        assert(nonce0_by2_before == nonce0_by2_after)
 
         # update id of node0
         nodes[0].update_identity(name='jane', propagate=True)
         time.sleep(1)
 
-        node0_id = nodes[0].identity().id()
-        identity0_by0 = nodes[0].db.get_identity(node0_id)
-        identity0_by1 = nodes[1].db.get_identity(node0_id)
-        identity0_by2 = nodes[2].db.get_identity(node0_id)
-
-        assert(identity0_by0.nonce() == 3)
-        assert(identity0_by1.nonce() == 3)
-        assert(identity0_by2.nonce() == 3)
+        nonce0_by0_after = nodes[0].db.get_identity(node0_id).nonce
+        nonce0_by1_after = nodes[1].db.get_identity(node0_id).nonce
+        nonce0_by2_after = nodes[2].db.get_identity(node0_id).nonce
+        assert(nonce0_by0_after == nonce0_by0_before + 2)
+        assert(nonce0_by1_after == nonce0_by1_before + 2)
+        assert(nonce0_by2_after == nonce0_by2_before + 2)
 
     def test_snapshot(self):
         # create nodes but don't form network
@@ -162,8 +162,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            signature = extras[i].update()
-            nodes[i].db.update_identity(extras[i].identity().serialise(), signature)
+            nodes[i].db.update_identity(extras[i].identity.serialise(as_json=True))
 
         # each node should know about 2 identities now
         for node in nodes:
@@ -201,8 +200,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            signature = extras[i].update()
-            nodes[i].db.update_identity(extras[i].identity().serialise(), signature, propagate=False)
+            nodes[i].db.update_identity(extras[i].identity.serialise(as_json=True), propagate=False)
 
         # each node should know about 4 identities now
         for node in nodes:
@@ -226,7 +224,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         nodes = self.create_nodes(3, perform_join=True, enable_rest=True)
         time.sleep(2)
 
-        iid0 = nodes[0].identity().id()
+        iid0 = nodes[0].identity().id
 
         proxy0 = NodeDBProxy(nodes[0].rest.address())
         proxy1 = NodeDBProxy(nodes[1].rest.address())
@@ -249,12 +247,11 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = proxy0.get_identity(iid0)
         print(result)
-        identity = Identity.deserialise(result)
-        assert(identity.id() == iid0)
-        assert(identity.nonce() == 1)
+        identity = Identity.deserialise_from_json(result)
+        assert(identity.id == iid0)
 
-        identity, signature = nodes[0].update_identity(name='updated_name')
-        proxy0.update_identity(identity, signature)
+        identity = nodes[0].update_identity(name='updated_name')
+        proxy0.update_identity(identity)
 
         result = proxy0.get_identities()
         print(result)

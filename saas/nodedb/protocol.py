@@ -54,7 +54,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         self.broadcast_message(self.prepare_message("leave"))
 
     def handle_leave(self, message, messenger):
-        self.node.db.remove_network_node(messenger.peer.id())
+        self.node.db.remove_network_node(messenger.peer.id)
 
     def broadcast_update(self, method, args):
         self.broadcast_message(self.prepare_message('update', {
@@ -74,4 +74,9 @@ class NodeDBP2PProtocol(P2PProtocol):
         for method_name in message:
             method = getattr(self.node.db, method_name)
             for args in message[method_name]:
-                method(**args)
+                try:
+                    method(**args)
+
+                except TypeError as e:
+                    logger.error(f"could not execute method '{method}': {e}")
+                    raise e

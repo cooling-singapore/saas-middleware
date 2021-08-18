@@ -3,10 +3,16 @@ import os
 import logging
 import json
 import tempfile
+import time
+
 import flask
 from flask import request, Flask, g
 
 from jsonschema import validate, ValidationError
+
+from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
+from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
 
 logger = logging.getLogger('rest.request_manager')
 
@@ -30,6 +36,61 @@ class AuthorisationFailedError(RequestError):
 class MalformedRequestError(RequestError):
     def __init__(self, code, message):
         super().__init__(code, message)
+
+
+def sign_authorisation_token(authority: Keystore,
+                             url: str, body: dict = None, precision: int = 5) -> str:
+    slot = int(time.time() / precision)
+
+    # logger.info("sign_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
+    token = hash_string_object(url).hex()
+
+    if body:
+        # logger.info("sign_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
+        token += hash_json_object(body).hex()
+
+    # logger.info("sign_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
+    token += hash_bytes_object(bytes(slot)).hex()
+
+    # logger.info("sign_authorisation_token\tH(self.public_as_string())={}".format(hash_string_object(self.public_as_string()).hex()))
+    token += hash_string_object(authority.signing_key().public_as_string()).hex()
+
+    token = hash_string_object(token)
+    # logger.info("sign_authorisation_token\ttoken={}".format(token.hex()))
+
+    return authority.sign(token)
+
+
+def verify_authorisation_token(identity: Identity, signature: str,
+                               url: str, body: dict = None, precision: int = 5) -> bool:
+    # determine time slots (we allow for some variation before and after)
+    ref = int(time.time() / precision)
+    slots = [ref - 1, ref, ref + 1]
+
+    # generate the token for each time slot and check if for one the signature is valid.
+    for slot in slots:
+        # logger.info("verify_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
+        token = hash_string_object(url).hex()
+
+        if body:
+            # logger.info("verify_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
+            token += hash_json_object(body).hex()
+
+        # logger.info("verify_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
+        token += hash_bytes_object(bytes(slot)).hex()
+
+        # logger.info("verify_authorisation_token\tH(self.public_as_string())={}".format(
+        #     hash_string_object(self.public_as_string()).hex()))
+        token += hash_string_object(identity.s_public_key_as_string()).hex()
+
+        token = hash_string_object(token)
+        # logger.info("verify_authorisation_token\ttoken={}".format(token.hex()))
+
+        if identity.verify(token, signature):
+            return True
+
+    # no valid signature for any of the eligible timeslots
+    return False
 
 
 class RequestManager:
@@ -137,7 +198,7 @@ class RequestManager:
                 # verify the the request using the owner public key
                 form = request.form.to_dict()
                 authorisation = json.loads(form['authorisation'])
-                if not owner.signing_public_key().verify_authorisation_token(authorisation['signature'], url, body):
+                if not verify_authorisation_token(owner, authorisation['signature'], url, body):
                     raise AuthorisationFailedError(401, "Authorisation failed.")
 
                 return func(*args, **kwargs)

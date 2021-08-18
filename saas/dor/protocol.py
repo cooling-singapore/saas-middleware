@@ -30,7 +30,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         if peer and messenger:
             reply = messenger.request(self.prepare_message('lookup', {
                 'object_ids': object_ids,
-                'user_iid': user.id()
+                'user_iid': user.id
             }))
             messenger.close()
             return reply
@@ -134,10 +134,10 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 return
 
             # verify the access request
-            token = f"{messenger.peer.id()}:{obj_id}".encode('utf-8')
-            if not user.signing_public_key().verify(token, message['user_signature']):
+            token = f"{messenger.peer.id}:{obj_id}".encode('utf-8')
+            if not user.verify(token, message['user_signature']):
                 messenger.reply_ok({'code': 403, 'reason': f"access authorisation failed "
-                                                           f"(user_iid={user.id()}, obj_id={obj_id})."})
+                                                           f"(user_iid={user.id}, obj_id={obj_id})."})
                 messenger.close()
                 return
 

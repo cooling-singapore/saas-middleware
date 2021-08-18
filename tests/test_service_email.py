@@ -11,13 +11,13 @@ class NodeTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        self.node = self.get_node('node', use_credentials=True, enable_rest=False)
+        self.node = self.get_node('node', enable_rest=False)
 
     def tearDown(self):
         self.cleanup()
 
     def test_send_simple_email(self):
-        receiver = self.node.identity().email()
+        receiver = self.node.identity().email
         result = self.node.email.send_test_email(receiver)
         assert(result is True)
 
