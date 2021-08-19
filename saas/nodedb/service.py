@@ -304,7 +304,7 @@ class NodeDBService:
         return result
 
     def update_identity(self, identity_as_json, propagate=True):
-        identity = Identity.deserialise_from_json(identity_as_json)
+        identity = Identity.deserialise(identity_as_json)
 
         # verify the signature
         if not identity.is_authentic():
@@ -342,7 +342,7 @@ class NodeDBService:
         # propagate only if flag is set
         if propagate:
             self.protocol.broadcast_update('update_identity', {
-                'identity_as_json': identity.serialise(as_json=True),
+                'identity_as_json': identity.serialise(),
                 'propagate': False
             })
 
