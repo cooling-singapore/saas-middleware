@@ -2,7 +2,7 @@ import unittest
 import logging
 import os
 
-from saas.keystore.assets.credentials import GithubCredentialsAsset, SSHCredentialsAsset
+from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials, SSHCredentials
 from saas.keystore.keystore import Keystore
 from tests.base_testcase import TestCaseBase
 
@@ -107,17 +107,17 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         login = 'johndoe'
         personal_access_token = 'token'
         host = '192.168.0.1'
-        password = 'password'
+        key_path = '/path/to/keyfile'
 
         keystore = Keystore.create(self.wd_path, 'name', 'email', 'password')
         assert(keystore.identity.name == 'name')
         assert(keystore.identity.email == 'email')
 
-        github = GithubCredentialsAsset.create('github-cred')
-        github.update(url, login, personal_access_token)
+        github = CredentialsAsset[GithubCredentials].create('github-cred', GithubCredentials)
+        github.update(url, GithubCredentials(login, personal_access_token))
 
-        ssh = SSHCredentialsAsset.create('ssh-cred')
-        ssh.update('my-remote-machine', host, login, password)
+        ssh = CredentialsAsset[SSHCredentials].create('ssh-cred', SSHCredentials)
+        ssh.update('my-remote-machine', SSHCredentials(host, login, key_path))
 
         keystore.update_asset(github)
         keystore.update_asset(ssh)
@@ -130,16 +130,16 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         c = github.get(url)
         print(c)
         assert(c is not None)
-        assert(c['login'] == login)
-        assert(c['personal_access_token'] == personal_access_token)
+        assert(c.login == login)
+        assert(c.personal_access_token == personal_access_token)
 
         ssh = keystore.get_asset('ssh-cred')
         c = ssh.get('my-remote-machine')
         print(c)
         assert(c is not None)
-        assert(c['host'] == host)
-        assert(c['login'] == login)
-        assert(c['password'] == password)
+        assert(c.host == host)
+        assert(c.login == login)
+        assert(c.key_path == key_path)
 
 
 if __name__ == '__main__':

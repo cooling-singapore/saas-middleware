@@ -13,7 +13,7 @@ from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
 from saas.keystore.asset import Asset
 from saas.keystore.assets.contentkeys import ContentKeysAsset
-from saas.keystore.assets.credentials import GithubCredentialsAsset, SSHCredentialsAsset, SMTPCredentialsAsset
+from saas.keystore.assets.credentials import CredentialsAsset
 from saas.keystore.assets.keypair import KeyPairAsset, MasterKeyPairAsset
 from saas.keystore.exceptions import KeystoreException
 from saas.keystore.identity import Identity
@@ -119,14 +119,8 @@ class Keystore:
                 elif serialised_asset['type'] == ContentKeysAsset.__name__:
                     assets[key] = ContentKeysAsset.from_content(key, serialised_asset['content'], master)
 
-                elif serialised_asset['type'] == GithubCredentialsAsset.__name__:
-                    assets[key] = GithubCredentialsAsset.from_content(key, serialised_asset['content'], master)
-
-                elif serialised_asset['type'] == SSHCredentialsAsset.__name__:
-                    assets[key] = SSHCredentialsAsset.from_content(key, serialised_asset['content'], master)
-
-                elif serialised_asset['type'] == SMTPCredentialsAsset.__name__:
-                    assets[key] = SMTPCredentialsAsset.from_content(key, serialised_asset['content'], master)
+                elif serialised_asset['type'] == CredentialsAsset.__name__:
+                    assets[key] = CredentialsAsset.deserialise(key, serialised_asset['content'], master)
 
         # check if signature is valid
         s_key = assets['signing-key'].get()

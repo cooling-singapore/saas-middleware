@@ -5,7 +5,7 @@ import logging
 
 from multiprocessing import Lock
 
-from saas.keystore.assets.credentials import SMTPCredentialsAsset, SSHCredentialsAsset, GithubCredentialsAsset
+from saas.keystore.assets.credentials import CredentialsAsset, SMTPCredentials, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.helpers import get_timestamp_now, read_json_from_file
@@ -131,18 +131,23 @@ class TestCaseBase:
 
                 # do we have SMTP credentials?
                 if 'smtp-credentials' in credentials:
-                    smtp_cred = SMTPCredentialsAsset.create('smtp-credentials')
-                    smtp_cred.update(credentials['email'],
-                                     credentials['smtp-credentials']['server'],
-                                     credentials['smtp-credentials']['login'],
-                                     credentials['smtp-credentials']['password'])
+                    smtp_cred = CredentialsAsset[SMTPCredentials].create('smtp-credentials', SMTPCredentials)
+                    smtp_cred.update(credentials['email'], SMTPCredentials(
+                        credentials['smtp-credentials']['server'],
+                        credentials['smtp-credentials']['login'],
+                        credentials['smtp-credentials']['password']
+                    ))
                     keystore.update_asset(smtp_cred)
 
                 # do we have SSH credentials?
                 if 'ssh-credentials' in credentials:
-                    ssh_cred = SSHCredentialsAsset.create('ssh-credentials')
+                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
                     for item in credentials['ssh-credentials']:
-                        ssh_cred.update(item['name'], item['host'], item['login'], key_path=item['key_path'])
+                        ssh_cred.update(item['name'], SSHCredentials(
+                            item['host'],
+                            item['login'],
+                            item['key_path']
+                        ))
                     keystore.update_asset(ssh_cred)
 
                     # get the specific SSH profile to be used for this node (if any)
@@ -153,9 +158,12 @@ class TestCaseBase:
 
                 # do we have Github credentials?
                 if 'github-credentials' in credentials:
-                    github_cred = GithubCredentialsAsset.create('github-credentials')
+                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
                     for item in credentials['github-credentials']:
-                        github_cred.update(item['repository'], item['login'], item['personal_access_token'])
+                        github_cred.update(item['repository'], GithubCredentials(
+                            item['login'],
+                            item['personal_access_token']
+                        ))
                     keystore.update_asset(github_cred)
 
             else:
