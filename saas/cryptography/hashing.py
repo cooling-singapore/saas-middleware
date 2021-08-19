@@ -1,5 +1,6 @@
 import logging
 from copy import copy
+from typing import Union
 
 import canonicaljson
 
@@ -30,7 +31,7 @@ def hash_file_content(path):
     return result
 
 
-def hash_json_object(obj: dict, exclusions: list = None):
+def hash_json_object(obj: Union[dict, list], exclusions: list[str] = None):
     """
     Hash a given JSON object. Before hashing the JSON input is encoded as canonical RFC 7159 JSON.
     :param exclusions:
@@ -38,13 +39,11 @@ def hash_json_object(obj: dict, exclusions: list = None):
     :return: hash
     """
 
-    obj = copy(obj)
-
-    # process exclusions (if any)
-    exclusions = [] if exclusions is None else exclusions
-    for exclusion in exclusions:
-        if exclusion in obj:
-            obj.pop(exclusion)
+    # make a copy and exclude items (if applicable)
+    if isinstance(obj, dict):
+        obj = {k: v for k, v in obj.items() if not exclusions or k not in exclusions}
+    else:
+        obj = [v for v in obj if not exclusions or v not in exclusions]
 
     # encode the json input as RFC 7159 JSON
     json_input = canonicaljson.encode_canonical_json(obj)
