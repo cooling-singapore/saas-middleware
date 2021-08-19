@@ -1,4 +1,6 @@
 import logging
+from abc import abstractmethod
+
 import cryptography.hazmat.primitives.serialization as serialization
 
 from saas.cryptography.hashing import hash_bytes_object
@@ -103,16 +105,19 @@ class KeyPair:
         with open(path, 'wb') as f:
             f.write(self.public_as_bytes())
 
+    @abstractmethod
     def sign(self, message: bytes) -> str:
-        raise NotImplementedError(f"Signing not implemented for {self.info()}")
+        pass
 
+    @abstractmethod
     def verify(self, message: bytes, signature: str) -> bool:
-        raise NotImplementedError(f"Signature verification not implemented for {self.info()}")
+        pass
 
+    @abstractmethod
     def encrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
-        raise NotImplementedError(f"Encryption not implemented for {self.info()}")
+        pass
 
+    @abstractmethod
     def decrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
-        raise NotImplementedError(f"Decryption not implemented for {self.info()}")
-
+        pass
 
