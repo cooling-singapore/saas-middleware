@@ -114,7 +114,7 @@ class Node:
             identity = self._keystore.update_profile(name=name, email=email)
 
             # user the identity and update the node db
-            self.db.update_identity(identity.serialise(as_json=True), propagate=propagate)
+            self.db.update_identity(identity.serialise(), propagate=propagate)
 
             return identity
 

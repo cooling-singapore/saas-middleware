@@ -162,7 +162,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            nodes[i].db.update_identity(extras[i].identity.serialise(as_json=True))
+            nodes[i].db.update_identity(extras[i].identity.serialise())
 
         # each node should know about 2 identities now
         for node in nodes:
@@ -200,7 +200,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            nodes[i].db.update_identity(extras[i].identity.serialise(as_json=True), propagate=False)
+            nodes[i].db.update_identity(extras[i].identity.serialise(), propagate=False)
 
         # each node should know about 4 identities now
         for node in nodes:
@@ -247,7 +247,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = proxy0.get_identity(iid0)
         print(result)
-        identity = Identity.deserialise_from_json(result)
+        identity = Identity.deserialise(result)
         assert(identity.id == iid0)
 
         identity = nodes[0].update_identity(name='updated_name')
