@@ -121,7 +121,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 # do we have credentials for this repo?
                 cred = github_cred.get(self._repo_home)
                 if cred:
-                    insert = f"{cred['login']}:{cred['personal_access_token']}@"
+                    insert = f"{cred.login}:{cred.personal_access_token}@"
                     index = url.find('github.com')
                     url = url[:index] + insert + url[index:]
 
@@ -192,22 +192,22 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
     def _execute_command(self, command, cwd=None):
         command = f"cd {cwd} && {command}" if cwd else command
-        command = ['ssh', '-i', self._ssh_profile['key_path'],
-                   f"{self._ssh_profile['login']}@{self._ssh_profile['host']}", command] \
+        command = ['ssh', '-i', self._ssh_profile.key_path,
+                   f"{self._ssh_profile.login}@{self._ssh_profile.host}", command] \
             if self._ssh_profile else ['bash', '-c', command]
 
         return subprocess.run(command, capture_output=True)
 
     def _copy_local_to_remote(self, local_path, remote_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_profile['key_path'], local_path,
-                               f"{self._ssh_profile['login']}@{self._ssh_profile['host']}:{remote_path}"],
+        return subprocess.run(['scp', '-i', self._ssh_profile.key_path, local_path,
+                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}"],
                               capture_output=True)
 
     def _copy_remote_to_local(self, remote_path, local_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_profile['key_path'],
-                               f"{self._ssh_profile['login']}@{self._ssh_profile['host']}:{remote_path}", local_path],
+        return subprocess.run(['scp', '-i', self._ssh_profile.key_path,
+                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}", local_path],
                               capture_output=True)
 
     def _write_to_file(self, path, content):

@@ -27,13 +27,13 @@ class EmailService:
 
         # try to establish a session
         try:
-            address = credentials['server'].split(":")
+            address = credentials.server.split(":")
             context = ssl.create_default_context()
             smtp = smtplib.SMTP(address[0], address[1])
             smtp.ehlo()
             smtp.starttls(context=context)
             smtp.ehlo()
-            smtp.login(credentials['login'], credentials['password'])
+            smtp.login(credentials.login, credentials.password)
             logger.debug(f"SMTP session established: email={self._keystore.identity.email} "
                          f"server={credentials['server']} login={credentials['login']}")
             return smtp
