@@ -1,11 +1,12 @@
 import json
+from copy import copy
 
 from saas.cryptography.keypair import KeyPair
 
 
 def serialise(content: dict, protect_with: KeyPair = None, protected_properties: list = None) -> dict:
     # encrypt protected content (if applicable)
-    content = dict(content)
+    content = copy(content)
     if protect_with and protected_properties:
         for p in protected_properties:
             if p in content:
@@ -17,7 +18,7 @@ def serialise(content: dict, protect_with: KeyPair = None, protected_properties:
 
 def deserialise(content: dict, protected_properties: list, master_key: KeyPair) -> dict:
     # decrypt protected content (if applicable)
-    content = dict(content)
+    content = copy(content)
     for p in protected_properties:
         if p in content:
             serialised = master_key.decrypt(content[p].encode('utf-8'), base64_encoded=True)
