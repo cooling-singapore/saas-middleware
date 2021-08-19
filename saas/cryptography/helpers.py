@@ -4,7 +4,6 @@ import shutil
 from cryptography.fernet import Fernet
 
 from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
 
 
 def symmetric_encrypt(content, key=None):
