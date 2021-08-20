@@ -3,10 +3,12 @@ import os
 
 from flask import Blueprint, send_from_directory, jsonify
 
+from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
 from saas.schemas import data_object_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now, load_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -117,7 +119,7 @@ class DORBlueprint:
     def get_descriptor(self, obj_id):
         descriptor_path = self._node.dor.obj_descriptor_path(obj_id)
         if os.path.isfile(descriptor_path):
-            descriptor = load_json_from_file(descriptor_path)
+            descriptor = read_json_from_file(descriptor_path)
             return jsonify(descriptor), 200
 
         return jsonify(f"Data object {obj_id} not found."), 404
@@ -156,7 +158,7 @@ class DORBlueprint:
         }), 200
 
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def revoke_access(self, obj_id, iid):
+    def revoke_access(self, obj_id: str, iid: str):
         if not self._node.db.get_object_by_id(obj_id):
             return jsonify(f"data object (id={obj_id}) not found"), 404
 
@@ -168,19 +170,19 @@ class DORBlueprint:
             obj_id: self._node.db.revoke_access(obj_id, identity)
         }), 200
 
-    def get_owner(self, obj_id):
+    def get_owner(self, obj_id: str):
         owner = self._node.db.get_owner(obj_id)
         if owner:
             return jsonify({
                 "obj_id": obj_id,
-                "owner_iid": owner.id()
+                "owner_iid": owner.id
             }), 200
         else:
             return jsonify(f"Data object '{obj_id}' not found."), 404
 
     @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def transfer_ownership(self, obj_id):
+    def transfer_ownership(self, obj_id: str):
         # get the record for this data object
         record = self._node.db.get_object_by_id(obj_id)
         if record is None:
@@ -197,9 +199,9 @@ class DORBlueprint:
 
         # retrieve the owner of the data object
         owner = self._node.db.get_owner(obj_id)
-        return jsonify({obj_id: owner.id()}), 200
+        return jsonify({obj_id: owner.id}), 200
 
-    def get_tags(self, obj_id):
+    def get_tags(self, obj_id: str):
         return jsonify(self._node.db.get_tags(obj_id)), 200
 
     @request_manager.verify_request_body(tags_body_specification)
@@ -235,10 +237,10 @@ class DORProxy(EndpointProxy):
         code, r = self.get('', body=body)
         return r
 
-    def add_data_object(self, content_path, owner, access_restricted, content_encrypted, content_key,
+    def add_data_object(self, content_path, owner: Identity, access_restricted, content_encrypted, content_key,
                         data_type, data_format, created_by, created_t=None, recipe=None):
         body = {
-            'owner_iid': owner.id(),
+            'owner_iid': owner.id,
             'descriptor': {
                 'data_type': data_type,
                 'data_format': data_format,
@@ -258,8 +260,8 @@ class DORProxy(EndpointProxy):
         code, r = self.post('', body=body, attachment=content_path)
         return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
 
-    def delete_data_object(self, obj_id, authorisation_key):
-        code, r = self.delete(f"/{obj_id}", with_authorisation_by=authorisation_key)
+    def delete_data_object(self, obj_id, with_authorisation_by):
+        code, r = self.delete(f"/{obj_id}", with_authorisation_by=with_authorisation_by)
         return r if code == 200 else None
 
     def get_descriptor(self, obj_id):
@@ -274,34 +276,34 @@ class DORProxy(EndpointProxy):
         code, r = self.get(f"/{obj_id}/access")
         return r
 
-    def grant_access(self, obj_id, authorisation_key, identity):
-        code, r = self.post(f"/{obj_id}/access/{identity.id()}", with_authorisation_by=authorisation_key)
+    def grant_access(self, obj_id: str, authority: Keystore, identity: Identity):
+        code, r = self.post(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
         return r
 
-    def revoke_access(self, obj_id, authorisation_key, identity):
-        code, r = self.delete(f"/{obj_id}/access/{identity.id()}", with_authorisation_by=authorisation_key)
+    def revoke_access(self, obj_id: str, authority: Keystore, identity: Identity):
+        code, r = self.delete(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
         return r
 
-    def get_owner(self, obj_id):
+    def get_owner(self, obj_id: str):
         code, r = self.get(f"/{obj_id}/owner")
         return r
 
-    def transfer_ownership(self, obj_id, authorisation_key, new_owner, content_key=None):
+    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity, content_key: str = None):
         body = {
-            'new_owner_iid': new_owner.id()
+            'new_owner_iid': new_owner.id
         }
 
         if content_key is not None:
             body['content_key'] = content_key
 
-        code, r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=authorisation_key)
+        code, r = self.put(f"/{obj_id}/owner", body, with_authorisation_by=authority)
         return r if code == 200 else None
 
-    def get_tags(self, obj_id):
+    def get_tags(self, obj_id: str):
         code, r = self.get(f"/{obj_id}/tags")
         return r
 
-    def update_tags(self, obj_id, authorisation_key, tags):
+    def update_tags(self, obj_id: str, authority: Keystore, tags: dict):
         body = []
         for key, value in tags.items():
             body.append({
@@ -309,9 +311,9 @@ class DORProxy(EndpointProxy):
                 'value': value
             })
 
-        code, r = self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=authorisation_key)
+        code, r = self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=authority)
         return r
 
-    def remove_tags(self, obj_id, authorisation_key, keys):
-        code, r = self.delete(f"/{obj_id}/tags", body=keys, with_authorisation_by=authorisation_key)
+    def remove_tags(self, obj_id: str, authority: Keystore, keys: list):
+        code, r = self.delete(f"/{obj_id}/tags", body=keys, with_authorisation_by=authority)
         return r

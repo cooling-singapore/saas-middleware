@@ -14,7 +14,7 @@ from saas.dor.blueprint import DORProxy
 from saas.email.service import EmailService
 from saas.keystore.keystore import Keystore, Identity
 from saas.node import Node
-from saas.helpers import prompt, get_address_from_string, load_json_from_file, dump_json_to_file, remove_path
+from saas.helpers import prompt, get_address_from_string, read_json_from_file, write_json_to_file, remove_path
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
 
@@ -606,7 +606,7 @@ def exec_cmd_dor(args, keystore):
         # generate git proc pointer file
         obj_path = os.path.join(args['temp-dir'], 'git-proc-pointer.json')
         remove_path(obj_path)
-        dump_json_to_file({
+        write_json_to_file({
             'source': args['url'],
             'commit_id': args['commit-id'],
             'proc_path': args['path'],
@@ -868,7 +868,7 @@ def exec_cmd_rti(args, keystore):
             if len(temp) == 2:
                 # is it a path?
                 if os.path.isfile(temp[1]):
-                    value = load_json_from_file(temp[1])
+                    value = read_json_from_file(temp[1])
                     if value is not None:
                         job_input.append({
                             'name': temp[0],

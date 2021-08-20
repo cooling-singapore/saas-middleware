@@ -7,7 +7,7 @@ import unittest
 
 from saas.cryptography.helpers import decrypt_file
 from saas.dor.blueprint import DORProxy
-from saas.helpers import dump_json_to_file, get_timestamp_now, prompt
+from saas.helpers import write_json_to_file, get_timestamp_now, prompt
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
 from saas_cli import parse_args, load_keystore, exec_cmd_service
@@ -37,7 +37,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
 
     def add_test_processor_to_dor(self, owner, dor_proxy):
         git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
-        dump_json_to_file({
+        write_json_to_file({
             'source': 'https://github.com/cooling-singapore/saas-processor-template',
             'commit_id': '79cab85',
             'proc_path': 'processor_test',
