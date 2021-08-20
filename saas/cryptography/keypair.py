@@ -1,5 +1,5 @@
 import logging
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 
 import cryptography.hazmat.primitives.serialization as serialization
 
@@ -8,7 +8,7 @@ from saas.cryptography.hashing import hash_bytes_object
 logger = logging.getLogger('KeyPair')
 
 
-class KeyPair:
+class KeyPair(ABC):
     """
     KeyPair encapsulates the functionality for asymmetric key pairs. It provides a number of convenience methods for
     (de)serialisation of keys. A key pair consists of a private key and a public key whereby the public key can be
