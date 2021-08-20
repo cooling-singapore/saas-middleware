@@ -138,7 +138,7 @@ class RuntimeInfrastructureService:
                 return None
 
             # determine job id
-            job_id = self._next_job_id
+            job_id = str(self._next_job_id)
             self._next_job_id += 1
 
             # create job descriptor
