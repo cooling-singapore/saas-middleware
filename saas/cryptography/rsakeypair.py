@@ -26,7 +26,7 @@ class RSAKeyPair(KeyPair):
     def __init__(self, private_key, public_key):
         KeyPair.__init__(self, private_key, public_key)
 
-    def info(self):
+    def info(self) -> str:
         return f"RSA/{self.private_key.key_size}/{self.iid}"
 
     @classmethod
@@ -103,7 +103,7 @@ class RSAKeyPair(KeyPair):
             )
             return RSAKeyPair.from_public_key(public_key)
 
-    def sign(self, message):
+    def sign(self, message: bytes) -> str:
         """
         Sign a message using the private key.
         :param message: the message that has to be signed
@@ -118,7 +118,7 @@ class RSAKeyPair(KeyPair):
             hashes.SHA256()
         ).hex()
 
-    def verify(self, message, signature):
+    def verify(self, message: bytes, signature: str) -> bool:
         """
         Verifies the signature for a given message using the public key.
         :param message: the message that has been used for signing
@@ -137,7 +137,7 @@ class RSAKeyPair(KeyPair):
         except InvalidSignature:
             return False
 
-    def encrypt(self, message, base64_encoded=False):
+    def encrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
         """
         Encrypts a message using the public key.
         :param base64_encoded:
@@ -163,7 +163,7 @@ class RSAKeyPair(KeyPair):
         else:
             return bytes(result)
 
-    def decrypt(self, message, base64_encoded=False):
+    def decrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
         """
         Decrypts a message using the private key.
         :param base64_encoded:

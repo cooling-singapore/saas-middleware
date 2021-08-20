@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.helpers import generate_random_string
-from saas.keystore.keystore import Identity
+from saas.keystore.identity import Identity
 
 logger = logging.getLogger('nodedb.service')
 
@@ -44,12 +44,11 @@ class DORPermission(Base):
 class IdentityRecord(Base):
     __tablename__ = 'identity'
     iid = Column(String(64), primary_key=True)
-    public_key = Column(String, nullable=False)
-    s_public_key = Column(String, nullable=True)
-    e_public_key = Column(String, nullable=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     nonce = Column(Integer, nullable=False)
+    s_public_key = Column(String, nullable=True)
+    e_public_key = Column(String, nullable=True)
     signature = Column(String, nullable=True)
 
 
@@ -141,15 +140,15 @@ class NodeDBService:
 
     def has_access(self, obj_id, identity):
         with self._Session() as session:
-            return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first() is not None
+            return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
 
     def grant_access(self, obj_id, identity):
         with self._Session() as session:
-            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).first()
+            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first()
             if item is None:
-                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id()))
+                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id))
             session.commit()
-            return identity.id()
+            return identity.id
 
     def revoke_access(self, obj_id, identity=None):
         with self._Session() as session:
@@ -158,9 +157,9 @@ class NodeDBService:
                 session.commit()
                 return '*'
             else:
-                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id()).delete()
+                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).delete()
                 session.commit()
-                return identity.id()
+                return identity.id
 
     def add_data_object(self, obj_id, d_hash, c_hash, owner_iid,
                         access_restricted, content_encrypted,
@@ -222,7 +221,7 @@ class NodeDBService:
                 return False
 
             # update ownership
-            record.owner_iid = new_owner.id()
+            record.owner_iid = new_owner.id
 
             # do we need to send a request?
             if content_key is not None:
@@ -233,15 +232,14 @@ class NodeDBService:
                     'req_id': req_id,
                     'obj_id': obj_id,
                     'content_key': content_key,
-                    'prev_owner_iid': prev_owner.id(),
-                    'prev_owner_name': prev_owner.name(),
-                    'prev_owner_email': prev_owner.email(),
-                    'node_id': self._node.identity().id(),
+                    'prev_owner_iid': prev_owner.id,
+                    'prev_owner_name': prev_owner.name,
+                    'prev_owner_email': prev_owner.email,
+                    'node_id': self._node.identity().id,
                     'node_address': self._node.rest.address()
 
                 })
-                request = new_owner.encryption_public_key().encrypt(
-                    request.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                request = new_owner.encrypt(request.encode('utf-8')).decode('utf-8')
 
             else:
                 request = None
@@ -254,7 +252,7 @@ class NodeDBService:
                 logger.error(error)
 
                 # if it failed, we need to change the ownership record back
-                record.owner_iid = prev_owner.id()
+                record.owner_iid = prev_owner.id
 
                 session.commit()
                 return False
@@ -286,10 +284,10 @@ class NodeDBService:
                 record = None
 
             if record is not None:
-                return Identity(RSAKeyPair.from_public_key_string(record.public_key),
-                                record.name, record.email, record.nonce,
+                return Identity(record.iid, record.name, record.email,
                                 ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
-                                RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None)
+                                RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None,
+                                record.nonce, record.signature)
 
             else:
                 return None
@@ -298,22 +296,19 @@ class NodeDBService:
         result = {}
         with self._Session() as session:
             for record in session.query(IdentityRecord).all():
-                result[record.iid] = Identity(RSAKeyPair.from_public_key_string(record.public_key),
-                                              record.name, record.email, record.nonce,
+                result[record.iid] = Identity(record.iid, record.name, record.email,
                                               ECKeyPair.from_public_key_string(record.s_public_key),
-                                              RSAKeyPair.from_public_key_string(record.e_public_key))
+                                              RSAKeyPair.from_public_key_string(record.e_public_key),
+                                              record.nonce, record.signature)
 
         return result
 
-    def update_identity(self, identity, signature, propagate=True):
-        # deserialise
-        identity = Identity.deserialise(identity)
+    def update_identity(self, identity_as_json, propagate=True):
+        identity = Identity.deserialise(identity_as_json)
 
         # verify the signature
-        if not identity.verify(signature):
-            logger.warning(f"ignoring identity update (invalid signature): "
-                           f"identity={identity.serialise()} "
-                           f"signature={signature}")
+        if not identity.is_authentic():
+            logger.warning(f"ignoring identity update (invalid signature): identity={identity.serialise()}")
             return False
 
         # update the db
@@ -321,36 +316,33 @@ class NodeDBService:
             # do we have the identity already on record?
             # only perform update if either the record does not exist yet OR if the information provided is valid
             # and more recent, i.e., if the nonce is greater than the one on record.
-            record = session.query(IdentityRecord).filter_by(iid=identity.id()).first()
+            record = session.query(IdentityRecord).filter_by(iid=identity.id).first()
             if record is None:
-                session.add(IdentityRecord(iid=identity.id(), public_key=identity.public_key().public_as_string(),
-                                           s_public_key=identity.signing_public_key().public_as_string(),
-                                           e_public_key=identity.encryption_public_key().public_as_string(),
-                                           name=identity.name(), email=identity.email(), nonce=identity.nonce(),
-                                           signature=signature))
+                session.add(IdentityRecord(iid=identity.id, name=identity.name, email=identity.email,
+                                           s_public_key=identity.s_public_key_as_string(),
+                                           e_public_key=identity.e_public_key_as_string(),
+                                           nonce=identity.nonce, signature=identity.signature))
                 session.commit()
 
             else:
-                if identity.nonce() > record.nonce:
-                    record.s_key = identity.signing_public_key().public_as_string()
-                    record.e_key = identity.encryption_public_key().public_as_string()
-                    record.name = identity.name()
-                    record.email = identity.email()
-                    record.nonce = identity.nonce()
-                    record.signature = signature
+                if identity.nonce > record.nonce:
+                    record.name = identity.name
+                    record.email = identity.email
+                    record.nonce = identity.nonce
+                    record.s_key = identity.s_public_key_as_string()
+                    record.e_key = identity.e_public_key_as_string()
+                    record.signature = identity.signature
                     session.commit()
 
                 else:
                     logger.debug(f"ignoring identity update (more recent nonce={record.nonce} on record): "
-                                 f"identity={identity.serialise()} "
-                                 f"signature={signature}")
+                                 f"identity={identity.serialise()}")
                     return False
 
         # propagate only if flag is set
         if propagate:
             self.protocol.broadcast_update('update_identity', {
-                'identity': identity.serialise(),
-                'signature': signature,
+                'identity_as_json': identity.serialise(),
                 'propagate': False
             })
 
@@ -406,15 +398,15 @@ class NodeDBService:
         with self._Session() as session:
             for item in session.query(IdentityRecord).all():
                 identity_items.append({
-                    'identity': {
-                        'public_key': item.public_key,
+                    'identity_as_json': {
+                        'iid': item.iid,
                         'name': item.name,
                         'email': item.email,
                         'nonce': item.nonce,
                         's_public_key': item.s_public_key,
-                        'e_public_key': item.e_public_key
+                        'e_public_key': item.e_public_key,
+                        'signature': item.signature
                     },
-                    'signature': item.signature,
                     'propagate': False
                   })
 
