@@ -1,6 +1,10 @@
 import json
 import requests
 
+from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
+from saas.rest.request_manager import sign_authorisation_token
+
 
 class EndpointProxy:
     def __init__(self, endpoint_prefix, remote_address):
@@ -78,7 +82,8 @@ class EndpointProxy:
         response = requests.delete(url, data=content)
         return response.status_code, response.json()
 
-    def _make_content(self, endpoint, action, parameters=None, body=None, with_authorisation_by=None):
+    def _make_content(self, endpoint: str, action: str, parameters=None, body=None,
+                      with_authorisation_by: Keystore = None):
         content = {}
 
         if body:
@@ -87,8 +92,8 @@ class EndpointProxy:
         if with_authorisation_by:
             url = f"{action}:{self._auth_url(endpoint, parameters)}"
             authorisation = {
-                    'public_key': with_authorisation_by.public_as_string(),
-                    'signature': with_authorisation_by.sign_authorisation_token(url, body)
+                    'public_key': with_authorisation_by.signing_key().public_as_string(),
+                    'signature': sign_authorisation_token(with_authorisation_by, url, body)
             }
 
             content['authorisation'] = json.dumps(authorisation)

@@ -5,6 +5,7 @@ from threading import Lock
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.email.service import EmailService
+from saas.keystore.identity import Identity
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.dor.service import DataObjectRepositoryService
@@ -36,14 +37,12 @@ class Node:
         self.rti = None
         self.email = None
 
+    @property
+    def keystore(self):
+        return self._keystore
+
     def identity(self):
-        return self._keystore.identity()
-
-    def signing_key(self):
-        return self._keystore.signing_key()
-
-    def encryption_key(self):
-        return self._keystore.encryption_key()
+        return self._keystore.identity
 
     def datastore(self):
         return self._datastore_path
@@ -64,8 +63,7 @@ class Node:
         if boot_node_address:
             self.join_network(boot_node_address)
 
-        if self._keystore.has_smtp_information():
-            self.email = EmailService(self._keystore)
+        self.email = EmailService(self._keystore)
 
     def shutdown(self):
         self.leave_network()
@@ -106,26 +104,25 @@ class Node:
         self.dor = DataObjectRepositoryService(self)
         self.p2p.add(DataObjectRepositoryP2PProtocol(self))
 
-    def start_rti_service(self, git_auth=None, ssh_auth=None):
+    def start_rti_service(self, ssh_profile=None):
         logger.info("starting DOR service.")
-        self.rti = RuntimeInfrastructureService(self, git_auth=git_auth, ssh_auth=ssh_auth)
+        self.rti = RuntimeInfrastructureService(self, ssh_profile=ssh_profile)
 
-    def update_identity(self, s_key=None, e_key=None, name=None, email=None, propagate=True):
+    def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
             # perform update on the keystore
-            signature = self._keystore.update(s_key=s_key, e_key=e_key, name=name, email=email)
+            identity = self._keystore.update_profile(name=name, email=email)
 
             # user the identity and update the node db
-            identity = self._keystore.identity()
-            self.db.update_identity(identity.serialise(), signature, propagate=propagate)
+            self.db.update_identity(identity.serialise(), propagate=propagate)
 
-            return identity, signature
+            return identity
 
     def update_network_node(self, propagate=True):
         p2p_address = self.p2p.address()
         rest_address = self.rest.address() if self.rest else None
 
-        self.db.update_network_node(self._keystore.identity().id(), get_timestamp_now(),
+        self.db.update_network_node(self._keystore.identity.id, get_timestamp_now(),
                                     f"{p2p_address[0]}:{p2p_address[1]}",
                                     f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
                                     propagate=propagate)

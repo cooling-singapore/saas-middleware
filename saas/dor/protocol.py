@@ -4,7 +4,7 @@ import json
 
 from saas.cryptography.messenger import SecureMessenger
 from saas.p2p.protocol import P2PProtocol
-from saas.helpers import dump_json_to_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('dor.protocol')
 
@@ -30,7 +30,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         if peer and messenger:
             reply = messenger.request(self.prepare_message('lookup', {
                 'object_ids': object_ids,
-                'user_iid': user.id()
+                'user_iid': user.id
             }))
             messenger.close()
             return reply
@@ -83,7 +83,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             }))
 
             if reply['code'] == 200:
-                dump_json_to_file(reply['descriptor'], destination_descriptor_path)
+                write_json_to_file(reply['descriptor'], destination_descriptor_path)
                 messenger.receive_attachment(destination_content_path)
 
             else:
@@ -134,10 +134,10 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 return
 
             # verify the access request
-            token = f"{messenger.peer.id()}:{obj_id}".encode('utf-8')
-            if not user.signing_public_key().verify(token, message['user_signature']):
+            token = f"{messenger.peer.id}:{obj_id}".encode('utf-8')
+            if not user.verify(token, message['user_signature']):
                 messenger.reply_ok({'code': 403, 'reason': f"access authorisation failed "
-                                                           f"(user_iid={user.id()}, obj_id={obj_id})."})
+                                                           f"(user_iid={user.id}, obj_id={obj_id})."})
                 messenger.close()
                 return
 
