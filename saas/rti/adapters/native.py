@@ -13,11 +13,10 @@ logger = logging.getLogger('RTINativeProcessorAdapter')
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, obj_content_path, node, git_auth=None, ssh_auth=None):
+    def __init__(self, proc_id, obj_content_path, node, ssh_profile=None):
         super().__init__(proc_id, node)
 
-        self._git_auth = git_auth
-        self._ssh_auth = ssh_auth
+        self._ssh_profile = ssh_profile
 
         # substitute home path with $HOME - check if $HOME is actually present
         self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
@@ -59,7 +58,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             working_directory = local_working_directory.replace(os.environ['HOME'], '$HOME')
 
             # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
-            if self._ssh_auth is not None:
+            if self._ssh_profile is not None:
                 # create the remote working directory
                 logger.info(f"create remote working directory at {working_directory}")
                 result = self._execute_command(f"mkdir -p {working_directory}")
@@ -84,7 +83,7 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 raise Exception(f"Could not successfully run execute script: {result}")
 
             # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
-            if self._ssh_auth is not None:
+            if self._ssh_profile is not None:
                 # copy the output data objects to the local working directory
                 for obj_name in self._output_interface:
                     remote_path = os.path.join(working_directory, obj_name)
@@ -117,10 +116,14 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             logger.info(f"cloning repository {url} to {self._repo_home}.")
 
             # do we have git credentials?
-            if self._git_auth:
-                insert = f"{self._git_auth['username']}:{self._git_auth['password']}@"
-                index = url.find('github.com')
-                url = url[:index] + insert + url[index:]
+            github_cred = self._node.keystore.get_asset('github-credentials')
+            if github_cred:
+                # do we have credentials for this repo?
+                cred = github_cred.get(self._repo_home)
+                if cred:
+                    insert = f"{cred.login}:{cred.personal_access_token}@"
+                    index = url.find('github.com')
+                    url = url[:index] + insert + url[index:]
 
             result = self._execute_command(f"git clone {url} {self._repo_home}")
             if result.returncode != 0:
@@ -189,21 +192,22 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
     def _execute_command(self, command, cwd=None):
         command = f"cd {cwd} && {command}" if cwd else command
-        command = ['ssh', '-i', self._ssh_auth['key'], self._ssh_auth['login'], command] \
-            if self._ssh_auth else ['bash', '-c', command]
+        command = ['ssh', '-i', self._ssh_profile.key_path,
+                   f"{self._ssh_profile.login}@{self._ssh_profile.host}", command] \
+            if self._ssh_profile else ['bash', '-c', command]
 
         return subprocess.run(command, capture_output=True)
 
     def _copy_local_to_remote(self, local_path, remote_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_auth['key'], local_path,
-                               f"{self._ssh_auth['login']}:{remote_path}"],
+        return subprocess.run(['scp', '-i', self._ssh_profile.key_path, local_path,
+                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}"],
                               capture_output=True)
 
     def _copy_remote_to_local(self, remote_path, local_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_auth['key'],
-                               f"{self._ssh_auth['login']}:{remote_path}", local_path],
+        return subprocess.run(['scp', '-i', self._ssh_profile.key_path,
+                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}", local_path],
                               capture_output=True)
 
     def _write_to_file(self, path, content):

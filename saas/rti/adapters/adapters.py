@@ -4,13 +4,16 @@ import os
 import time
 from enum import Enum
 from threading import Lock, Thread
+from typing import Optional
 
 from saas.cryptography.helpers import encrypt_file, decrypt_file
+from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.rti.status import State
-from saas.helpers import dump_json_to_file, load_json_from_file, generate_random_string
+from saas.keystore.identity import Identity
+from saas.rti.status import State, StatusLogger
+from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string
 
 logger = logging.getLogger('rti.adapters')
 
@@ -130,17 +133,18 @@ class RTIProcessorAdapter(Thread):
         logger.info(f"adapter {self._proc_id} shut down.")
         self._state = ProcessorState.STOPPED
 
-    def push_output_data_object(self, output_descriptor, output_content_path, owner, task_descriptor, job_id):
+    def push_output_data_object(self, output_descriptor: dict, output_content_path: str, owner: Identity,
+                                task_descriptor: dict, job_id: str) -> Optional[str]:
         output_name = output_descriptor['name']
         data_type = output_descriptor['data_type']
         data_format = output_descriptor['data_format']
-        created_by = self._node.identity().id()
+        created_by = self._node.identity().id
 
         for item in task_descriptor['output']:
             if item['name'] == output_name:
                 restricted_access = item['restricted_access']
                 content_encrypted = item['content_encrypted']
-                content_key = encrypt_file(output_content_path, protect_key_with=owner.encryption_public_key(),
+                content_key = encrypt_file(output_content_path, encrypt_for=owner,
                                            delete_source=True) if content_encrypted else None
 
                 # do we have a target node specified for storing the data object?
@@ -164,13 +168,13 @@ class RTIProcessorAdapter(Thread):
                                                   })
 
                 # update tags with information from the job
-                proxy.update_tags(obj_id, self._node.signing_key(), {
+                proxy.update_tags(obj_id, self._node.keystore, {
                     'name': f"{item['name']}",
                     'job_id': job_id
                 })
 
                 # transfer ownership to the new owner
-                proxy.transfer_ownership(obj_id, self._node.signing_key(), owner)
+                proxy.transfer_ownership(obj_id, self._node.keystore, owner)
 
                 return obj_id
 
@@ -184,14 +188,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         self._input_interface = {}
         self._output_interface = {}
 
-    def parse_io_interface(self, descriptor):
+    def parse_io_interface(self, descriptor: dict):
         for item in descriptor['input']:
             self._input_interface[item['name']] = item
 
         for item in descriptor['output']:
             self._output_interface[item['name']] = item
 
-    def _store_value_input_data_objects(self, task_descriptor, working_directory, status):
+    def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
         status.update('input_status', f"storing value data objects")
         for item in task_descriptor['input']:
             obj_name = item['name']
@@ -199,8 +203,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             # if it is a 'value' input then store it to the working directory
             if item['type'] == 'value':
                 input_content_path = os.path.join(working_directory, obj_name)
-                dump_json_to_file(item['value'], input_content_path)
-                dump_json_to_file({
+                write_json_to_file(item['value'], input_content_path)
+                write_json_to_file({
                     'data_type': 'JSONObject',
                     'data_format': 'json'
                 }, f"{input_content_path}.descriptor")
@@ -208,8 +212,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove('input_status')
         return True
 
-    def _fetch_reference_input_data_objects(self, ephemeral_key, pending_list, task_descriptor, working_directory,
-                                            status):
+    def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_list: list, task_descriptor: dict,
+                                            working_directory: str, status: StatusLogger):
         status.update('input_status', f"fetching data objects")
 
         # get the user identity
@@ -280,7 +284,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             # try to fetch the data object
             result = protocol.send_fetch(item['custodian_address'], obj_id,
                                          destination_descriptor_path, destination_content_path,
-                                         user_iid=user.id(), user_signature=item['user_signature'])
+                                         user_iid=user.id, user_signature=item['user_signature'])
 
             # if the result is None, something went wrong...
             if result['code'] != 200:
@@ -309,13 +313,12 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                     'req_id': req_id,
                     'obj_id': obj_id,
                     'ephemeral_public_key': ephemeral_key.public_as_string(),
-                    'user_name': user.name(),
-                    'user_email': user.email(),
-                    'node_id': self._node.identity().id(),
+                    'user_name': user.name,
+                    'user_email': user.email,
+                    'node_id': self._node.identity().id,
                     'node_address': node_address
                 })
-                request = owner.encryption_public_key().encrypt(
-                    request.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                request = owner.encrypt(request.encode('utf-8')).decode('utf-8')
 
                 # send an email to the owner
                 if not self._node.email.send_content_key_request(owner, obj_id, user, node_address, request):
@@ -333,7 +336,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove('input_status')
         return True
 
-    def _decrypt_reference_input_data_objects(self, ephemeral_key, pending_list, status):
+    def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_list: list, status: StatusLogger):
         # wait for pending content keys (if any)
         status.update('input_status', f"decrypt input data objects")
         while len(pending_list) > 0:
@@ -345,7 +348,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                     need_sleep = False
 
                     # decrypt the content key
-                    content_key = ephemeral_key.decrypt(permission.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                    # content_key = ephemeral_key.decrypt(permission.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                    content_key = ephemeral_key.decrypt(permission.encode('utf-8'), base64_encoded=True)
 
                     # decrypt the data object using the
                     decrypt_file(item['path'], content_key)
@@ -359,12 +363,13 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         status.remove('input_status')
         return True
 
-    def _verify_input_data_objects_types_and_formats(self, task_descriptor, working_directory, status):
+    def _verify_input_data_objects_types_and_formats(self, task_descriptor: dict, working_directory: str,
+                                                     status: StatusLogger):
         for item in task_descriptor['input']:
             obj_name = item['name']
 
             descriptor_path = os.path.join(working_directory, f"{obj_name}.descriptor")
-            d0 = load_json_from_file(descriptor_path)
+            d0 = read_json_from_file(descriptor_path)
             d1 = self._input_interface[obj_name]
 
             if d0['data_type'] != d1['data_type'] or d0['data_format'] != d1['data_format']:
@@ -379,7 +384,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
         return True
 
-    def _verify_output_data_object_owner_identities(self, task_descriptor, status):
+    def _verify_output_data_object_owner_identities(self, task_descriptor: dict, status: StatusLogger):
         for item in task_descriptor['output']:
             owner = self._node.db.get_identity(item['owner_iid'])
             if owner is None:
@@ -391,7 +396,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
         return True
 
-    def pre_execute(self, task_descriptor, working_directory, status):
+    def pre_execute(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
         # store 'value' input data objects to disk
         self._store_value_input_data_objects(task_descriptor, working_directory, status)
 
@@ -415,14 +420,15 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
         return True
 
-    def post_execute(self, task_descriptor, working_directory, job_id, status):
+    def post_execute(self, task_descriptor: dict, working_directory: str, job_id: str, status: StatusLogger):
         # push output data objects to DOR
         if not self._push_output_data_objects(task_descriptor, working_directory, job_id, status):
             return False
 
         return True
 
-    def _push_output_data_objects(self, task_descriptor, working_directory, job_id, status):
+    def _push_output_data_objects(self, task_descriptor: dict, working_directory: str, job_id: str,
+                                  status: StatusLogger):
         status.update('stage', 'push output data objects')
 
         # map the output items in the task descriptor

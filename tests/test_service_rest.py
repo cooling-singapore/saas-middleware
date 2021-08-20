@@ -1,11 +1,13 @@
+import time
 import unittest
 import logging
 
 from flask import Blueprint, jsonify
 from flask_cors import CORS
 
+from saas.cryptography.eckeypair import ECKeyPair
 from saas.rest.proxy import EndpointProxy
-from saas.rest.request_manager import request_manager
+from saas.rest.request_manager import request_manager, verify_authorisation_token, sign_authorisation_token
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -63,6 +65,31 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = proxy.get_info()
         assert(result == 'hello')
+
+    def test_authorisation(self):
+        url = "/repository/345345345lk3j45345ef3f34r3984r"
+        body = {
+            'a': 'asdasdas',
+            'f': 2343
+        }
+
+        keystore = self.create_keystores(1)[0]
+
+        # case 1a: no body, successful
+        signature = sign_authorisation_token(keystore, url)
+        assert verify_authorisation_token(keystore.identity, signature, url)
+
+        # case 1b: no body, unsuccessful
+        time.sleep(11)
+        assert not verify_authorisation_token(keystore.identity, signature, url)
+
+        # case 2a: body, successful
+        signature = sign_authorisation_token(keystore, url, body)
+        assert verify_authorisation_token(keystore.identity, signature, url, body)
+
+        # case 2b: body, unsuccessful
+        time.sleep(11)
+        assert not verify_authorisation_token(keystore.identity, signature, url, body)
 
 
 if __name__ == '__main__':

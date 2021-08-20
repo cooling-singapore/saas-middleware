@@ -3,6 +3,8 @@ import shutil
 
 from cryptography.fernet import Fernet
 
+from saas.keystore.identity import Identity
+
 
 def symmetric_encrypt(content, key=None):
     if key is None:
@@ -16,7 +18,7 @@ def symmetric_decrypt(content, key):
     return cipher.decrypt(content)
 
 
-def encrypt_file(source, destination=None, key=None, protect_key_with=None, delete_source=False, chunk_size=1024*1024):
+def encrypt_file(source, destination=None, key=None, encrypt_for: Identity = None, delete_source=False, chunk_size=1024*1024):
     # if no key is provided, generate one
     if key is None:
         key = Fernet.generate_key()
@@ -49,13 +51,13 @@ def encrypt_file(source, destination=None, key=None, protect_key_with=None, dele
         os.remove(source)
 
     # do we need to protect the key?
-    if protect_key_with is not None:
-        key = protect_key_with.encrypt(key, base64_encoded=True).decode('utf-8')
+    if encrypt_for is not None:
+        key = encrypt_for.encrypt(key).decode('utf-8')
 
     return key
 
 
-def decrypt_file(source, key, destination=None, delete_source=False):
+def decrypt_file(source, key: bytes, destination=None, delete_source=False):
     cipher = Fernet(key)
 
     # determine the (temporary) location
