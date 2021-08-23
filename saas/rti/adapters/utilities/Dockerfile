@@ -1,26 +1,27 @@
 FROM python:3-slim as clone
 ARG PROC_ID
+ARG GIT_REPO=https://github.com/cooling-singapore/saas-processor-template
+ARG COMMIT_ID=HEAD
+
 LABEL proc_id=$PROC_ID
 
 RUN apt-get update && apt-get install -y git
-
-ARG GIT_REPO=https://github.com/cooling-singapore/saas-processor-template
 RUN git clone $GIT_REPO /processor_repo
 
 WORKDIR processor_repo
-ARG COMMIT_ID=HEAD
 RUN git checkout $COMMIT_ID
 
 FROM python:3-slim as install
 ARG PROC_ID
+ARG PROCESSOR_PATH=processor_test
+
 LABEL proc_id=$PROC_ID
+
 COPY --from=clone /processor_repo /processor_repo
 
-COPY processor_scripts.py .
-RUN python processor_scripts.py --repo-path /processor_repo
-
-ARG PROCESSOR_PATH=processor_dummy
 WORKDIR /processor_repo/$PROCESSOR_PATH
+RUN echo "$PWD"
+RUN ./install.sh default
 
 RUN mkdir /working_directory
-ENTRYPOINT ["../venv/bin/python", "processor.py", "/working_directory"]
+ENTRYPOINT ["./execute.sh", "default", "/working_directory"]
