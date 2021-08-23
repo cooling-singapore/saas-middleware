@@ -3,10 +3,8 @@ import logging
 import os
 
 import docker
-from jsonschema import validate
 
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
-from saas.schemas import git_specification_schema
 
 logger = logging.getLogger('rti.adapters.docker')
 
@@ -38,7 +36,6 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
     def _read_git_spec(git_spec_path):
         with open(git_spec_path, 'rb') as f:
             git_spec = json.load(f)
-        validate(instance=git_spec, schema=git_specification_schema)
         return git_spec
 
     # TODO: Catch exceptions and log output for docker commands
@@ -49,7 +46,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                             forcerm=True,  # remove intermediate containers
                             buildargs={"GIT_REPO": self.git_spec["source"],
                                        "COMMIT_ID": self.git_spec["commit_id"],
-                                       "PROCESSOR_PATH": self.git_spec["path"],
+                                       "PROCESSOR_PATH": self.git_spec["proc_path"],
                                        "PROC_ID": self.proc_id})
         client.close()
 
@@ -74,7 +71,7 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
 
         logs = client.containers.run(self.docker_image_tag,
                                      entrypoint=["cat",
-                                                 f"/processor_repo/{self.git_spec['path']}/descriptor.json"],
+                                                 f"/processor_repo/{self.git_spec['proc_path']}/descriptor.json"],
                                      remove=True)
         descriptor = json.loads(logs.decode('utf-8'))
         logger.debug(f"{self.proc_id} descriptor: {descriptor}")
