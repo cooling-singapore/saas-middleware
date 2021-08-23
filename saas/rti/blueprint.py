@@ -1,5 +1,4 @@
 import logging
-import os
 
 from flask import Blueprint, jsonify
 
@@ -7,7 +6,6 @@ from saas.keystore.identity import Identity
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 from saas.schemas import task_descriptor_schema
-from saas.helpers import read_json_from_file
 
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
