@@ -17,6 +17,8 @@ import string
 
 from getpass import getpass
 
+import jsonschema
+
 logger = logging.getLogger('Utilities.general_helpers')
 
 
@@ -41,24 +43,42 @@ def get_timestamp_now():
     return int(round(time.time() * 1000))
 
 
-def dump_json_to_file(json_input, destination_path):
-    """
-    Write a given JSON input to a file.
-    :param json_input: the JSON input
-    :param destination_path: the path of the destination file
-    :return: None
-    """
-    with open(destination_path, 'w') as f:
-        json.dump(json_input, f, indent=4, sort_keys=True)
+def validate_json(content, schema):
+    try:
+        jsonschema.validate(instance=content, schema=schema)
+        return True
+
+    except jsonschema.exceptions.ValidationError:
+        return False
+
+    except jsonschema.exceptions.SchemaError:
+        return False
+
+
+def read_json_from_file(path, schema=None):
+    with open(path, 'r') as f:
+        content = json.load(f)
+
+        # do we have a schema to validate?
+        if schema is not None:
+            jsonschema.validate(instance=content, schema=schema)
+
+        return content
+
+
+def write_json_to_file(content, path, schema=None, indent=4, sort_keys=False):
+    with open(path, 'w') as f:
+        json.dump(content, f, indent=indent, sort_keys=sort_keys)
+
+        # do we have a schema to validate?
+        if schema is not None:
+            jsonschema.validate(instance=content, schema=schema)
+
+        return content
 
 
 def generate_random_string(length, characters=string.ascii_letters+string.digits):
     return ''.join(random.choice(characters) for c in range(length))
-
-
-def load_json_from_file(source_path):
-    with open(source_path, 'r') as f:
-        return json.load(f)
 
 
 def object_to_ordered_list(obj):

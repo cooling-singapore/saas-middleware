@@ -13,20 +13,9 @@ from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.status import StatusLogger, State
 
-from jsonschema import validate, ValidationError
-
-from saas.helpers import dump_json_to_file, load_json_from_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('RTI')
-
-
-def validate_json(instance, schema):
-    try:
-        validate(instance=instance, schema=schema)
-        return True
-
-    except ValidationError:
-        return False
 
 
 class RuntimeInfrastructureService:
@@ -38,12 +27,13 @@ class RuntimeInfrastructureService:
     def proc_descriptor_path(self, obj_id):
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
 
-    def __init__(self, node):
+    def __init__(self, node, ssh_profile=None):
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
         self._content_keys = {}
+        self._ssh_profile = ssh_profile
 
         # initialise directories
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
@@ -80,7 +70,7 @@ class RuntimeInfrastructureService:
                     # create an RTI adapter instance
                     if deployment == 'native':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTINativeProcessorAdapter(proc_id, content_path, self._node)
+                            RTINativeProcessorAdapter(proc_id, content_path, self._node, ssh_profile=self._ssh_profile)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
@@ -134,7 +124,7 @@ class RuntimeInfrastructureService:
                 return None
 
             # determine job id
-            job_id = self._next_job_id
+            job_id = str(self._next_job_id)
             self._next_job_id += 1
 
             # create job descriptor
@@ -150,7 +140,7 @@ class RuntimeInfrastructureService:
 
             # dump the job descriptor
             job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
-            dump_json_to_file(job_descriptor, job_descriptor_path)
+            write_json_to_file(job_descriptor, job_descriptor_path)
 
             # create status logger
             status_path = os.path.join(wd_path, 'job_status.json')
