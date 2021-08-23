@@ -636,25 +636,38 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             logger.exception("Could not find docker on this machine")
             return
 
-        deployed = self.rti_proxy.get_deployed()
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(2)
+        owner = keystores[0]
+        user = keystores[1]
+        db.update_identity(owner.identity)
+        db.update_identity(user.identity)
+
+        deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor()
+        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = self.rti_proxy.deploy(proc_id, 'docker')
+        descriptor = rti.deploy(proc_id, 'docker')
         logger.info(f"descriptor={descriptor}")
         assert (descriptor is not None)
 
-        deployed = self.rti_proxy.get_deployed()
+        deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 1)
         assert (proc_id in deployed)
 
-        jobs = self.rti_proxy.get_jobs(proc_id)
+        jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert (jobs is not None)
         assert (len(jobs) == 0)
@@ -679,36 +692,37 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         job_output = [
             {
                 'name': 'c',
-                'owner_iid': self.extras[2].identity().id(),
+                'owner_iid': owner.identity.id,
                 'restricted_access': False,
                 'content_encrypted': False
             }
         ]
 
-        job_id = self.rti_proxy.submit_job(proc_id, job_input, job_output, self.extras[1].identity())
+        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
         logger.info(f"job_id={job_id}")
         assert (job_id is not None)
 
-        jobs = self.rti_proxy.get_jobs(proc_id)
+        jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert (jobs is not None)
         assert (len(jobs) == 1)
 
-        self.wait_for_job(job_id)
+        result = self.wait_for_job(rti, job_id)
+        assert (result is True)
 
-        jobs = self.rti_proxy.get_jobs(proc_id)
+        jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert (jobs is not None)
         assert (len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        result = self.rti_proxy.undeploy(proc_id)
+        result = rti.undeploy(proc_id)
         assert result is not None
         assert result == proc_id
 
-        deployed = self.rti_proxy.get_deployed()
+        deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 0)
