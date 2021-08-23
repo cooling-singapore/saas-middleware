@@ -86,29 +86,6 @@ class ECKeyPairTestCases(unittest.TestCase, TestCaseBase):
         assert(self.key.verify(message0, signature0))
         assert(not self.key.verify(message1, signature0))
 
-    def test_authorisation(self):
-        url = "/repository/345345345lk3j45345ef3f34r3984r"
-        body = {
-            'a': 'asdasdas',
-            'f': 2343
-        }
-
-        # case 1a: no body, successful
-        signature = self.key.sign_authorisation_token(url)
-        assert self.key.verify_authorisation_token(signature, url)
-
-        # case 1b: no body, unsuccessful
-        time.sleep(11)
-        assert not self.key.verify_authorisation_token(signature, url)
-
-        # case 2a: body, successful
-        signature = self.key.sign_authorisation_token(url, body)
-        assert self.key.verify_authorisation_token(signature, url, body)
-
-        # case 2b: body, unsuccessful
-        time.sleep(11)
-        assert not self.key.verify_authorisation_token(signature, url, body)
-
 
 class RSAKeyPairTestCases(unittest.TestCase, TestCaseBase):
     def __init__(self, method_name='runTest'):

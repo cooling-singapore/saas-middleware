@@ -3,10 +3,11 @@ import os
 
 from flask import Blueprint, jsonify
 
+from saas.keystore.identity import Identity
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 from saas.schemas import task_descriptor_schema
-from saas.helpers import load_json_from_file
+from saas.helpers import read_json_from_file
 
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
@@ -128,12 +129,12 @@ class RTIProxy(EndpointProxy):
         code, r = self.get(f"/{proc_id}/descriptor")
         return r if code == 200 else None
 
-    def submit_job(self, proc_id, job_input, job_output, user):
+    def submit_job(self, proc_id: str, job_input: list, job_output: list, user: Identity):
         body = {
             'processor_id': proc_id,
             'input': job_input,
             'output': job_output,
-            'user_iid': user.id()
+            'user_iid': user.id
         }
 
         code, r = self.post(f"/{proc_id}/jobs", body=body)

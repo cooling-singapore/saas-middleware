@@ -5,9 +5,10 @@ import logging
 
 from multiprocessing import Lock
 
+from saas.keystore.assets.credentials import CredentialsAsset, SMTPCredentials, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
 from saas.node import Node
-from saas.helpers import get_timestamp_now, load_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file
 
 logger = logging.getLogger('tests.base_testcase')
 
@@ -70,15 +71,15 @@ class TestCaseBase:
         keystores = []
         for i in range(n):
             keystores.append(
-                Keystore.create(self.wd_path, f"keystore_{i}", f"keystore_{i}@somewhere.com", f"password_{i}")
+                Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
             )
 
         return keystores
 
-    def create_nodes(self, n, offset=0, perform_join=True, enable_rest=False):
+    def create_nodes(self, n, offset=0, use_credentials=True, perform_join=True, enable_rest=False):
         nodes = []
         for i in range(n):
-            nodes.append(self.get_node(f"node_{i+offset}", enable_rest=enable_rest))
+            nodes.append(self.get_node(f"node_{i+offset}", use_credentials=use_credentials, enable_rest=enable_rest))
 
             if perform_join and i > 0:
                 nodes[i].join_network(nodes[0].p2p.address())
@@ -104,7 +105,15 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=False, enable_rest=False):
+    # def has_ssh_credentials(self):
+    #     path = 'credentials.json'
+    #     if os.path.isfile(path):
+    #         credentials = read_json_from_file('credentials.json')
+    #         return 'ssh_auth' in credentials
+    #     else:
+    #         return False
+
+    def get_node(self, name, use_credentials=True, enable_rest=False, use_ssh_profile=None):
         if name in self.nodes:
             return self.nodes[name]
 
@@ -115,21 +124,70 @@ class TestCaseBase:
             storage_path = os.path.join(self.wd_path, name)
             subprocess.check_output(['mkdir', '-p', storage_path])
 
+            ssh_profile = None
             if use_credentials:
-                credentials = load_json_from_file('credentials.json')
-                keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
-                logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
-                            f"using existing keystore (id={keystore.identity().id()})")
+                credentials = read_json_from_file('credentials.json')
+                keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
+
+                # do we have SMTP credentials?
+                if 'smtp-credentials' in credentials:
+                    smtp_cred = CredentialsAsset[SMTPCredentials].create('smtp-credentials', SMTPCredentials)
+                    smtp_cred.update(credentials['email'], SMTPCredentials(
+                        credentials['smtp-credentials']['server'],
+                        credentials['smtp-credentials']['login'],
+                        credentials['smtp-credentials']['password']
+                    ))
+                    keystore.update_asset(smtp_cred)
+
+                # do we have SSH credentials?
+                if 'ssh-credentials' in credentials:
+                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
+                    for item in credentials['ssh-credentials']:
+                        ssh_cred.update(item['name'], SSHCredentials(
+                            item['host'],
+                            item['login'],
+                            item['key_path']
+                        ))
+                    keystore.update_asset(ssh_cred)
+
+                    # get the specific SSH profile to be used for this node (if any)
+                    if use_ssh_profile:
+                        ssh_profile = ssh_cred.get(use_ssh_profile)
+                        if not ssh_profile:
+                            return None
+
+                # do we have Github credentials?
+                if 'github-credentials' in credentials:
+                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
+                    for item in credentials['github-credentials']:
+                        github_cred.update(item['repository'], GithubCredentials(
+                            item['login'],
+                            item['personal_access_token']
+                        ))
+                    keystore.update_asset(github_cred)
+
             else:
-                logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
-                            f"using new (fake) keystore")
-                keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
+                keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
+
+            # ssh_auth = None
+            # if use_credentials:
+            #     credentials = read_json_from_file('credentials.json')
+            #     keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
+            #     logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
+            #                 f"using existing keystore (id={keystore.identity().id()})")
+            #
+            #     if use_ssh_auth and 'ssh_auth' in credentials:
+            #         ssh_auth = credentials['ssh_auth']
+            # else:
+            #     logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
+            #                 f"using new (fake) keystore")
+            #     keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
 
             # create node and startup services
             node = Node(keystore, storage_path)
             node.startup(p2p_address)
             node.start_dor_service()
-            node.start_rti_service()
+            node.start_rti_service(ssh_profile=ssh_profile)
             if enable_rest:
                 node.start_rest_service(rest_address)
 

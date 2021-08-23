@@ -91,7 +91,7 @@ class P2PProtocol:
         # we always exclude ourselves
         if exclude is None:
             exclude = []
-        exclude.append(self.node.identity().id())
+        exclude.append(self.node.identity().id)
 
         # send message to all peers we know of
         for record in self.node.db.get_network():
