@@ -37,7 +37,7 @@ class DataObjectRepositoryService:
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
                                                              DataObjectRepositoryService.infix_cache_path)])
 
-    def add(self, owner_iid, descriptor, content_path, access_restricted, content_encrypted, content_key):
+    def add(self, owner_iid, descriptor, content_path, access_restricted, content_encrypted):
         # calculate the hash for the data object content
         c_hash = hash_file_content(content_path)
 

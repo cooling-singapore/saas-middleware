@@ -96,7 +96,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         created_by = 'test_user'
 
         proc_id, _ = dor.add_data_object(git_proc_pointer_path, owner,
-                                         False, False, None,
+                                         False, False,
                                          data_type, data_format, created_by, created_t)
 
         return proc_id
@@ -111,7 +111,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         created_by = 'heiko'
 
         obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        access_restricted, False, None,
+                                        access_restricted, False,
                                         data_type, data_format, created_by, created_t)
 
         return test_obj_id, obj_id
@@ -127,7 +127,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         content_key = encrypt_file(test_file_path, encrypt_for=owner, delete_source=True)
 
         obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        True, True, content_key,
+                                        True, True,
                                         data_type, data_format, created_by, created_t)
 
         return obj_id, content_key
@@ -760,7 +760,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         created_by = 'test_user'
 
         proc_id, _ = dor.add_data_object(git_proc_pointer_path, owner,
-                                         False, False, None,
+                                         False, False,
                                          data_type, data_format, created_by, created_t)
 
         return proc_id

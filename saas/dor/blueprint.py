@@ -30,8 +30,7 @@ add_body_specification = {
         'owner_iid': {'type': 'string'},
         'descriptor': data_object_descriptor_schema,
         'access_restricted': {'type': 'boolean'},
-        'content_encrypted': {'type': 'boolean'},
-        'content_key': {'type': 'string'}
+        'content_encrypted': {'type': 'boolean'}
     },
     'required': ['owner_iid', 'descriptor', 'access_restricted', 'content_encrypted']
 }
@@ -104,11 +103,9 @@ class DORBlueprint:
         descriptor = body['descriptor']
         access_restricted = body['access_restricted']
         content_encrypted = body['content_encrypted']
-        content_key = body['content_key'] if 'content_key' in body else "no-content-key"
         content_path = files['attachment']
 
-        status, result = self._node.dor.add(owner_iid, descriptor, content_path,
-                                            access_restricted, content_encrypted, content_key)
+        status, result = self._node.dor.add(owner_iid, descriptor, content_path, access_restricted, content_encrypted)
         return jsonify(result), status
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -237,7 +234,7 @@ class DORProxy(EndpointProxy):
         code, r = self.get('', body=body)
         return r
 
-    def add_data_object(self, content_path, owner: Identity, access_restricted, content_encrypted, content_key,
+    def add_data_object(self, content_path, owner: Identity, access_restricted, content_encrypted,
                         data_type, data_format, created_by, created_t=None, recipe=None):
         body = {
             'owner_iid': owner.id,
@@ -250,9 +247,6 @@ class DORProxy(EndpointProxy):
             'access_restricted': access_restricted,
             'content_encrypted': content_encrypted
         }
-
-        if content_key is not None:
-            body['content_key'] = content_key
 
         if recipe is not None:
             body['descriptor']['recipe'] = recipe
