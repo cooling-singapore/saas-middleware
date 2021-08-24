@@ -1,101 +1,97 @@
-import socket
+import json
+import logging
+import os
+
+import docker
 
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
 
+logger = logging.getLogger('rti.adapters.docker')
 
-def find_open_port():
-    """
-    Use socket's built in ability to find an open port.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        port = s.getsockname()[1]
-    return port
+
+def get_image_tag(proc_id):
+    return proc_id[:10]
+
+
+def prune_image(proc_id):
+    client = docker.from_env()
+    # Remove image
+    client.images.remove(get_image_tag(proc_id), noprune=False)
+    # Remove any other intermediate images
+    client.images.prune({'label': f'proc_id={proc_id}'})
+    client.close()
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, descriptor, content_path, node):
+    def __init__(self, proc_id, content_path, node):
         super().__init__(proc_id, node)
-        # self.processor_name = self.processor_descriptor['name']
-        # self.processor_version = self.processor_descriptor['commit']
+        self.proc_id = proc_id
+        self.git_spec = self._read_git_spec(content_path)
 
-        self.port = None
-        self.docker_image_id = None
-        self.docker_container_id = None
-        # self.docker_container_name = f'{self.processor_name}-{self.processor_version}'
+        self.docker_image_tag = get_image_tag(proc_id)
 
-    @property
-    def uri(self):
-        if self.port is not None:
-            return f'http://localhost:{self.port}'
-        else:
-            raise ValueError('Port has not been initialised.')
+        self._processor_descriptor = None
 
-    # def build_docker_image(self):
-    #     client = docker.from_env()
-    #
-    #     image, logs = client.images.build(path=processor_path,
-    #                                       dockerfile=os.path.join(dockerfile_directory, 'Dockerfile'),
-    #                                       rm=True)
-    #
-    # def start_docker_container(self):
-    #     client = docker.from_env()
-    #
-    #     # bind rti.jobs_path to jobs_path in Docker
-    #     jobs_path = os.path.realpath(self._node.rti.get_job_wd())
-    #     self.port = find_open_port()
-    #     container = client.containers.run(self.docker_image_id,
-    #                                       name=self.docker_container_name,
-    #                                       ports={'5000/tcp': self.port},
-    #                                       volumes={jobs_path: {'bind': '/jobs_path', 'mode': 'rw'}},
-    #                                       detach=True)
-    #
-    #     while True:
-    #         if container.status != 'running':
-    #             time.sleep(1)
-    #             container.reload()  # refresh container attrs
-    #         else:  # check if server is responding to requests
-    #             r = requests.get(f'{self.uri}/descriptor')
-    #             if r.status_code == 200:
-    #                 break
-    #
-    #     client.close()
-    #
-    #     self.docker_container_id = container.id
+    @staticmethod
+    def _read_git_spec(git_spec_path):
+        with open(git_spec_path, 'rb') as f:
+            git_spec = json.load(f)
+        return git_spec
 
-    # def startup(self):
-    #     self.parse_io_interface(self.descriptor)
-    #     logger.info(f"[{self.__class__.__name__}] startup: started docker processor '{self.processor_name}'")
-    #
-    # def shutdown(self):
-    #     client = docker.from_env()
-    #
-    #     # Kill and remove docker container
-    #     try:
-    #         container = client.containers.get(self.docker_container_id)
-    #     except docker.errors.NotFound:
-    #         logger.warning(
-    #             f"[{self.__class__.__name__}] shutdown: could not find docker processor '{self.processor_name}'")
-    #     else:
-    #         container.stop()
-    #         container.wait()
-    #         container.remove()
-    #
-    #     # Remove image from docker
-    #     client.images.remove(self.docker_image_id)
-    #
-    #     client.close()
-    #     logger.info(f"[{self.__class__.__name__}] shutdown: shutdown docker processor '{self.processor_name}'")
-    #
-    # def execute(self, task_descriptor, working_directory, status_logger):
-    #     try:
-    #         job_id = os.path.basename(working_directory)
-    #         r = requests.post(f'{self.uri}/execute', json={'job_id': job_id,
-    #                                                        'task_descriptor': task_descriptor})
-    #         status_code = r.status_code
-    #     except Exception as e:
-    #         logger.warning(
-    #             f"[{self.__class__.__name__}] execute: execute failed for docker processor '{self.processor_name}'")
-    #         return False
-    #     else:
-    #         return r.status_code == 200
+    # TODO: Catch exceptions and log output for docker commands
+    def build_docker_image(self):
+        client = docker.from_env()
+        client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
+                            tag=self.docker_image_tag,
+                            forcerm=True,  # remove intermediate containers
+                            buildargs={"GIT_REPO": self.git_spec["source"],
+                                       "COMMIT_ID": self.git_spec["commit_id"],
+                                       "PROCESSOR_PATH": self.git_spec["proc_path"],
+                                       "PROC_ID": self.proc_id})
+        client.close()
+
+    def run_docker_container(self, working_directory):
+        client = docker.from_env()
+
+        full_working_directory = os.path.realpath(working_directory)
+        client.containers.run(self.docker_image_tag, full_working_directory,
+                              volumes={
+                                  full_working_directory: {'bind': '/working_directory', 'mode': 'rw'}
+                              },
+                              remove=True)
+        client.close()
+
+    def get_processor_descriptor(self):
+        """
+        Retrieves descriptor of processor from git repo cloned in the docker image
+
+        :return: Descriptor of processor
+        """
+        client = docker.from_env()
+
+        logs = client.containers.run(self.docker_image_tag,
+                                     entrypoint=["cat",
+                                                 f"/processor_repo/{self.git_spec['proc_path']}/descriptor.json"],
+                                     remove=True)
+        descriptor = json.loads(logs.decode('utf-8'))
+        logger.debug(f"{self.proc_id} descriptor: {descriptor}")
+        client.close()
+
+        return descriptor
+
+    def descriptor(self):
+        return self._processor_descriptor
+
+    def startup(self):
+        self.build_docker_image()
+
+        self._processor_descriptor = self.get_processor_descriptor()
+        self.parse_io_interface(self._processor_descriptor)
+
+    def execute(self, task_descriptor, working_directory, status_logger):
+        try:
+            self.run_docker_container(working_directory)
+        except Exception as e:
+            logger.error(e)
+            return False
+        return True

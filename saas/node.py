@@ -2,6 +2,7 @@ import os
 import logging
 import time
 from threading import Lock
+from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.email.service import EmailService
@@ -30,12 +31,12 @@ class Node:
         self._mutex = Lock()
         self._datastore_path = datastore_path
         self._keystore = keystore
-        self.db = None
-        self.p2p = None
-        self.rest = None
-        self.dor = None
-        self.rti = None
-        self.email = None
+        self.db: Optional[NodeDBService] = None
+        self.p2p: Optional[P2PService] = None
+        self.rest: Optional[RESTService] = None
+        self.dor: Optional[DataObjectRepositoryService] = None
+        self.rti: Optional[RuntimeInfrastructureService] = None
+        self.email: Optional[EmailService] = None
 
     @property
     def keystore(self):

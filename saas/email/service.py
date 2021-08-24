@@ -35,7 +35,7 @@ class EmailService:
             smtp.ehlo()
             smtp.login(credentials.login, credentials.password)
             logger.debug(f"SMTP session established: email={self._keystore.identity.email} "
-                         f"server={credentials['server']} login={credentials['login']}")
+                         f"server={credentials.server} login={credentials.login}")
             return smtp
 
         except smtplib.SMTPException as e:

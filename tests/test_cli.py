@@ -493,7 +493,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
             'rti', '--address', f"{address[0]}:{address[1]}",
-            'deploy', '--proc-id', fake_proc_id
+            'deploy', '--proc-id', fake_proc_id, '--deployment', 'native'
         ]
         descriptor = parse_args(args)
         assert(descriptor is None)
@@ -503,7 +503,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
             'rti', '--address', f"{address[0]}:{address[1]}",
-            'deploy', '--proc-id', proc_id
+            'deploy', '--proc-id', proc_id, '--deployment', 'native'
         ]
         descriptor = parse_args(args)
         assert(descriptor is not None)
@@ -562,7 +562,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
             'rti', '--address', f"{address[0]}:{address[1]}",
-            'deploy', '--proc-id', proc_id
+            'deploy', '--proc-id', proc_id, '--deployment', 'native'
         ]
         descriptor = parse_args(args)
         assert(descriptor is not None)
@@ -712,7 +712,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
             '--keystore', self.wd_path, '--temp-dir', self.wd_path,
             '--keystore-id', identity.id(), '--password', self.password,
             'rti', '--address', f"{address[0]}:{address[1]}",
-            'deploy', '--proc-id', proc_id
+            'deploy', '--proc-id', proc_id, '--deployment', 'native'
         ]
         descriptor = parse_args(args)
         assert(descriptor is not None)
