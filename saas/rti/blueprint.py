@@ -1,5 +1,4 @@
 import logging
-import os
 
 from flask import Blueprint, jsonify
 
@@ -7,13 +6,20 @@ from saas.keystore.identity import Identity
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 from saas.schemas import task_descriptor_schema
-from saas.helpers import read_json_from_file
 
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
 put_permission_body_schema = {
     'type': 'string'
+}
+
+deployment_specification = {
+    'type': 'object',
+    'properties': {
+        'deployment': {'type': 'string', 'enum': ['native', 'docker']},
+    },
+    'required': ['deployment']
 }
 
 
@@ -36,9 +42,12 @@ class RTIBlueprint:
     def get_deployed(self):
         return jsonify(self._node.rti.get_deployed()), 200
 
+    @request_manager.verify_request_body(deployment_specification)
     def deploy(self, proc_id):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
-        descriptor = self._node.rti.deploy(proc_id)
+        body = request_manager.get_request_variable('body')
+        deployment = body['deployment']
+        descriptor = self._node.rti.deploy(proc_id, deployment)
         if descriptor:
             return jsonify(descriptor), 201
         else:
@@ -102,8 +111,12 @@ class RTIProxy(EndpointProxy):
         code, r = self.get(f"")
         return r
 
-    def deploy(self, proc_id):
-        code, r = self.post(f"/{proc_id}")
+    def deploy(self, proc_id, deployment="native"):
+        body = {
+            'deployment': deployment,
+        }
+
+        code, r = self.post(f"/{proc_id}", body=body)
         return r if code == 201 else None
 
     def undeploy(self, proc_id):

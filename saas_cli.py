@@ -133,11 +133,9 @@ def select_gpp_data_object(proxy, multi_selection=False):
     # show list
     print(f"List of all GPP data objects found on node:")
     lookup = {}
-    i = 0
-    for obj_id, tags in objects.items():
+    for i, (obj_id, tags) in enumerate(objects.items()):
         print(f"[{i}] {obj_id} {tags}")
         lookup[i] = [obj_id, tags]
-        i += 1
 
     # allow user to select gpp data object
     selection = prompt("Select data object:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
@@ -154,12 +152,10 @@ def select_known_identity(proxy, multi_selection=False):
     print(f"List of identities known to the node:")
     identities = proxy.get_identities()
     lookup = {}
-    i = 0
-    for iid, record in identities.items():
+    for i, (iid, record) in enumerate(identities.items()):
         identity = Identity.deserialise(record)
         print(f"[{i}] {identity.id()}{identity.name()}/{identity.email()}")
         lookup[i] = identity
-        i += 1
 
     selection = prompt("Select identity:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
     if multi_selection:
@@ -175,13 +171,11 @@ def select_identity_from_access_list(dor_proxy, db_proxy, obj_id, multi_selectio
     print(f"List of identities that have access to data object {obj_id}:")
     identities = dor_proxy.get_access_overview(obj_id)
     lookup = {}
-    i = 0
-    for iid in identities:
+    for i, iid in enumerate(identities):
         record = db_proxy.get_identity(iid)
         identity = Identity.deserialise(record)
         print(f"[{i}] {identity.id()}{identity.name()}/{identity.email()}")
         lookup[i] = identity
-        i += 1
 
     selection = prompt("Select identity:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
     if multi_selection:
@@ -204,11 +198,9 @@ def select_from_deployed_processors(rti_proxy, multi_selection=False):
     print(f"List of all deployed processors found on node:")
     deployed = rti_proxy.get_deployed()
     lookup = {}
-    i = 0
-    for proc_id in deployed:
+    for i, proc_id in enumerate(deployed):
         print(f"[{i}] {proc_id}")
         lookup[i] = proc_id
-        i += 1
 
     # allow user to select
     selection = prompt("Select processor id:", valid_range=[0, len(lookup)-1], multi_selection=multi_selection)
@@ -219,6 +211,15 @@ def select_from_deployed_processors(rti_proxy, multi_selection=False):
         return result
     else:
         return lookup[selection]
+
+
+def select_deployment_type():
+    lookup = ["native", "docker"]
+    for i, deployment in enumerate(lookup):
+        print(f"[{i}] {deployment}")
+
+    selection = prompt("Select deployment type:", valid_range=[0, len(lookup)-1])
+    return lookup[selection]
 
 
 def add_cmd_identity(subparsers):
@@ -757,6 +758,8 @@ def add_cmd_rti(subparsers):
 
     deploy_parser.add_argument('--proc-id', dest='proc-id', action='store', required=False,
                                help=f"the id of the processor to be deployed to the node")
+    deploy_parser.add_argument('--deployment', dest='deployment', action='store', required=False,
+                               help=f"how the processor should be deployed")
 
     undeploy_parser = subparsers.add_parser('undeploy', help='undeploys a processor from the node')
 
@@ -804,8 +807,12 @@ def exec_cmd_rti(args, keystore):
         if proc_id is None:
             return None
 
+        deployment = args['deployment']
+        if deployment is None:
+            deployment = select_deployment_type()
+
         # perform the deployment
-        descriptor = proxy.deploy(proc_id)
+        descriptor = proxy.deploy(proc_id, deployment)
         if descriptor is not None:
             print(f"Processor (id={args['proc-id']}) successfully deployed: \n{descriptor}")
 
