@@ -8,7 +8,7 @@ from saas.keystore.keystore import Keystore
 from saas.schemas import data_object_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now, read_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -252,6 +252,40 @@ class DORProxy(EndpointProxy):
             body['descriptor']['recipe'] = recipe
 
         code, r = self.post('', body=body, attachment=content_path)
+        return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
+
+    def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
+                            temp_path: str = None):
+
+        # set default temp path
+        temp_path = temp_path if temp_path else os.environ['HOME']
+
+        # create temporary Github-Processor-Pointer (GPP) file
+        t_created = get_timestamp_now()
+        gpp_path = os.path.join(temp_path, f"gpp.{t_created}.json")
+        write_json_to_file({
+            'source': source,
+            'commit_id': commit_id,
+            'proc_path': proc_path,
+            'proc_config': proc_config
+        }, gpp_path)
+
+        body = {
+            'owner_iid': owner.id,
+            'descriptor': {
+                'data_type': 'Git-Processor-Pointer',
+                'data_format': 'json',
+                'created_t': t_created,
+                'created_by': owner.name
+            },
+            'access_restricted': False,
+            'content_encrypted': False
+        }
+
+        # execute post request and remove temp file afterwards
+        code, r = self.post('', body=body, attachment=gpp_path)
+        os.remove(gpp_path)
+
         return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
 
     def delete_data_object(self, obj_id, with_authorisation_by):
