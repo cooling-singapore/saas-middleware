@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
-import subprocess
 from abc import abstractmethod, ABC
 from argparse import ArgumentParser
+from typing import Optional, Union
+
+import requests
 from PyInquirer import prompt
 
+from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
+from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
+from saas.nodedb.blueprint import NodeDBProxy
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -34,9 +38,8 @@ def initialise_storage_folder(path: str, usage: str) -> None:
         print(f"Storage directory ({usage}) created at '{path}'.")
 
 
-def get_available_keystores(path: str) -> (dict, list):
-    available = {}
-    index = []
+def get_available_keystores(path: str) -> list[dict[str, str]]:
+    available = []
     for f in os.listdir(path):
         # valid example: 9rak8e1tmc0xt4v3onwq7cpsydpselrjxqp2cys823alhu8evzkjhusqic740h39.json
 
@@ -54,20 +57,85 @@ def get_available_keystores(path: str) -> (dict, list):
         keystore_path = os.path.join(path, f)
         content = read_json_from_file(keystore_path)
         if validate_json(content, keystore_schema):
-            available[temp[0]] = {
+            available.append({
                 'keystore-id': temp[0],
-                'path': keystore_path,
+                'keystore-path': keystore_path,
                 'label': f"{content['profile']['name']}/{content['profile']['email']}/{temp[0]}"
-            }
-            index.append(temp[0])
+            })
 
-    return available, index
+    return available
 
 
-def prompt_for_password(args: dict, key: str, confirm=True) -> None:
-    if args[key] is not None:
+def prompt_for_keystore_selection(path: str, message: str) -> Optional[dict]:
+    # get all available keystores
+    available = get_available_keystores(path)
+    if len(available) == 0:
+        print(f"No keystores found at '{path}'")
         return None
 
+    return prompt_for_selection(available, message)
+
+
+def prompt_for_identity_selection(address: str, message: str, id_name: str) -> Optional[dict]:
+    try:
+        # get all identities known to the node
+        proxy = NodeDBProxy(address.split(":"))
+        available = []
+        for serialised in proxy.get_identities():
+            identity = Identity.deserialise(serialised)
+            available.append({
+                'label': f"{identity.name}/{identity.email}/{identity.id}",
+                'identity': identity,
+                id_name: identity.id
+            })
+            available.append(identity)
+
+        # prompt for selection
+        if len(available) == 0:
+            print(f"No identities found at '{address}'")
+            return None
+
+        return prompt_for_selection(available, message)
+
+    except requests.exceptions.ConnectionError:
+        print(f"Could not connect to node at '{address}'.")
+        return None
+
+    except requests.exceptions.InvalidURL:
+        print(f"Invalid node address: '{address}'.")
+        return None
+
+
+def unlock_keystore(path: str, keystore_id: str, password: str) -> Optional[Keystore]:
+    try:
+        return Keystore.load(path, keystore_id, password)
+
+    except TypeError:
+        return None
+
+    except ValueError:
+        return None
+
+
+def prompt_for_string(message: str, default: str = None) -> str:
+    questions = [
+        {
+            'type': 'input',
+            'message': message,
+            'name': 'answer',
+        }
+    ]
+
+    # set the default (if any)
+    if default:
+        questions[0]['default'] = default
+
+    # get the answer
+    answers = prompt(questions)
+    return answers['answer']
+
+
+def prompt_for_password(confirm=True) -> str:
     if confirm:
         questions = [
             {
@@ -85,8 +153,7 @@ def prompt_for_password(args: dict, key: str, confirm=True) -> None:
         while True:
             answers = prompt(questions)
             if answers['password1'] == answers['password2']:
-                args[key] = answers['password1']
-                return None
+                return answers['password1']
 
             print(f"Passwords don't match! Please try again.")
 
@@ -100,44 +167,48 @@ def prompt_for_password(args: dict, key: str, confirm=True) -> None:
         ]
 
         answers = prompt(questions)
-        args[key] = answers['password']
+        return answers['password']
 
 
-def prompt_for_string(args: dict, key: str, message: str) -> None:
-    questions = [
-        {
-            'type': 'input',
-            'message': message,
-            'name': key
-        }
-    ]
-
-    if args[key] is None:
-        answers = prompt(questions)
-        args[key] = answers[key]
-
-
-def prompt_for_selection(items: dict[str, dict], index: list[str], message: str) -> dict:
+def prompt_for_selection(items: list[dict], message: str, allow_multiple=False) -> Union[dict, list[dict]]:
+    # build the reverse lookup table and the choices
     reverse = {}
-    for item in items.values():
-        reverse[item['label']] = item
-
     choices = []
-    for key in index:
-        item = items[key]
-        choices.append(item['label'])
+    for item in items:
+        reverse[item['label']] = item
+        choices.append({'name': item['label']} if allow_multiple else item['label'])
 
-    questions = [
-        {
-            'type': 'list',
-            'message': message,
-            'name': 'selection',
-            'choices': choices
-        }
-    ]
+    # determine questions
+    if allow_multiple:
+        questions = [
+            {
+                'type': 'checkbox',
+                'message': message,
+                'name': 'selection',
+                'choices': choices
+            }
+        ]
+
+    else:
+        questions = [
+            {
+                'type': 'list',
+                'message': message,
+                'name': 'selection',
+                'choices': choices
+            }
+        ]
 
     answers = prompt(questions)
-    return reverse[answers['selection']]
+
+    if allow_multiple:
+        result = []
+        for item in answers['selection']:
+            result.append(reverse[item])
+        return result
+
+    else:
+        return reverse[answers['selection']]
 
 
 def prompt_for_confirmation(message: str, default: bool) -> bool:
@@ -152,6 +223,89 @@ def prompt_for_confirmation(message: str, default: bool) -> bool:
 
     answers = prompt(questions)
     return answers['confirmation']
+
+
+def prompt_for_address(message: str) -> str:
+    questions = [
+        {
+            'type': 'input',
+            'message': 'Host (e.g., 127.0.0.1):',
+            'name': 'host'
+        },
+        {
+            'type': 'input',
+            'message': 'Port (e.g., 5001):',
+            'name': 'port'
+        }
+    ]
+
+    print(f"{message}")
+    answers = prompt(questions)
+    return f"{answers['host']}:{answers['port']}"
+
+def prompt_for_tags(message: str) -> list[str]:
+    questions = [
+        {
+            'type': 'input',
+            'message': message,
+            'name': 'tag'
+        }
+    ]
+
+    result = []
+    while True:
+        answers = prompt(questions)
+        if answers['tag'] == '':
+            break
+
+        elif answers['tag'].count('=') > 1:
+            print(f"Invalid tag. Use key=value form. Must not contain more than 1 '=' character. Try again...")
+
+        else:
+            result.append(answers['tag'])
+
+    return result
+
+
+def prompt_for_data_object_selection(address: str, owner: Identity, message: str, allow_multiple=False) -> Union[Optional[str],list[str]]:
+    # find all data objects owned by the identity
+    dor = DORProxy(address.split(':'))
+    result = dor.search(owner_iid=owner.id)
+
+    # do we have any data objects?
+    if len(result) == 0:
+        return [] if allow_multiple else None
+
+    # determine choices
+    choices = []
+    for obj_id, tags in result.items():
+        choices.append({
+            'label': f"{obj_id} {tags}",
+            'obj-id': obj_id
+        })
+
+    # prompt for selection
+    return [item['obj-id'] for item in prompt_for_selection(choices, message, allow_multiple=True)] \
+        if allow_multiple else prompt_for_selection(choices, message, allow_multiple=False)['obj-id']
+
+
+def prompt_if_missing(args: dict, arg_key: str, function, **fargs) -> Union[str, bool]:
+    if args[arg_key] is None:
+        result = function(**fargs)
+        if isinstance(result, dict):
+            args[arg_key] = result[arg_key]
+
+        else:
+            args[arg_key] = result
+
+    return args[arg_key]
+
+
+def default_if_missing(args: dict, arg_key: str, default: str) -> str:
+    if args[arg_key] is None:
+        args[arg_key] = default
+
+    return args[arg_key]
 
 
 class Argument:
@@ -221,7 +375,7 @@ class CLICommandGroup(CLIExecutable, ABC):
             c.initialise(c_parser)
             self._c_map[c.name()] = c
 
-    def execute(self, args) -> None:
+    def execute(self, args: dict) -> None:
         c_name = args[self._tag]
         command = self._c_map[c_name]
         command.execute(args)
@@ -231,13 +385,15 @@ class CLIParser(CLICommandGroup):
     def __init__(self, description, arguments: list[Argument] = None, commands: list[CLIExecutable] = None) -> None:
         super().__init__('main', description, arguments, commands)
 
-    def execute(self, args) -> None:
+    def execute(self, args: list) -> None:
         parser = argparse.ArgumentParser(description=self._description)
 
         try:
             self.initialise(parser)
 
             args = vars(parser.parse_args(args))
+
+            initialise_storage_folder(args['keystore'], 'keystore')
 
             super().execute(args)
 
