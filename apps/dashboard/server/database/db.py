@@ -3,7 +3,7 @@ import sqlite3
 
 from werkzeug.security import generate_password_hash
 
-from saas.eckeypair import ECKeyPair, hash_bytes_object
+from saas.cryptography.eckeypair import ECKeyPair, hash_bytes_object
 
 USER_TABLE_NAME = 'users'
 USER_GROUP_TABLE_NAME = 'user_groups'

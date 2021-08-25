@@ -49,8 +49,7 @@ class RuntimeInfrastructureService:
     def get_job_wd(self, job_id=None):
         return os.path.join(self._jobs_path, job_id) if job_id else self._jobs_path
 
-    # FIXME: Remove default value
-    def deploy(self, proc_id, deployment='native'):
+    def deploy(self, proc_id, deployment):
         with self._mutex:
             descriptor_path = self.proc_descriptor_path(proc_id)
 

@@ -1,8 +1,8 @@
 import logging
+
 import cryptography.hazmat.primitives.serialization as serialization
 
 from saas.cryptography.keypair import KeyPair
-from saas.cryptography.hashing import hash_file_content, hash_json_object, hash_string_object, hash_bytes_object
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -170,3 +170,9 @@ class ECKeyPair(KeyPair):
             return True
         except InvalidSignature:
             return False
+
+    def encrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
+        raise NotImplementedError(f"EC keys do not currently support encryption/decryption")
+
+    def decrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
+        raise NotImplementedError(f"EC keys do not currently support encryption/decryption")

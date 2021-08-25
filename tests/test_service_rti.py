@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-import shutil
-import tempfile
 import time
 import unittest
 from threading import Thread
@@ -13,13 +11,11 @@ from saas.dor.blueprint import DORProxy
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
 from saas.helpers import write_json_to_file, get_timestamp_now, prompt
 from tests.base_testcase import TestCaseBase
-from tools.create_template import create_folder_structure
-
-from tools.package_processor import package_docker
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -28,30 +24,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def create_dummy_docker_processor(dummy_processor_path):
-    temp_dir = tempfile.TemporaryDirectory()
-    output_path = os.path.join(temp_dir.name, 'dummy_processor')
-    processor_path = os.path.join(output_path, 'processor.py')
-    descriptor_path = os.path.join(output_path, 'descriptor.json')
-    image_path = os.path.join(output_path, 'builds', 'docker', 'dummy_image.tar.gz')
-
-    create_folder_structure(output_path)
-    shutil.copy(dummy_processor_path, processor_path)
-
-    with open('descriptor_dummy_script.json') as f:
-        _dummy_script_descriptor = json.load(f)
-
-    _dummy_script_descriptor['type'] = 'docker'
-    with open(descriptor_path, 'w') as f:
-        json.dump(_dummy_script_descriptor, f)
-
-    package_docker(output_path, image_output_name='dummy_image')
-
-    logger.info(f"image_path: {image_path}, descriptor_path: {descriptor_path}")
-
-    return image_path, descriptor_path, temp_dir.cleanup
 
 
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -656,82 +628,106 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-    # def test_docker_processor_execution_value(self):
-    #     image_path, descriptor_path, cleanup_func = create_dummy_docker_processor('proc_dummy_script.py')
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 0)
-    #
-    #     data_type = 'Processor'
-    #     data_format = 'Docker Image'
-    #     created_t = 21342342
-    #     created_by = 'heiko'
-    #
-    #     proc_id, _ = self.dor_proxy.add_data_object(image_path, self.extras[1].identity(),
-    #                                                 False, False, None,
-    #                                                 data_type, data_format, created_by, created_t)
-    #
-    #     logger.info(f"proc_id={proc_id}")
-    #     cleanup_func()
-    #
-    #     descriptor = self.rti_proxy.deploy(proc_id)
-    #     logger.info(f"descriptor={descriptor}")
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 1)
-    #     assert(proc_id in deployed)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 0)
-    #
-    #     proc_input = [
-    #         {
-    #             'name': 'a',
-    #             'type': 'value',
-    #             'value': {
-    #                 'v': 1
-    #             }
-    #         },
-    #         {
-    #             'name': 'b',
-    #             'type': 'value',
-    #             'value': {
-    #                 'v': 2
-    #             }
-    #         }
-    #     ]
-    #
-    #     job_id = self.rti_proxy.submit_job(proc_id, proc_input, self.extras[1].identity())
-    #     logger.info(f"job_id={job_id}")
-    #     assert(job_id is not None)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 1)
-    #
-    #     self.wait_for_job(proc_id, job_id)
-    #
-    #     jobs = self.rti_proxy.get_jobs(proc_id)
-    #     logger.info(f"jobs={jobs}")
-    #     assert(jobs is not None)
-    #     assert(len(jobs) == 0)
-    #
-    #     output_path = os.path.join(self.wd_path, self.node.datastore(), 'jobs', str(job_id), 'c')
-    #     assert os.path.isfile(output_path)
-    #
-    #     self.rti_proxy.undeploy(proc_id)
-    #
-    #     deployed = self.rti_proxy.get_deployed()
-    #     logger.info(f"deployed={deployed}")
-    #     assert(deployed is not None)
-    #     assert(len(deployed) == 0)
+    def test_docker_processor_execution_value(self):
+        import docker
+        try:  # Check if able to get docker. if not ignore test and pass
+            _ = docker.from_env()
+        except Exception as e:
+            logger.exception("Could not find docker on this machine")
+            return
+
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(2)
+        owner = keystores[0]
+        user = keystores[1]
+        db.update_identity(owner.identity)
+        db.update_identity(user.identity)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 0)
+
+        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = rti.deploy(proc_id, 'docker')
+        logger.info(f"descriptor={descriptor}")
+        assert (descriptor is not None)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 1)
+        assert (proc_id in deployed)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 0)
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        logger.info(f"job_id={job_id}")
+        assert (job_id is not None)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 1)
+
+        result = self.wait_for_job(rti, job_id)
+        assert (result is True)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert (jobs is not None)
+        assert (len(jobs) == 0)
+
+        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
+
+        result = rti.undeploy(proc_id)
+        assert result is not None
+        assert result == proc_id
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert (deployed is not None)
+        assert (len(deployed) == 0)
+
+        prune_image(proc_id)
 
 
 class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
