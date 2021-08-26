@@ -24,7 +24,7 @@ class RTIProcDeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
 
         # do we have a processor id?
         if args['proc-id'] is None:
@@ -72,7 +72,7 @@ class RTIProcUndeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
 
         # get the deployed processors
         rti = RTIProxy(args['address'].split(':'))
@@ -112,7 +112,7 @@ class RTIProcList(CLICommand):
         super().__init__('list', 'retrieves a list of all deployed processors', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
 
         rti = RTIProxy(args['address'].split(':'))
         deployed = rti.get_deployed()
@@ -222,7 +222,7 @@ class RTIJobSubmit(CLICommand):
         return job_output
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
 
         self._prepare(args['address'])
 
@@ -303,6 +303,8 @@ class RTIJobStatus(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+
         rti = RTIProxy(args['address'].split(':'))
 
         prompt_if_missing(args, 'job-id', prompt_for_string, message='Enter the job id:')
