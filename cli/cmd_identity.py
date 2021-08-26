@@ -1,6 +1,7 @@
 import logging
 import os
 import requests
+from tabulate import tabulate
 
 from cli.helpers import CLICommand, Argument, prompt_for_string, \
     get_available_keystores, prompt_for_confirmation, prompt_for_address, \
@@ -102,8 +103,19 @@ class IdentityList(CLICommand):
         available = get_available_keystores(args['keystore'])
         if len(available) > 0:
             print(f"Found {len(available)} keystores in '{args['keystore']}':")
-            for item in available:
-                print(f"- {item['label']}")
+
+            # headers
+            lines = [
+                ['NAME', 'EMAIL', 'KEYSTORE/IDENTITY ID'],
+                ['----', '-----', '--------------------']
+            ]
+
+            # list
+            lines += [
+                [item['name'], item['email'], item['keystore-id']] for item in available
+            ]
+
+            print(tabulate(lines, tablefmt="plain"))
         else:
             print(f"No keystores found in '{args['keystore']}':")
 
@@ -339,9 +351,8 @@ class CredentialsList(CLICommand):
         # load the keystore
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
-            credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
-
             # collect all credentials
+            credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
             credentials = []
             for c_type in credential_types:
                 # print the credentials for this type
@@ -349,7 +360,10 @@ class CredentialsList(CLICommand):
                 if asset is not None:
                     index = asset.index()
                     for key in index:
-                        credentials.append(f"[{c_type}] {key}")
+                        credentials.append({
+                            'type': c_type,
+                            'key': key
+                        })
 
             # print the credentials
             if len(credentials) == 0:
@@ -357,8 +371,19 @@ class CredentialsList(CLICommand):
 
             else:
                 print(f"Found {len(credentials)} credentials in keystore:")
-                for c in credentials:
-                    print(f"- {c}")
+
+                # headers
+                lines = [
+                    ['TYPE', 'CREDENTIAL KEY'],
+                    ['----', '--------------']
+                ]
+
+                # list
+                lines += [
+                    [item['type'], item['key']] for item in credentials
+                ]
+
+                print(tabulate(lines, tablefmt="plain"))
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
