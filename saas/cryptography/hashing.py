@@ -1,5 +1,4 @@
 import logging
-from copy import copy
 from typing import Union
 
 import canonicaljson
