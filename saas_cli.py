@@ -17,7 +17,7 @@ if __name__ == "__main__":
     try:
         default_keystore = os.path.join(os.environ['HOME'], '.keystore')
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
-        default_logging = 'both'
+        default_logging = 'file'
 
         cli = CLIParser('SaaS Middleware command line interface (CLI)', arguments=[
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
@@ -30,7 +30,7 @@ if __name__ == "__main__":
             Argument('--password', dest='password', action='store',
                      help=f"password for the keystore"),
             Argument('--logging', dest='logging', action='store',
-                     choices=['console', 'file', 'both'],
+                     choices=['console', 'file', 'both'], default=default_logging,
                      help=f"indicate where log output should be written to (default: '{default_logging}')")
 
         ], commands=[
