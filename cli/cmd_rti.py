@@ -140,8 +140,7 @@ class RTIJobSubmit(CLICommand):
 
         # create identity choices
         self._identity_choices = []
-        for serialised in self._db.get_identities().values():
-            identity = Identity.deserialise(serialised)
+        for identity in self._db.get_identities().values():
             self._identity_choices.append({
                 'label': f"{identity.name}/{identity.email}/{identity.id}",
                 'identity': identity

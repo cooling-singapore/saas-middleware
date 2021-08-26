@@ -523,10 +523,7 @@ class DORAccessShow(CLICommand):
                     return None
 
             # get the identities known to the node
-            identities = {}
-            for serialised in db.get_identities().values():
-                identity = Identity.deserialise(serialised)
-                identities[identity.id] = identity
+            identities = db.get_identities()
 
             # get the identities that have access
             access = dor.get_access_overview(args['obj-id'])
@@ -584,10 +581,7 @@ class DORAccessGrant(CLICommand):
                 return None
 
             # get the identities known to the node
-            identities = {}
-            for serialised in db.get_identities().values():
-                identity = Identity.deserialise(serialised)
-                identities[identity.id] = identity
+            identities = db.get_identities()
 
             # do we have an identity?
             if not args['iid']:
@@ -652,10 +646,7 @@ class DORAccessRevoke(CLICommand):
                         print(f"Data object {obj_id} does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
 
             # get the identities known to the node
-            identities = {}
-            for serialised in db.get_identities().values():
-                identity = Identity.deserialise(serialised)
-                identities[identity.id] = identity
+            identities = db.get_identities()
 
             # do we have an identity?
             if not args['iids']:
