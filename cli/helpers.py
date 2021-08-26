@@ -84,7 +84,9 @@ def get_available_keystores(path: str) -> list[dict[str, str]]:
             available.append({
                 'keystore-id': temp[0],
                 'keystore-path': keystore_path,
-                'label': f"{content['profile']['name']}/{content['profile']['email']}/{temp[0]}"
+                'label': f"{content['profile']['name']}/{content['profile']['email']}/{temp[0]}",
+                'name': content['profile']['name'],
+                'email': content['profile']['email']
             })
 
     return available
