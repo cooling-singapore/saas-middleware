@@ -437,14 +437,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             output_items[item['name']] = item
 
         successful = True
+        output = []
         for output_descriptor in self._output_interface.values():
             output_name = output_descriptor['name']
 
             output_content_path = os.path.join(working_directory, output_name)
-            status.update_all({
-                'output': output_descriptor,
-                'output_content_path': output_content_path,
-                'output_status': 'pending add'
+            status.update('pending_output_item', {
+                'descriptor': output_descriptor,
+                'content_path': output_content_path,
             })
 
             # check if the output data object exists
@@ -475,11 +475,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 successful = False
                 break
 
-            status.update_all({
-                f"output:{output_descriptor['name']}": obj_id,
-                'output_status': 'added'
+            output.append({
+                'name': output_descriptor['name'],
+                'obj_id': obj_id
             })
 
+        # set the output data object ids
+        status.update('output', output)
+
         # clean up transient status information
-        status.remove_all(['output', 'output_content_path', 'output_status'])
+        status.remove('pending_output_item')
         return successful

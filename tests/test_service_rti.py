@@ -385,7 +385,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # get job info and extract object id
         descriptor, status = rti.get_job_info(job_id)
-        obj_id = status['output:c']
+        outputs = status['output']
+        output = {o['name']: o['obj_id'] for o in outputs}
+        obj_id = output['c']
 
         # the output data object should be with nodes[1]
         obj_descriptor0 = dor.get_descriptor(obj_id)
