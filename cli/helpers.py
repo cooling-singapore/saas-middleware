@@ -165,7 +165,7 @@ def prompt_for_string(message: str, default: str = None, hide: bool = False, all
         return answers['answer']
 
 
-def prompt_for_password(confirm=True) -> str:
+def prompt_for_password(confirm: bool = True, allow_empty: bool = False) -> str:
     if confirm:
         questions = [
             {
@@ -182,10 +182,16 @@ def prompt_for_password(confirm=True) -> str:
 
         while True:
             answers = prompt(questions)
-            if answers['password1'] == answers['password2']:
-                return answers['password1']
+            if len(answers['password1']) == 0 and not allow_empty:
+                print(f"Password must not be empty! Please try again.")
+                continue
 
-            print(f"Passwords don't match! Please try again.")
+            elif answers['password1'] != answers['password2']:
+                print(f"Passwords don't match! Please try again.")
+                continue
+
+            else:
+                return answers['password1']
 
     else:
         questions = [
@@ -196,8 +202,14 @@ def prompt_for_password(confirm=True) -> str:
             }
         ]
 
-        answers = prompt(questions)
-        return answers['password']
+        while True:
+            answers = prompt(questions)
+            if len(answers['password']) == 0 and not allow_empty:
+                print(f"Password must not be empty! Please try again.")
+                continue
+
+            else:
+                return answers['password']
 
 
 def prompt_for_selection(items: list[dict], message: str, allow_multiple=False) -> Union[dict, list[dict]]:
