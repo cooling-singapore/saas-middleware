@@ -219,7 +219,8 @@ class CredentialsAdd(CLICommand):
                         'host': None,
                         'login': None,
                         'key_path': None
-                    }
+                    },
+                    'hide-when-prompt': []
                 },
                 {
                     'label': 'Github Credentials',
@@ -229,7 +230,8 @@ class CredentialsAdd(CLICommand):
                     'template': {
                         'login': None,
                         'personal_access_token': None
-                    }
+                    },
+                    'hide-when-prompt': ['personal_access_token']
                 },
                 {
                     'label': 'SMTP Credentials',
@@ -240,7 +242,8 @@ class CredentialsAdd(CLICommand):
                         'server': None,
                         'login': None,
                         'password': None
-                    }
+                    },
+                    'hide-when-prompt': ['password']
                 }
             ]
             item = prompt_for_selection(items, 'Select the type of credential to add:')
@@ -253,7 +256,7 @@ class CredentialsAdd(CLICommand):
             # create a credential
             cred_key = prompt_for_string(f"Enter the key/name for which this credential is for (hint: {item['cred-key']}):")
             for key in item['template'].keys():
-                item['template'][key] = prompt_for_string(f"Enter value for '{key}':")
+                item['template'][key] = prompt_for_string(f"Enter value for '{key}':", hide=key in item['hide-when-prompt'])
 
             # update the asset
             asset.update(cred_key, item['c-type'].from_record(item['template']))

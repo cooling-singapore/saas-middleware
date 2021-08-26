@@ -140,10 +140,10 @@ def unlock_keystore(path: str, keystore_id: str, password: str) -> Optional[Keys
         return None
 
 
-def prompt_for_string(message: str, default: str = None) -> str:
+def prompt_for_string(message: str, default: str = None, hide: bool = False, allow_empty: bool = False) -> str:
     questions = [
         {
-            'type': 'input',
+            'type': 'password' if hide else 'input',
             'message': message,
             'name': 'answer',
         }
@@ -153,9 +153,13 @@ def prompt_for_string(message: str, default: str = None) -> str:
     if default:
         questions[0]['default'] = default
 
-    # get the answer
-    answers = prompt(questions)
-    return answers['answer']
+    while True:
+        # get the answer
+        answers = prompt(questions)
+        if len(answers['answer']) == 0 and not allow_empty:
+            continue
+
+        return answers['answer']
 
 
 def prompt_for_password(confirm=True) -> str:
