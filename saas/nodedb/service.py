@@ -211,8 +211,12 @@ class NodeDBService:
                 return None
 
     def update_ownership(self, obj_id, new_owner, content_key):
-        # get the current owner (=previous owner to be)
+        # get the current owner (i.e., previous owner to be) and check if it is the same as the new owner
         prev_owner = self.get_owner(obj_id)
+        if prev_owner.id == new_owner.id:
+            logger.warning(f"Ignoring ownership transfer between same identity: "
+                           f"current={prev_owner.id} new={new_owner.id}")
+            return True
 
         with self._Session() as session:
             # get the record for the data object
