@@ -413,6 +413,8 @@ class CLIParser(CLICommandGroup):
 
             initialise_logging(args['temp-dir'], args['logging'])
 
+            initialise_storage_folder(args['temp-dir'], 'temp-dir')
+
             initialise_storage_folder(args['keystore'], 'keystore')
 
             super().execute(args)
