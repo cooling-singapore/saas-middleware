@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 from abc import abstractmethod, ABC
 from argparse import ArgumentParser
 from typing import Optional, Union
@@ -270,6 +271,7 @@ def prompt_for_address(message: str) -> str:
     answers = prompt(questions)
     return f"{answers['host']}:{answers['port']}"
 
+
 def prompt_for_tags(message: str) -> list[str]:
     questions = [
         {
@@ -408,12 +410,18 @@ class CLICommandGroup(CLIExecutable, ABC):
         command.execute(args)
 
 
+class CLIArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_help()
+        sys.exit(1)
+
+
 class CLIParser(CLICommandGroup):
     def __init__(self, description, arguments: list[Argument] = None, commands: list[CLIExecutable] = None) -> None:
         super().__init__('main', description, arguments, commands)
 
     def execute(self, args: list) -> None:
-        parser = argparse.ArgumentParser(description=self._description)
+        parser = CLIArgumentParser(description=self._description)
 
         try:
             self.initialise(parser)
