@@ -15,12 +15,6 @@ from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.schemas import processor_descriptor_schema
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
 logger = logging.getLogger('cli.dor')
 
 

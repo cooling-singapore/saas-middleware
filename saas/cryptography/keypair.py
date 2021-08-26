@@ -5,7 +5,7 @@ import cryptography.hazmat.primitives.serialization as serialization
 
 from saas.cryptography.hashing import hash_bytes_object
 
-logger = logging.getLogger('KeyPair')
+logger = logging.getLogger('cryptography.KeyPair')
 
 
 class KeyPair(ABC):

@@ -3,7 +3,6 @@
 import os
 import sys
 import traceback
-import logging
 
 from cli.cmd_dor import DORAdd, DORAddProc, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
@@ -12,14 +11,6 @@ from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, Ident
 from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
 from cli.cmd_service import Service
 from cli.helpers import CLIParser, Argument, CLICommandGroup
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger('CLI_Keystore')
 
 
 if __name__ == "__main__":
@@ -89,5 +80,6 @@ if __name__ == "__main__":
 
     except Exception as e:
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        logger.error(trace)
+        print(trace)
+        # logger.error(trace)
         sys.exit(-1)

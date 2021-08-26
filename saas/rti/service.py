@@ -15,7 +15,7 @@ from saas.rti.status import StatusLogger, State
 
 from saas.helpers import write_json_to_file
 
-logger = logging.getLogger('RTI')
+logger = logging.getLogger('rti.service')
 
 
 class RuntimeInfrastructureService:

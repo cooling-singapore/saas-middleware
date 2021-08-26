@@ -6,12 +6,7 @@ from saas.dor.blueprint import DORProxy
 from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+from saas.schemas import task_descriptor_schema
 
 logger = logging.getLogger('cli.rti')
 

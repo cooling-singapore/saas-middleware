@@ -6,12 +6,6 @@ from cli.helpers import CLICommand, Argument, prompt_for_password, prompt_for_st
     initialise_storage_folder, prompt_for_selection
 from saas.node import Node
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
 logger = logging.getLogger('cli.service')
 
 

@@ -11,8 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-
-logger = logging.getLogger('RSAKeyPair')
+logger = logging.getLogger('cryptography.RSAKeyPair')
 
 
 class RSAKeyPair(KeyPair):
