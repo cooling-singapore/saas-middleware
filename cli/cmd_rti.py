@@ -1,8 +1,11 @@
 import json
 import logging
+import os
+from typing import Optional
 
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection
 from saas.dor.blueprint import DORProxy
+from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
@@ -69,6 +72,8 @@ class RTIProcUndeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+
         # get the deployed processors
         rti = RTIProxy(args['address'].split(':'))
         deployed = rti.get_deployed()
@@ -107,6 +112,8 @@ class RTIProcList(CLICommand):
         super().__init__('list', 'retrieves a list of all deployed processors', arguments=[])
 
     def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+
         rti = RTIProxy(args['address'].split(':'))
         deployed = rti.get_deployed()
         if len(deployed) == 0:
@@ -121,48 +128,36 @@ class RTIProcList(CLICommand):
 class RTIJobSubmit(CLICommand):
     def __init__(self):
         super().__init__('submit', 'submit a new job', arguments=[
-            Argument('--proc-id', dest='proc-id', action='store', required=False,
-                     help=f"the id of the processor")
-
-            # Argument('--job', dest='job', action='store',
-            #          help=f"path to the job descriptor")
+            Argument('--job', dest='job', action='store',
+                     help=f"path to the job descriptor")
         ])
 
-    def execute(self, args: dict) -> None:
-        # get the deployed processors
-        rti = RTIProxy(args['address'].split(':'))
-        deployed = rti.get_deployed()
-        if len(deployed) == 0:
-            print(f"No processors deployed at {args['address']}. Aborting.")
-            return None
+    def _prepare(self, address: str):
+        self._address = address
+        self._db = NodeDBProxy(address.split(':'))
+        self._dor = DORProxy(address.split(':'))
+        self._rti = RTIProxy(address.split(':'))
 
-        # create choices
-        choices = []
-        for proc_id in deployed:
-            descriptor = rti.get_descriptor(proc_id)
-            choices.append({
-                'label': f"{descriptor['name']}/{proc_id}",
-                'proc-id': proc_id
+        # create identity choices
+        self._identity_choices = []
+        for serialised in self._db.get_identities().values():
+            identity = Identity.deserialise(serialised)
+            self._identity_choices.append({
+                'label': f"{identity.name}/{identity.email}/{identity.id}",
+                'identity': identity
             })
 
-        # do we have a processor id?
-        prompt_if_missing(args, 'proc-id', prompt_for_selection, items=choices, message="Select the processor for the job:")
+        # create node choices
+        self._node_choices = []
+        for node in self._db.get_network():
+            self._node_choices.append({
+                'label': f"{node['iid']} at {node['rest_address']}/{node['p2p_address']}",
+                'iid': node['iid']
+            })
 
-        # is the processor deployed
-        if args['proc-id'] not in deployed:
-            print(f"Processor {args['proc-id']} is not deployed at {args['address']}. Aborting.")
-            return None
-
-        descriptor = rti.get_descriptor(args['proc-id'])
-        print(f"Processor descriptor: {json.dumps(descriptor, indent=4)}")
-
-        job = {
-            'processor_id': args['proc-id'],
-            'input': [],
-            'output': [],
-            'user_iid': None
-        }
-        for item in descriptor['input']:
+    def _create_job_input(self, proc_descriptor: dict) -> Optional[list]:
+        job_input = []
+        for item in proc_descriptor['input']:
             selection = prompt_for_selection([
                 {'label': f"by-value [{item['data_type']}/{item['data_format']}]", 'type': 'value'},
                 {'label': f"by-reference [{item['data_type']}/{item['data_format']}]", 'type': 'reference'}
@@ -171,62 +166,52 @@ class RTIJobSubmit(CLICommand):
             if selection['type'] == 'value':
                 value = prompt_for_string(f"Enter the value for input '{item['name']}' as JSON object:")
                 value = json.loads(value)
-                job['input'].append({
+                job_input.append({
                     'name': item['name'],
                     'type': 'value',
                     'value': value
                 })
 
             else:
-                dor = DORProxy(args['address'].split(':'))
-                choices = []
-                result = dor.search(patterns=[item['data_type'], item['data_format']])
+                # get the data object choices for this input item
+                object_choices = []
+                result = self._dor.search(patterns=[item['data_type'], item['data_format']])
                 for obj_id, tags in result.items():
-                    choices.append({
+                    object_choices.append({
                         'label': f"{obj_id} {tags}",
                         'obj_id': obj_id
                     })
 
-                if len(choices) == 0:
-                    print(f"No data objects found that match data type ({item['data_type']}) and format ({item['data_format']}) of input '{item['name']}'. Aborting.")
+                # do we have any matching objects?
+                if len(object_choices) == 0:
+                    print(f"No data objects found that match data type ({item['data_type']}) and "
+                          f"format ({item['data_format']}) of input '{item['name']}'. Aborting.")
                     return None
 
-                selection = prompt_for_selection(choices, f"Select the data object to be used for input '{item['name']}':")
-                job['input'].append({
+                # select an object
+                selection = prompt_for_selection(object_choices,
+                                                 f"Select the data object to be used for input '{item['name']}':")
+                job_input.append({
                     'name': item['name'],
                     'type': 'reference',
                     'obj_id': selection['obj_id']
                 })
 
-        # select the owner for the output data objects
-        db = NodeDBProxy(args['address'].split(':'))
-        identity_choices = []
-        for serialised in db.get_identities().values():
-            identity = Identity.deserialise(serialised)
-            identity_choices.append({
-                'label': f"{identity.name}/{identity.email}/{identity.id}",
-                'identity': identity
-            })
+        return job_input
 
-        selected = prompt_for_selection(identity_choices, "Select the owner for the output data objects:", allow_multiple=False)
+    def _create_job_output(self, proc_descriptor: dict) -> Optional[list]:
+        # select the owner for the output data objects
+        selected = prompt_for_selection(self._identity_choices, "Select the owner for the output data objects:", allow_multiple=False)
         owner = selected['identity']
 
         # select the target node for the output data objects
-        target_choices = []
-        for node in db.get_network():
-            target_choices.append({
-                'label': f"{node['iid']} at {node['rest_address']}/{node['p2p_address']}",
-                'iid': node['iid']
-            })
-
-        selected = prompt_for_selection(target_choices, "Select the destination node for the output data objects:", allow_multiple=False)
+        selected = prompt_for_selection(self._node_choices, "Select the destination node for the output data objects:", allow_multiple=False)
         target = selected['iid']
 
-        selected = prompt_for_selection(identity_choices, "Select the user on whose behalf the job is executed:", allow_multiple=False)
-        user = selected['identity']
-
-        for item in descriptor['output']:
-            job['output'].append({
+        # create the job output
+        job_output = []
+        for item in proc_descriptor['output']:
+            job_output.append({
                 'name': item['name'],
                 'owner_iid': owner.id,
                 'restricted_access': False,
@@ -234,8 +219,79 @@ class RTIJobSubmit(CLICommand):
                 'target_node_iid': target
             })
 
+        return job_output
+
+    def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+
+        self._prepare(args['address'])
+
+        # get the deployed processors
+        deployed = self._rti.get_deployed()
+        if len(deployed) == 0:
+            print(f"No processors deployed at {args['address']}. Aborting.")
+            return None
+
+        # do we have a job descriptor?
+        if args['job'] is not None:
+            # does the file exist?
+            if not os.path.isfile(args['job']):
+                print(f"No job descriptor at '{args['job']}'. Aborting.")
+                return None
+
+            # read the file and validate
+            job_descriptor = read_json_from_file(args['job'])
+            if not validate_json(job_descriptor, task_descriptor_schema):
+                print(f"Invalid job descriptor. Aborting.")
+                return None
+
+            # is the processor deployed?
+            if job_descriptor['processor_id'] not in deployed:
+                print(f"Processor {job_descriptor['processor_id']} is not deployed at {args['address']}. Aborting.")
+                return None
+
+        # if we don't have a job descriptor then we obtain all the information interactively
+        else:
+            # create choices for processor selection
+            proc_choices = []
+            for proc_id in deployed:
+                descriptor = self._rti.get_descriptor(proc_id)
+                proc_choices.append({
+                    'label': f"{descriptor['name']}/{proc_id}",
+                    'proc-id': proc_id
+                })
+
+            # select the processor
+            proc_id = prompt_for_selection(items=proc_choices, message="Select the processor for the job:")['proc-id']
+
+            # get the descriptor for this processor
+            proc_descriptor = self._rti.get_descriptor(proc_id)
+            print(f"Processor descriptor: {json.dumps(proc_descriptor, indent=4)}")
+
+            # create the job input
+            job_input = self._create_job_input(proc_descriptor)
+            if job_input is None:
+                return None
+
+            # create the job output
+            job_output = self._create_job_output(proc_descriptor)
+            if job_output is None:
+                return None
+
+            # create the job descriptor template, then begin to fill it
+            job_descriptor = {
+                'processor_id': proc_id,
+                'input': job_input,
+                'output': job_output,
+                'user_iid': None
+            }
+
+        # select the user on whose behalf the jbo
+        selected = prompt_for_selection(self._identity_choices, "Select the user on whose behalf the job is executed:", allow_multiple=False)
+        user = selected['identity']
+
         # submit the job
-        job_id = rti.submit_job(args['proc-id'], job['input'], job['output'], user)
+        job_id = self._rti.submit_job(job_descriptor['processor_id'], job_descriptor['input'], job_descriptor['output'], user)
         print(f"Job submitted: job-id={job_id}")
 
 
