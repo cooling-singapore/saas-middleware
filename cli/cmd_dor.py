@@ -3,6 +3,7 @@ import os
 import subprocess
 
 import jsonschema
+from tabulate import tabulate
 
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
     prompt_for_password, unlock_keystore, prompt_for_confirmation, \
@@ -532,9 +533,19 @@ class DORAccessShow(CLICommand):
 
             else:
                 print(f"Access granted to {len(access)} identities:")
-                for iid in access:
-                    identity = identities[iid]
-                    print(f"- {identity.name}/{identity.email}/{identity.id}")
+
+                # headers
+                lines = [
+                    ['NAME', 'EMAIL', 'IDENTITY ID'],
+                    ['----', '-----', '-----------']
+                ]
+
+                # list
+                lines += [
+                    [item.name, item.email, item.id] for item in identities.values()
+                ]
+
+                print(tabulate(lines, tablefmt="plain"))
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
