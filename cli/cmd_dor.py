@@ -39,7 +39,7 @@ class DORAdd(CLICommand):
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
-            prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+            prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
             prompt_if_missing(args, 'data-type', prompt_for_string, message="Enter the data type of the data object:")
             prompt_if_missing(args, 'data-format', prompt_for_string, message="Enter the data format of the data object:")
 
@@ -108,7 +108,7 @@ class DORAddProc(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
         # default_if_missing(args, 'url', 'https://github.com/cooling-singapore/saas-processor-template')
 
@@ -281,7 +281,7 @@ class DORRemove(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
@@ -330,7 +330,7 @@ class DORTag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
@@ -388,7 +388,7 @@ class DORUntag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
@@ -452,7 +452,7 @@ class DORSearch(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
 
         dor = DORProxy(args['address'].split(':'))
         db = NodeDBProxy(args['address'].split(':'))
@@ -497,7 +497,7 @@ class DORAccessShow(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
 
         dor = DORProxy(args['address'].split(':'))
         db = NodeDBProxy(args['address'].split(":"))
@@ -554,7 +554,7 @@ class DORAccessGrant(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
@@ -626,7 +626,7 @@ class DORAccessRevoke(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address (e.g., 127.0.0.1:5001):")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
