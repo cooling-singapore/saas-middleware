@@ -4,7 +4,7 @@ import requests
 from tabulate import tabulate
 
 from cli.helpers import CLICommand, Argument, prompt_for_string, \
-    get_available_keystores, prompt_for_confirmation, prompt_for_address, \
+    get_available_keystores, prompt_for_confirmation, \
     prompt_for_password, prompt_if_missing, unlock_keystore, \
     prompt_for_keystore_selection, prompt_for_selection
 from saas.helpers import read_json_from_file, validate_json
@@ -128,7 +128,7 @@ class IdentityPublish(CLICommand):
         ])
 
     def execute(self, args):
-        prompt_if_missing(args, 'address', prompt_for_address, message="Enter address of node for publication:")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter address of node for publication:", default="127.0.0.1:5001")
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
@@ -157,7 +157,7 @@ class IdentityDiscover(CLICommand):
         ])
 
     def execute(self, args):
-        prompt_if_missing(args, 'address', prompt_for_address, message="Enter address of node for discovery:")
+        prompt_if_missing(args, 'address', prompt_for_string, message="Enter address of node for discovery:", default="127.0.0.1:5001")
 
         try:
             proxy = NodeDBProxy(args['address'].split(":"))

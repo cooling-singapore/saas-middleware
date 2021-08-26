@@ -255,25 +255,6 @@ def prompt_for_confirmation(message: str, default: bool) -> bool:
     return answers['confirmation']
 
 
-def prompt_for_address(message: str) -> str:
-    questions = [
-        {
-            'type': 'input',
-            'message': 'Host (e.g., 127.0.0.1):',
-            'name': 'host'
-        },
-        {
-            'type': 'input',
-            'message': 'Port (e.g., 5001):',
-            'name': 'port'
-        }
-    ]
-
-    print(f"{message}")
-    answers = prompt(questions)
-    return f"{answers['host']}:{answers['port']}"
-
-
 def prompt_for_tags(message: str) -> list[str]:
     questions = [
         {
