@@ -482,7 +482,7 @@ class DORSearch(CLICommand):
         print(f"Found {len(result)} data objects that match the criteria:")
         for obj_id, tags in result.items():
             owner_iid = dor.get_owner(obj_id)['owner_iid']
-            owner = Identity.deserialise(db.get_identity(owner_iid))
+            owner = db.get_identity(owner_iid)
             print(f"[{obj_id}]\n   Owner: {owner.name}/{owner.email}/{owner.id}\n   Tags: ")
             for tag in tags:
                 tag = tag.split('=')
