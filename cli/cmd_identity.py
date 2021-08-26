@@ -264,6 +264,8 @@ class CredentialsAdd(CLICommand):
             # update the keystore
             keystore.update_asset(asset)
 
+            print(f"Credential successfully created.")
+
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
 
@@ -309,13 +311,13 @@ class CredentialsRemove(CLICommand):
                     if prompt_for_confirmation("Remove the selected credentials?", default=False):
                         modified_assets = []
                         for item in items:
-                            print(f"Removing {item['label']}")
+                            print(f"Removing {item['label']}...", end='')
                             item['asset'].remove(item['key'])
                             if item['asset'] not in modified_assets:
                                 modified_assets.append(item['asset'])
+                            print("Done")
 
                         for asset in modified_assets:
-                            print(f"Update keystore asset {asset.key}")
                             keystore.update_asset(asset)
 
                     else:
