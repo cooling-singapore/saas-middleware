@@ -19,7 +19,7 @@ from getpass import getpass
 
 import jsonschema
 
-logger = logging.getLogger('Utilities.general_helpers')
+logger = logging.getLogger('helpers')
 
 
 def remove_path(path):

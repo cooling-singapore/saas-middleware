@@ -13,11 +13,6 @@ from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
 from saas.nodedb.blueprint import NodeDBProxy
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 
 logger = logging.getLogger('cli.identity')
 

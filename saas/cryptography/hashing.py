@@ -6,7 +6,7 @@ import canonicaljson
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 
-logger = logging.getLogger('hashing')
+logger = logging.getLogger('cryptography.hashing')
 
 
 def hash_file_content(path):

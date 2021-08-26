@@ -9,8 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-
-logger = logging.getLogger('ECKeyPair')
+logger = logging.getLogger('cryptography.ECKeyPair')
 
 
 class ECKeyPair(KeyPair):
