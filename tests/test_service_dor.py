@@ -463,9 +463,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = self.dor_proxy.search(["whazzup", "124"])
         logger.info(f"result={result}")
-        assert len(result) == 2
-        assert obj_id0 in result
-        assert obj_id1 in result
+        assert len(result) == 0
 
         # delete the data object 0
         descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
