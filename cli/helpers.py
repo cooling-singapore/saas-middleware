@@ -11,13 +11,42 @@ import requests
 from PyInquirer import prompt
 
 from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json
+from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
 from saas.nodedb.blueprint import NodeDBProxy
 
 logger = logging.getLogger('cli.helpers')
+
+
+def initialise_logging(path: str, logging_mode: str) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
+
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
+    root_logger = logging.getLogger()
+
+    file_handler = logging.FileHandler(os.path.join(path, f"log.{get_timestamp_now()}"))
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    root_logger.setLevel(logging.DEBUG)
+
+    if logging_mode == 'file':
+        root_logger.addHandler(file_handler)
+
+    elif logging_mode == 'console':
+        root_logger.addHandler(console_handler)
+
+    else:
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
 
 
 def initialise_storage_folder(path: str, usage: str) -> None:
@@ -386,6 +415,8 @@ class CLIParser(CLICommandGroup):
             self.initialise(parser)
 
             args = vars(parser.parse_args(args))
+
+            initialise_logging(args['temp-dir'], args['logging'])
 
             initialise_storage_folder(args['keystore'], 'keystore')
 

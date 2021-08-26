@@ -17,6 +17,7 @@ if __name__ == "__main__":
     try:
         default_keystore = os.path.join(os.environ['HOME'], '.keystore')
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
+        default_logging = 'both'
 
         cli = CLIParser('SaaS Middleware command line interface (CLI)', arguments=[
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
@@ -26,7 +27,12 @@ if __name__ == "__main__":
             Argument('--keystore-id', dest='keystore-id', action='store',
                      help=f"id of the keystore to be used if there are more than one available "
                           f"(default: id of the only keystore if only one is available )"),
-            Argument('--password', dest='password', action='store', help=f"password for the keystore")
+            Argument('--password', dest='password', action='store',
+                     help=f"password for the keystore"),
+            Argument('--logging', dest='logging', action='store',
+                     choices=['console', 'file', 'both'],
+                     help=f"indicate where log output should be written to (default: '{default_logging}')")
+
         ], commands=[
             CLICommandGroup('identity', 'manage and explore identities', commands=[
                 IdentityCreate(),
@@ -81,5 +87,4 @@ if __name__ == "__main__":
     except Exception as e:
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
         print(trace)
-        # logger.error(trace)
         sys.exit(-1)
