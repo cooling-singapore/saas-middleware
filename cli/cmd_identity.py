@@ -166,9 +166,19 @@ class IdentityDiscover(CLICommand):
                 print(f"No identities discovered.")
             else:
                 print(f"Discovered {len(identities)} identities:")
-                for serialised in identities.values():
-                    identity = Identity.deserialise(serialised)
-                    print(f"- {identity.name}/{identity.email}/{identity.id}")
+
+                # headers
+                lines = [
+                    ['NAME', 'EMAIL', 'IDENTITY ID'],
+                    ['----', '-----', '-----------']
+                ]
+
+                # list
+                lines += [
+                    [item.name, item.email, item.id] for item in identities.values()
+                ]
+
+                print(tabulate(lines, tablefmt="plain"))
 
         except requests.exceptions.ConnectionError:
             print(f"Could not connect to node at '{args['address']}'. Aborting.")
