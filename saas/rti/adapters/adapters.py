@@ -28,11 +28,12 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread):
-    def __init__(self, proc_id, node):
+    def __init__(self, proc_id, proc_descriptor, node):
         Thread.__init__(self, daemon=True)
 
         self._node = node
         self._proc_id = proc_id
+        self._proc_descriptor = proc_descriptor
         self._mutex = Lock()
         self._pending = []
         self._state = ProcessorState.UNINITIALISED
@@ -41,7 +42,7 @@ class RTIProcessorAdapter(Thread):
         return self._state
 
     def descriptor(self):
-        return None
+        return self._proc_descriptor
 
     def startup(self):
         return True
@@ -182,17 +183,16 @@ class RTIProcessorAdapter(Thread):
 
 
 class RTITaskProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, proc_id, node):
-        super().__init__(proc_id, node)
+    def __init__(self, proc_id, proc_descriptor, node):
+        super().__init__(proc_id, proc_descriptor, node)
 
         self._input_interface = {}
         self._output_interface = {}
 
-    def parse_io_interface(self, descriptor: dict):
-        for item in descriptor['input']:
+        for item in proc_descriptor['input']:
             self._input_interface[item['name']] = item
 
-        for item in descriptor['output']:
+        for item in proc_descriptor['output']:
             self._output_interface[item['name']] = item
 
     def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
