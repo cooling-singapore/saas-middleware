@@ -3,12 +3,13 @@ import os
 
 from flask import Blueprint, send_from_directory, jsonify
 
+from saas.keystore.assets.credentials import GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
-from saas.schemas import data_object_descriptor_schema
+from saas.schemas import data_object_descriptor_schema, git_proc_pointer_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file
+from saas.helpers import get_timestamp_now, read_json_from_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -33,6 +34,17 @@ add_body_specification = {
         'content_encrypted': {'type': 'boolean'}
     },
     'required': ['owner_iid', 'descriptor', 'access_restricted', 'content_encrypted']
+}
+
+add_gpp_body_specification = {
+    'type': 'object',
+    'properties': {
+        'owner_iid': {'type': 'string'},
+        'descriptor': data_object_descriptor_schema,
+        'gpp': git_proc_pointer_schema,
+        'credentials': {'type': 'object'}
+    },
+    'required': ['owner_iid', 'descriptor', 'gpp']
 }
 
 transfer_ownership_body_specification = {
@@ -71,7 +83,8 @@ class DORBlueprint:
     def blueprint(self):
         blueprint = Blueprint('repository', __name__, url_prefix=endpoint_prefix)
         blueprint.add_url_rule('', self.search.__name__, self.search, methods=['GET'])
-        blueprint.add_url_rule('', self.add.__name__, self.add, methods=['POST'])
+        blueprint.add_url_rule('/add', self.add.__name__, self.add, methods=['POST'])
+        blueprint.add_url_rule('/add-gpp', self.add_gpp.__name__, self.add_gpp, methods=['POST'])
         blueprint.add_url_rule('/<obj_id>', self.delete.__name__, self.delete, methods=['DELETE'])
         blueprint.add_url_rule('/<obj_id>/descriptor', self.get_descriptor.__name__, self.get_descriptor, methods=['GET'])
         blueprint.add_url_rule('/<obj_id>/content', self.get_content.__name__, self.get_content, methods=['GET'])
@@ -106,6 +119,18 @@ class DORBlueprint:
         content_path = files['attachment']
 
         status, result = self._node.dor.add(owner_iid, descriptor, content_path, access_restricted, content_encrypted)
+        return jsonify(result), status
+
+    @request_manager.verify_request_body(add_gpp_body_specification)
+    def add_gpp(self):
+        body = request_manager.get_request_variable('body')
+
+        owner_iid = body['owner_iid']
+        descriptor = body['descriptor']
+        gpp = body['gpp']
+        credentials = GithubCredentials.from_record(body.get['credentials']) if 'credentials' in body else None
+
+        status, result = self._node.dor.add_gpp(owner_iid, descriptor, gpp, credentials)
         return jsonify(result), status
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -251,41 +276,39 @@ class DORProxy(EndpointProxy):
         if recipe is not None:
             body['descriptor']['recipe'] = recipe
 
-        code, r = self.post('', body=body, attachment=content_path)
+        code, r = self.post('/add', body=body, attachment=content_path)
         return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            temp_path: str = None):
-
-        # set default temp path
-        temp_path = temp_path if temp_path else os.environ['HOME']
-
-        # create temporary Github-Processor-Pointer (GPP) file
-        t_created = get_timestamp_now()
-        gpp_path = os.path.join(temp_path, f"gpp.{t_created}.json")
-        write_json_to_file({
-            'source': source,
-            'commit_id': commit_id,
-            'proc_path': proc_path,
-            'proc_config': proc_config
-        }, gpp_path)
+                            created_by, created_t=None, recipe=None, git_credentials: GithubCredentials = None):
 
         body = {
             'owner_iid': owner.id,
             'descriptor': {
                 'data_type': 'Git-Processor-Pointer',
                 'data_format': 'json',
-                'created_t': t_created,
-                'created_by': owner.name
+                'created_t': created_t if created_t else get_timestamp_now(),
+                'created_by': created_by
             },
-            'access_restricted': False,
-            'content_encrypted': False
+            'gpp': {
+                'source': source,
+                'commit_id': commit_id,
+                'proc_path': proc_path,
+                'proc_config': proc_config
+            }
         }
 
-        # execute post request and remove temp file afterwards
-        code, r = self.post('', body=body, attachment=gpp_path)
-        os.remove(gpp_path)
+        if recipe is not None:
+            body['descriptor']['recipe'] = recipe
 
+        if git_credentials:
+            body['git_credentials'] = {
+                'login': git_credentials.login,
+                'personal_access_token': git_credentials.personal_access_token
+            }
+
+        # execute post request and remove temp file afterwards
+        code, r = self.post('/add-gpp', body=body)
         return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
 
     def delete_data_object(self, obj_id, with_authorisation_by):
