@@ -4,11 +4,10 @@ import subprocess
 import json
 
 from threading import Lock
-from time import sleep
 
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.rti.adapters.adapters import RTIProcessorAdapter, ProcessorState
+from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.status import StatusLogger, State
@@ -67,27 +66,27 @@ class RuntimeInfrastructureService:
                     protocol = DataObjectRepositoryP2PProtocol(self._node)
                     protocol.send_fetch(network_node.p2p_address.split(":"), proc_id, descriptor_path, content_path)
 
+                    proc_descriptor = descriptor['proc_descriptor']
+
                     # create an RTI adapter instance
                     if deployment == 'native':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTINativeProcessorAdapter(proc_id, content_path, self._node, ssh_profile=self._ssh_profile)
+                            RTINativeProcessorAdapter(proc_id, proc_descriptor, content_path, self._node,
+                                                      ssh_profile=self._ssh_profile)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTIDockerProcessorAdapter(proc_id, content_path, self._node)
+                            RTIDockerProcessorAdapter(proc_id, proc_descriptor, content_path, self._node)
 
                     # start the processor and wait until it is deployed
                     processor = self._deployed_processors[proc_id]
                     processor.start()
-                    while processor.state() == ProcessorState.UNINITIALISED or \
-                            processor.state() == ProcessorState.STARTING:
-                        sleep(0.5)
 
                     return self._deployed_processors[proc_id].descriptor()
 
             return None
 
-    def undeploy(self, proc_id, force=False):
+    def undeploy(self, proc_id):
         with self._mutex:
             if proc_id in self._deployed_processors:
                 # TODO: what happens with pending jobs???
