@@ -23,14 +23,12 @@ def prune_image(proc_id):
 
 
 class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, content_path, node):
-        super().__init__(proc_id, node)
+    def __init__(self, proc_id, proc_descriptor, content_path, node):
+        super().__init__(proc_id, proc_descriptor, node)
         self.proc_id = proc_id
         self.git_spec = self._read_git_spec(content_path)
 
         self.docker_image_tag = get_image_tag(proc_id)
-
-        self._processor_descriptor = None
 
     @staticmethod
     def _read_git_spec(git_spec_path):
@@ -61,32 +59,8 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                               remove=True)
         client.close()
 
-    def get_processor_descriptor(self):
-        """
-        Retrieves descriptor of processor from git repo cloned in the docker image
-
-        :return: Descriptor of processor
-        """
-        client = docker.from_env()
-
-        logs = client.containers.run(self.docker_image_tag,
-                                     entrypoint=["cat",
-                                                 f"/processor_repo/{self.git_spec['proc_path']}/descriptor.json"],
-                                     remove=True)
-        descriptor = json.loads(logs.decode('utf-8'))
-        logger.debug(f"{self.proc_id} descriptor: {descriptor}")
-        client.close()
-
-        return descriptor
-
-    def descriptor(self):
-        return self._processor_descriptor
-
     def startup(self):
         self.build_docker_image()
-
-        self._processor_descriptor = self.get_processor_descriptor()
-        self.parse_io_interface(self._processor_descriptor)
 
     def execute(self, task_descriptor, working_directory, status_logger):
         try:

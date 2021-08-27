@@ -13,8 +13,8 @@ logger = logging.getLogger('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, obj_content_path, node, ssh_profile=None):
-        super().__init__(proc_id, node)
+    def __init__(self, proc_id, proc_descriptor, obj_content_path, node, ssh_profile=None):
+        super().__init__(proc_id, proc_descriptor, node)
 
         self._ssh_profile = ssh_profile
 
@@ -34,10 +34,6 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
         # set the processor path
         self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])
-        self._descriptor = None
-
-    def descriptor(self):
-        return self._descriptor
 
     def startup(self):
         # clone the repository
@@ -48,9 +44,6 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
         # install the processor
         self._install()
-
-        # parse the processor IO interface
-        self.parse_io_interface(self._descriptor)
 
     def execute(self, task_descriptor: dict, local_working_directory: str, status_logger: StatusLogger):
         try:
