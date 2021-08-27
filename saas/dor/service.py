@@ -4,8 +4,10 @@ import subprocess
 import json
 
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
-from saas.helpers import write_json_to_file
+from saas.helpers import write_json_to_file, read_json_from_file, validate_json
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.keystore.assets.credentials import GithubCredentials
+from saas.schemas import processor_descriptor_schema
 
 logger = logging.getLogger('dor.service')
 
@@ -13,6 +15,7 @@ logger = logging.getLogger('dor.service')
 class DataObjectRepositoryService:
     infix_master_path = 'dor-master'
     infix_cache_path = 'dor-cache'
+    infix_repo_path = 'dor-repositories'
 
     def obj_content_path(self, c_hash, cache=False):
         if cache:
@@ -36,13 +39,74 @@ class DataObjectRepositoryService:
                                                              DataObjectRepositoryService.infix_master_path)])
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
                                                              DataObjectRepositoryService.infix_cache_path)])
+        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
+                                                             DataObjectRepositoryService.infix_repo_path)])
 
-    def add(self, owner_iid, descriptor, content_path, access_restricted, content_encrypted):
+    def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict, credentials: GithubCredentials = None) -> (int, dict):
+        # in case of a GPP, we verify validity first before adding the data object
+
+        # calculate the hash for the data object content
+        c_hash = hash_json_object(gpp)
+
+        # prepare for cloning
+        target_path = os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_repo_path, c_hash.hex())
+        url = gpp['source']
+        if credentials:
+            insert = f"{credentials.login}:{credentials.personal_access_token}@"
+            index = url.find('github.com')
+            url = url[:index] + insert + url[index:]
+
+        # try to clone the repository
+        result = subprocess.run(['git', 'clone', url, target_path], capture_output=True)
+        if result.returncode != 0:
+            return 500, {'reason': 'could not clone repository',
+                         'stdout': result.stdout.decode('utf-8'),
+                         'stderr': result.stderr.decode('utf-8')}
+
+        # try to checkout the commit
+        result = subprocess.run(['git', 'checkout', gpp['commit_id']], capture_output=True, cwd=target_path)
+        if result.returncode != 0:
+            return 500, {'reason': f"could not checkout commit '{gpp['commit-id']}'",
+                         'stdout': result.stdout.decode('utf-8'),
+                         'stderr': result.stderr.decode('utf-8')}
+
+        # does the processor descriptor exist?
+        proc_descriptor_path = os.path.join(target_path, gpp['proc_path'], 'descriptor.json')
+        if not os.path.isfile(proc_descriptor_path):
+            return 500, {'reason': f"could not find processor descriptor at '{proc_descriptor_path}'"}
+
+        # read the processor descriptor
+        proc_descriptor = read_json_from_file(proc_descriptor_path)
+        if not validate_json(proc_descriptor, processor_descriptor_schema):
+            return 500, {'reason': 'invalid processor descriptor',
+                         'descriptor': proc_descriptor,
+                         'schema': processor_descriptor_schema}
+
+        # write the content of the data object
+        content_path = os.path.join(target_path, 'gpp.json')
+        write_json_to_file(gpp, content_path)
+
+        # add the c_hash and proc descriptor to the data object descriptor and calculate the hash for the descriptor
+        descriptor['c_hash'] = c_hash.hex()
+        descriptor['proc_descriptor'] = proc_descriptor
+
+        return self._add(owner_iid, c_hash, descriptor, content_path, False, False)
+
+    def add(self, owner_iid: str, descriptor: dict, content_path: str,
+            access_restricted: bool, content_encrypted: bool) -> (int, dict):
+
         # calculate the hash for the data object content
         c_hash = hash_file_content(content_path)
 
-        # add the c_hash to the descriptor and calculate the hash for the descriptor
+        # add the c_hash to the descriptor
         descriptor['c_hash'] = c_hash.hex()
+
+        return self._add(owner_iid, c_hash, descriptor, content_path, access_restricted, content_encrypted)
+
+    def _add(self, owner_iid: str, c_hash: bytes, descriptor: dict, content_path: str,
+             access_restricted: bool, content_encrypted: bool) -> (int, dict):
+
+        # calculate the hash for the descriptor
         d_hash = hash_json_object(descriptor)
 
         # calculate the data object id as a hash of the descriptor and content hashes
