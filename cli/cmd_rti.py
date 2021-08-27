@@ -6,7 +6,6 @@ from typing import Optional
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
 from saas.schemas import task_descriptor_schema
@@ -24,7 +23,9 @@ class RTIProcDeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
 
         # do we have a processor id?
         if args['proc-id'] is None:
@@ -45,7 +46,9 @@ class RTIProcDeploy(CLICommand):
                 print("No processors found for deployment. Aborting.")
                 return None
 
-            selection = prompt_for_selection(choices, "Select the processor you would like to deploy:", allow_multiple=False)
+            selection = prompt_for_selection(choices,
+                                             "Select the processor you would like to deploy:",
+                                             allow_multiple=False)
             args['proc-id'] = selection['proc-id']
 
         # do we have a type?
@@ -72,7 +75,9 @@ class RTIProcUndeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
 
         # get the deployed processors
         rti = RTIProxy(args['address'].split(':'))
@@ -91,7 +96,9 @@ class RTIProcUndeploy(CLICommand):
             })
 
         # do we have a processor id?
-        prompt_if_missing(args, 'proc-id', prompt_for_selection, items=choices, message="Select the processor you would like to undeploy:")
+        prompt_if_missing(args, 'proc-id', prompt_for_selection,
+                          items=choices,
+                          message="Select the processor you would like to undeploy:")
 
         # is the processor deployed
         if args['proc-id'] not in deployed:
@@ -112,7 +119,9 @@ class RTIProcList(CLICommand):
         super().__init__('list', 'retrieves a list of all deployed processors', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
 
         rti = RTIProxy(args['address'].split(':'))
         deployed = rti.get_deployed()
@@ -200,11 +209,15 @@ class RTIJobSubmit(CLICommand):
 
     def _create_job_output(self, proc_descriptor: dict) -> Optional[list]:
         # select the owner for the output data objects
-        selected = prompt_for_selection(self._identity_choices, "Select the owner for the output data objects:", allow_multiple=False)
+        selected = prompt_for_selection(self._identity_choices,
+                                        "Select the owner for the output data objects:",
+                                        allow_multiple=False)
         owner = selected['identity']
 
         # select the target node for the output data objects
-        selected = prompt_for_selection(self._node_choices, "Select the destination node for the output data objects:", allow_multiple=False)
+        selected = prompt_for_selection(self._node_choices,
+                                        "Select the destination node for the output data objects:",
+                                        allow_multiple=False)
         target = selected['iid']
 
         # create the job output
@@ -221,7 +234,9 @@ class RTIJobSubmit(CLICommand):
         return job_output
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
 
         self._prepare(args['address'])
 
@@ -286,11 +301,16 @@ class RTIJobSubmit(CLICommand):
             }
 
         # select the user on whose behalf the jbo
-        selected = prompt_for_selection(self._identity_choices, "Select the user on whose behalf the job is executed:", allow_multiple=False)
+        selected = prompt_for_selection(self._identity_choices,
+                                        "Select the user on whose behalf the job is executed:",
+                                        allow_multiple=False)
         user = selected['identity']
 
         # submit the job
-        job_id = self._rti.submit_job(job_descriptor['processor_id'], job_descriptor['input'], job_descriptor['output'], user)
+        job_id = self._rti.submit_job(job_descriptor['processor_id'],
+                                      job_descriptor['input'],
+                                      job_descriptor['output'],
+                                      user)
         print(f"Job submitted: job-id={job_id}")
 
 
@@ -302,7 +322,8 @@ class RTIJobStatus(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:", default="127.0.0.1:5001")
 
         rti = RTIProxy(args['address'].split(':'))
 
@@ -316,4 +337,3 @@ class RTIJobStatus(CLICommand):
         else:
             print(f"Job descriptor: {json.dumps(descriptor, indent=4)}")
             print(f"Status: {json.dumps(status, indent=4)}")
-

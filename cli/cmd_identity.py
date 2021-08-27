@@ -9,7 +9,6 @@ from cli.helpers import CLICommand, Argument, prompt_for_string, \
     prompt_for_keystore_selection, prompt_for_selection
 from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, SMTPCredentials, GithubCredentials
-from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
 from saas.nodedb.blueprint import NodeDBProxy
@@ -47,13 +46,18 @@ class IdentityRemove(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
             # confirm removal (if applicable)
-            confirm = prompt_if_missing(args, 'confirm', prompt_for_confirmation, message=f"Remove keystore {args['keystore-id']}?", default=False)
+            confirm = prompt_if_missing(args, 'confirm',
+                                        prompt_for_confirmation,
+                                        message=f"Remove keystore {args['keystore-id']}?",
+                                        default=False)
             if confirm:
                 # delete the keystore
                 keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
@@ -71,7 +75,9 @@ class IdentityShow(CLICommand):
         super().__init__('show', 'shows details about a keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
 
         # read the keystore file
         keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
@@ -128,8 +134,12 @@ class IdentityPublish(CLICommand):
         ])
 
     def execute(self, args):
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter address of node for publication:", default="127.0.0.1:5001")
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter address of node for publication:",
+                          default="127.0.0.1:5001")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         # load the keystore
@@ -157,7 +167,9 @@ class IdentityDiscover(CLICommand):
         ])
 
     def execute(self, args):
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter address of node for discovery:", default="127.0.0.1:5001")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter address of node for discovery:",
+                          default="127.0.0.1:5001")
 
         try:
             proxy = NodeDBProxy(args['address'].split(":"))
@@ -195,7 +207,9 @@ class IdentityUpdate(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         # load the keystore
@@ -224,7 +238,9 @@ class CredentialsAdd(CLICommand):
         super().__init__('add', 'adds credentials to the keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         # load the keystore
@@ -276,9 +292,11 @@ class CredentialsAdd(CLICommand):
                 asset = CredentialsAsset.create(item['asset-key'], item['c-type'])
 
             # create a credential
-            cred_key = prompt_for_string(f"Enter the key/name for which this credential is for (hint: {item['cred-key']}):")
+            cred_key = prompt_for_string(f"Enter the key/name for which this credential is for "
+                                         f"(hint: {item['cred-key']}):")
             for key in item['template'].keys():
-                item['template'][key] = prompt_for_string(f"Enter value for '{key}':", hide=key in item['hide-when-prompt'])
+                item['template'][key] = prompt_for_string(f"Enter value for '{key}':",
+                                                          hide=key in item['hide-when-prompt'])
 
             # update the asset
             asset.update(cred_key, item['c-type'].from_record(item['template']))
@@ -297,7 +315,9 @@ class CredentialsRemove(CLICommand):
         super().__init__('remove', 'removes credentials from a keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         # load the keystore
@@ -355,7 +375,9 @@ class CredentialsList(CLICommand):
         super().__init__('list', 'lists credentials of the keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         # load the keystore
@@ -397,6 +419,3 @@ class CredentialsList(CLICommand):
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
-
-
-
