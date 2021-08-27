@@ -61,11 +61,26 @@ class NetworkNode(Base):
 
 
 def tags_match_patterns(tag_records, patterns):
-    for tag_record in tag_records:
-        for pattern in patterns:
+    # ALL
+    for pattern in patterns:
+        found = False
+        for tag_record in tag_records:
             if pattern in tag_record.key or pattern in tag_record.value:
-                return True
-    return False
+                found = True
+                break
+
+        if not found:
+            return False
+
+    return True
+
+    # ANY
+    # for tag_record in tag_records:
+    #     for pattern in patterns:
+    #         if pattern in tag_record.key or pattern in tag_record.value:
+    #             return True
+    #
+    # return False
 
 
 class NodeDBService:

@@ -160,7 +160,7 @@ class RTIProcessorAdapter(Thread):
                 # so we can update tags in the next step)
                 proxy = DORProxy(target_address)
                 obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
-                                                  restricted_access, content_encrypted, content_key,
+                                                  restricted_access, content_encrypted,
                                                   data_type, data_format, created_by,
                                                   recipe={
                                                       'task_descriptor': task_descriptor,

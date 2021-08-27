@@ -8,7 +8,7 @@ from saas.keystore.keystore import Keystore
 from saas.schemas import data_object_descriptor_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now, read_json_from_file
+from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -30,8 +30,7 @@ add_body_specification = {
         'owner_iid': {'type': 'string'},
         'descriptor': data_object_descriptor_schema,
         'access_restricted': {'type': 'boolean'},
-        'content_encrypted': {'type': 'boolean'},
-        'content_key': {'type': 'string'}
+        'content_encrypted': {'type': 'boolean'}
     },
     'required': ['owner_iid', 'descriptor', 'access_restricted', 'content_encrypted']
 }
@@ -104,11 +103,9 @@ class DORBlueprint:
         descriptor = body['descriptor']
         access_restricted = body['access_restricted']
         content_encrypted = body['content_encrypted']
-        content_key = body['content_key'] if 'content_key' in body else "no-content-key"
         content_path = files['attachment']
 
-        status, result = self._node.dor.add(owner_iid, descriptor, content_path,
-                                            access_restricted, content_encrypted, content_key)
+        status, result = self._node.dor.add(owner_iid, descriptor, content_path, access_restricted, content_encrypted)
         return jsonify(result), status
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -237,7 +234,7 @@ class DORProxy(EndpointProxy):
         code, r = self.get('', body=body)
         return r
 
-    def add_data_object(self, content_path, owner: Identity, access_restricted, content_encrypted, content_key,
+    def add_data_object(self, content_path, owner: Identity, access_restricted, content_encrypted,
                         data_type, data_format, created_by, created_t=None, recipe=None):
         body = {
             'owner_iid': owner.id,
@@ -251,13 +248,44 @@ class DORProxy(EndpointProxy):
             'content_encrypted': content_encrypted
         }
 
-        if content_key is not None:
-            body['content_key'] = content_key
-
         if recipe is not None:
             body['descriptor']['recipe'] = recipe
 
         code, r = self.post('', body=body, attachment=content_path)
+        return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
+
+    def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
+                            temp_path: str = None):
+
+        # set default temp path
+        temp_path = temp_path if temp_path else os.environ['HOME']
+
+        # create temporary Github-Processor-Pointer (GPP) file
+        t_created = get_timestamp_now()
+        gpp_path = os.path.join(temp_path, f"gpp.{t_created}.json")
+        write_json_to_file({
+            'source': source,
+            'commit_id': commit_id,
+            'proc_path': proc_path,
+            'proc_config': proc_config
+        }, gpp_path)
+
+        body = {
+            'owner_iid': owner.id,
+            'descriptor': {
+                'data_type': 'Git-Processor-Pointer',
+                'data_format': 'json',
+                'created_t': t_created,
+                'created_by': owner.name
+            },
+            'access_restricted': False,
+            'content_encrypted': False
+        }
+
+        # execute post request and remove temp file afterwards
+        code, r = self.post('', body=body, attachment=gpp_path)
+        os.remove(gpp_path)
+
         return (r['data_object_id'], r['descriptor']) if 'data_object_id' in r else None
 
     def delete_data_object(self, obj_id, with_authorisation_by):

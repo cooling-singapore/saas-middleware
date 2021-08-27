@@ -9,7 +9,7 @@ from saas.rti.adapters.adapters import RTITaskProcessorAdapter
 from saas.rti.status import StatusLogger
 from saas.schemas import git_proc_pointer_schema
 
-logger = logging.getLogger('RTINativeProcessorAdapter')
+logger = logging.getLogger('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):

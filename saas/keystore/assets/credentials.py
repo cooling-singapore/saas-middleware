@@ -139,8 +139,18 @@ class CredentialsAsset(Generic[T], Asset):
             }, protect_with=protect_with, protected_properties=['credentials'])
         }
 
+    def index(self) -> list[str]:
+        return list(self._credentials.keys())
+
     def update(self, name: str, item: T) -> None:
         self._credentials[name] = item
 
     def get(self, name: str) -> T:
         return self._credentials.get(name)
+
+    def remove(self, name: str) -> None:
+        if name in self._credentials:
+            self._credentials.pop(name)
+
+    def size(self) -> int:
+        return len(self._credentials)
