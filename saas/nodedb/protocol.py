@@ -2,7 +2,6 @@ import logging
 
 from saas.p2p.protocol import P2PProtocol
 
-
 logger = logging.getLogger('nodedb.protocol')
 
 

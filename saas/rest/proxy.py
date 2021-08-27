@@ -1,7 +1,6 @@
 import json
 import requests
 
-from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.rest.request_manager import sign_authorisation_token
 

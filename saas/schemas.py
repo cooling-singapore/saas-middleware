@@ -90,27 +90,13 @@ processor_descriptor_schema = {
         'output': {
             'type': 'array',
             'items': io_variable_schema
+        },
+        'configurations': {
+            'type': 'array',
+            'items': {'type': 'string'}
         }
     },
-    'required': ['name', 'input', 'output']
-}
-
-git_auth_schema = {
-    'type': 'object',
-    'properties': {
-        'username': {'type': 'string'},
-        'password': {'type': 'string'}
-    },
-    'required': ['username', 'password']
-}
-
-ssh_auth_schema = {
-    'type': 'object',
-    'properties': {
-        'login': {'type': 'string'},
-        'key': {'type': 'string'}
-    },
-    'required': ['username', 'password']
+    'required': ['name', 'input', 'output', 'configurations']
 }
 
 git_proc_pointer_schema = {

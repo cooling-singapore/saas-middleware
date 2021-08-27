@@ -105,14 +105,6 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    # def has_ssh_credentials(self):
-    #     path = 'credentials.json'
-    #     if os.path.isfile(path):
-    #         credentials = read_json_from_file('credentials.json')
-    #         return 'ssh_auth' in credentials
-    #     else:
-    #         return False
-
     def get_node(self, name, use_credentials=True, enable_rest=False, use_ssh_profile=None):
         if name in self.nodes:
             return self.nodes[name]
@@ -168,20 +160,6 @@ class TestCaseBase:
 
             else:
                 keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
-
-            # ssh_auth = None
-            # if use_credentials:
-            #     credentials = read_json_from_file('credentials.json')
-            #     keystore = Keystore.load(credentials['path'], credentials['keystore_id'], credentials['password'])
-            #     logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
-            #                 f"using existing keystore (id={keystore.identity().id()})")
-            #
-            #     if use_ssh_auth and 'ssh_auth' in credentials:
-            #         ssh_auth = credentials['ssh_auth']
-            # else:
-            #     logger.info(f"creating node '{name}' at p2p={p2p_address} rest={rest_address} datastore={storage_path} "
-            #                 f"using new (fake) keystore")
-            #     keystore = Keystore.create(storage_path, name, f"{name}@somewhere.com", 'password')
 
             # create node and startup services
             node = Node(keystore, storage_path)

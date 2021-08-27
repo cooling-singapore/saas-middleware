@@ -51,7 +51,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object
         obj_id, descriptor = self.dor_proxy.add_data_object(test_file_path, self.extras[0].identity,
-                                                            False, False, None,
+                                                            False, False,
                                                             data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
@@ -80,7 +80,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False, None,
+                                                   False, False,
                                                    data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
@@ -131,7 +131,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # create the data object
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
         obj_id, _ = self.dor_proxy.add_data_object(test_file_path, owner0,
-                                                   False, False, None,
+                                                   False, False,
                                                    'map', 'json', owner0.name, 21342342)
         logger.info(f"obj_id={obj_id}")
         assert obj_id is not None
@@ -179,7 +179,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object
         obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False, None,
+                                                   False, False,
                                                    data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
@@ -221,7 +221,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         owner1 = self.extras[1].identity
         protected_content_key1 = owner1.encrypt(content_key).decode('utf-8')
         obj_id, descriptor = self.dor_proxy.add_data_object(content_enc_path, owner1,
-                                                            False, True, protected_content_key1,
+                                                            False, True,
                                                             'map', 'json', owner1.name)
         assert obj_id is not None
         assert descriptor is not None
@@ -255,7 +255,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # create the data object (set access_restricted to True which means permission needs to be granted
         # before fetching is possible)
         obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   True, False, None,
+                                                   True, False,
                                                    data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
@@ -324,7 +324,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object
         obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False, None,
+                                                   False, False,
                                                    data_type, data_format, created_by, created_t)
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
@@ -386,7 +386,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object 0
         obj_id0, _ = self.dor_proxy.add_data_object(test_file_path0, self.extras[1].identity,
-                                                    False, False, None,
+                                                    False, False,
                                                     data_type, data_format, created_by, created_t)
         logger.info(f"obj_id0: {obj_id0}")
         assert obj_id0 is not None
@@ -403,7 +403,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object 1
         obj_id1, _ = self.dor_proxy.add_data_object(test_file_path1, self.extras[1].identity,
-                                                    False, False, None,
+                                                    False, False,
                                                     data_type, data_format, created_by, created_t)
         logger.info(f"obj_id1: {obj_id1}")
         assert obj_id1 is not None
@@ -420,7 +420,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object 2
         obj_id2, _ = self.dor_proxy.add_data_object(test_file_path2, self.extras[2].identity,
-                                                    False, False, None,
+                                                    False, False,
                                                     data_type, data_format, created_by, created_t)
         logger.info(f"obj_id2: {obj_id2}")
         assert obj_id2 is not None
@@ -463,9 +463,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = self.dor_proxy.search(["whazzup", "124"])
         logger.info(f"result={result}")
-        assert len(result) == 2
-        assert obj_id0 in result
-        assert obj_id1 in result
+        assert len(result) == 0
 
         # delete the data object 0
         descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])

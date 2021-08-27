@@ -1,5 +1,7 @@
 import logging
+from typing import Optional
 
+from saas.keystore.identity import Identity
 from saas.keystore.schemas import identity_schema
 from saas.rest.proxy import EndpointProxy
 
@@ -45,13 +47,13 @@ class NodeDBBlueprint:
         return jsonify(result), 200
 
     def get_identities(self):
-        result = {}
+        result = []
         for iid, identity in self._node.db.get_all_identities().items():
-            result[iid] = identity.serialise()
+            result.append(identity.serialise())
 
         return jsonify(result), 200
 
-    def get_identity(self, iid):
+    def get_identity(self, iid: str):
         identity = self._node.db.get_identity(iid=iid)
         if identity is not None:
             return jsonify(identity.serialise()), 200
@@ -74,21 +76,27 @@ class NodeDBProxy(EndpointProxy):
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
-    def get_node(self):
+    def get_node(self) -> dict:
         code, r = self.get("/node")
         return r
 
-    def get_network(self):
+    def get_network(self) -> list[dict]:
         code, r = self.get("/network")
         return r
 
-    def get_identities(self):
+    def get_identities(self) -> dict[str, Identity]:
         code, r = self.get("/identity")
-        return r
 
-    def get_identity(self, iid):
+        result = {}
+        for content in r:
+            identity = Identity.deserialise(content)
+            result[identity.id] = identity
+
+        return result
+
+    def get_identity(self, iid: str) -> Optional[Identity]:
         code, r = self.get(f"/identity/{iid}")
-        return r
+        return Identity.deserialise(r) if code == 200 else None
 
     def update_identity(self, identity):
         code, r = self.post('/identity', body=identity.serialise())
