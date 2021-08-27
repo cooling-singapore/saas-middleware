@@ -45,17 +45,27 @@ class Service(CLICommand):
             default_if_missing(args, 'type', self.default_service)
 
         else:
-            prompt_if_missing(args, 'datastore', prompt_for_string, message="Enter path to datastore:", default=self.default_datastore)
-            prompt_if_missing(args, 'rest-address', prompt_for_string, message="Enter address for REST service:", default=self.default_rest_address)
-            prompt_if_missing(args, 'p2p-address', prompt_for_string, message="Enter address for P2P service:", default=self.default_p2p_address)
-            prompt_if_missing(args, 'boot-node', prompt_for_string, message="Enter address for boot node:", default=self.default_boot_node_address)
+            prompt_if_missing(args, 'datastore', prompt_for_string,
+                              message="Enter path to datastore:",
+                              default=self.default_datastore)
+            prompt_if_missing(args, 'rest-address', prompt_for_string,
+                              message="Enter address for REST service:",
+                              default=self.default_rest_address)
+            prompt_if_missing(args, 'p2p-address', prompt_for_string,
+                              message="Enter address for P2P service:",
+                              default=self.default_p2p_address)
+            prompt_if_missing(args, 'boot-node', prompt_for_string,
+                              message="Enter address for boot node:",
+                              default=self.default_boot_node_address)
             prompt_if_missing(args, 'type', prompt_for_selection, items=[
                 {'type': 'full', 'label': 'Full node (i.e., DOR + RTI services)'},
                 {'type': 'storage', 'label': 'Storage node (i.e., DOR service only)'},
                 {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
             ], message="Select the type of service:")
 
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])

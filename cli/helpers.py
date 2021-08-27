@@ -107,8 +107,7 @@ def prompt_for_identity_selection(address: str, message: str, id_name: str) -> O
         # get all identities known to the node
         proxy = NodeDBProxy(address.split(":"))
         available = []
-        for serialised in proxy.get_identities():
-            identity = Identity.deserialise(serialised)
+        for identity in proxy.get_identities().values():
             available.append({
                 'label': f"{identity.name}/{identity.email}/{identity.id}",
                 'identity': identity,
@@ -291,7 +290,8 @@ def prompt_for_tags(message: str) -> list[str]:
     return result
 
 
-def prompt_for_data_object_selection(address: str, owner: Identity, message: str, allow_multiple=False) -> Union[Optional[str],list[str]]:
+def prompt_for_data_object_selection(address: str, owner: Identity, message: str,
+                                     allow_multiple=False) -> Union[Optional[str],list[str]]:
     # find all data objects owned by the identity
     dor = DORProxy(address.split(':'))
     result = dor.search(owner_iid=owner.id)
@@ -338,7 +338,7 @@ class Argument:
         self.kwargs = kwargs
 
 
-class CLIExecutable:
+class CLIExecutable(ABC):
     @abstractmethod
     def name(self) -> str:
         pass

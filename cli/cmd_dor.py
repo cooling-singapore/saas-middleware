@@ -12,7 +12,6 @@ from saas.cryptography.helpers import encrypt_file
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file
 from saas.keystore.assets.contentkeys import ContentKeysAsset
-from saas.keystore.identity import Identity
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.schemas import processor_descriptor_schema
 
@@ -35,14 +34,20 @@ class DORAdd(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
-            prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-            prompt_if_missing(args, 'data-type', prompt_for_string, message="Enter the data type of the data object:")
-            prompt_if_missing(args, 'data-format', prompt_for_string, message="Enter the data format of the data object:")
+            prompt_if_missing(args, 'address', prompt_for_string,
+                              message="Enter the target node's REST address",
+                              default='127.0.0.1:5001')
+            prompt_if_missing(args, 'data-type', prompt_for_string,
+                              message="Enter the data type of the data object:")
+            prompt_if_missing(args, 'data-format', prompt_for_string,
+                              message="Enter the data format of the data object:")
 
             # check if the file exists
             if not os.path.isfile(args['file'][0]):
@@ -109,13 +114,16 @@ class DORAddProc(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
         # default_if_missing(args, 'url', 'https://github.com/cooling-singapore/saas-processor-template')
 
         # is any of the other arguments missing?
         if not args['commit-id'] or not args['path'] or not args['config'] or not args['name']:
-            if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?", default=True):
+            if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?",
+                                       default=True):
                 # delete existing directory (if it exists)
                 repo_name = args['url'].split('/')[-1]
                 repo_path = os.path.join(args['temp-dir'], repo_name)
@@ -146,7 +154,9 @@ class DORAddProc(CLICommand):
                         print(f"Done: {default_commmit_id}")
 
                     # which commit id to use?
-                    prompt_if_missing(args, 'commit-id', prompt_for_string, message="Enter commit id:", default=default_commmit_id)
+                    prompt_if_missing(args, 'commit-id', prompt_for_string,
+                                      message="Enter commit id:",
+                                      default=default_commmit_id)
 
                 # checkout commit-id
                 print(f"Checkout commit id {args['commit-id']}...", end='')
@@ -243,19 +253,29 @@ class DORAddProc(CLICommand):
                 subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
 
             else:
-                prompt_if_missing(args, 'commit-id', prompt_for_string, message="Enter the commit id:")
-                prompt_if_missing(args, 'name', prompt_for_string, message="Enter the name of the processor:")
-                prompt_if_missing(args, 'path', prompt_for_string, message="Enter the relative path of the processor in the repository:")
-                prompt_if_missing(args, 'config', prompt_for_string, message="Enter the name of the configuration profile to be used:")
+                prompt_if_missing(args, 'commit-id', prompt_for_string,
+                                  message="Enter the commit id:")
+                prompt_if_missing(args, 'name', prompt_for_string,
+                                  message="Enter the name of the processor:")
+                prompt_if_missing(args, 'path', prompt_for_string,
+                                  message="Enter the relative path of the processor in the repository:")
+                prompt_if_missing(args, 'config', prompt_for_string,
+                                  message="Enter the name of the configuration profile to be used:")
 
         # get keystore and upload data object
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
             # connect to the DOR and add the data object
             dor = DORProxy(args['address'].split(':'))
-            obj_id, descriptor = dor.add_gpp_data_object(args['url'], args['commit-id'], args['path'], args['config'], keystore.identity)
+            obj_id, descriptor = dor.add_gpp_data_object(args['url'],
+                                                         args['commit-id'],
+                                                         args['path'],
+                                                         args['config'],
+                                                         keystore.identity)
 
             # set some tags
             dor.update_tags(obj_id, keystore, {
@@ -282,15 +302,22 @@ class DORRemove(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
             # do we have object ids?
             if len(args['obj-ids']) == 0:
-                args['obj-ids'] = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data objects to be removed:", allow_multiple=True)
+                args['obj-ids'] = prompt_for_data_object_selection(args['address'],
+                                                                   keystore.identity,
+                                                                   "Select data objects to be removed:",
+                                                                   allow_multiple=True)
 
             else:
                 # check if the object ids exist/owned by this entity
@@ -299,7 +326,8 @@ class DORRemove(CLICommand):
                 removable = []
                 for obj_id in args['obj-ids']:
                     if obj_id not in result:
-                        print(f"Ignoring data object '{obj_id}': does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+                        print(f"Ignoring data object '{obj_id}': does not exist or is not owned by "
+                              f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
                     else:
                         removable.append(obj_id)
                 args['obj-ids'] = removable
@@ -331,8 +359,12 @@ class DORTag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
@@ -341,13 +373,15 @@ class DORTag(CLICommand):
 
             # do we have an object id?
             if args['obj-id'] is None:
-                args['obj-id'] = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object for tagging:")
+                args['obj-id'] = prompt_for_data_object_selection(args['address'],
+                                                                  keystore.identity, "Select data object for tagging:")
 
             else:
                 # check if the object ids exist/owned by this entity
                 result = dor.search(owner_iid=keystore.identity.id)
                 if not args['obj-id'] in result:
-                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
+                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by "
+                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
                     return None
 
             # do we have tags?
@@ -389,8 +423,12 @@ class DORUntag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
@@ -399,13 +437,16 @@ class DORUntag(CLICommand):
 
             # do we have an object id?
             if args['obj-id'] is None:
-                args['obj-id'] = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object for untagging:")
+                args['obj-id'] = prompt_for_data_object_selection(args['address'],
+                                                                  keystore.identity,
+                                                                  "Select data object for untagging:")
 
             else:
                 # check if the object ids exist/owned by this entity
                 result = dor.search(owner_iid=keystore.identity.id)
                 if not args['obj-id'] in result:
-                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
+                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by "
+                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
                     return None
 
             # do we have tags?
@@ -453,7 +494,9 @@ class DORSearch(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
 
         dor = DORProxy(args['address'].split(':'))
         db = NodeDBProxy(args['address'].split(':'))
@@ -461,7 +504,9 @@ class DORSearch(CLICommand):
         # determine the owner iid to limit the search (if applicable)
         owner_iid = None
         if args['own']:
-            prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+            prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                              path=args['keystore'],
+                              message="Select the keystore:")
             prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
             keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
             if keystore is not None:
@@ -498,18 +543,25 @@ class DORAccessShow(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
 
         dor = DORProxy(args['address'].split(':'))
         db = NodeDBProxy(args['address'].split(":"))
 
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
             # do we have object ids?
             if not args['obj-id']:
-                obj_id = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object:", allow_multiple=False)
+                obj_id = prompt_for_data_object_selection(args['address'],
+                                                          keystore.identity,
+                                                          "Select data object:",
+                                                          allow_multiple=False)
                 if obj_id is None:
                     print(f"No data objects found. Aborting.")
                     return None
@@ -520,7 +572,8 @@ class DORAccessShow(CLICommand):
                 # check if the object ids exist/owned by this entity
                 result = dor.search(owner_iid=keystore.identity.id)
                 if args['obj-id'] not in result:
-                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
+                    print(f"Data object '{args['obj-id']}' does not exist or is not owned by "
+                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
                     return None
 
             # get the identities known to the node
@@ -562,8 +615,12 @@ class DORAccessGrant(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         dor = DORProxy(args['address'].split(':'))
@@ -573,7 +630,10 @@ class DORAccessGrant(CLICommand):
         if keystore is not None:
             # do we have object ids?
             if len(args['obj-ids']) == 0:
-                args['obj-ids'] = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data objects:", allow_multiple=True)
+                args['obj-ids'] = prompt_for_data_object_selection(args['address'],
+                                                                   keystore.identity,
+                                                                   "Select data objects:",
+                                                                   allow_multiple=True)
 
             else:
                 # check if the object ids exist/owned by this entity
@@ -581,7 +641,8 @@ class DORAccessGrant(CLICommand):
                 removable = []
                 for obj_id in args['obj-ids']:
                     if obj_id not in result:
-                        print(f"Ignoring data object '{obj_id}': does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+                        print(f"Ignoring data object '{obj_id}': does not exist or is not owned by "
+                              f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
                     else:
                         removable.append(obj_id)
                 args['obj-ids'] = removable
@@ -599,7 +660,9 @@ class DORAccessGrant(CLICommand):
                 items = [{'label': f"{identity.name}/{identity.email}/{identity.id}", 'iid': iid}
                          for iid, identity in identities.items()]
 
-                selected = prompt_for_selection(items, "Select the identity who should be granted access:", allow_multiple=False)
+                selected = prompt_for_selection(items,
+                                                "Select the identity who should be granted access:",
+                                                allow_multiple=False)
                 args['iid'] = selected['iid']
 
             # is the identity known to the node?
@@ -631,8 +694,12 @@ class DORAccessRevoke(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string, message="Enter the target node's REST address", default='127.0.0.1:5001')
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'], message="Select the keystore:")
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                          path=args['keystore'],
+                          message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         dor = DORProxy(args['address'].split(':'))
@@ -642,7 +709,10 @@ class DORAccessRevoke(CLICommand):
         if keystore is not None:
             # do we have object ids?
             if args['obj-id'] is None:
-                obj_id = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object:", allow_multiple=False)
+                obj_id = prompt_for_data_object_selection(args['address'],
+                                                          keystore.identity,
+                                                          "Select data object:",
+                                                          allow_multiple=False)
                 if obj_id is None:
                     print(f"No data objects found. Aborting.")
                     return None
@@ -654,7 +724,8 @@ class DORAccessRevoke(CLICommand):
                 result = dor.search(owner_iid=keystore.identity.id)
                 for obj_id in args['obj-id']:
                     if obj_id not in result:
-                        print(f"Data object {obj_id} does not exist or is not owned by '{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+                        print(f"Data object {obj_id} does not exist or is not owned by "
+                              f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
 
             # get the identities known to the node
             identities = db.get_identities()
@@ -671,7 +742,9 @@ class DORAccessRevoke(CLICommand):
                         'iid': iid
                     })
 
-                for selected in prompt_for_selection(choices, "Select the identities whose access should be removed:", allow_multiple=True):
+                for selected in prompt_for_selection(choices,
+                                                     "Select the identities whose access should be removed:",
+                                                     allow_multiple=True):
                     args['iids'].append(selected['iid'])
 
             # revoke access
@@ -685,5 +758,3 @@ class DORAccessRevoke(CLICommand):
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
-
-
