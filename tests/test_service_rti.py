@@ -54,23 +54,14 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         rti.put_permission(request['req_id'], content_key)
 
     def add_test_processor_to_dor(self, dor: DORProxy, owner: Identity):
-        git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
-        write_json_to_file({
-            'source': 'https://github.com/cooling-singapore/saas-processor-template',
-            'commit_id': '79cab85',
-            'proc_path': 'processor_test',
-            'proc_config': 'default'
-        }, git_proc_pointer_path)
-
-        data_type = 'Git-Processor-Pointer'
-        data_format = 'json'
+        source = 'https://github.com/cooling-singapore/saas-processor-template'
+        commit_id = '972bd54'
+        proc_path = 'processor_test'
+        proc_config = 'default'
         created_t = get_timestamp_now()
         created_by = 'test_user'
 
-        proc_id, _ = dor.add_data_object(git_proc_pointer_path, owner,
-                                         False, False,
-                                         data_type, data_format, created_by, created_t)
-
+        proc_id, _ = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by, created_t)
         return proc_id
 
     def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
