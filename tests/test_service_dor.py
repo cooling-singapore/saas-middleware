@@ -69,6 +69,38 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
 
+    def test_add_delete_gpp_data_object(self):
+        created_t = 21342342
+        created_by = 'heiko'
+
+        source = 'https://github.com/cooling-singapore/saas-processor-template'
+        commit_id = '972bd54'
+        proc_path = 'processor_test'
+        proc_config = 'default'
+
+        ref_obj_id = '989451bdcf0e624d6487ce5a132f109ecce9dfd6af21c04d7d2d6fb62ea4fed4'
+
+        # create the data object
+        obj_id, descriptor = self.dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config,
+                                                                self.extras[0].identity, created_by, created_t)
+
+        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
+        assert ref_obj_id is not None
+        assert obj_id is not None
+        assert obj_id == ref_obj_id
+
+        # get the descriptor of the data object
+        descriptor1 = self.dor_proxy.get_descriptor(obj_id)
+        logger.info(f"descriptor1={descriptor1}")
+        assert descriptor1 is not None
+        assert('proc_descriptor' in descriptor1)
+
+        # delete the data object
+        descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
+        logger.info(f"descriptor2={descriptor2}")
+        assert descriptor2 is not None
+        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+
     def test_grant_revoke_access(self):
         data_type = 'map'
         data_format = 'json'
