@@ -14,7 +14,7 @@ from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.helpers import write_json_to_file, get_timestamp_now, prompt
+from saas.helpers import get_timestamp_now, prompt
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -24,6 +24,33 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def wait_for_job(rti, job_id):
+    while True:
+        time.sleep(5)
+        descriptor, status = rti.get_job_info(job_id)
+        if descriptor and status:
+            logger.info(f"descriptor={descriptor}")
+            logger.info(f"status={status}")
+
+            state = State.from_string(status['state'])
+            if state == State.SUCCESSFUL:
+                return True
+            elif state == State.FAILED:
+                return False
+
+
+def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
+    source = 'https://github.com/cooling-singapore/saas-processor-template'
+    commit_id = '972bd54'
+    proc_path = 'processor_test'
+    proc_config = config
+    created_t = get_timestamp_now()
+    created_by = 'test_user'
+
+    proc_id, _ = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by, created_t)
+    return proc_id
 
 
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -52,17 +79,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # submit the content key
         rti.put_permission(request['req_id'], content_key)
-
-    def add_test_processor_to_dor(self, dor: DORProxy, owner: Identity):
-        source = 'https://github.com/cooling-singapore/saas-processor-template'
-        commit_id = '972bd54'
-        proc_path = 'processor_test'
-        proc_config = 'default'
-        created_t = get_timestamp_now()
-        created_by = 'test_user'
-
-        proc_id, _ = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by, created_t)
-        return proc_id
 
     def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
         test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
@@ -140,22 +156,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        result = self.wait_for_job(rti, job_id)
+        result = wait_for_job(rti, job_id)
         return job_id, result
-
-    def wait_for_job(self, rti: RTIProxy, job_id: str) -> bool:
-        while True:
-            time.sleep(5)
-            descriptor, status = rti.get_job_info(job_id)
-            if descriptor and status:
-                logger.info(f"descriptor={descriptor}")
-                logger.info(f"status={status}")
-
-                state = State.from_string(status['state'])
-                if state == State.SUCCESSFUL:
-                    return True
-                elif state == State.FAILED:
-                    return False
 
     def test_deployment_undeployment(self):
         # create node
@@ -173,7 +175,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -221,7 +223,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -274,7 +276,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        self.wait_for_job(rti, job_id)
+        wait_for_job(rti, job_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
@@ -307,7 +309,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         db.update_identity(owner.identity)
         db.update_identity(user.identity)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -367,7 +369,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        self.wait_for_job(rti, job_id)
+        wait_for_job(rti, job_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
@@ -414,7 +416,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -470,7 +472,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        result = self.wait_for_job(rti, job_id)
+        result = wait_for_job(rti, job_id)
         assert(result is True)
 
         jobs = rti.get_jobs(proc_id)
@@ -509,7 +511,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -581,7 +583,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         db.update_identity(user.identity)
 
         # add and deploy test processor
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
         descriptor = rti.deploy(proc_id)
         logger.info(f"descriptor={descriptor}")
@@ -647,7 +649,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (deployed is not None)
         assert (len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id, 'docker')
@@ -700,7 +702,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (jobs is not None)
         assert (len(jobs) == 1)
 
-        result = self.wait_for_job(rti, job_id)
+        result = wait_for_job(rti, job_id)
         assert (result is True)
 
         jobs = rti.get_jobs(proc_id)
@@ -734,40 +736,6 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
-    def add_test_processor_to_dor(self, dor: DORProxy, owner: Identity):
-        git_proc_pointer_path = os.path.join(self.wd_path, "git_proc_pointer.json")
-        write_json_to_file({
-            'source': 'https://github.com/cooling-singapore/saas-processor-template',
-            'commit_id': '79cab85',
-            'proc_path': 'processor_test',
-            'proc_config': 'nscc'
-        }, git_proc_pointer_path)
-
-        data_type = 'Git-Processor-Pointer'
-        data_format = 'json'
-        created_t = get_timestamp_now()
-        created_by = 'test_user'
-
-        proc_id, _ = dor.add_data_object(git_proc_pointer_path, owner,
-                                         False, False,
-                                         data_type, data_format, created_by, created_t)
-
-        return proc_id
-
-    def wait_for_job(self, rti, job_id):
-        while True:
-            time.sleep(5)
-            descriptor, status = rti.get_job_info(job_id)
-            if descriptor and status:
-                logger.info(f"descriptor={descriptor}")
-                logger.info(f"status={status}")
-
-                state = State.from_string(status['state'])
-                if state == State.SUCCESSFUL:
-                    return True
-                elif state == State.FAILED:
-                    return False
-
     def test_deployment_undeployment(self):
         # create node
         node = self.get_node('node', enable_rest=True, use_ssh_profile='nscc')
@@ -792,7 +760,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -845,7 +813,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
-        proc_id = self.add_test_processor_to_dor(dor, owner.identity)
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
         descriptor = rti.deploy(proc_id)
@@ -898,7 +866,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        self.wait_for_job(rti, job_id)
+        wait_for_job(rti, job_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
