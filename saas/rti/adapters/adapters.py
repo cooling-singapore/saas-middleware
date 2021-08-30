@@ -107,6 +107,9 @@ class RTIProcessorAdapter(Thread):
             job_descriptor = result[0]
             status = result[1]
 
+            # set job state
+            status.update_state(State.RUNNING)
+
             # perform pre-execute routine
             job_id = str(job_descriptor['id'])
             task_or_wf_descriptor = job_descriptor['descriptor']
