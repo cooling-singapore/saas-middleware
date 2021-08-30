@@ -59,24 +59,6 @@ class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
                               remove=True)
         client.close()
 
-    def get_processor_descriptor(self):
-        """
-        Retrieves descriptor of processor from git repo cloned in the docker image
-
-        :return: Descriptor of processor
-        """
-        client = docker.from_env()
-
-        logs = client.containers.run(self.docker_image_tag,
-                                     entrypoint=["cat",
-                                                 f"/processor_repo/{self.git_spec['proc_path']}/descriptor.json"],
-                                     remove=True)
-        descriptor = json.loads(logs.decode('utf-8'))
-        logger.debug(f"{self.proc_id} descriptor: {descriptor}")
-        client.close()
-
-        return descriptor
-
     def startup(self):
         self.build_docker_image()
 
