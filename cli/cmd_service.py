@@ -77,22 +77,23 @@ class Service(CLICommand):
             if args['type'] in ['full', 'execution']:
                 # do we have SSH profiles?
                 asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
-                ssh_profiles = asset.index()
+                if asset is not None:
+                    ssh_profiles = asset.index()
 
-                # has a profile been specified?
-                if args['ssh-profile']:
-                    # does it exist?
-                    if args['ssh-profile'] not in ssh_profiles:
-                        print(f"SSH profile '{args['ssh-profile']}' not found. Aborting.")
-                        return None
+                    # has a profile been specified?
+                    if args['ssh-profile']:
+                        # does it exist?
+                        if args['ssh-profile'] not in ssh_profiles:
+                            print(f"SSH profile '{args['ssh-profile']}' not found. Aborting.")
+                            return None
 
-                else:
-                    # select an ssh profile (include a none option)
-                    choices = [{'label': s, 'ssh-profile': s} for s in ssh_profiles]
-                    choices.append({'label': '(none)', 'ssh-profile': ''})
-                    prompt_if_missing(args, 'ssh-profile', prompt_for_selection,
-                                      items=choices,
-                                      message="Select the SSH profile to use for the RTI (if any):")
+                    else:
+                        # select an ssh profile (include a none option)
+                        choices = [{'label': s, 'ssh-profile': s} for s in ssh_profiles]
+                        choices.append({'label': '(none)', 'ssh-profile': ''})
+                        prompt_if_missing(args, 'ssh-profile', prompt_for_selection,
+                                          items=choices,
+                                          message="Select the SSH profile to use for the RTI (if any):")
 
             # initialise storage directory (if necessary)
             initialise_storage_folder(args['datastore'], 'datastore')
