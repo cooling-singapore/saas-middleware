@@ -138,6 +138,12 @@ class RequestManager:
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
+                # for debugging purposes, get the contents of 'values' and 'form'
+                values = {k: v for k, v in request.values.items()}
+                form = {k: v for k, v in request.form.items()}
+                logger.debug(f"request: values={values}")
+                logger.debug(f"request: form={form}")
+
                 # body will be either in request.values or request.form (not sure why).
                 if 'body' in request.values:
                     body = json.loads(request.values['body'])
