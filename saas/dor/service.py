@@ -56,6 +56,10 @@ class DataObjectRepositoryService:
             index = url.find('github.com')
             url = url[:index] + insert + url[index:]
 
+        # does the repository already exist?
+        if os.path.isdir(target_path):
+            subprocess.run(['rm', '-rf', target_path])
+
         # try to clone the repository
         result = subprocess.run(['git', 'clone', url, target_path], capture_output=True)
         if result.returncode != 0:
