@@ -6,6 +6,7 @@ from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.email.service import EmailService
+from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saas.keystore.identity import Identity
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
@@ -105,9 +106,21 @@ class Node:
         self.dor = DataObjectRepositoryService(self)
         self.p2p.add(DataObjectRepositoryP2PProtocol(self))
 
-    def start_rti_service(self, ssh_profile=None):
-        logger.info("starting DOR service.")
-        self.rti = RuntimeInfrastructureService(self, ssh_profile=ssh_profile)
+    def start_rti_service(self, ssh_profile: str = None):
+        # are we supposed to use an ssh profile?
+        if ssh_profile:
+            asset: CredentialsAsset = self._keystore.get_asset('ssh-credentials')
+            ssh_credentials: SSHCredentials = asset.get(ssh_profile)
+            if ssh_credentials is None:
+                raise RuntimeError(f"SSH profile '{ssh_profile}' but no credentials found for "
+                                   f"identity '{self._keystore.identity.id}'.")
+
+            logger.info(f"starting RTI service using SSH profile: {ssh_profile}.")
+            self.rti = RuntimeInfrastructureService(self, ssh_credentials=ssh_credentials)
+
+        else:
+            logger.info("starting RTI service.")
+            self.rti = RuntimeInfrastructureService(self)
 
     def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
@@ -130,7 +143,7 @@ class Node:
 
     @classmethod
     def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None,
-               enable_dor=False, enable_rti=False):
+               enable_dor=False, enable_rti=False, ssh_profile: str = None):
         node = Node(keystore, storage_path)
 
         node.startup(p2p_address, boot_node_address)
@@ -142,6 +155,6 @@ class Node:
             node.start_dor_service()
 
         if enable_rti:
-            node.start_rti_service()
+            node.start_rti_service(ssh_profile)
 
         return node
