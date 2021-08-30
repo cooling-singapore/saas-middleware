@@ -39,9 +39,6 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         # clone the repository
         self._clone_repository()
 
-        # load the descriptor
-        self._load_descriptor()
-
         # install the processor
         self._install()
 
@@ -126,20 +123,6 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         result = self._execute_command(f"cd {self._repo_home} && git checkout {commit_id}")
         if result.returncode != 0:
             raise Exception(f"Failed to checkout commit with id={commit_id}")
-
-    def _load_descriptor(self):
-        # check if the descriptor.json exists
-        descriptor_path = os.path.join(self._processor_path, 'descriptor.json')
-        if not self._path_exists(descriptor_path):
-            raise FileNotFoundError(f"Could not find descriptor.json at {descriptor_path}")
-
-        # read the descriptor.json content
-        result = self._execute_command(f"cat {descriptor_path}")
-        if result.returncode != 0:
-            raise Exception(f"Failed to read descriptor.json: {result}")
-
-        # load the descriptor
-        self._descriptor = json.loads(result.stdout.decode('utf-8'))
 
     def _install(self):
         for script in ['install.sh', 'execute.sh']:
