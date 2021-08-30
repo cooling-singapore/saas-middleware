@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import subprocess
+import traceback
 
 from jsonschema import validate
 
@@ -54,7 +55,9 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
             if self._ssh_credentials is not None:
                 # create the remote working directory
-                logger.info(f"create remote working directory at {working_directory}")
+                msg = f"create remote working directory at {working_directory}"
+                status_logger.update('status', msg)
+                logger.info(msg)
                 result = self._execute_command(f"mkdir -p {working_directory}")
                 if result.returncode != 0:
                     raise Exception(
@@ -63,12 +66,18 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 # copy the input data objects to the remote working directory
                 for obj_name in self._input_interface:
                     local_path = os.path.join(local_working_directory, obj_name)
-                    logger.info(f"copy local:{local_path} -> remote:{working_directory}")
+                    msg = f"copy local:{local_path} -> remote:{working_directory}"
+                    status_logger.update('status', msg)
+                    logger.info(msg)
                     result = self._copy_local_to_remote(local_path, working_directory)
                     if result.returncode != 0:
                         raise Exception(f"Failed to copy local:{local_path} -> remote:{working_directory}: {result}")
 
             # run execute script
+            msg = f"running execute.sh: config={self._gpp['proc_config']} working_directory={working_directory} "\
+                  f"processor_path={self._processor_path}"
+            status_logger.update('status', msg)
+            logger.info(msg)
             result = self._execute_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
                                            cwd=self._processor_path)
             self._write_to_file(os.path.join(working_directory, "execute.sh.stdout"), result.stdout.decode('utf-8'))
@@ -81,22 +90,32 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 # copy the output data objects to the local working directory
                 for obj_name in self._output_interface:
                     remote_path = os.path.join(working_directory, obj_name)
-                    logger.info(f"copy remote:{remote_path} -> local:{local_working_directory}")
+                    msg = f"copy remote:{remote_path} -> local:{local_working_directory}"
+                    status_logger.update('status', msg)
+                    logger.info(msg)
                     result = self._copy_remote_to_local(remote_path, local_working_directory)
                     if result.returncode != 0:
                         raise Exception(f"Failed to copy remote:{remote_path} -> local:{local_working_directory}: {result}")
 
                 # delete remote working directory
-                logger.info(f"delete remote working directory at {working_directory}")
+                msg = f"delete remote working directory at {working_directory}"
+                status_logger.update('status', msg)
+                logger.info(msg)
                 result = self._execute_command(f"rm -rf {working_directory}")
                 if result.returncode != 0:
                     raise Exception(
                         f"Failed to delete remote working directory at {working_directory}: {result}")
 
+            status_logger.remove('status')
+            logger.info(f"running execute.sh was SUCCESSFUL")
             return True
 
         except Exception as e:
-            status_logger.update('exception', e)
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            status_logger.update('trace', trace)
+
+            status_logger.remove('status')
+            logger.info(f"running execute.sh was UNSUCCESSFUL: {trace}")
             return False
 
     def _clone_repository(self):
