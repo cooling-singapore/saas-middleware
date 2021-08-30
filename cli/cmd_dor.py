@@ -272,7 +272,7 @@ class DORAddProc(CLICommand):
         if keystore is not None:
             # do we have git credentials for this repository
             asset: CredentialsAsset = keystore.get_asset('github-credentials')
-            credentials: GithubCredentials = asset.get(args['url'])
+            credentials: GithubCredentials = asset.get(args['url']) if asset else None
 
             # connect to the DOR and add the data object
             dor = DORProxy(args['address'].split(':'))
