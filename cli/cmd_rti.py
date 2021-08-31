@@ -158,8 +158,16 @@ class RTIJobSubmit(CLICommand):
         # create node choices
         self._node_choices = []
         for node in self._db.get_network():
+            # check if the node has a DOR
+            if not node['dor_service']:
+                continue
+
+            # get the identity of the node
+            identity = self._db.get_identity(node['iid'])
+
+            # add the choice
             self._node_choices.append({
-                'label': f"{node['iid']} at {node['rest_address']}/{node['p2p_address']}",
+                'label': f"{identity.name}/{identity.id} at {node['rest_address']}/{node['p2p_address']}",
                 'iid': node['iid']
             })
 
