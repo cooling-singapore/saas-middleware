@@ -137,6 +137,7 @@ class Node:
         rest_address = self.rest.address() if self.rest else None
 
         self.db.update_network_node(self._keystore.identity.id, get_timestamp_now(),
+                                    self.dor is not None, self.rti is not None,
                                     f"{p2p_address[0]}:{p2p_address[1]}",
                                     f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
                                     propagate=propagate)
