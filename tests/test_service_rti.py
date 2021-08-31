@@ -738,7 +738,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_deployment_undeployment(self):
         # create node
-        node = self.get_node('node', enable_rest=True, use_ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
@@ -791,7 +791,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_processor_execution_value(self):
         # create node
-        node = self.get_node('node', enable_rest=True, use_ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
