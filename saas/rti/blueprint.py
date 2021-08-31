@@ -40,10 +40,18 @@ class RTIBlueprint:
         return blueprint
 
     def get_deployed(self):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         return jsonify(self._node.rti.get_deployed()), 200
 
     @request_manager.verify_request_body(deployment_specification)
     def deploy(self, proc_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
         deployment = body['deployment']
@@ -54,6 +62,10 @@ class RTIBlueprint:
             return jsonify(proc_id), 404
 
     def undeploy(self, proc_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         if self._node.rti.undeploy(proc_id):
             return jsonify(proc_id), 200
@@ -61,6 +73,10 @@ class RTIBlueprint:
             return jsonify(proc_id), 404
 
     def get_descriptor(self, proc_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         descriptor = self._node.rti.get_descriptor(proc_id)
         if descriptor:
             return jsonify(descriptor), 200
@@ -70,6 +86,10 @@ class RTIBlueprint:
 
     @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         task_descriptor = request_manager.get_request_variable('body')
 
         job_id = self._node.rti.submit(proc_id, task_descriptor)
@@ -79,6 +99,10 @@ class RTIBlueprint:
             return jsonify(proc_id), 404
 
     def get_jobs(self, proc_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         jobs = self._node.rti.get_jobs(proc_id)
         if jobs is not None:
             return jsonify(jobs), 200
@@ -86,6 +110,10 @@ class RTIBlueprint:
             return jsonify(proc_id), 404
 
     def get_job_info(self, job_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         job_info = self._node.rti.get_job_info(job_id)
         if job_info:
             return jsonify({
@@ -97,6 +125,10 @@ class RTIBlueprint:
 
     @request_manager.verify_request_body(put_permission_body_schema)
     def put_permission(self, req_id):
+        # does this node have a DOR?
+        if self._node.rti is None:
+            return jsonify("Node does not have a RTI service."), 404
+
         permission = request_manager.get_request_variable('body')
         self._node.rti.put_permission(req_id, permission)
 
@@ -109,7 +141,7 @@ class RTIProxy(EndpointProxy):
 
     def get_deployed(self):
         code, r = self.get(f"")
-        return r
+        return r if code == 200 else None
 
     def deploy(self, proc_id, deployment="native"):
         body = {
@@ -136,11 +168,11 @@ class RTIProxy(EndpointProxy):
         }
 
         code, r = self.post(f"/{proc_id}/jobs", body=body)
-        return r
+        return r if code == 201 else None
 
     def get_jobs(self, proc_id):
         code, r = self.get(f"/{proc_id}/jobs")
-        return r
+        return r if code == 200 else None
 
     def get_job_info(self, job_id):
         code, r = self.get(f"/job/{job_id}")
@@ -151,4 +183,4 @@ class RTIProxy(EndpointProxy):
 
     def put_permission(self, req_id, permission):
         code, r = self.post(f"/permission/{req_id}", body=permission)
-        return r
+        return r if code == 201 else None
