@@ -105,7 +105,7 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=True, enable_rest=False, use_ssh_profile=None,
+    def get_node(self, name, use_credentials=True, enable_rest=False, ssh_profile=None,
                  use_dor: bool = True, use_rti: bool = True):
         if name in self.nodes:
             return self.nodes[name]
@@ -117,7 +117,6 @@ class TestCaseBase:
             storage_path = os.path.join(self.wd_path, name)
             subprocess.check_output(['mkdir', '-p', storage_path])
 
-            ssh_profile = None
             if use_credentials:
                 credentials = read_json_from_file('credentials.json')
                 keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
@@ -144,10 +143,8 @@ class TestCaseBase:
                     keystore.update_asset(ssh_cred)
 
                     # get the specific SSH profile to be used for this node (if any)
-                    if use_ssh_profile:
-                        ssh_profile = ssh_cred.get(use_ssh_profile)
-                        if not ssh_profile:
-                            return None
+                    if ssh_profile and ssh_cred.get(ssh_profile) is None:
+                        return None
 
                 # do we have Github credentials?
                 if 'github-credentials' in credentials:
