@@ -123,7 +123,7 @@ class IdentityList(CLICommand):
 
             print(tabulate(lines, tablefmt="plain"))
         else:
-            print(f"No keystores found in '{args['keystore']}':")
+            print(f"No keystores found in '{args['keystore']}'.")
 
 
 class IdentityPublish(CLICommand):
