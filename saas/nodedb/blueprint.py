@@ -30,6 +30,8 @@ class NodeDBBlueprint:
         return jsonify({
             "iid": self._node.identity().id,
             "identity": self._node.identity().serialise(),
+            "dor_service": self._node.dor is not None,
+            "rti_service": self._node.rti is not None,
             "rest_service_address": self._node.rest.address(),
             "p2p_service_address": self._node.p2p.address()
         }), 200
@@ -40,6 +42,8 @@ class NodeDBBlueprint:
             result.append({
                 'iid': record.iid,
                 'last_seen': record.last_seen,
+                'dor_service': record.dor_service,
+                'rti_service': record.rti_service,
                 'p2p_address': record.p2p_address,
                 'rest_address': record.rest_address
             })

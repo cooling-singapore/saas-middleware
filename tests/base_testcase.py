@@ -105,7 +105,8 @@ class TestCaseBase:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=True, enable_rest=False, use_ssh_profile=None):
+    def get_node(self, name, use_credentials=True, enable_rest=False, use_ssh_profile=None,
+                 use_dor: bool = True, use_rti: bool = True):
         if name in self.nodes:
             return self.nodes[name]
 
@@ -164,8 +165,13 @@ class TestCaseBase:
             # create node and startup services
             node = Node(keystore, storage_path)
             node.startup(p2p_address)
-            node.start_dor_service()
-            node.start_rti_service(ssh_profile=ssh_profile)
+
+            if use_dor:
+                node.start_dor_service()
+
+            if use_rti:
+                node.start_rti_service(ssh_profile=ssh_profile)
+
             if enable_rest:
                 node.start_rest_service(rest_address)
 

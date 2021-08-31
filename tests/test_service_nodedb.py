@@ -263,6 +263,23 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         print(result)
         assert(result[iid0].name == 'updated_name')
 
+    def test_service_availability(self):
+        node_s = self.get_node('storage_node', use_dor=True, use_rti=False, enable_rest=True)
+        node_e = self.get_node('execution_node', use_dor=False, use_rti=True, enable_rest=True)
+
+        proxy_s = NodeDBProxy(node_s.rest.address())
+        proxy_e = NodeDBProxy(node_e.rest.address())
+
+        result_s = proxy_s.get_node()
+        print(result_s)
+        assert (result_s['dor_service'] is True)
+        assert (result_s['rti_service'] is False)
+
+        result_e = proxy_e.get_node()
+        print(result_e)
+        assert (result_e['dor_service'] is False)
+        assert (result_e['rti_service'] is True)
+
 
 if __name__ == '__main__':
     unittest.main()
