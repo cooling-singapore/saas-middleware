@@ -124,7 +124,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert len(permissions) == 1
 
         reply = self.dor_proxy.grant_access(obj_id, self.extras[0], self.extras[2].identity)
-        assert reply == 'Authorisation failed.'
+        assert reply is None
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
