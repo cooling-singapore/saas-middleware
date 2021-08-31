@@ -148,6 +148,8 @@ class RTIProcessorAdapter(Thread):
             if item['name'] == output_name:
                 restricted_access = item['restricted_access']
                 content_encrypted = item['content_encrypted']
+
+                # TODO: figure out what is supposed to happen with the content key here
                 content_key = encrypt_file(output_content_path, encrypt_for=owner,
                                            delete_source=True) if content_encrypted else None
 
