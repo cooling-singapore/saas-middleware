@@ -7,7 +7,7 @@ from tabulate import tabulate
 
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
     prompt_for_password, unlock_keystore, prompt_for_confirmation, \
-    prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags
+    prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags, get_keystore_content
 from saas.cryptography.helpers import encrypt_file
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file
@@ -510,14 +510,14 @@ class DORSearch(CLICommand):
         if args['own']:
             prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                               path=args['keystore'],
-                              message="Select the keystore:")
-            prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
-            keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
+                              message="Select the owner:")
+            # prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+            keystore = get_keystore_content(args['keystore'], args['keystore-id'])
             if keystore is not None:
-                owner_iid = keystore.identity.id
+                owner_iid = keystore['iid']
 
             else:
-                print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+                print(f"Could not open keystore. Keystore corrupted? Aborting.")
                 return None
 
         # perform the search
