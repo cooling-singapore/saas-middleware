@@ -252,7 +252,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
 
                 # lookup the data missing objects
                 peer_address = node.p2p_address.split(":")
-                result = self._node.dor.protocol.send_lookup(peer_address, missing, user)
+                protocol = DataObjectRepositoryP2PProtocol(self._node)
+                result = protocol.send_lookup(peer_address, missing, user)
 
                 # move found items to the result set and remove from the pending set
                 for obj_id in result:
