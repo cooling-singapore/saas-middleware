@@ -58,6 +58,8 @@ class NetworkNode(Base):
     last_seen = Column(BigInteger, nullable=False)
     p2p_address = Column(String(21), nullable=False)
     rest_address = Column(String(21), nullable=True)
+    dor_service = Column(Boolean, nullable=False)
+    rti_service = Column(Boolean, nullable=False)
 
 
 def tags_match_patterns(tag_records, patterns):
@@ -367,18 +369,22 @@ class NodeDBService:
 
         return True
 
-    def update_network_node(self, node_iid, last_seen, p2p_address, rest_address=None, propagate=True):
+    def update_network_node(self, node_iid, last_seen, dor_service: bool, rti_service: bool,
+                            p2p_address, rest_address=None, propagate=True):
         with self._Session() as session:
             # do we already have a record for this node? only update if either the record does not exist yet OR if
             # the information provided is more recent.
             record = session.query(NetworkNode).filter_by(iid=node_iid).first()
             if record is None:
-                session.add(NetworkNode(iid=node_iid, last_seen=last_seen, p2p_address=p2p_address,
-                                        rest_address=rest_address))
+                session.add(NetworkNode(iid=node_iid, last_seen=last_seen,
+                                        dor_service=dor_service, rti_service=rti_service,
+                                        p2p_address=p2p_address, rest_address=rest_address))
                 session.commit()
 
             elif last_seen > record.last_seen:
                 record.last_seen = last_seen
+                record.dor_service = dor_service
+                record.rti_service = rti_service
                 record.p2p_address = p2p_address
                 record.rest_address = rest_address
                 session.commit()
@@ -391,6 +397,8 @@ class NodeDBService:
             self.protocol.broadcast_update('update_network_node', {
                 'node_iid': node_iid,
                 'last_seen': last_seen,
+                'dor_service': dor_service,
+                'rti_service': rti_service,
                 'p2p_address': p2p_address,
                 'rest_address': rest_address,
                 'propagate': False
@@ -433,6 +441,8 @@ class NodeDBService:
                 network_node_items.append({
                     'node_iid': item.iid,
                     'last_seen': item.last_seen,
+                    'dor_service': item.dor_service,
+                    'rti_service': item.rti_service,
                     'p2p_address': item.p2p_address,
                     'rest_address': item.rest_address,
                     'propagate': False

@@ -49,7 +49,7 @@ class Node:
     def datastore(self):
         return self._datastore_path
 
-    def startup(self, server_address, boot_node_address=None):
+    def startup(self, server_address, enable_dor, enable_rti, rest_address=None, boot_node_address=None, ssh_profile=None):
         logger.info("starting P2P service.")
         self.p2p = P2PService(self, server_address)
         self.p2p.start_service()
@@ -59,9 +59,47 @@ class Node:
         self.db = NodeDBService(self, f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
         self.p2p.add(protocol)
 
+        if enable_dor:
+            logger.info("starting DOR service.")
+            self.dor = DataObjectRepositoryService(self)
+            self.p2p.add(DataObjectRepositoryP2PProtocol(self))
+
+        if enable_rti:
+            # are we supposed to use an ssh profile?
+            if ssh_profile:
+                asset: CredentialsAsset = self._keystore.get_asset('ssh-credentials')
+                ssh_credentials: SSHCredentials = asset.get(ssh_profile)
+                if ssh_credentials is None:
+                    raise RuntimeError(f"SSH profile '{ssh_profile}' but no credentials found for "
+                                       f"identity '{self._keystore.identity.id}'.")
+
+                logger.info(f"starting RTI service using SSH profile: {ssh_profile}.")
+                self.rti = RuntimeInfrastructureService(self, ssh_credentials=ssh_credentials)
+
+            else:
+                logger.info("starting RTI service.")
+                self.rti = RuntimeInfrastructureService(self)
+
+        if rest_address is not None:
+            blueprint_dor = dor_blueprint.DORBlueprint(self)
+            blueprint_rti = rti_blueprint.RTIBlueprint(self)
+            blueprint_nodedb = nodedb_blueprint.NodeDBBlueprint(self)
+
+            logger.info("starting REST service.")
+            self.rest = RESTService(self, rest_address)
+            self.rest.add(blueprint_dor.blueprint())
+            self.rest.add(blueprint_rti.blueprint())
+            self.rest.add(blueprint_nodedb.blueprint())
+            self.rest.start_service()
+
+        # update the identity
+        # TODO: is this still needed?
         self.update_identity(propagate=False)
+
+        # update the network node
         self.update_network_node(propagate=False)
 
+        # join an existing network of nodes?
         if boot_node_address:
             self.join_network(boot_node_address)
 
@@ -87,41 +125,6 @@ class Node:
         self.db.protocol.broadcast_leave()
         time.sleep(2)
 
-    def start_rest_service(self, server_address):
-        blueprint_dor = dor_blueprint.DORBlueprint(self)
-        blueprint_rti = rti_blueprint.RTIBlueprint(self)
-        blueprint_nodedb = nodedb_blueprint.NodeDBBlueprint(self)
-
-        logger.info("starting REST service.")
-        self.rest = RESTService(self, server_address)
-        self.rest.add(blueprint_dor.blueprint())
-        self.rest.add(blueprint_rti.blueprint())
-        self.rest.add(blueprint_nodedb.blueprint())
-        self.rest.start_service()
-
-        self.update_network_node(propagate=True)
-
-    def start_dor_service(self):
-        logger.info("starting DOR service.")
-        self.dor = DataObjectRepositoryService(self)
-        self.p2p.add(DataObjectRepositoryP2PProtocol(self))
-
-    def start_rti_service(self, ssh_profile: str = None):
-        # are we supposed to use an ssh profile?
-        if ssh_profile:
-            asset: CredentialsAsset = self._keystore.get_asset('ssh-credentials')
-            ssh_credentials: SSHCredentials = asset.get(ssh_profile)
-            if ssh_credentials is None:
-                raise RuntimeError(f"SSH profile '{ssh_profile}' but no credentials found for "
-                                   f"identity '{self._keystore.identity.id}'.")
-
-            logger.info(f"starting RTI service using SSH profile: {ssh_profile}.")
-            self.rti = RuntimeInfrastructureService(self, ssh_credentials=ssh_credentials)
-
-        else:
-            logger.info("starting RTI service.")
-            self.rti = RuntimeInfrastructureService(self)
-
     def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
             # perform update on the keystore
@@ -137,6 +140,7 @@ class Node:
         rest_address = self.rest.address() if self.rest else None
 
         self.db.update_network_node(self._keystore.identity.id, get_timestamp_now(),
+                                    self.dor is not None, self.rti is not None,
                                     f"{p2p_address[0]}:{p2p_address[1]}",
                                     f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
                                     propagate=propagate)
@@ -146,15 +150,7 @@ class Node:
                enable_dor=False, enable_rti=False, ssh_profile: str = None):
         node = Node(keystore, storage_path)
 
-        node.startup(p2p_address, boot_node_address)
-
-        if rest_address:
-            node.start_rest_service(rest_address)
-
-        if enable_dor:
-            node.start_dor_service()
-
-        if enable_rti:
-            node.start_rti_service(ssh_profile)
+        node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
+                     rest_address=rest_address, boot_node_address=boot_node_address, ssh_profile=ssh_profile)
 
         return node

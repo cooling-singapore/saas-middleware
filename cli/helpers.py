@@ -142,6 +142,17 @@ def unlock_keystore(path: str, keystore_id: str, password: str) -> Optional[Keys
         return None
 
 
+def get_keystore_content(path: str, keystore_id: str):
+    # load content and validate
+    keystore_path = os.path.join(path, f"{keystore_id}.json")
+    content = read_json_from_file(keystore_path)
+    if not validate_json(content, keystore_schema):
+        return None
+
+    else:
+        return content
+
+
 def prompt_for_string(message: str, default: str = None, hide: bool = False, allow_empty: bool = False) -> str:
     questions = [
         {

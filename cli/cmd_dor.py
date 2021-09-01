@@ -7,7 +7,7 @@ from tabulate import tabulate
 
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
     prompt_for_password, unlock_keystore, prompt_for_confirmation, \
-    prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags
+    prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags, get_keystore_content
 from saas.cryptography.helpers import encrypt_file
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file
@@ -38,6 +38,14 @@ class DORAdd(CLICommand):
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
@@ -118,6 +126,14 @@ class DORAddProc(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
         # default_if_missing(args, 'url', 'https://github.com/cooling-singapore/saas-processor-template')
 
@@ -266,7 +282,7 @@ class DORAddProc(CLICommand):
         # get keystore and upload data object
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
-                          message="Select the keystore:")
+                          message="Select the owner of the GPP data object:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
@@ -309,6 +325,14 @@ class DORRemove(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
@@ -366,6 +390,14 @@ class DORTag(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
@@ -430,6 +462,14 @@ class DORUntag(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
@@ -502,41 +542,76 @@ class DORSearch(CLICommand):
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
 
-        dor = DORProxy(args['address'].split(':'))
-        db = NodeDBProxy(args['address'].split(':'))
+        target_db = NodeDBProxy(args['address'].split(':'))
 
         # determine the owner iid to limit the search (if applicable)
         owner_iid = None
-        if args['own']:
+        if args['own'] is not None:
             prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                               path=args['keystore'],
-                              message="Select the keystore:")
-            prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
-            keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
+                              message="Select the owner:")
+
+            # read the keystore content (we only need the public part)
+            keystore = get_keystore_content(args['keystore'], args['keystore-id'])
             if keystore is not None:
-                owner_iid = keystore.identity.id
+                owner_iid = keystore['iid']
 
             else:
-                print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+                print(f"Could not open keystore. Keystore corrupted? Aborting.")
                 return None
 
-        # perform the search
-        result = dor.search(patterns=args['pattern'], owner_iid=owner_iid)
+        # get a list of nodes in the network
+        search_result = []
+        for node in target_db.get_network():
+            print(node)
+            # does the node have a DOR?
+            if node['dor_service'] is False:
+                continue
 
-        # do we have any results?
-        if len(result) == 0:
+            # create proxies
+            node_dor = DORProxy(node['rest_address'].split(':'))
+            node_db = NodeDBProxy(node['rest_address'].split(':'))
+
+            # perform the search
+            result = node_dor.search(patterns=args['pattern'], owner_iid=owner_iid)
+            items = []
+            for obj_id, tags in result.items():
+                owner_iid = node_dor.get_owner(obj_id)['owner_iid']
+                owner = node_db.get_identity(owner_iid)
+
+                # add an item
+                items.append({
+                    'obj_id': obj_id,
+                    'owner': owner,
+                    'tags': tags
+                })
+
+            search_result.append({
+                'node': node,
+                'objects': items
+            })
+
+        # do we have any search results?
+        if len(search_result) == 0:
             print(f"No data objects found that match the criteria.")
             return None
 
-        # display what we have found
-        print(f"Found {len(result)} data objects that match the criteria:")
-        for obj_id, tags in result.items():
-            owner_iid = dor.get_owner(obj_id)['owner_iid']
-            owner = db.get_identity(owner_iid)
-            print(f"[{obj_id}]\n   Owner: {owner.name}/{owner.email}/{owner.id}\n   Tags: ")
-            for tag in tags:
-                tag = tag.split('=')
-                print(f"      {tag[0]}: {tag[1]}")
+        # print search results
+        print(f"Found the following data objects that match the criteria:")
+        for item in search_result:
+            count = len(item['objects'])
+            if count == 0:
+                continue
+
+            for obj in item['objects']:
+                print()
+                print(f"{obj['obj_id']}")
+                print(f"  - HOST: {item['node']['iid']}/{item['node']['rest_address']}/{item['node']['p2p_address']}")
+                print(f"  - OWNER: {obj['owner'].name}/{obj['owner'].email}/{obj['owner'].id}")
+                print(f"  - TAGS:")
+                for tag in obj['tags']:
+                    tag = tag.split('=')
+                    print(f"      {tag[0]}: {tag[1]}")
 
 
 class DORAccessShow(CLICommand):
@@ -551,8 +626,14 @@ class DORAccessShow(CLICommand):
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
 
-        dor = DORProxy(args['address'].split(':'))
+        # check if node has DOR service
         db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
+        dor = DORProxy(args['address'].split(':'))
 
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
@@ -622,13 +703,20 @@ class DORAccessGrant(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         dor = DORProxy(args['address'].split(':'))
-        db = NodeDBProxy(args['address'].split(":"))
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
@@ -701,13 +789,20 @@ class DORAccessRevoke(CLICommand):
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
+
+        # check if node has DOR service
+        db = NodeDBProxy(args['address'].split(":"))
+        info = db.get_node()
+        if info['dor_service'] is False:
+            print(f"Node at {args['address']} does not have a DOR service. Aborting.")
+            return None
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
 
         dor = DORProxy(args['address'].split(':'))
-        db = NodeDBProxy(args['address'].split(":"))
 
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
