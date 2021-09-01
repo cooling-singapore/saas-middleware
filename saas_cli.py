@@ -8,6 +8,7 @@ from cli.cmd_dor import DORAdd, DORAddProc, DORRemove, DORSearch, DORTag, DORUnt
     DORAccessRevoke, DORAccessShow
 from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
+from cli.cmd_network import NetworkShow
 from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
 from cli.cmd_service import Service
 from cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -78,6 +79,12 @@ if __name__ == "__main__":
                     RTIJobSubmit(),
                     RTIJobStatus()
                 ])
+            ]),
+            CLICommandGroup('network', 'explore the network of nodes', arguments=[
+                Argument('--address', dest='address', action='store',
+                         help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+            ], commands=[
+                NetworkShow()
             ])
         ])
 

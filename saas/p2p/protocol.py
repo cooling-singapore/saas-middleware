@@ -60,10 +60,14 @@ class P2PProtocol:
     def send_message(self, remote_address, message):
         logger.debug(f"send message: {message}")
 
-        # connect to the peer, send message and close connection
+        # connect to the peer (if it can be reached), send message and close connection
         peer, messenger = SecureMessenger.connect_to_peer(remote_address, self.node)
-        messenger.send(message)
-        messenger.close()
+        if messenger is not None:
+            messenger.send(message)
+            messenger.close()
+            return True
+
+        return False
 
     def send_request(self, remote_address, message):
         logger.debug(f"send request: {message}")
