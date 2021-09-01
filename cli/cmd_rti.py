@@ -29,9 +29,22 @@ class RTIProcDeploy(CLICommand):
 
         # do we have a processor id?
         if args['proc-id'] is None:
+            # find a node with a DOR (that's because the target node may well be an execution node without DOR)
+            db = NodeDBProxy(args['address'].split(':'))
+            dor_node = None
+            for node in db.get_network():
+                if node['dor_service']:
+                    dor_node = node
+                    break
+
+            # do we have a DOR node?
+            if dor_node is None:
+                print("Could not find a node with a DOR service in the network. Try again later.")
+                return None
+
             # lookup all the data objects that are GPPs
-            dor = DORProxy(args['address'].split(':'))
             choices = []
+            dor = DORProxy(dor_node['rest_address'].split(':'))
             result = dor.search(patterns=['Git-Processor-Pointer'])
             for obj_id, tags in result.items():
                 tags = {tag.split('=')[0]: tag.split('=')[1] for tag in tags}
@@ -144,8 +157,8 @@ class RTIJobSubmit(CLICommand):
     def _prepare(self, address: str):
         self._address = address
         self._db = NodeDBProxy(address.split(':'))
-        self._dor = DORProxy(address.split(':'))
         self._rti = RTIProxy(address.split(':'))
+        self._dor = None
 
         # create identity choices
         self._identity_choices = []
@@ -158,9 +171,13 @@ class RTIJobSubmit(CLICommand):
         # create node choices
         self._node_choices = []
         for node in self._db.get_network():
-            # check if the node has a DOR
-            if not node['dor_service']:
+            # does the node have a DOR?
+            if node['dor_service'] is False:
                 continue
+
+            # use the fist eligible node
+            if self._dor is None:
+                self._dor = DORProxy(node['rest_address'].split(':'))
 
             # get the identity of the node
             identity = self._db.get_identity(node['iid'])

@@ -58,9 +58,15 @@ class RuntimeInfrastructureService:
                 return self._deployed_processors[proc_id].descriptor()
 
             # does any node in the network have the processor data object?
+            # TODO: this is potentially redundant because when using the CLI, the node that has the processor
+            #  is already known so no need to search for the right node.
             for network_node in self._node.db.get_network():
-                proxy = DORProxy(network_node.rest_address.split(":"))
+                # does the node have DOR?
+                if network_node.dor_service is False:
+                    continue
 
+                # lookup the processor id
+                proxy = DORProxy(network_node.rest_address.split(":"))
                 descriptor = proxy.get_descriptor(proc_id)
                 if descriptor:
                     content_path = self.proc_content_path(descriptor['c_hash'])
