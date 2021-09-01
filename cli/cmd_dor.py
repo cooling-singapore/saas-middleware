@@ -12,6 +12,7 @@ from saas.cryptography.helpers import encrypt_file
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file
 from saas.keystore.assets.contentkeys import ContentKeysAsset
+from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.schemas import processor_descriptor_schema
 
@@ -269,13 +270,16 @@ class DORAddProc(CLICommand):
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
+            # do we have git credentials for this repository
+            asset: CredentialsAsset = keystore.get_asset('github-credentials')
+            credentials: GithubCredentials = asset.get(args['url']) if asset else None
+
             # connect to the DOR and add the data object
             dor = DORProxy(args['address'].split(':'))
-            obj_id, descriptor = dor.add_gpp_data_object(args['url'],
-                                                         args['commit-id'],
-                                                         args['path'],
-                                                         args['config'],
-                                                         keystore.identity)
+            obj_id, descriptor = dor.add_gpp_data_object(
+                args['url'], args['commit-id'], args['path'], args['config'],
+                keystore.identity, keystore.identity.name, git_credentials=credentials
+            )
 
             # set some tags
             dor.update_tags(obj_id, keystore, {

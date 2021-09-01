@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import subprocess
+import traceback
 
 from jsonschema import validate
 
+from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.rti.adapters.adapters import RTITaskProcessorAdapter
 from saas.rti.status import StatusLogger
 from saas.schemas import git_proc_pointer_schema
@@ -13,10 +15,13 @@ logger = logging.getLogger('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, proc_descriptor, obj_content_path, node, ssh_profile=None):
+    def __init__(self, proc_id, proc_descriptor, obj_content_path, node,
+                 ssh_credentials: SSHCredentials = None,
+                 github_credentials: GithubCredentials = None):
         super().__init__(proc_id, proc_descriptor, node)
 
-        self._ssh_profile = ssh_profile
+        self._ssh_credentials = ssh_credentials
+        self._github_credentials = github_credentials
 
         # substitute home path with $HOME - check if $HOME is actually present
         self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
@@ -39,9 +44,6 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
         # clone the repository
         self._clone_repository()
 
-        # load the descriptor
-        self._load_descriptor()
-
         # install the processor
         self._install()
 
@@ -51,9 +53,11 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             working_directory = local_working_directory.replace(os.environ['HOME'], '$HOME')
 
             # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
-            if self._ssh_profile is not None:
+            if self._ssh_credentials is not None:
                 # create the remote working directory
-                logger.info(f"create remote working directory at {working_directory}")
+                msg = f"create remote working directory at {working_directory}"
+                status_logger.update('status', msg)
+                logger.info(msg)
                 result = self._execute_command(f"mkdir -p {working_directory}")
                 if result.returncode != 0:
                     raise Exception(
@@ -62,12 +66,18 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 # copy the input data objects to the remote working directory
                 for obj_name in self._input_interface:
                     local_path = os.path.join(local_working_directory, obj_name)
-                    logger.info(f"copy local:{local_path} -> remote:{working_directory}")
+                    msg = f"copy local:{local_path} -> remote:{working_directory}"
+                    status_logger.update('status', msg)
+                    logger.info(msg)
                     result = self._copy_local_to_remote(local_path, working_directory)
                     if result.returncode != 0:
                         raise Exception(f"Failed to copy local:{local_path} -> remote:{working_directory}: {result}")
 
             # run execute script
+            msg = f"running execute.sh: config={self._gpp['proc_config']} working_directory={working_directory} "\
+                  f"processor_path={self._processor_path}"
+            status_logger.update('status', msg)
+            logger.info(msg)
             result = self._execute_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
                                            cwd=self._processor_path)
             self._write_to_file(os.path.join(working_directory, "execute.sh.stdout"), result.stdout.decode('utf-8'))
@@ -76,26 +86,36 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 raise Exception(f"Could not successfully run execute script: {result}")
 
             # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
-            if self._ssh_profile is not None:
+            if self._ssh_credentials is not None:
                 # copy the output data objects to the local working directory
                 for obj_name in self._output_interface:
                     remote_path = os.path.join(working_directory, obj_name)
-                    logger.info(f"copy remote:{remote_path} -> local:{local_working_directory}")
+                    msg = f"copy remote:{remote_path} -> local:{local_working_directory}"
+                    status_logger.update('status', msg)
+                    logger.info(msg)
                     result = self._copy_remote_to_local(remote_path, local_working_directory)
                     if result.returncode != 0:
                         raise Exception(f"Failed to copy remote:{remote_path} -> local:{local_working_directory}: {result}")
 
                 # delete remote working directory
-                logger.info(f"delete remote working directory at {working_directory}")
+                msg = f"delete remote working directory at {working_directory}"
+                status_logger.update('status', msg)
+                logger.info(msg)
                 result = self._execute_command(f"rm -rf {working_directory}")
                 if result.returncode != 0:
                     raise Exception(
                         f"Failed to delete remote working directory at {working_directory}: {result}")
 
+            status_logger.remove('status')
+            logger.info(f"running execute.sh was SUCCESSFUL")
             return True
 
         except Exception as e:
-            status_logger.update('exception', e)
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            status_logger.update('trace', trace)
+
+            status_logger.remove('status')
+            logger.info(f"running execute.sh was UNSUCCESSFUL: {trace}")
             return False
 
     def _clone_repository(self):
@@ -112,36 +132,26 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
             github_cred = self._node.keystore.get_asset('github-credentials')
             if github_cred:
                 # do we have credentials for this repo?
-                cred = github_cred.get(self._repo_home)
+                cred = github_cred.get(url)
                 if cred:
                     insert = f"{cred.login}:{cred.personal_access_token}@"
                     index = url.find('github.com')
                     url = url[:index] + insert + url[index:]
 
-            result = self._execute_command(f"git clone {url} {self._repo_home}")
+            command = f"git clone {url} {self._repo_home}"
+            logger.debug(f"attemping to execute: {command}")
+            result = self._execute_command(command)
             if result.returncode != 0:
                 raise Exception(f"Failed to clone repository: {result}")
 
         # checkout the commit
+        logger.info(f"checkout commit {commit_id}")
         result = self._execute_command(f"cd {self._repo_home} && git checkout {commit_id}")
         if result.returncode != 0:
             raise Exception(f"Failed to checkout commit with id={commit_id}")
 
-    def _load_descriptor(self):
-        # check if the descriptor.json exists
-        descriptor_path = os.path.join(self._processor_path, 'descriptor.json')
-        if not self._path_exists(descriptor_path):
-            raise FileNotFoundError(f"Could not find descriptor.json at {descriptor_path}")
-
-        # read the descriptor.json content
-        result = self._execute_command(f"cat {descriptor_path}")
-        if result.returncode != 0:
-            raise Exception(f"Failed to read descriptor.json: {result}")
-
-        # load the descriptor
-        self._descriptor = json.loads(result.stdout.decode('utf-8'))
-
     def _install(self):
+        logger.info(f"check if install.sh and execute.sh scripts exist")
         for script in ['install.sh', 'execute.sh']:
             # check if the script exists
             script_path = os.path.join(self._processor_path, script)
@@ -154,11 +164,14 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
                 raise Exception(f"Could not make '{script}' script at {script_path} executable: {result}")
 
         # run install script
+        logger.info(f"running install.sh...")
         result = self._execute_command(f"./install.sh {self._gpp['proc_config']}", cwd=self._processor_path)
         self._write_to_file(os.path.join(self._processor_path, "install.sh.stdout"), result.stdout.decode('utf-8'))
         self._write_to_file(os.path.join(self._processor_path, "install.sh.stderr"), result.stderr.decode('utf-8'))
         if result.returncode != 0:
             raise Exception(f"Could not successfully run install script at {script_path}: {result}")
+
+        logger.info("done running install.sh")
 
     def _run_script(self, working_directory, script_name, args=None):
         # check if script exists
@@ -185,22 +198,22 @@ class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
 
     def _execute_command(self, command, cwd=None):
         command = f"cd {cwd} && {command}" if cwd else command
-        command = ['ssh', '-i', self._ssh_profile.key_path,
-                   f"{self._ssh_profile.login}@{self._ssh_profile.host}", command] \
-            if self._ssh_profile else ['bash', '-c', command]
+        command = ['ssh', '-i', self._ssh_credentials.key_path,
+                   f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command] \
+            if self._ssh_credentials else ['bash', '-c', command]
 
         return subprocess.run(command, capture_output=True)
 
     def _copy_local_to_remote(self, local_path, remote_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_profile.key_path, local_path,
-                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}"],
+        return subprocess.run(['scp', '-i', self._ssh_credentials.key_path, local_path,
+                               f"{self._ssh_credentials.login}@{self._ssh_credentials.host}:{remote_path}"],
                               capture_output=True)
 
     def _copy_remote_to_local(self, remote_path, local_path):
         remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_profile.key_path,
-                               f"{self._ssh_profile.login}@{self._ssh_profile.host}:{remote_path}", local_path],
+        return subprocess.run(['scp', '-i', self._ssh_credentials.key_path,
+                               f"{self._ssh_credentials.login}@{self._ssh_credentials.host}:{remote_path}", local_path],
                               capture_output=True)
 
     def _write_to_file(self, path, content):
