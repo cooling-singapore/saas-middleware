@@ -243,8 +243,14 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         found = {}
         if len(missing) > 0:
             # search the network for the data objects
+            # TODO: unnecessary redundancy? this information may already be known beforehand.
             network = self._node.db.get_network()
             for node in network:
+                # does the node have a DOR?
+                if node.dor_service is False:
+                    continue
+
+                # lookup the data missing objects
                 peer_address = node.p2p_address.split(":")
                 result = self._node.dor.protocol.send_lookup(peer_address, missing, user)
 
