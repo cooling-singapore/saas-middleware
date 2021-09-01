@@ -282,7 +282,7 @@ class DORAddProc(CLICommand):
         # get keystore and upload data object
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
-                          message="Select the keystore:")
+                          message="Select the owner of the GPP data object:")
         prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
         keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
         if keystore is not None:
