@@ -7,6 +7,7 @@ from threading import Lock
 
 from saas.dor.blueprint import DORProxy
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.keystore.assets.credentials import SSHCredentials
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
@@ -26,13 +27,13 @@ class RuntimeInfrastructureService:
     def proc_descriptor_path(self, obj_id):
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
 
-    def __init__(self, node, ssh_profile=None):
+    def __init__(self, node, ssh_credentials: SSHCredentials = None):
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
         self._content_keys = {}
-        self._ssh_profile = ssh_profile
+        self._ssh_credentials = ssh_credentials
 
         # initialise directories
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
@@ -70,9 +71,11 @@ class RuntimeInfrastructureService:
 
                     # create an RTI adapter instance
                     if deployment == 'native':
+                        # do we have a ssh profile to use?
+
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                             RTINativeProcessorAdapter(proc_id, proc_descriptor, content_path, self._node,
-                                                      ssh_profile=self._ssh_profile)
+                                                      ssh_credentials=self._ssh_credentials)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
