@@ -31,6 +31,9 @@ def initialise_logging(path: str, logging_mode: str) -> None:
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
     root_logger = logging.getLogger()
 
+    # Ensure path exists before writing log
+    if not os.path.exists(path):
+        os.makedirs(path)
     file_handler = logging.FileHandler(os.path.join(path, f"log.{get_timestamp_now()}"))
     file_handler.setFormatter(formatter)
 
