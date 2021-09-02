@@ -13,7 +13,7 @@ from saas.rti.adapters.docker import RTIDockerProcessorAdapter
 from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.status import StatusLogger, State
 
-from saas.helpers import write_json_to_file
+from saas.helpers import write_json_to_file, generate_random_string
 
 logger = logging.getLogger('rti.service')
 
@@ -39,9 +39,6 @@ class RuntimeInfrastructureService:
         subprocess.check_output(['mkdir', '-p', self._jobs_path])
         subprocess.check_output(['mkdir', '-p', os.path.join(self._node.datastore(),
                                                              RuntimeInfrastructureService.infix_path)])
-
-        # initialise job id counter
-        self._next_job_id = 0
 
     def rest_address(self):
         return self._node.rest.address()
@@ -131,9 +128,8 @@ class RuntimeInfrastructureService:
             if not processor:
                 return None
 
-            # determine job id
-            job_id = str(self._next_job_id)
-            self._next_job_id += 1
+            # generate job id
+            job_id = generate_random_string(8)
 
             # create job descriptor
             job_descriptor = {
