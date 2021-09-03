@@ -3,7 +3,6 @@ import os
 
 from flask import Blueprint, send_from_directory, jsonify
 
-from saas.keystore.assets.credentials import GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.schemas import data_object_descriptor_schema, git_proc_pointer_schema
@@ -140,9 +139,8 @@ class DORBlueprint:
         owner_iid = body['owner_iid']
         descriptor = body['descriptor']
         gpp = body['gpp']
-        credentials = GithubCredentials.from_record(body.get['credentials']) if 'credentials' in body else None
 
-        status, result = self._node.dor.add_gpp(owner_iid, descriptor, gpp, credentials)
+        status, result = self._node.dor.add_gpp(owner_iid, descriptor, gpp)
         return jsonify(result), status
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -336,7 +334,7 @@ class DORProxy(EndpointProxy):
         return (r['data_object_id'], r['descriptor']) if code == 200 or code == 201 else None
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            created_by, created_t=None, recipe=None, git_credentials: GithubCredentials = None):
+                            created_by, created_t=None, recipe=None):
 
         body = {
             'owner_iid': owner.id,
@@ -356,12 +354,6 @@ class DORProxy(EndpointProxy):
 
         if recipe is not None:
             body['descriptor']['recipe'] = recipe
-
-        if git_credentials:
-            body['git_credentials'] = {
-                'login': git_credentials.login,
-                'personal_access_token': git_credentials.personal_access_token
-            }
 
         # execute post request and remove temp file afterwards
         code, r = self.post('/add-gpp', body=body)
