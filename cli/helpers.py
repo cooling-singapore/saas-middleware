@@ -31,9 +31,6 @@ def initialise_logging(path: str, logging_mode: str) -> None:
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
     root_logger = logging.getLogger()
 
-    # Ensure path exists before writing log
-    if not os.path.exists(path):
-        os.makedirs(path)
     file_handler = logging.FileHandler(os.path.join(path, f"log.{get_timestamp_now()}"))
     file_handler.setFormatter(formatter)
 
@@ -437,11 +434,11 @@ class CLIParser(CLICommandGroup):
 
             args = vars(parser.parse_args(args))
 
-            initialise_logging(args['temp-dir'], args['logging'])
-
             initialise_storage_folder(args['temp-dir'], 'temp-dir')
 
             initialise_storage_folder(args['keystore'], 'keystore')
+
+            initialise_logging(args['temp-dir'], args['logging'])
 
             super().execute(args)
 
