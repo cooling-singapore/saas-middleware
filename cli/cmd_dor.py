@@ -137,148 +137,6 @@ class DORAddProc(CLICommand):
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
         # default_if_missing(args, 'url', 'https://github.com/cooling-singapore/saas-processor-template')
 
-        # is any of the other arguments missing?
-        if not args['commit-id'] or not args['path'] or not args['config'] or not args['name']:
-            if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?",
-                                       default=True):
-                # delete existing directory (if it exists)
-                repo_name = args['url'].split('/')[-1]
-                repo_path = os.path.join(args['temp-dir'], repo_name)
-                if os.path.exists(repo_path):
-                    print(f"Deleting already existing path '{repo_path}'...", end='')
-                    subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
-                    print(f"Done")
-
-                # clone the repository
-                print(f"Cloning repository '{repo_name}' to '{repo_path}'...", end='')
-                result = subprocess.run(['git', 'clone', args['url']], capture_output=True, cwd=args['temp-dir'])
-                if result.returncode != 0:
-                    print(f"Failed: {result}")
-                    return None
-                else:
-                    print(f"Done")
-
-                # do we have a commit it?
-                if not args['commit-id']:
-                    # obtain current commit id
-                    print("Determining default commit id...", end='')
-                    result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, cwd=repo_path)
-                    if result.returncode != 0:
-                        print(f"Failed: {result}")
-                        return None
-                    else:
-                        default_commmit_id = result.stdout.decode('utf-8').strip()
-                        print(f"Done: {default_commmit_id}")
-
-                    # which commit id to use?
-                    prompt_if_missing(args, 'commit-id', prompt_for_string,
-                                      message="Enter commit id:",
-                                      default=default_commmit_id)
-
-                # checkout commit-id
-                print(f"Checkout commit id {args['commit-id']}...", end='')
-                result = subprocess.run(['git', 'checkout', args['commit-id']], capture_output=True, cwd=repo_path)
-                if result.returncode != 0:
-                    print(f"Failed: invalid commit id '{args['commit-id']}' -> aborting.")
-                    return None
-                else:
-                    print("Done")
-
-                # do we have a processor path?
-                if not args['path']:
-                    # analyse all sub directories to find 'descriptor.json' files
-                    print(f"Searching for processor descriptors...", end='')
-                    pending = [repo_path]
-                    found = []
-                    while len(pending) > 0:
-                        current = pending.pop(0)
-                        descriptor_path = os.path.join(current, 'descriptor.json')
-                        if os.path.isfile(descriptor_path):
-                            found.append({
-                                'file-path': descriptor_path,
-                                'proc-path': current[len(repo_path) + len(os.sep):]
-                            })
-
-                        for item in os.listdir(current):
-                            if item.startswith('.'):
-                                continue
-
-                            path = os.path.join(current, item)
-                            if os.path.isdir(path):
-                                pending.append(path)
-
-                    if len(found) == 0:
-                        print("Done: no descriptors found -> aborting.")
-                        return None
-
-                    else:
-                        print(f"Done: found {len(found)} descriptors.")
-
-                    # verify processor descriptors
-                    descriptors = []
-                    for item in found:
-                        print(f"Analysing descriptor file '{item['file-path']}'...", end='')
-                        try:
-                            descriptor = read_json_from_file(item['file-path'], schema=processor_descriptor_schema)
-                            # proc_path = item['proc-path'][len(repo_path) + len(os.sep):]
-                            descriptors.append({
-                                'descriptor': descriptor,
-                                'proc-path': item['proc-path'],
-                                'label': f"{descriptor['name']} in {item['proc-path']}"
-                            })
-                            print("Done")
-
-                        except jsonschema.exceptions.ValidationError:
-                            print("Done: invalid processor descriptor -> ignoring")
-
-                    # any valid processors found?
-                    if len(descriptors) == 0:
-                        print("No valid processor descriptors -> aborting.")
-                        return None
-
-                    # select the processor
-                    selection = prompt_for_selection(descriptors, f"Select a processor:")
-                    args['path'] = selection['proc-path']
-
-                # does the descriptor file exist? load it
-                print(args)
-                descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
-                print(f"Load processor descriptor at '{args['path']}'...", end='')
-                if not os.path.isfile(descriptor_path):
-                    print("Failed: no processor descriptor found at location -> aborting")
-                    return None
-                else:
-                    try:
-                        descriptor = read_json_from_file(descriptor_path, schema=processor_descriptor_schema)
-                        print("Done")
-
-                    except jsonschema.exceptions.ValidationError:
-                        print("Failed: invalid processor descriptor -> aborting.")
-                        return None
-
-                # do we have a configuration?
-                if not args['config']:
-                    profiles = [{'label': c, 'config': c} for c in descriptor['configurations']]
-                    selection = prompt_for_selection(profiles, f"Select the configuration profile:")
-                    args['config'] = selection['config']
-
-                # do we have a name?
-                if not args['name']:
-                    args['name'] = descriptor['name']
-
-                # clean up
-                subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
-
-            else:
-                prompt_if_missing(args, 'commit-id', prompt_for_string,
-                                  message="Enter the commit id:")
-                prompt_if_missing(args, 'name', prompt_for_string,
-                                  message="Enter the name of the processor:")
-                prompt_if_missing(args, 'path', prompt_for_string,
-                                  message="Enter the relative path of the processor in the repository:")
-                prompt_if_missing(args, 'config', prompt_for_string,
-                                  message="Enter the name of the configuration profile to be used:")
-
         # get keystore and upload data object
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
@@ -288,13 +146,164 @@ class DORAddProc(CLICommand):
         if keystore is not None:
             # do we have git credentials for this repository
             asset: CredentialsAsset = keystore.get_asset('github-credentials')
-            credentials: GithubCredentials = asset.get(args['url']) if asset else None
+
+            # is any of the other arguments missing?
+            if not args['commit-id'] or not args['path'] or not args['config'] or not args['name']:
+                if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?",
+                                           default=True):
+                    # delete existing directory (if it exists)
+                    repo_name = args['url'].split('/')[-1]
+                    repo_path = os.path.join(args['temp-dir'], repo_name)
+                    if os.path.exists(repo_path):
+                        print(f"Deleting already existing path '{repo_path}'...", end='')
+                        subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+                        print(f"Done")
+
+                    # get the URL
+                    url = args['url']
+                    credentials: GithubCredentials = asset.get(url) if asset else None
+                    if credentials is not None:
+                        insert = f"{credentials.login}:{credentials.personal_access_token}@"
+                        index = url.find('github.com')
+                        url = url[:index] + insert + url[index:]
+
+                    # clone the repository
+                    print(f"Cloning repository '{repo_name}' to '{repo_path}'...", end='')
+
+                    result = subprocess.run(['git', 'clone', url], capture_output=True, cwd=args['temp-dir'])
+                    if result.returncode != 0:
+                        print(f"Failed: {result}")
+                        return None
+                    else:
+                        print(f"Done")
+
+                    # do we have a commit it?
+                    if not args['commit-id']:
+                        # obtain current commit id
+                        print("Determining default commit id...", end='')
+                        result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, cwd=repo_path)
+                        if result.returncode != 0:
+                            print(f"Failed: {result}")
+                            return None
+                        else:
+                            default_commmit_id = result.stdout.decode('utf-8').strip()
+                            print(f"Done: {default_commmit_id}")
+
+                        # which commit id to use?
+                        prompt_if_missing(args, 'commit-id', prompt_for_string,
+                                          message="Enter commit id:",
+                                          default=default_commmit_id)
+
+                    # checkout commit-id
+                    print(f"Checkout commit id {args['commit-id']}...", end='')
+                    result = subprocess.run(['git', 'checkout', args['commit-id']], capture_output=True, cwd=repo_path)
+                    if result.returncode != 0:
+                        print(f"Failed: invalid commit id '{args['commit-id']}' -> aborting.")
+                        return None
+                    else:
+                        print("Done")
+
+                    # do we have a processor path?
+                    if not args['path']:
+                        # analyse all sub directories to find 'descriptor.json' files
+                        print(f"Searching for processor descriptors...", end='')
+                        pending = [repo_path]
+                        found = []
+                        while len(pending) > 0:
+                            current = pending.pop(0)
+                            descriptor_path = os.path.join(current, 'descriptor.json')
+                            if os.path.isfile(descriptor_path):
+                                found.append({
+                                    'file-path': descriptor_path,
+                                    'proc-path': current[len(repo_path) + len(os.sep):]
+                                })
+
+                            for item in os.listdir(current):
+                                if item.startswith('.'):
+                                    continue
+
+                                path = os.path.join(current, item)
+                                if os.path.isdir(path):
+                                    pending.append(path)
+
+                        if len(found) == 0:
+                            print("Done: no descriptors found -> aborting.")
+                            return None
+
+                        else:
+                            print(f"Done: found {len(found)} descriptors.")
+
+                        # verify processor descriptors
+                        descriptors = []
+                        for item in found:
+                            print(f"Analysing descriptor file '{item['file-path']}'...", end='')
+                            try:
+                                descriptor = read_json_from_file(item['file-path'], schema=processor_descriptor_schema)
+                                # proc_path = item['proc-path'][len(repo_path) + len(os.sep):]
+                                descriptors.append({
+                                    'descriptor': descriptor,
+                                    'proc-path': item['proc-path'],
+                                    'label': f"{descriptor['name']} in {item['proc-path']}"
+                                })
+                                print("Done")
+
+                            except jsonschema.exceptions.ValidationError:
+                                print("Done: invalid processor descriptor -> ignoring")
+
+                        # any valid processors found?
+                        if len(descriptors) == 0:
+                            print("No valid processor descriptors -> aborting.")
+                            return None
+
+                        # select the processor
+                        selection = prompt_for_selection(descriptors, f"Select a processor:")
+                        args['path'] = selection['proc-path']
+
+                    # does the descriptor file exist? load it
+                    print(args)
+                    descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
+                    print(f"Load processor descriptor at '{args['path']}'...", end='')
+                    if not os.path.isfile(descriptor_path):
+                        print("Failed: no processor descriptor found at location -> aborting")
+                        return None
+                    else:
+                        try:
+                            descriptor = read_json_from_file(descriptor_path, schema=processor_descriptor_schema)
+                            print("Done")
+
+                        except jsonschema.exceptions.ValidationError:
+                            print("Failed: invalid processor descriptor -> aborting.")
+                            return None
+
+                    # do we have a configuration?
+                    if not args['config']:
+                        profiles = [{'label': c, 'config': c} for c in descriptor['configurations']]
+                        selection = prompt_for_selection(profiles, f"Select the configuration profile:")
+                        args['config'] = selection['config']
+
+                    # do we have a name?
+                    if not args['name']:
+                        args['name'] = descriptor['name']
+
+                    # clean up
+                    subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+
+                else:
+                    prompt_if_missing(args, 'commit-id', prompt_for_string,
+                                      message="Enter the commit id:")
+                    prompt_if_missing(args, 'name', prompt_for_string,
+                                      message="Enter the name of the processor:")
+                    prompt_if_missing(args, 'path', prompt_for_string,
+                                      message="Enter the relative path of the processor in the repository:")
+                    prompt_if_missing(args, 'config', prompt_for_string,
+                                      message="Enter the name of the configuration profile to be used:")
 
             # connect to the DOR and add the data object
+            credentials: GithubCredentials = asset.get(args['url']) if asset else None
             dor = DORProxy(args['address'].split(':'))
             obj_id, descriptor = dor.add_gpp_data_object(
                 args['url'], args['commit-id'], args['path'], args['config'],
-                keystore.identity, keystore.identity.name, git_credentials=credentials
+                keystore.identity, keystore.identity.name
             )
 
             # set some tags
