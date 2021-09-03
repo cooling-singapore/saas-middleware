@@ -434,11 +434,11 @@ class CLIParser(CLICommandGroup):
 
             args = vars(parser.parse_args(args))
 
-            initialise_logging(args['temp-dir'], args['logging'])
-
             initialise_storage_folder(args['temp-dir'], 'temp-dir')
 
             initialise_storage_folder(args['keystore'], 'keystore')
+
+            initialise_logging(args['temp-dir'], args['logging'])
 
             super().execute(args)
 
