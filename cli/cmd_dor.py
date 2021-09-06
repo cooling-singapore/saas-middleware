@@ -35,6 +35,10 @@ class DORAdd(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
