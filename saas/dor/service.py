@@ -6,7 +6,7 @@ import json
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
 from saas.helpers import write_json_to_file, read_json_from_file, validate_json
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.assets.credentials import GithubCredentials
+from saas.keystore.assets.credentials import GithubCredentials, CredentialsAsset
 from saas.schemas import processor_descriptor_schema
 
 logger = logging.getLogger('dor.service')
@@ -42,7 +42,7 @@ class DataObjectRepositoryService:
         subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
                                                              DataObjectRepositoryService.infix_repo_path)])
 
-    def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict, credentials: GithubCredentials = None) -> (int, dict):
+    def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict) -> (int, dict):
         # in case of a GPP, we verify validity first before adding the data object
 
         # calculate the hash for the data object content
@@ -51,10 +51,15 @@ class DataObjectRepositoryService:
         # prepare for cloning
         target_path = os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_repo_path, c_hash.hex())
         url = gpp['source']
-        if credentials:
-            insert = f"{credentials.login}:{credentials.personal_access_token}@"
-            index = url.find('github.com')
-            url = url[:index] + insert + url[index:]
+
+        # does the node identity have credentials for that?
+        credentials: CredentialsAsset = self.node.keystore.get_asset('github-credentials')
+        if credentials is not None:
+            credentials: GithubCredentials = credentials.get(url)
+            if credentials:
+                insert = f"{credentials.login}:{credentials.personal_access_token}@"
+                index = url.find('github.com')
+                url = url[:index] + insert + url[index:]
 
         # does the repository already exist?
         if os.path.isdir(target_path):
