@@ -15,9 +15,8 @@ MUST only be used for exceptions, i.e., in case the normal workflow cannot conti
   the location where the exception is caught/handled, not where the exception is thrown/created. CRITICAL log level 
   is reserved for exceptions that cause the application to crash, i.e., for conditions that leave the application in 
   a state in which it cannot recover or continue to function and thus requiring a restart. Exceptions SHOULD come 
-  with a stack trace and a unique id, both of which MUST be mentioned in the log message. However, stack traces 
-  SHOULD NOT be logged. Instead, stack traces SHOULD be stored in a separate file with the filename reflecting the 
-  reference id of the exception.
+  with a stack trace and a unique id, both of which MUST be mentioned in the log message. Stack traces SHOULD be 
+  logged using DEBUG log level, reflecting the reference id of the exception.
 
 - `WARNING`:
 SHOULD be used for conditions that may cause a modification, but not a complete disruption, of the normal workflow.
@@ -38,9 +37,9 @@ Not used.
 
 
 ### Destination
-It MUST be possible to write logs stdout and/or multiple file(s). Furthermore, it SHOULD be possible to filter (e.g., 
-by module name) and redirect logs to different files. In order to avoid extremely large log files, log files MUST be
-automatically rolled over once they have reached a certain size.
+It MUST be possible to write logs to stdout and/or multiple file(s). Furthermore, it SHOULD be possible to filter 
+(e.g., by module name) and redirect logs to different files. In order to avoid extremely large log files, log files 
+MUST be automatically rolled over once they have reached a certain size.
 
 
 ### Format
