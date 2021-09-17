@@ -1,6 +1,6 @@
 import logging
 import time
-from logging.handlers import TimedRotatingFileHandler, RotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from threading import Lock
 
 
