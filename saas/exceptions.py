@@ -2,31 +2,29 @@ from saas.helpers import generate_random_string
 
 
 class SaaSException(Exception):
-    def __init__(self):
+    def __init__(self, reason: str, details: dict = None):
+        self._reason = reason
+        self._details = details
         self._id = generate_random_string(16)
+
+    @property
+    def reason(self):
+        return self._reason
+
+    @property
+    def details(self):
+        return self._details
 
     @property
     def id(self):
         return self._id
 
 
-class P2PMessengerException(SaaSException):
+# TODO: the following exception classes will have to be moved to their corresponding module eventually
+
+class NodeDBException(SaaSException):
     pass
 
 
-class PeerUnavailableError(P2PMessengerException):
-    def __init__(self, address: (str, int)):
-        self.address = address
-
-
-class ConnectionBrokenError(P2PMessengerException):
-    pass
-
-
-class TransmissionError(P2PMessengerException):
-    def __init__(self, info: dict):
-        self._info = info
-
-
-class HandshakeFailedError(P2PMessengerException):
+class InvalidSignatureError(SaaSException):
     pass
