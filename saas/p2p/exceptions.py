@@ -5,74 +5,66 @@ class P2PException(SaaSException):
     pass
 
 
-class P2PMessengerError(P2PException):
-    pass
-
-
-class ReceiveDataError(P2PMessengerError):
+class ReceiveDataError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Problem encountered while receiving data', details=details)
+        P2PException.__init__(self, 'Problem encountered while receiving data', details=details)
 
 
-class SendDataError(P2PMessengerError):
+class SendDataError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Problem encountered while sending data', details=details)
+        P2PException.__init__(self, 'Problem encountered while sending data', details=details)
 
 
-class MalformedPreambleError(P2PMessengerError):
+class MalformedPreambleError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Preamble does not contain all the required elements', details=details)
+        P2PException.__init__(self, 'Preamble does not contain all the required elements', details=details)
 
 
-class MismatchingBytesWrittenError(P2PMessengerError):
+class MismatchingBytesWrittenError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Unexpected number of bytes written', details=details)
+        P2PException.__init__(self, 'Unexpected number of bytes written', details=details)
 
 
-class ResourceNotFoundError(P2PMessengerError):
+class ResourceNotFoundError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Resource not found', details=details)
+        P2PException.__init__(self, 'Resource not found', details=details)
 
 
-class DecodingJSONError(P2PMessengerError):
+class DecodingJSONError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Problem encountered while decoding JSON object', details=details)
+        P2PException.__init__(self, 'Problem encountered while decoding JSON object', details=details)
 
 
-class EncodingJSONError(P2PMessengerError):
+class EncodingJSONError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Problem encountered while decoding JSON object', details=details)
+        P2PException.__init__(self, 'Problem encountered while decoding JSON object', details=details)
 
 
-class HandshakeFailedError(P2PMessengerError):
+class HandshakeFailedError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Could not perform handshake', details=details)
+        P2PException.__init__(self, 'Could not perform handshake', details=details)
 
 
-class MalformedMessageError(P2PMessengerError):
+class MalformedMessageError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Message does not contain all the required elements', details=details)
+        P2PException.__init__(self, 'Message does not contain all the required elements', details=details)
 
 
-class UnexpectedMessageTypeError(P2PMessengerError):
+class UnexpectedMessageTypeError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Unexpected message type', details=details)
+        P2PException.__init__(self, 'Unexpected message type', details=details)
 
 
-class MismatchingRequestIdError(P2PMessengerError):
+class UnsupportedProtocolError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Request ids do not match', details=details)
+        P2PException.__init__(self, 'Protocol not supported', details=details)
+
+
+class MismatchingRequestIdError(P2PException):
+    def __init__(self, details: dict) -> None:
+        P2PException.__init__(self, 'Request ids do not match', details=details)
 
 
 class PeerUnavailableError(P2PException):
     def __init__(self, details: dict) -> None:
-        P2PMessengerError.__init__(self, 'Peer is not available', details=details)
-
-
-class P2PMessengerError(SaaSException):
-    pass
-
-
-class P2PProtocolError(SaaSException):
-    pass
-
+        P2PException.__init__(self, 'Peer is not available', details=details)
