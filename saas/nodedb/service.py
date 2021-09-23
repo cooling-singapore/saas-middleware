@@ -267,22 +267,6 @@ class NodeDBService:
                 'data_format': record.data_format
             } for record in records]
 
-    # def get_content_key(self, obj_id: str):
-    #     with self._Session() as session:
-    #         record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-    #         return record.content_key if record else None
-    #
-    # def delete_content_key(self, obj_id):
-    #     with self._Session() as session:
-    #         record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-    #         if record.content_key is not None:
-    #             content_key = record.content_key
-    #             record.content_key = None
-    #             session.commit()
-    #             return content_key
-    #         else:
-    #             return None
-
     def get_owner(self, obj_id: str) -> Identity:
         with self._Session() as session:
             # does the data object exist?
