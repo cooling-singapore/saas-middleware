@@ -2,8 +2,9 @@ import unittest
 import logging
 import time
 
-from saas.keystore.identity import Identity
+from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.nodedb.exceptions import DataObjectNotFoundError
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -24,12 +25,13 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.proxy = NodeDBProxy(self.node.rest.address())
+        self.db = NodeDBProxy(self.node.rest.address())
+        self.dor = DORProxy(self.node.rest.address())
 
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(2)
         for extra in self.extras:
-            self.proxy.update_identity(extra.identity)
+            self.db.update_identity(extra.identity)
 
     def tearDown(self):
         self.cleanup()
@@ -41,78 +43,100 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         network = self.node.db.get_network()
         assert(len(network) == 1)
-        assert(network[0].iid == self.node.identity().id)
+        assert(network[0]['iid'] == self.node.identity().id)
 
     def test_add_update_remove_tags(self):
-        tags = self.node.db.get_tags('aaa')
+        try:
+            self.node.db.get_tags('invalid-object-id')
+            assert False
+        except DataObjectNotFoundError:
+            assert True
+
+        # add dummy data object
+        owner = self.node.identity()
+        obj_id0, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                              False, False, 'type', 'format', owner.name)
+        obj_id1, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                              False, False, 'type', 'format', owner.name)
+
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 0)
 
-        self.node.db.update_tags('aaa', [
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': 'v0'}
         ])
 
-        tags = self.node.db.get_tags('aaa')
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 1)
         assert('k0' in tags)
 
-        self.node.db.update_tags('aaa', [
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k1', 'value': 'v1'},
             {'key': 'k2', 'value': 'v2'}
         ])
 
-        tags = self.node.db.get_tags('aaa')
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 3)
 
-        self.node.db.update_tags('aaa', [
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': '999'}
         ])
 
-        tags = self.node.db.get_tags('aaa')
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 3)
         assert(tags['k0'] == '999')
 
-        self.node.db.remove_tags('aaa', ['k3'])
-        tags = self.node.db.get_tags('aaa')
+        self.node.db.remove_tags(obj_id0, ['k3'])
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 3)
 
-        self.node.db.remove_tags('bbb', ['k2'])
-        tags = self.node.db.get_tags('aaa')
+        self.node.db.remove_tags(obj_id1, ['k2'])
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 3)
 
-        self.node.db.remove_tags('aaa', ['k2'])
-        tags = self.node.db.get_tags('aaa')
+        self.node.db.remove_tags(obj_id0, ['k2'])
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 2)
 
-        self.node.db.remove_tags('aaa', ['k0', 'k1'])
-        tags = self.node.db.get_tags('aaa')
+        self.node.db.remove_tags(obj_id0, ['k0', 'k1'])
+        tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 0)
 
     def test_grant_revoke_permissions(self):
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 0)
+        # add dummy data object
+        owner = self.node.identity()
+        obj_id, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                             False, False, 'type', 'format', owner.name)
 
-        result = self.node.db.has_access('aaa', self.extras[0].identity)
+        result = self.node.db.get_access_list(obj_id)
+        assert(len(result) == 1)
+        assert(owner.id in result)
+
+        result = self.node.db.has_access(obj_id, self.extras[0].identity)
         assert(not result)
 
-        result = self.node.db.has_access('aaa', self.extras[1].identity)
+        result = self.node.db.has_access(obj_id, self.extras[1].identity)
         assert(not result)
 
-        self.node.db.grant_access('aaa', self.extras[0].identity)
+        self.node.db.grant_access(obj_id, self.extras[0].identity)
 
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 1)
+        result = self.node.db.get_access_list(obj_id)
+        assert(len(result) == 2)
+        assert(owner.id in result)
         assert(self.extras[0].identity.id in result)
 
-        self.node.db.revoke_access('aaa', self.extras[1].identity)
+        self.node.db.revoke_access(obj_id, self.extras[1].identity)
 
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 1)
+        result = self.node.db.get_access_list(obj_id)
+        assert(len(result) == 2)
+        assert(owner.id in result)
         assert(self.extras[0].identity.id in result)
 
-        self.node.db.revoke_access('aaa', self.extras[0].identity)
+        self.node.db.revoke_access(obj_id, self.extras[0].identity)
 
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 0)
+        result = self.node.db.get_access_list(obj_id)
+        assert(len(result) == 1)
+        assert(owner.id in result)
 
     def test_update_identity(self):
         # check identities known to nodes (they should all know of each other)

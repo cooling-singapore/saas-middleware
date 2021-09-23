@@ -34,25 +34,23 @@ class NodeDBP2PProtocol(P2PProtocol):
             # get all nodes in the network and add any nodes that we may not have been aware of
             network = self.node.db.get_network()
             for record in network:
-                r_address = record.p2p_address.split(':')
+                r_address = record['p2p_address']
                 if r_address not in processed and r_address not in remaining:
-                    remaining.append(record.p2p_address.split(':'))
+                    remaining.append(r_address)
 
         # by now we should have absorbed snapshots from all nodes in the network, let's update the other nodes
         # with a complete snapshot
         for address in processed:
             self.send_snapshot(address)
 
-    def broadcast_leave(self):
-        result = self.broadcast(self.prepare_message("leave"))
-        logger.debug(result)
+    def broadcast_leave(self) -> None:
+        self.broadcast(self.prepare_message("leave"))
 
-    def broadcast_update(self, method, args):
-        result = self.broadcast(self.prepare_message('update', {
+    def broadcast_update(self, method, args) -> None:
+        self.broadcast(self.prepare_message('update', {
             'method': method,
             'args': args
         }))
-        logger.debug(result)
 
     def send_snapshot(self, peer_address: (str, int)) -> None:
         snapshot = self.node.db.create_sync_snapshot()
@@ -70,13 +68,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         method(**message['args'])
 
     def _handle_snapshot(self, message: dict, peer: Identity = None) -> None:
-
         for method_name in message:
             method = getattr(self.node.db, method_name)
             for args in message[method_name]:
-                try:
-                    method(**args)
-
-                except TypeError as e:
-                    logger.error(f"could not execute method '{method}': {e}")
-                    raise e
+                method(**args)
