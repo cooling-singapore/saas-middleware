@@ -160,7 +160,7 @@ class RTIProcessorAdapter(Thread):
                     node_record = self._node.db.get_network_node(item['target_node_iid'])
 
                     # extract the rest address from that node record
-                    target_address = node_record.rest_address.split(":")
+                    target_address = node_record['rest_address']
 
                 # upload the data object to the DOR (the owner is the node for now
                 # so we can update tags in the next step)
@@ -249,11 +249,11 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             network = self._node.db.get_network()
             for node in network:
                 # does the node have a DOR?
-                if node.dor_service is False:
+                if node['dor_service'] is False:
                     continue
 
                 # lookup the data missing objects
-                peer_address = node.p2p_address.split(":")
+                peer_address = node['p2p_address']
                 protocol = DataObjectRepositoryP2PProtocol(self._node)
                 response = protocol.send_lookup(peer_address, missing, user)
 

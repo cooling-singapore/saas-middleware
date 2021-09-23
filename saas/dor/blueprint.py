@@ -5,6 +5,7 @@ from flask import Blueprint, send_from_directory, jsonify
 
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
+from saas.nodedb.exceptions import DataObjectNotFoundError
 from saas.schemas import data_object_descriptor_schema, git_proc_pointer_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
@@ -176,7 +177,7 @@ class DORBlueprint:
             return jsonify(f"Data object '{obj_id}' not found."), 404
 
         # stream the file content
-        head, tail = os.path.split(self._node.dor.obj_content_path(record.c_hash))
+        head, tail = os.path.split(self._node.dor.obj_content_path(record['c_hash']))
         return send_from_directory(head, tail, as_attachment=True)
 
     def get_access_overview(self, obj_id):
@@ -205,8 +206,9 @@ class DORBlueprint:
         if identity is None:
             return jsonify(f"identity (iid={iid}) not found"), 404
 
+        self._node.db.grant_access(obj_id, identity)
         return jsonify({
-            obj_id: self._node.db.grant_access(obj_id, identity)
+            obj_id: iid
         }), 200
 
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -222,8 +224,9 @@ class DORBlueprint:
         if identity is None:
             return jsonify(f"identity (iid={iid}) not found"), 404
 
+        self._node.db.revoke_access(obj_id, identity)
         return jsonify({
-            obj_id: self._node.db.revoke_access(obj_id, identity)
+            obj_id: iid
         }), 200
 
     def get_owner(self, obj_id: str):
@@ -270,7 +273,12 @@ class DORBlueprint:
         if self._node.dor is None:
             return jsonify("Node does not have a DOR service."), 404
 
-        return jsonify(self._node.db.get_tags(obj_id)), 200
+        try:
+            tags = self._node.db.get_tags(obj_id)
+            return jsonify(tags), 200
+
+        except DataObjectNotFoundError:
+            return jsonify({'reason': 'data object not found'}), 404
 
     @request_manager.verify_request_body(tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')

@@ -158,7 +158,7 @@ class DataObjectRepositoryService:
         logger.info(f"data object '{obj_id}' descriptor stored at '{descriptor_path}'.")
 
         # try to resolve the owner identity
-        owner = self.node.db.get_identity(iid=owner_iid)
+        owner = self.node.db.get_identity(owner_iid)
         if owner is None:
             logger.info(f"no identity found for owner '{owner_iid}'. not adding to DOR.")
             return 404, {'owner_iid': owner_iid}
@@ -198,9 +198,9 @@ class DataObjectRepositoryService:
 
         # next we need to check if there are other data objects that point to the same content (very unlikely but
         # not impossible). if not, then we can also safely delete the data object content.
-        if not self.node.db.get_objects_by_content_hash(record.c_hash):
-            content_path = self.obj_content_path(record.c_hash)
+        if not self.node.db.get_objects_by_content_hash(record['c_hash']):
+            content_path = self.obj_content_path(record['c_hash'])
             os.remove(content_path)
-            logger.info(f"data object content '{record.c_hash}' for data object '{obj_id}' deleted.")
+            logger.info(f"data object content '{record['c_hash']}' for data object '{obj_id}' deleted.")
 
         return 200, descriptor
