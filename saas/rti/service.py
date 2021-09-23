@@ -59,16 +59,16 @@ class RuntimeInfrastructureService:
             #  is already known so no need to search for the right node.
             for network_node in self._node.db.get_network():
                 # does the node have DOR?
-                if network_node.dor_service is False:
+                if network_node['dor_service'] is False:
                     continue
 
                 # lookup the processor id
-                proxy = DORProxy(network_node.rest_address.split(":"))
+                proxy = DORProxy(network_node['rest_address'])
                 descriptor = proxy.get_descriptor(proc_id)
                 if descriptor:
                     content_path = self.proc_content_path(descriptor['c_hash'])
                     protocol = DataObjectRepositoryP2PProtocol(self._node)
-                    protocol.send_fetch(network_node.p2p_address.split(":"), proc_id, descriptor_path, content_path)
+                    protocol.send_fetch(network_node['p2p_address'], proc_id, descriptor_path, content_path)
 
                     proc_descriptor = descriptor['proc_descriptor']
 

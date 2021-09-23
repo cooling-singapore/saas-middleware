@@ -45,7 +45,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         :param messenger:
         :return:
         """
-        user = self.node.db.get_identity(iid=message['user_iid'])
+        user = self.node.db.get_identity(message['user_iid'])
         if user is None:
             return self.prepare_message('lookup_response', {
                 'successful': False,
@@ -59,8 +59,8 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             if record is not None:
                 result[obj_id] = {
                     'custodian_address': self.node.p2p.address(),
-                    'access_restricted': record.access_restricted,
-                    'content_encrypted': record.content_encrypted,
+                    'access_restricted': record['access_restricted'],
+                    'content_encrypted': record['content_encrypted'],
                     'user_has_permission': self.node.db.has_access(obj_id, user) if user else False
                 }
 
@@ -124,9 +124,9 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # check if the data object access is restricted and (if so) if the user has the required permission
-        if obj_record.access_restricted:
+        if obj_record['access_restricted']:
             # get the identity of the user
-            user = self.node.db.get_identity(iid=message['user_iid'])
+            user = self.node.db.get_identity(message['user_iid'])
             if user is None:
                 return self.prepare_message('fetch_response', {
                     'successful': False,
@@ -157,14 +157,14 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 })
 
         # we should have the data object content in our local DOR
-        content_path = self.node.dor.obj_content_path(obj_record.c_hash)
+        content_path = self.node.dor.obj_content_path(obj_record['c_hash'])
         if not os.path.isfile(content_path):
             return self.prepare_message('fetch_response', {
                 'successful': False,
                 'reason': 'data object content not found',
                 'user_iid': message['user_iid'],
                 'object_id': obj_id,
-                'c_hash': obj_record.c_hash
+                'c_hash': obj_record['c_hash']
             })
 
         # we send the descriptor in the reply and stream the contents of the data object
@@ -183,11 +183,11 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             'successful': True,
             'descriptor': descriptor,
             'record': {
-                'obj_id': obj_record.obj_id,
-                'c_hash': obj_record.c_hash,
-                'd_hash': obj_record.d_hash,
-                'owner_iid': obj_record.owner_iid,
-                'access_restricted': obj_record.access_restricted,
-                'content_encrypted': obj_record.content_encrypted
+                'obj_id': obj_record['obj_id'],
+                'c_hash': obj_record['c_hash'],
+                'd_hash': obj_record['d_hash'],
+                'owner_iid': obj_record['owner_iid'],
+                'access_restricted': obj_record['access_restricted'],
+                'content_encrypted': obj_record['content_encrypted']
             }
         }, content_path)

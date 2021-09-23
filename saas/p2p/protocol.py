@@ -87,20 +87,20 @@ class P2PProtocol:
         unavailable = []
         for record in self._node.db.get_network():
             # is this peer iid in the exclusion list?
-            if record.iid in exclude:
+            if record['iid'] in exclude:
                 continue
 
             # connect to the peer (if it is online), send a request and keep the response. if a peer is not available,
             # we just skip it (this is a broadcast and we can't expect every peer in the list to be online/reachable).
             try:
-                peer, messenger = SecureMessenger.connect(record.p2p_address.split(":"),
+                peer, messenger = SecureMessenger.connect(record['p2p_address'],
                                                           self._node.identity(),
                                                           self._node.datastore())
                 responses[peer.id] = messenger.send_request(message, message['attachment'])
                 messenger.close()
 
             except PeerUnavailableError:
-                unavailable.append(record.iid)
+                unavailable.append(['record.iid'])
 
         return {
             'responses': responses,
