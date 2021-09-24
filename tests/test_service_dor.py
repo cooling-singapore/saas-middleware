@@ -5,6 +5,7 @@ import os
 from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rest.exceptions import UnexpectedHTTPError, AuthorisationFailedError, UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
 from saas.helpers import object_to_ordered_list
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -123,8 +124,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
 
-        reply = self.dor_proxy.grant_access(obj_id, self.extras[0], self.extras[2].identity)
-        assert reply is None
+        try:
+            self.dor_proxy.grant_access(obj_id, self.extras[0], self.extras[2].identity)
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
@@ -174,8 +179,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert owner_info['owner_iid'] == owner0.id
 
         # perform TRANSFER w/ non-owner auth key
-        reply = self.dor_proxy.transfer_ownership(obj_id, self.extras[2], owner1)
-        assert reply is None
+        try:
+            self.dor_proxy.transfer_ownership(obj_id, self.extras[2], owner1)
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         # perform TRANSFER
         reply = self.dor_proxy.transfer_ownership(obj_id, owner0_k, owner1)
@@ -190,9 +199,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert owner_info['owner_iid'] == owner1.id
 
         # perform DELETE w/ wrong owner
-        descriptor = self.dor_proxy.delete_data_object(obj_id, owner0_k)
-        logger.info(f"descriptor={descriptor}")
-        assert descriptor is None
+        try:
+            descriptor = self.dor_proxy.delete_data_object(obj_id, owner0_k)
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         # perform DELETE w/ correct owner
         descriptor = self.dor_proxy.delete_data_object(obj_id, owner1_k)
@@ -225,13 +237,15 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # only the OWNER can get the content via the REST API
 
         destination = os.path.join(self.wd_path, 'test_copy.dat')
-        reply = self.dor_proxy.get_content(obj_id, self.extras[0], destination)
-        assert reply is None
-        assert not os.path.exists(destination)
+        try:
+            self.dor_proxy.get_content(obj_id, self.extras[0], destination)
+            assert False
 
-        reply = self.dor_proxy.get_content(obj_id, self.extras[1], destination)
-        assert reply is not None
-        assert reply == destination
+        except UnsuccessfulRequestError:
+            assert True
+
+        result = self.dor_proxy.get_content(obj_id, self.extras[1], destination)
+        assert result is not None
         assert os.path.isfile(destination)
 
         descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
