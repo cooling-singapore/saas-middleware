@@ -23,3 +23,8 @@ class RecordNotFoundError(NodeDBException):
 class InvalidIdentityError(NodeDBException):
     def __init__(self, details: dict) -> None:
         NodeDBException.__init__(self, 'Identity is not valid', details=details)
+
+
+class UnexpectedIdentityError(NodeDBException):
+    def __init__(self, details: dict) -> None:
+        NodeDBException.__init__(self, 'Unexpected identity encountered', details=details)

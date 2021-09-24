@@ -1,19 +1,17 @@
+import os
 import unittest
 import logging
 import time
 
 from saas.dor.blueprint import DORProxy
+from saas.logging import Logging
+from saas.node import Node
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.nodedb.exceptions import DataObjectNotFoundError
 from tests.base_testcase import TestCaseBase
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
+Logging.initialise(level=logging.DEBUG)
+logger = Logging.get(__name__)
 
 
 class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -41,7 +39,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(identities) == 1 + len(self.extras))
         assert(identities[self.node.identity().id].name == 'node')
 
-        network = self.node.db.get_network()
+        network = self.node.db.get_network_all()
         assert(len(network) == 1)
         assert(network[0]['iid'] == self.node.identity().id)
 
@@ -194,11 +192,11 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
             assert(len(ids) == 2)
 
         # send snapshot from node 0 to node 1
-        nodes[0].db.protocol.send_snapshot(nodes[1].p2p.address())
+        nodes[0].db.protocol.update_peer(nodes[1].p2p.address(), reciprocate=False, forward=False)
         time.sleep(2)
 
         # send snapshot from node 1 to node 2
-        nodes[1].db.protocol.send_snapshot(nodes[2].p2p.address())
+        nodes[1].db.protocol.update_peer(nodes[2].p2p.address(), reciprocate=False, forward=False)
         time.sleep(2)
 
         # node 0 should know about 2 identities now
@@ -224,7 +222,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            nodes[i].db.update_identity(extras[i].identity.serialise(), propagate=False)
+            nodes[i].db.update_identity(extras[i].identity)
 
         # each node should know about 4 identities now
         for node in nodes:
