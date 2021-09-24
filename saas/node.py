@@ -27,7 +27,7 @@ class Node:
     def __init__(self, keystore, datastore_path):
         # check if path exists
         if not os.path.isdir(datastore_path):
-            raise Exception(f"datastore path '{datastore_path}' does not exist.")
+            os.mkdir(datastore_path)
 
         self._mutex = Lock()
         self._datastore_path = datastore_path
