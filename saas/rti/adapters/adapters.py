@@ -157,7 +157,7 @@ class RTIProcessorAdapter(Thread):
                 target_address = self._node.rest.address()
                 if 'target_node_iid' in item:
                     # check with the node db to see if we know about this node
-                    node_record = self._node.db.get_network_node(item['target_node_iid'])
+                    node_record = self._node.db.get_network(item['target_node_iid'])
 
                     # extract the rest address from that node record
                     target_address = node_record['rest_address']
@@ -246,7 +246,7 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         if len(missing) > 0:
             # search the network for the data objects
             # TODO: unnecessary redundancy? this information may already be known beforehand.
-            network = self._node.db.get_network()
+            network = self._node.db.get_network_all()
             for node in network:
                 # does the node have a DOR?
                 if node['dor_service'] is False:

@@ -97,7 +97,7 @@ class P2PProtocol:
         # send requests to all peers we know of and collect the responses
         responses = {}
         unavailable = []
-        for record in self._node.db.get_network():
+        for record in self._node.db.get_network_all():
             # is this peer iid in the exclusion list?
             if record['iid'] in exclude:
                 continue
@@ -112,7 +112,7 @@ class P2PProtocol:
                 messenger.close()
 
             except PeerUnavailableError:
-                unavailable.append(['record.iid'])
+                unavailable.append(record)
 
         return {
             'responses': responses,

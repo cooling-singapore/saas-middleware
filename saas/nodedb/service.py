@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -9,8 +9,7 @@ from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.keystore.identity import Identity
 from saas.logging import Logging
-from saas.nodedb.exceptions import DataObjectNotFoundError, DataObjectAlreadyExistsError, RecordNotFoundError, \
-    InvalidIdentityError
+from saas.nodedb.exceptions import DataObjectNotFoundError, DataObjectAlreadyExistsError, InvalidIdentityError
 
 logger = Logging.get('nodedb.service')
 
@@ -328,12 +327,12 @@ class NodeDBService:
                                          RSAKeyPair.from_public_key_string(record.e_public_key),
                                          record.nonce, record.signature) for record in records}
 
-    def update_identity(self, serialised_identity: dict, propagate: bool = True) -> None:
-        # deserialise the identity and verify its authenticity
-        identity = Identity.deserialise(serialised_identity)
+    def update_identity(self, identity: Union[Identity, dict]) -> None:
+        # deserialise the identity (if necessary) and verify its authenticity
+        identity = Identity.deserialise(identity) if not isinstance(identity, Identity) else identity
         if not identity.is_authentic():
             raise InvalidIdentityError({
-                'serialised_identity': serialised_identity
+                'identity': identity
             })
 
         # update the db
@@ -361,49 +360,79 @@ class NodeDBService:
             else:
                 logger.debug("Ignore identity update as nonce on record is more recent.")
 
-        # propagate only if flag is set
-        if propagate:
-            self.protocol.broadcast_update('update_identity', {
-                'serialised_identity': identity.serialise(),
-                'propagate': False
-            })
-
-    def update_network_node(self, node_iid: str, last_seen: int, dor_service: bool, rti_service: bool,
-                            p2p_address: (str, int), rest_address: (str, int) = None, propagate: bool = True) -> None:
+    def update_network(self, node_iid: str, last_seen: int, dor_service: bool, rti_service: bool,
+                       p2p_address: (str, int), rest_address: (str, int) = None) -> None:
         with self._Session() as session:
+            # TRACE: usefule for debugging
+            # network = session.query(NetworkNode).all()
+            # for record in network:
+            #     print(f"R: {record.iid} {record.p2p_address} {record.rest_address} {record.last_seen}")
+            # print(f"+: {node_iid} {p2p_address} {rest_address} {last_seen}")
+            # print()
+
+            # do we have conflicting records (i.e., records of a node with a different iid but on the same P2P/REST
+            # address but different)?
+            conflicting_records = session.query(NetworkNode).filter(
+                (NetworkNode.iid != node_iid) & (
+                    (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
+                    ((NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
+                )
+            ).all()
+
+            for record in conflicting_records:
+                if record.last_seen > last_seen:
+                    logger.debug(f"ignoring network node update -> record with conflicting address but more recent "
+                                 f"timestamp found: "
+                                 f"\nrecord.iid={record.iid} <> {node_iid}"
+                                 f"\nrecord.last_seen={record.last_seen} > {last_seen}"
+                                 f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                                 f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
+                    return
+
+            # the pending update is more recent than any of the conflicting records -> delete the outdated conflicts
+            for record in conflicting_records:
+                session.query(NetworkNode).filter_by(iid=record.iid).delete()
+                session.commit()
+
             # do we already have a record for this node? only update if either the record does not exist yet OR if
             # the information provided is more recent.
             record = session.query(NetworkNode).filter_by(iid=node_iid).first()
             if record is None:
                 session.add(NetworkNode(iid=node_iid, last_seen=last_seen,
                                         dor_service=dor_service, rti_service=rti_service,
-                                        p2p_address=p2p_address, rest_address=rest_address))
+                                        p2p_address=f"{p2p_address[0]}:{p2p_address[1]}",
+                                        rest_address=f"{rest_address[0]}:{rest_address[1]}" if rest_address else None))
                 session.commit()
 
             elif last_seen > record.last_seen:
                 record.last_seen = last_seen
                 record.dor_service = dor_service
                 record.rti_service = rti_service
-                record.p2p_address = p2p_address
-                record.rest_address = rest_address
+                record.p2p_address = f"{p2p_address[0]}:{p2p_address[1]}"
+                record.rest_address = f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
                 session.commit()
 
             else:
-                logger.debug(f"ignoring network node update (more recent timestamp={record.last_seen} on record)")
+                logger.debug(f"ignoring network node update -> more recent record found: "
+                             f"\nrecord.iid={record.iid} <> {node_iid}"
+                             f"\nrecord.last_seen={record.last_seen} > {last_seen}"
+                             f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                             f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
+                return
 
-        # propagate only if flag is set
-        if propagate:
-            self.protocol.broadcast_update('update_network_node', {
-                'node_iid': node_iid,
-                'last_seen': last_seen,
-                'dor_service': dor_service,
-                'rti_service': rti_service,
-                'p2p_address': p2p_address,
-                'rest_address': rest_address,
-                'propagate': False
-            })
+    def remove_network(self, node_iid: str) -> None:
+        with self._Session() as session:
+            record = session.query(NetworkNode).get(node_iid)
+            if record is not None:
+                session.query(NetworkNode).filter_by(iid=node_iid).delete()
+                session.commit()
 
-    def get_network_node(self, node_iid: str) -> Optional[dict]:
+    def resolve_network(self, p2p_address: (str, int)) -> Optional[str]:
+        with self._Session() as session:
+            record = session.query(NetworkNode).filter_by(p2p_address=f"{p2p_address[0]}:{p2p_address[1]}").first()
+            return record.iid if record else None
+
+    def get_network(self, node_iid: str) -> Optional[dict]:
         with self._Session() as session:
             record = session.query(NetworkNode).get(node_iid)
             return {
@@ -415,7 +444,7 @@ class NodeDBService:
                 'rti_service': record.rti_service
             } if record else None
 
-    def get_network(self) -> list[dict]:
+    def get_network_all(self) -> list[dict]:
         with self._Session() as session:
             records = session.query(NetworkNode).all()
             return [{
@@ -427,27 +456,18 @@ class NodeDBService:
                 'rti_service': record.rti_service
             } for record in records]
 
-    def remove_network_node(self, node_iid: str) -> None:
-        with self._Session() as session:
-            record = session.query(NetworkNode).get(node_iid)
-            if record is None:
-                raise RecordNotFoundError({
-                    'table': NetworkNode.__name__,
-                    'node_iid': node_iid
-                })
-
-            session.query(NetworkNode).filter_by(iid=node_iid).delete()
-            session.commit()
-
     # END: things that DO require synchronisation/propagation
 
-    def create_sync_snapshot(self) -> dict:
+    def create_sync_snapshot(self, exclude_self: bool = False) -> dict:
         identity_items = []
-        network_node_items = []
+        network_items = []
         with self._Session() as session:
             for item in session.query(IdentityRecord).all():
+                if exclude_self and item.iid == self._node.identity().id:
+                    continue
+
                 identity_items.append({
-                    'serialised_identity': {
+                    'identity': {
                         'iid': item.iid,
                         'name': item.name,
                         'email': item.email,
@@ -455,22 +475,25 @@ class NodeDBService:
                         's_public_key': item.s_public_key,
                         'e_public_key': item.e_public_key,
                         'signature': item.signature
-                    },
-                    'propagate': False
-                  })
+                    }
+                })
 
             for item in session.query(NetworkNode).all():
-                network_node_items.append({
+                if exclude_self and item.iid == self._node.identity().id:
+                    continue
+
+                p2p_address = item.p2p_address.split(':')
+                rest_address = item.rest_address.split(':') if item.rest_address else None
+                network_items.append({
                     'node_iid': item.iid,
                     'last_seen': item.last_seen,
                     'dor_service': item.dor_service,
                     'rti_service': item.rti_service,
-                    'p2p_address': item.p2p_address,
-                    'rest_address': item.rest_address,
-                    'propagate': False
+                    'p2p_address': [p2p_address[0], int(p2p_address[1])],
+                    'rest_address': [rest_address[0], int(rest_address[1])] if rest_address else None
                 })
 
         return {
             'update_identity': identity_items,
-            'update_network_node': network_node_items
+            'update_network': network_items
         }

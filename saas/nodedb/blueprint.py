@@ -38,7 +38,7 @@ class NodeDBBlueprint:
         }), 200
 
     def get_network(self):
-        result = self._node.db.get_network()
+        result = self._node.db.get_network_all()
         return jsonify(result), 200
 
     def get_identities(self):

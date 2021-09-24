@@ -57,7 +57,7 @@ class RuntimeInfrastructureService:
             # does any node in the network have the processor data object?
             # TODO: this is potentially redundant because when using the CLI, the node that has the processor
             #  is already known so no need to search for the right node.
-            for network_node in self._node.db.get_network():
+            for network_node in self._node.db.get_network_all():
                 # does the node have DOR?
                 if network_node['dor_service'] is False:
                     continue
