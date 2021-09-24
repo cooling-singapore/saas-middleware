@@ -86,7 +86,7 @@ class Node:
 
             logger.info("starting REST service.")
             self.rest = RESTService(self, rest_address)
-            self.rest.add(blueprint_dor.blueprint())
+            self.rest.add(blueprint_dor.generate_blueprint())
             self.rest.add(blueprint_rti.blueprint())
             self.rest.add(blueprint_nodedb.generate_blueprint())
             self.rest.start_service()
