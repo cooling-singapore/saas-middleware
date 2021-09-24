@@ -1,6 +1,5 @@
 import functools
 import os
-import logging
 import json
 import tempfile
 import time
@@ -13,29 +12,10 @@ from jsonschema import validate, ValidationError
 from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
+from saas.logging import Logging
+from saas.rest.exceptions import MalformedRequestError, AuthorisationFailedError
 
-logger = logging.getLogger('rest.request_manager')
-
-
-class RequestError(Exception):
-    def __init__(self, code, message):
-        self.code = code
-        self.message = message
-
-
-class AuthenticationFailedError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
-
-
-class AuthorisationFailedError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
-
-
-class MalformedRequestError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
+logger = Logging.get('rest.request_manager')
 
 
 def sign_authorisation_token(authority: Keystore,
@@ -102,22 +82,6 @@ class RequestManager:
 
     def init_app(self, app: Flask, node):
         self.node = node
-        self._set_error_handler_callbacks(app)
-
-    def _set_error_handler_callbacks(self, app: Flask):
-        @app.errorhandler(RequestError)
-        def handle_failed_request(e: RequestError):
-            """
-            Handles any failed request such as authentication errors
-
-            :param e: RequestError object
-            :return: Response
-            """
-            logger.error(e)
-
-            response = flask.jsonify(e.message)
-            response.status_code = e.code
-            return response
 
     def _set_request_variable(self, name: str, value):
         """
@@ -156,8 +120,10 @@ class RequestManager:
                     validate(instance=body, schema=body_specification)
 
                 except ValidationError:
-                    raise MalformedRequestError(400, f"Malformed content:\ncontent={json.dumps(body, indent=3)}\n"
-                                                     f"schema={json.dumps(body_specification, indent=3)}")
+                    raise MalformedRequestError({
+                        'content': body,
+                        'schema': body_specification
+                    })
 
                 self._set_request_variable('body', body)
                 return func(*args, **kwargs)
@@ -180,7 +146,10 @@ class RequestManager:
                 # check if all required files are available
                 for key in required_files:
                     if key not in files:
-                        raise MalformedRequestError(400, f"Missing content: file '{key}' required but not found.")
+                        raise MalformedRequestError({
+                            'expected': key,
+                            'found': [*files.keys()]
+                        })
 
                 self._set_request_variable('files', files)
                 return func(*args, **kwargs)
@@ -199,13 +168,22 @@ class RequestManager:
                 # get the owner identity
                 owner = self.node.db.get_owner(_obj_id)
                 if not owner:
-                    raise AuthorisationFailedError(404, f"Owner for data object '{_obj_id}' not found.")
+                    raise AuthorisationFailedError({
+                        'obj_id': _obj_id,
+                        'owner': None
+                    })
 
                 # verify the the request using the owner public key
                 form = request.form.to_dict()
                 authorisation = json.loads(form['authorisation'])
                 if not verify_authorisation_token(owner, authorisation['signature'], url, body):
-                    raise AuthorisationFailedError(401, "Authorisation failed.")
+                    raise AuthorisationFailedError({
+                        'obj_id': _obj_id,
+                        'owner': owner,
+                        'authorisation': authorisation,
+                        'url': url,
+                        'body': body
+                    })
 
                 return func(*args, **kwargs)
             return wrapper
