@@ -2,29 +2,31 @@ from saas.exceptions import SaaSException
 
 
 class NodeDBException(SaaSException):
-    pass
+    """
+    Base exception class used for errors originating in the NodeDB subsystem.
+    """
 
 
 class DataObjectNotFoundError(NodeDBException):
     def __init__(self, details: dict) -> None:
-        NodeDBException.__init__(self, 'Data object not found', details=details)
+        super().__init__('Data object not found', details=details)
 
 
 class DataObjectAlreadyExistsError(NodeDBException):
     def __init__(self, details: dict) -> None:
-        NodeDBException.__init__(self, 'Data object already exists', details=details)
+        super().__init__('Data object already exists', details=details)
 
 
 class RecordNotFoundError(NodeDBException):
     def __init__(self, details: dict) -> None:
-        NodeDBException.__init__(self, 'NodeDB record not found', details=details)
+        super().__init__('NodeDB record not found', details=details)
 
 
 class InvalidIdentityError(NodeDBException):
     def __init__(self, details: dict) -> None:
-        NodeDBException.__init__(self, 'Identity is not valid', details=details)
+        super().__init__('Identity is not valid', details=details)
 
 
 class UnexpectedIdentityError(NodeDBException):
     def __init__(self, details: dict) -> None:
-        NodeDBException.__init__(self, 'Unexpected identity encountered', details=details)
+        super().__init__('Unexpected identity encountered', details=details)
