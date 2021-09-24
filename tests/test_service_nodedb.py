@@ -302,6 +302,55 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (result_e['dor_service'] is False)
         assert (result_e['rti_service'] is True)
 
+    def test_different_address(self):
+        p2p_address = self.generate_p2p_address()
+
+        # manually create a node on a certain address and make it known to the self.node
+        node0 = Node(self.extras[0], os.path.join(self.wd_path, 'node0'))
+        node0.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
+        node0.join_network(self.node.p2p.address())
+
+        # the self.node should know of 2 nodes now
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity().id in network)
+        assert(node0.identity().id in network)
+
+        # shutdown the first node silently (i.e., not leaving the network) - this emulates what happens
+        # when a node suddenly crashes for example.
+        node0.shutdown(leave_network=False)
+
+        # the self.node should still know 2 nodes
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity().id in network)
+        assert(node0.identity().id in network)
+
+        # manually create a second node, using the same address but a different keystore
+        node1 = Node(self.extras[1], os.path.join(self.wd_path, 'node1'))
+        node1.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
+
+        # at this point node1 should only know about itself
+        network = node1.db.get_network_all()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 1)
+        assert(node1.identity().id in network)
+
+        # perform the join
+        node1.join_network(self.node.p2p.address())
+
+        # the self.node should know still only know of 2 nodes now (the first node should be replaced)
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity().id in network)
+        assert(node1.identity().id in network)
+
+        node0.shutdown()
+        node1.shutdown()
+
 
 if __name__ == '__main__':
     unittest.main()
