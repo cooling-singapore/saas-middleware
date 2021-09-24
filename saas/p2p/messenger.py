@@ -37,7 +37,6 @@ class SecureMessenger:
     def __init__(self, peer_socket: socket, storage_path: str):
         self._peer_socket = peer_socket
         self._storage_path = storage_path
-        self._peer = None
         self._cipher = None
 
     @classmethod
@@ -220,7 +219,7 @@ class SecureMessenger:
             ).derive(shared_key)
 
             # initialise the cipher used to encrypt/decrypt messages
-            self.cipher = Fernet(base64.urlsafe_b64encode(session_key))
+            self._cipher = Fernet(base64.urlsafe_b64encode(session_key))
 
             # exchange identities. note that this is not strictly speaking part of the handshake. it is merely for the
             # benefit of the peers to know who their counterparty is.
@@ -245,7 +244,7 @@ class SecureMessenger:
             # convert the content object into the message and encrypt it
             message = json.dumps(content)
             message = message.encode('utf-8')
-            message = self.cipher.encrypt(message)
+            message = self._cipher.encrypt(message)
 
             # send the message
             length = len(message)
@@ -267,7 +266,7 @@ class SecureMessenger:
             message = self._receive_data(length)
 
             # decrypt and convert the message into the content object
-            message = self.cipher.decrypt(message)
+            message = self._cipher.decrypt(message)
             message = message.decode('utf-8')
             content = json.loads(message)
 
