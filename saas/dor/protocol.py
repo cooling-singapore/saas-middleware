@@ -4,6 +4,7 @@ import subprocess
 from typing import Optional
 
 from saas.keystore.identity import Identity
+from saas.p2p.exceptions import P2PException
 from saas.p2p.protocol import P2PProtocol
 from saas.helpers import write_json_to_file, read_json_from_file
 
@@ -35,7 +36,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             }))
             return response
 
-        except ConnectionRefusedError:
+        except P2PException:
             return {}
 
     def _handle_lookup(self, message: dict, peer: Identity) -> dict:
