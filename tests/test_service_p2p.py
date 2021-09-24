@@ -18,7 +18,7 @@ from tests.base_testcase import TestCaseBase
 
 
 Logging.initialise(level=logging.DEBUG)
-logger = Logging.get('test_service_p2p')
+logger = Logging.get(__name__)
 
 
 class SimpleProtocol(P2PProtocol):

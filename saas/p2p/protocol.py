@@ -17,6 +17,11 @@ class P2PProtocol:
         self._node = node
         self._protocol_name = protocol_name
         self._function_mapping = function_mapping
+        self._seq_id_counter = 0
+
+    def _next_seq_id(self) -> str:
+        self._seq_id_counter += 1
+        return f"{self._seq_id_counter:04d}"
 
     @property
     def node(self):
@@ -62,8 +67,15 @@ class P2PProtocol:
         :param message: the request message
         :return: the response message
         """
+        seq_id = self._next_seq_id()
+
         peer, messenger = SecureMessenger.connect(address, self._node.identity(), self._node.datastore())
+        logger.debug(f"[req:{seq_id}] ({self._node.identity().short_id}) -> ({peer.short_id}) "
+                     f"{message['protocol']} {message['type']} {message['attachment'] is not None}")
+
         response = messenger.send_request(message, message['attachment'])
+        logger.debug(f"[res:{seq_id}] ({self._node.identity().short_id}) <- ({peer.short_id})")
+
         messenger.close()
         return response['content'], response['attachment']
 
