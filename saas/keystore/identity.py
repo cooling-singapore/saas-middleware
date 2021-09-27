@@ -30,7 +30,7 @@ class Identity:
 
     @property
     def short_id(self) -> str:
-        return f"{self._id[:6]}..{self._id[-6:]}"
+        return self._id[:8]
 
     @property
     def name(self) -> str:
