@@ -40,3 +40,8 @@ class AuthorisationFailedError(RESTException):
 class UnexpectedContentType(RESTException):
     def __init__(self, details: dict) -> None:
         super().__init__('Unexpected content type', details=details)
+
+
+class MissingResponseSchemaError(RESTException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Response schema is missing', details=details)

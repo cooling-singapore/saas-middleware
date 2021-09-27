@@ -166,7 +166,7 @@ class RequestManager:
                 body = json.loads(request.values['body']) if 'body' in request.values else None
 
                 # get the owner identity
-                owner = self.node.db.get_owner(_obj_id)
+                owner: Identity = self.node.db.get_owner(_obj_id)
                 if not owner:
                     raise AuthorisationFailedError({
                         'obj_id': _obj_id,
@@ -179,7 +179,7 @@ class RequestManager:
                 if not verify_authorisation_token(owner, authorisation['signature'], url, body):
                     raise AuthorisationFailedError({
                         'obj_id': _obj_id,
-                        'owner': owner,
+                        'owner': owner.serialise(),
                         'authorisation': authorisation,
                         'url': url,
                         'body': body
