@@ -3,8 +3,7 @@ import unittest
 import logging
 
 from saas.logging import Logging
-from saas.rest.blueprint import SaaSBlueprint
-from saas.rest.envelope import create_ok_response
+from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager, verify_authorisation_token, sign_authorisation_token
 from tests.base_testcase import TestCaseBase
@@ -19,7 +18,13 @@ class TestBlueprint(SaaSBlueprint):
     def __init__(self):
         super().__init__('test', __name__, endpoint_prefix)
 
-        self.add_rule('info/<value>', self.get_info, methods=['GET'])
+        self.add_rule('info/<value>', self.get_info, ['GET'], {
+            'type': 'object',
+            'properties': {
+                'message': {'type': 'string'}
+            },
+            'required': ['message']
+        })
 
     @request_manager.verify_request_body({'type': 'object'})
     def get_info(self, value: str):
