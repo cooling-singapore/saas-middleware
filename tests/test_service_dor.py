@@ -60,12 +60,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
-        descriptor1 = self.dor_proxy.get_descriptor(obj_id)
+        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
         # delete the data object
-        descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
+        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
@@ -91,13 +91,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
-        descriptor1 = self.dor_proxy.get_descriptor(obj_id)
+        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
         assert('proc_descriptor' in descriptor1)
 
         # delete the data object
-        descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
+        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
@@ -137,7 +137,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         reply = self.dor_proxy.grant_access(obj_id, self.extras[1], self.extras[2].identity)
         assert reply is not None
-        assert reply[obj_id] == self.extras[2].identity.id
+        assert self.extras[2].identity.id in reply
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
@@ -146,13 +146,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         reply = self.dor_proxy.revoke_access(obj_id, self.extras[1], self.extras[2].identity)
         assert reply is not None
-        assert reply[obj_id] == self.extras[2].identity.id
+        assert self.extras[2].identity.id not in reply
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
 
-        descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        _, descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
         logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
@@ -176,6 +176,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # check the ownership
         owner_info = self.dor_proxy.get_owner(obj_id)
         logger.info(f"owner_info={owner_info}")
+        assert owner_info is not None
         assert owner_info['owner_iid'] == owner0.id
 
         # perform TRANSFER w/ non-owner auth key
@@ -187,27 +188,27 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
             assert True
 
         # perform TRANSFER
-        reply = self.dor_proxy.transfer_ownership(obj_id, owner0_k, owner1)
-        logger.info(f"reply={reply}")
-        assert reply is not None
-        assert obj_id in reply
-        assert reply[obj_id] == owner1.id
+        owner_info = self.dor_proxy.transfer_ownership(obj_id, owner0_k, owner1)
+        logger.info(f"owner_info={owner_info}")
+        assert owner_info is not None
+        assert owner_info['owner_iid'] == owner1.id
 
         # check the ownership
         owner_info = self.dor_proxy.get_owner(obj_id)
         logger.info(f"owner_info={owner_info}")
+        assert owner_info is not None
         assert owner_info['owner_iid'] == owner1.id
 
         # perform DELETE w/ wrong owner
         try:
-            descriptor = self.dor_proxy.delete_data_object(obj_id, owner0_k)
+            self.dor_proxy.delete_data_object(obj_id, owner0_k)
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
         # perform DELETE w/ correct owner
-        descriptor = self.dor_proxy.delete_data_object(obj_id, owner1_k)
+        _, descriptor = self.dor_proxy.delete_data_object(obj_id, owner1_k)
         logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
@@ -230,7 +231,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
-        descriptor1 = self.dor_proxy.get_descriptor(obj_id)
+        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
@@ -248,7 +249,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert result is not None
         assert os.path.isfile(destination)
 
-        descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
@@ -284,7 +285,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         unprotected_content = symmetric_decrypt(content_enc, unprotected_content_key).decode('utf-8')
         assert(unprotected_content == content_plain)
 
-        descriptor = self.dor_proxy.delete_data_object(obj_id, owner_k2)
+        _, descriptor = self.dor_proxy.delete_data_object(obj_id, owner_k2)
         assert descriptor is not None
         logger.info(f"descriptor={descriptor}")
 
@@ -308,7 +309,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id is not None
         assert obj_id == ref_obj_id
 
-        descriptor1 = self.dor_proxy.get_descriptor(obj_id)
+        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
@@ -338,7 +339,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # grant permission
         result = self.dor_proxy.grant_access(obj_id, self.extras[1], receiver_identity)
-        assert result[obj_id] == receiver_identity.id
+        assert receiver_identity.id in result
 
         # create user signature to delegate access rights
         token = f"{receiver_identity.id}:{obj_id}"
@@ -353,7 +354,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert os.path.isfile(descriptor_path)
         assert os.path.isfile(content_path)
 
-        descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
         assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
@@ -380,7 +381,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # get tags for that data object
         tags = self.dor_proxy.get_tags(obj_id)
         logger.info(f"tags={tags}")
-        assert tags == {}
+        assert len(tags) == 0
 
         # update tags for that data object
         tags = self.dor_proxy.update_tags(obj_id, self.extras[1], {
@@ -389,6 +390,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         })
         logger.info(f"tags={tags}")
         assert len(tags) == 2
+        tags = {tag['key']: tag['value'] for tag in tags}
         assert 'a' in tags
         assert 'b' in tags
         assert tags['a'] == '123'
@@ -399,6 +401,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         })
         logger.info(f"tags={tags}")
         assert len(tags) == 2
+        tags = {tag['key']: tag['value'] for tag in tags}
         assert 'a' in tags
         assert 'b' in tags
         assert tags['a'] == '567'
@@ -407,11 +410,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         tags = self.dor_proxy.remove_tags(obj_id, self.extras[1], ['b'])
         logger.info(f"tags={tags}")
         assert len(tags) == 1
+        tags = {tag['key']: tag['value'] for tag in tags}
         assert 'a' in tags
         assert 'b' not in tags
 
         # delete the data object
-        descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        _, descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
         logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
@@ -481,11 +485,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         result = self.dor_proxy.search(["hellox"])
         logger.info(f"result={result}")
         assert len(result) == 1
+        result = {i['obj_id']: i['tags'] for i in result}
         assert obj_id0 in result
 
         result = self.dor_proxy.search(["hello"])
         logger.info(f"result={result}")
         assert len(result) == 3
+        result = {i['obj_id']: i['tags'] for i in result}
         assert obj_id0 in result
         assert obj_id1 in result
         assert obj_id2 in result
@@ -494,11 +500,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         result = self.dor_proxy.search(["hello"], owner_iid=self.extras[2].identity.id)
         logger.info(f"result={result}")
         assert len(result) == 1
+        result = {i['obj_id']: i['tags'] for i in result}
         assert obj_id2 in result
 
         result = self.dor_proxy.search(["o"])
         logger.info(f"result={result}")
         assert len(result) == 3
+        result = {i['obj_id']: i['tags'] for i in result}
         assert obj_id0 in result
         assert obj_id1 in result
         assert obj_id2 in result
@@ -508,17 +516,17 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert len(result) == 2
 
         # delete the data object 0
-        descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
+        _, descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
         logger.info(f"descriptor0={descriptor0}")
         assert descriptor0 is not None
 
         # delete the data object 1
-        descriptor1 = self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
+        _, descriptor1 = self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
         logger.info(f"descriptor1={descriptor1}")
         assert descriptor1 is not None
 
         # delete the data object 2
-        descriptor2 = self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
+        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
 
