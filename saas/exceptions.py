@@ -18,13 +18,3 @@ class SaaSException(Exception):
     @property
     def id(self):
         return self._id
-
-
-# TODO: the following exception classes will have to be moved to their corresponding module eventually
-
-class NodeDBException(SaaSException):
-    pass
-
-
-class InvalidSignatureError(SaaSException):
-    pass

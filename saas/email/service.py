@@ -1,8 +1,11 @@
+import json
 import logging
 import smtplib
 import ssl
 from typing import Optional
 
+from saas.helpers import generate_random_string
+from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 
 logger = logging.getLogger('email.service')
@@ -62,29 +65,45 @@ class EmailService:
             print(f"FROM: {self._keystore.identity.email}\nTO: {receiver}\nSUBJECT: {subject}\nBODY:\n{body}")
             return True
 
-    def send_ownership_transfer_notification_to_prev_owner(self, new_owner, prev_owner, obj_id, address):
+    def send_ownership_transfer_notifications(self, new_owner: Identity, prev_owner: Identity, obj_id: str,
+                                              node_identity: Identity, node_p2p_address: (str, int),
+                                              content_key: str = None) -> None:
+
         subject = f"Transfer of Ownership Notification"
 
         body = f"Dear {prev_owner.name},\n\n" \
                f"This is to inform you that the ownership of a data object you own has been transferred to a " \
                f"new user.\n" \
                f"- Data Object Id: {obj_id}\n" \
-               f"- New Owner: {new_owner.name} <{new_owner.email}>\n" \
-               f"- DOR Address: {address}\n\n"
+               f"- Custodian Node: {node_identity.name}/{node_identity.email}/{node_identity.id}\n" \
+               f"- New Owner: {new_owner.name} <{new_owner.email}>\n\n"
 
-        return self._send_email(prev_owner.email, subject, body)
-
-    def send_ownership_transfer_notification_to_new_owner(self, new_owner, prev_owner, obj_id, address, request=None):
-        subject = f"Transfer of Ownership Notification"
+        self._send_email(prev_owner.email, subject, body)
 
         body = f"Dear {new_owner.name},\n\n" \
                f"This is to inform you that the ownership of a data object has been transferred to you.\n" \
                f"- Data Object Id: {obj_id}\n" \
-               f"- Previous Owner: {prev_owner.name} <{prev_owner.email}>\n" \
-               f"- DOR Address: {address}\n\n"
+               f"- Custodian Node: {node_identity.name}/{node_identity.email}/{node_identity.id}\n" \
+               f"- Previous Owner: {prev_owner.name} <{prev_owner.email}>\n\n" \
 
         # does the new owner have to import the content key?
-        if request is not None:
+        if content_key is not None:
+            # create the request content and encrypt it using the owners key
+            req_id = generate_random_string(16)
+            request = json.dumps({
+                'type': 'import_content_key',
+                'req_id': req_id,
+                'obj_id': obj_id,
+                'content_key': content_key,
+                'prev_owner_iid': prev_owner.id,
+                'prev_owner_name': prev_owner.name,
+                'prev_owner_email': prev_owner.email,
+                'node_id': node_identity.id,
+                'node_address': node_p2p_address
+
+            })
+            request = new_owner.encrypt(request.encode('utf-8')).decode('utf-8')
+
             body += f"The data object is encrypted. Use the SaaS CLI to import the content key for this data object " \
                     f"into your keystore:\n" \
                     f"saas_cli request\n\n"
@@ -92,7 +111,7 @@ class EmailService:
             body += f"Request Content (when asked by the CLI, simply copy and paste the following):\n" \
                     f"{request}\n\n" \
 
-        return self._send_email(new_owner.email, subject, body)
+        self._send_email(new_owner.email, subject, body)
 
     def send_content_key_request(self, owner, obj_id, user, address, request):
         subject = f"Request for Content Key"

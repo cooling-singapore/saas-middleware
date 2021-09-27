@@ -17,6 +17,11 @@ class P2PProtocol:
         self._node = node
         self._protocol_name = protocol_name
         self._function_mapping = function_mapping
+        self._seq_id_counter = 0
+
+    def _next_seq_id(self) -> str:
+        self._seq_id_counter += 1
+        return f"{self._seq_id_counter:04d}"
 
     @property
     def node(self):
@@ -62,8 +67,15 @@ class P2PProtocol:
         :param message: the request message
         :return: the response message
         """
+        seq_id = self._next_seq_id()
+
         peer, messenger = SecureMessenger.connect(address, self._node.identity(), self._node.datastore())
+        logger.debug(f"[req:{seq_id}] ({self._node.identity().short_id}) -> ({peer.short_id}) "
+                     f"{message['protocol']} {message['type']} {message['attachment'] is not None}")
+
         response = messenger.send_request(message, message['attachment'])
+        logger.debug(f"[res:{seq_id}] ({self._node.identity().short_id}) <- ({peer.short_id})")
+
         messenger.close()
         return response['content'], response['attachment']
 
@@ -85,22 +97,22 @@ class P2PProtocol:
         # send requests to all peers we know of and collect the responses
         responses = {}
         unavailable = []
-        for record in self._node.db.get_network():
+        for record in self._node.db.get_network_all():
             # is this peer iid in the exclusion list?
-            if record.iid in exclude:
+            if record['iid'] in exclude:
                 continue
 
             # connect to the peer (if it is online), send a request and keep the response. if a peer is not available,
             # we just skip it (this is a broadcast and we can't expect every peer in the list to be online/reachable).
             try:
-                peer, messenger = SecureMessenger.connect(record.p2p_address.split(":"),
+                peer, messenger = SecureMessenger.connect(record['p2p_address'],
                                                           self._node.identity(),
                                                           self._node.datastore())
                 responses[peer.id] = messenger.send_request(message, message['attachment'])
                 messenger.close()
 
             except PeerUnavailableError:
-                unavailable.append(record.iid)
+                unavailable.append(record)
 
         return {
             'responses': responses,

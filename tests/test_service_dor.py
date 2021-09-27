@@ -401,10 +401,6 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"descriptor={descriptor}")
         assert descriptor is not None
 
-        tags = self.dor_proxy.get_tags(obj_id)
-        logger.info(f"tags={tags}")
-        assert len(tags) == 0
-
     def test_add_tag_search_delete_data_object(self):
         data_type = 'map'
         data_format = 'json'
@@ -495,7 +491,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = self.dor_proxy.search(["whazzup", "124"])
         logger.info(f"result={result}")
-        assert len(result) == 0
+        assert len(result) == 2
 
         # delete the data object 0
         descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
@@ -511,18 +507,6 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         descriptor2 = self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
         logger.info(f"descriptor2={descriptor2}")
         assert descriptor2 is not None
-
-        tags0 = self.dor_proxy.get_tags(obj_id0)
-        logger.info(f"tags0={tags0}")
-        assert len(tags0) == 0
-
-        tags1 = self.dor_proxy.get_tags(obj_id1)
-        logger.info(f"tags1={tags1}")
-        assert len(tags1) == 0
-
-        tags2 = self.dor_proxy.get_tags(obj_id2)
-        logger.info(f"tags2={tags2}")
-        assert len(tags2) == 0
 
 
 if __name__ == '__main__':

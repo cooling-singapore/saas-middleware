@@ -1,6 +1,5 @@
 import os
 import logging
-import time
 from threading import Lock
 from typing import Optional
 
@@ -25,9 +24,8 @@ logger = logging.getLogger('node')
 
 class Node:
     def __init__(self, keystore, datastore_path):
-        # check if path exists
-        if not os.path.isdir(datastore_path):
-            raise Exception(f"datastore path '{datastore_path}' does not exist.")
+        # create datastore (if it doesn't already exist)
+        os.makedirs(datastore_path, exist_ok=True)
 
         self._mutex = Lock()
         self._datastore_path = datastore_path
@@ -92,12 +90,11 @@ class Node:
             self.rest.add(blueprint_nodedb.blueprint())
             self.rest.start_service()
 
-        # update the identity
-        # TODO: is this still needed?
-        self.update_identity(propagate=False)
-
-        # update the network node
-        self.update_network_node(propagate=False)
+        # update our node db
+        self.db.update_identity(self.identity())
+        self.db.update_network(self.identity().id, get_timestamp_now(),
+                               self.dor is not None, self.rti is not None,
+                               self.p2p.address(), self.rest.address() if self.rest else None)
 
         # join an existing network of nodes?
         if boot_node_address:
@@ -105,8 +102,11 @@ class Node:
 
         self.email = EmailService(self._keystore)
 
-    def shutdown(self):
-        self.leave_network()
+    def shutdown(self, leave_network=True):
+        if leave_network:
+            self.leave_network()
+        else:
+            logger.warning(f"node shutting down silently (not leaving the network)")
 
         logger.info("stopping all services.")
         if self.p2p:
@@ -115,15 +115,11 @@ class Node:
         if self.rest:
             self.rest.stop_service()
 
-    def join_network(self, boot_node_address):
-        logger.info(f"joining network via boot node '{boot_node_address}'.")
-        self.db.protocol.send_join(boot_node_address)
-        return True
+    def join_network(self, boot_node_address: (str, int)) -> None:
+        self.db.protocol.perform_join(boot_node_address)
 
-    def leave_network(self):
-        logger.info(f"leaving network.")
+    def leave_network(self) -> None:
         self.db.protocol.broadcast_leave()
-        time.sleep(2)
 
     def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
@@ -131,19 +127,15 @@ class Node:
             identity = self._keystore.update_profile(name=name, email=email)
 
             # user the identity and update the node db
-            self.db.update_identity(identity.serialise(), propagate=propagate)
+            self.db.update_identity(identity)
+
+            # propagate only if flag is set
+            if propagate:
+                self.db.protocol.broadcast_update('update_identity', {
+                    'identity': identity.serialise()
+                })
 
             return identity
-
-    def update_network_node(self, propagate=True):
-        p2p_address = self.p2p.address()
-        rest_address = self.rest.address() if self.rest else None
-
-        self.db.update_network_node(self._keystore.identity.id, get_timestamp_now(),
-                                    self.dor is not None, self.rti is not None,
-                                    f"{p2p_address[0]}:{p2p_address[1]}",
-                                    f"{rest_address[0]}:{rest_address[1]}" if rest_address else None,
-                                    propagate=propagate)
 
     @classmethod
     def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None,
