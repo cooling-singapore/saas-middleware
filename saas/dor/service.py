@@ -177,7 +177,7 @@ class DataObjectRepositoryService:
         self.node.db.grant_access(obj_id, owner)
 
         return {
-            'data_object_id': obj_id,
+            'obj_id': obj_id,
             'descriptor': descriptor
         }
 
@@ -211,4 +211,7 @@ class DataObjectRepositoryService:
             os.remove(content_path)
             logger.info(f"data object content '{record['c_hash']}' for data object '{obj_id}' deleted.")
 
-        return descriptor
+        return {
+            'obj_id': obj_id,
+            'descriptor': descriptor
+        }

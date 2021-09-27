@@ -112,19 +112,19 @@ class RTIProcessorAdapter(Thread):
 
             # perform pre-execute routine
             job_id = str(job_descriptor['id'])
-            task_or_wf_descriptor = job_descriptor['descriptor']
+            task_descriptor = job_descriptor['task']
             wd_path = self._node.rti.get_job_wd(job_id)
-            if not self.pre_execute(task_or_wf_descriptor, wd_path, status):
+            if not self.pre_execute(task_descriptor, wd_path, status):
                 status.update_state(State.FAILED)
                 continue
 
             # instruct processor adapter to execute the job
-            if not self.execute(task_or_wf_descriptor, wd_path, status):
+            if not self.execute(task_descriptor, wd_path, status):
                 status.update_state(State.FAILED)
                 continue
 
             # perform post-execute routine
-            if not self.post_execute(task_or_wf_descriptor, wd_path, job_id, status):
+            if not self.post_execute(task_descriptor, wd_path, job_id, status):
                 status.update_state(State.FAILED)
                 continue
 

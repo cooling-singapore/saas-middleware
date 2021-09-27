@@ -109,3 +109,26 @@ git_proc_pointer_schema = {
     },
     'required': ['source', 'commit_id', 'proc_path', 'proc_config']
 }
+
+network_node_schema = {
+    'type': 'object',
+    'properties': {
+        'iid': {'type': 'string'},
+        'last_seen': {'type': 'number'},
+        'p2p_address': {'type': 'string'},
+        'rest_address': {'type': 'string'},
+        'dor_service': {'type': 'boolean'},
+        'rti_service': {'type': 'boolean'}
+    },
+    'required': ['iid', 'last_seen', 'p2p_address', 'dor_service', 'rti_service']
+}
+
+job_descriptor_schema = {
+    'type': 'object',
+    'properties': {
+        'id': {'type': 'string'},
+        'proc_id': {'type': 'string'},
+        'task': task_descriptor_schema
+    },
+    'required': ['id', 'proc_id', 'task']
+}
