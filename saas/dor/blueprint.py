@@ -8,8 +8,7 @@ from saas.dor.exceptions import DataObjectDescriptorNotFoundError, DataObjectNot
 from saas.exceptions import DORServiceNotSupportedError
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
-from saas.rest.blueprint import SaaSBlueprint
-from saas.rest.envelope import create_ok_response, create_ok_attachment
+from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
 from saas.schemas import data_object_descriptor_schema, git_proc_pointer_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
@@ -79,26 +78,73 @@ delete_tags_body_specification = {
     }
 }
 
+tags_response_schema = {
+    'type': 'array',
+    'items': {
+        'type': 'object',
+        'properties': {
+            'key': {'type': 'string'},
+            'value': {'type': 'string'}
+        },
+        'required': ['key', 'value']
+    }
+}
+
+owner_response_schema = {
+    'type': 'object',
+    'properties': {
+        'obj_id': {'type': 'string'},
+        'owner_iid': {'type': 'string'}
+    },
+    'required': ['obj_id', 'owner_iid']
+}
+
+access_response_schema = {
+    'type': 'array',
+    'items': {'type': 'string'}
+}
+
+obj_response_schema = {
+    'type': 'object',
+    'properties': {
+        'obj_id': {'type': 'string'},
+        'descriptor': data_object_descriptor_schema
+    },
+    'required': ['obj_id', 'descriptor']
+}
+
+search_response_schema = {
+    'type': 'array',
+    'items': {
+        'type': 'object',
+        'properties': {
+            'obj_id': {'type': 'string'},
+            'tags': tags_response_schema
+        },
+        'required': ['obj_id', 'tags']
+    }
+}
+
 
 class DORBlueprint(SaaSBlueprint):
     def __init__(self, node):
         super().__init__('repository', __name__, endpoint_prefix)
         self._node = node
 
-        self.add_rule('', self.search, methods=['GET'])
-        self.add_rule('add', self.add, methods=['POST'])
-        self.add_rule('add-gpp', self.add_gpp, methods=['POST'])
-        self.add_rule('<obj_id>', self.delete, methods=['DELETE'])
-        self.add_rule('<obj_id>/descriptor', self.get_descriptor, methods=['GET'])
-        self.add_rule('<obj_id>/content', self.get_content, methods=['GET'])
-        self.add_rule('<obj_id>/access', self.get_access_overview, methods=['GET'])
-        self.add_rule('<obj_id>/access/<iid>', self.grant_access, methods=['POST'])
-        self.add_rule('<obj_id>/access/<iid>', self.revoke_access, methods=['DELETE'])
-        self.add_rule('<obj_id>/owner', self.get_owner, methods=['GET'])
-        self.add_rule('<obj_id>/owner', self.transfer_ownership, methods=['PUT'])
-        self.add_rule('<obj_id>/tags', self.get_tags, methods=['GET'])
-        self.add_rule('<obj_id>/tags', self.update_tags, methods=['PUT'])
-        self.add_rule('<obj_id>/tags', self.remove_tags, methods=['DELETE'])
+        self.add_rule('', self.search, ['GET'], response_schema=search_response_schema)
+        self.add_rule('add', self.add, ['POST'], response_schema=obj_response_schema)
+        self.add_rule('add-gpp', self.add_gpp, ['POST'], response_schema=obj_response_schema)
+        self.add_rule('<obj_id>', self.delete, ['DELETE'], response_schema=obj_response_schema)
+        self.add_rule('<obj_id>/descriptor', self.get_descriptor, ['GET'], response_schema=obj_response_schema)
+        self.add_rule('<obj_id>/content', self.get_content, ['GET'])
+        self.add_rule('<obj_id>/access', self.get_access_overview, ['GET'], response_schema=access_response_schema)
+        self.add_rule('<obj_id>/access/<iid>', self.grant_access, ['POST'], response_schema=access_response_schema)
+        self.add_rule('<obj_id>/access/<iid>', self.revoke_access, ['DELETE'], response_schema=access_response_schema)
+        self.add_rule('<obj_id>/owner', self.get_owner, ['GET'], response_schema=owner_response_schema)
+        self.add_rule('<obj_id>/owner', self.transfer_ownership, ['PUT'], response_schema=owner_response_schema)
+        self.add_rule('<obj_id>/tags', self.get_tags, ['GET'], response_schema=tags_response_schema)
+        self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'], response_schema=tags_response_schema)
+        self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'], response_schema=tags_response_schema)
 
     @request_manager.verify_request_body(search_body_specification)
     def search(self) -> (Response, int):
@@ -165,7 +211,10 @@ class DORBlueprint(SaaSBlueprint):
         if not os.path.isfile(descriptor_path):
             raise DataObjectDescriptorNotFoundError(descriptor_path)
 
-        return create_ok_response(read_json_from_file(descriptor_path))
+        return create_ok_response({
+            'obj_id': obj_id,
+            'descriptor': read_json_from_file(descriptor_path)
+        })
 
     @request_manager.verify_authorisation_by_owner('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
@@ -213,9 +262,7 @@ class DORBlueprint(SaaSBlueprint):
             raise IdentityNotFoundError(iid)
 
         self._node.db.grant_access(obj_id, identity)
-        return create_ok_response({
-            obj_id: iid
-        })
+        return create_ok_response(self._node.db.get_access_list(obj_id))
 
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -234,9 +281,7 @@ class DORBlueprint(SaaSBlueprint):
             raise IdentityNotFoundError(iid)
 
         self._node.db.revoke_access(obj_id, identity)
-        return create_ok_response({
-            obj_id: iid
-        })
+        return create_ok_response(self._node.db.get_access_list(obj_id))
 
     def get_owner(self, obj_id: str) -> (Response, int):
         # does this node have a DOR?
@@ -279,7 +324,10 @@ class DORBlueprint(SaaSBlueprint):
 
         # retrieve the owner of the data object
         owner = self._node.db.get_owner(obj_id)
-        return create_ok_response({obj_id: owner.id})
+        return create_ok_response({
+            'obj_id': obj_id,
+            'owner_iid': owner.id
+        })
 
     def get_tags(self, obj_id: str) -> (Response, int):
         # does this node have a DOR?
@@ -357,7 +405,7 @@ class DORProxy(EndpointProxy):
             body['descriptor']['recipe'] = recipe
 
         r = self.post('/add', body=body, attachment_path=content_path)
-        return r['data_object_id'], r['descriptor']
+        return r['obj_id'], r['descriptor']
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
                             created_by: str, created_t: int = None, recipe: dict = None) -> (str, dict):
@@ -382,13 +430,15 @@ class DORProxy(EndpointProxy):
 
         # execute post request and remove temp file afterwards
         r = self.post('/add-gpp', body=body)
-        return r['data_object_id'], r['descriptor']
+        return r['obj_id'], r['descriptor']
 
-    def delete_data_object(self, obj_id: str, with_authorisation_by: Keystore) -> dict:
-        return self.delete(f"/{obj_id}", with_authorisation_by=with_authorisation_by)
+    def delete_data_object(self, obj_id: str, with_authorisation_by: Keystore) -> (str, dict):
+        r = self.delete(f"/{obj_id}", with_authorisation_by=with_authorisation_by)
+        return r['obj_id'], r['descriptor']
 
-    def get_descriptor(self, obj_id: str) -> dict:
-        return self.get(f"/{obj_id}/descriptor")
+    def get_descriptor(self, obj_id: str) -> (str, dict):
+        r = self.get(f"/{obj_id}/descriptor")
+        return r['obj_id'], r['descriptor']
 
     def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str):
         return self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
