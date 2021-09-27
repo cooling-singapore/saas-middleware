@@ -24,9 +24,8 @@ logger = logging.getLogger('node')
 
 class Node:
     def __init__(self, keystore, datastore_path):
-        # check if path exists
-        if not os.path.isdir(datastore_path):
-            os.mkdir(datastore_path)
+        # create datastore (if it doesn't already exist)
+        os.makedirs(datastore_path, exist_ok=True)
 
         self._mutex = Lock()
         self._datastore_path = datastore_path
