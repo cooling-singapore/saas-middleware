@@ -5,11 +5,11 @@ from requests import Response
 
 from saas.keystore.identity import Identity
 from saas.keystore.schemas import identity_schema
-from saas.rest.blueprint import SaaSBlueprint
-from saas.rest.envelope import create_ok_response
+from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 
 from saas.rest.request_manager import request_manager
+from saas.schemas import network_node_schema
 
 logger = logging.getLogger('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
@@ -20,25 +20,49 @@ class NodeDBBlueprint(SaaSBlueprint):
         super().__init__('nodedb', __name__, endpoint_prefix)
         self._node = node
 
-        self.add_rule('node', self.get_node, methods=['GET'])
-        self.add_rule('network', self.get_network, methods=['GET'])
-        self.add_rule('identity', self.get_identities, methods=['GET'])
+        self.add_rule('node', self.get_node, methods=['GET'], response_schema={
+            'type': 'object',
+            'properties': {
+                'iid': {'type': 'string'},
+                'identity': identity_schema,
+                'dor_service': {'type': 'boolean'},
+                'rti_service': {'type': 'boolean'},
+                'rest_service_address': {'type': 'string'},
+                'p2p_service_address': {'type': 'string'}
+            },
+            'required': ['iid', 'identity', 'dor_service', 'rti_service', 'rest_service_address', 'p2p_service_address']
+        })
+
+        self.add_rule('network', self.get_network, methods=['GET'], response_schema={
+            'type': 'array',
+            'items': network_node_schema
+        })
+
+        self.add_rule('identity', self.get_identities, methods=['GET'], response_schema={
+            'type': 'array',
+            'items': identity_schema
+        })
+
+        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'], response_schema=identity_schema)
+
         self.add_rule('identity', self.update_identity, methods=['POST'])
-        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
 
     def get_node(self) -> (Response, int):
+        p2p_address = self._node.p2p.address()
+        rest_address = self._node.rest.address()
+
         return create_ok_response({
             "iid": self._node.identity().id,
             "identity": self._node.identity().serialise(),
             "dor_service": self._node.dor is not None,
             "rti_service": self._node.rti is not None,
-            "rest_service_address": self._node.rest.address(),
-            "p2p_service_address": self._node.p2p.address()
+            "rest_service_address": f"{p2p_address[0]}:{p2p_address[1]}",
+            "p2p_service_address": f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
         })
 
     def get_network(self) -> (Response, int):
         return create_ok_response(
-            self._node.db.get_network_all()
+            self._node.db.get_network_all(valid_json=True)
         )
 
     def get_identities(self) -> (Response, int):
