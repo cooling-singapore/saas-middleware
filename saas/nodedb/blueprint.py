@@ -3,6 +3,7 @@ from typing import Optional
 
 from saas.keystore.identity import Identity
 from saas.keystore.schemas import identity_schema
+from saas.nodedb.exceptions import InvalidIdentityError
 from saas.rest.proxy import EndpointProxy
 
 from flask import Blueprint, jsonify
@@ -37,28 +38,15 @@ class NodeDBBlueprint:
         }), 200
 
     def get_network(self):
-        result = []
-        for record in self._node.db.get_network():
-            result.append({
-                'iid': record.iid,
-                'last_seen': record.last_seen,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service,
-                'p2p_address': record.p2p_address,
-                'rest_address': record.rest_address
-            })
-
+        result = self._node.db.get_network_all()
         return jsonify(result), 200
 
     def get_identities(self):
-        result = []
-        for iid, identity in self._node.db.get_all_identities().items():
-            result.append(identity.serialise())
-
+        result = [identity.serialise() for identity in self._node.db.get_all_identities().values()]
         return jsonify(result), 200
 
     def get_identity(self, iid: str):
-        identity = self._node.db.get_identity(iid=iid)
+        identity = self._node.db.get_identity(iid)
         if identity is not None:
             return jsonify(identity.serialise()), 200
 
@@ -67,13 +55,16 @@ class NodeDBBlueprint:
 
     @request_manager.verify_request_body(identity_schema)
     def update_identity(self):
-        identity_as_json = request_manager.get_request_variable('body')
+        serialised_identity = request_manager.get_request_variable('body')
 
-        if self._node.db.update_identity(identity_as_json):
-            return jsonify(identity_as_json), 200
+        try:
+            self._node.db.update_identity(serialised_identity)
+            return jsonify({}), 200
 
-        else:
-            return jsonify(f"Identity not updated (either outdated record invalid signature)."), 405
+        except InvalidIdentityError:
+            return jsonify({
+                'reason': 'Invalid identity signature.'
+            }), 400
 
 
 class NodeDBProxy(EndpointProxy):

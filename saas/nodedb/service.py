@@ -1,5 +1,4 @@
-import json
-import logging
+from typing import Optional, Union
 
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -8,10 +7,11 @@ from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.helpers import generate_random_string
 from saas.keystore.identity import Identity
+from saas.logging import Logging
+from saas.nodedb.exceptions import DataObjectNotFoundError, DataObjectAlreadyExistsError, InvalidIdentityError
 
-logger = logging.getLogger('nodedb.service')
+logger = Logging.get('nodedb.service')
 
 Base = declarative_base()
 
@@ -62,29 +62,6 @@ class NetworkNode(Base):
     rti_service = Column(Boolean, nullable=False)
 
 
-def tags_match_patterns(tag_records, patterns):
-    # ALL
-    for pattern in patterns:
-        found = False
-        for tag_record in tag_records:
-            if pattern in tag_record.key or pattern in tag_record.value:
-                found = True
-                break
-
-        if not found:
-            return False
-
-    return True
-
-    # ANY
-    # for tag_record in tag_records:
-    #     for pattern in patterns:
-    #         if pattern in tag_record.key or pattern in tag_record.value:
-    #             return True
-    #
-    # return False
-
-
 class NodeDBService:
     def __init__(self, node, db_path, protocol):
         self._node = node
@@ -95,8 +72,16 @@ class NodeDBService:
 
     # BEGIN: things that do NOT require synchronisation/propagation: DORObject, DORTag, DORPermission
 
-    def update_tags(self, obj_id, tags):
+    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # update the tags
             for tag in tags:
                 item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
                 if item:
@@ -105,232 +90,250 @@ class NodeDBService:
                     session.add(DORTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
             session.commit()
 
-    def remove_tags(self, obj_id, keys=None):
+    def remove_tags(self, obj_id: str, keys: list[str] = None) -> None:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # remove specific tags
             if keys:
                 for key in keys:
                     session.query(DORTag).filter_by(obj_id=obj_id, key=key).delete()
+
+            # remove all tags
             else:
                 session.query(DORTag).filter_by(obj_id=obj_id).delete()
 
             session.commit()
 
-    def get_tags(self, obj_id):
+    def get_tags(self, obj_id: str) -> dict[str, str]:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # get all tags
             tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
+            return {tag.key: tag.value for tag in tags}
 
-            result = {}
-            for tag in tags:
-                result[tag.key] = tag.value
-            return result
-
-    def find_data_objects(self, patterns, owner_iid=None):
+    def find_data_objects(self, patterns: list[str], owner_iid: str = None) -> dict[str, list]:
         with self._Session() as session:
-            # first, get all the potential object records
+            # first, get records of all potential data objects
             if owner_iid is not None:
                 object_records = session.query(DORObject).filter_by(owner_iid=owner_iid).all()
             else:
                 object_records = session.query(DORObject).all()
 
-            # second, find all data objects and filter by patterns (if any)
+            # second, filter data objects by patterns (if any)
             result = {}
             for obj_record in object_records:
-                # get the tags for this object
+                # prepare a tags array for the result dict
                 tag_records = session.query(DORTag).filter_by(obj_id=obj_record.obj_id).all()
+                tags = [{'key': tag.key, 'value': tag.value} for tag in tag_records]
 
-                # any patterns to match?
-                if patterns is None or tags_match_patterns(tag_records, patterns):
-                    tags = []
-                    for tag in tag_records:
-                        tags.append(f"{tag.key}={tag.value}")
+                # check if any of the patterns can be found in the tags. for this purpose, flatten all tags (keys
+                # values) into a single string and check if any of the patterns is a substring the flattened string.
+                # if we don't have patterns then always add the object.
+                flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
+                if patterns is None or any(pattern in flattened for pattern in patterns):
                     result[obj_record.obj_id] = tags
 
             return result
 
-    def get_access_list(self, obj_id):
+    def get_access_list(self, obj_id: str) -> list[str]:
         with self._Session() as session:
-            result = []
-            records = session.query(DORPermission).filter_by(obj_id=obj_id).all()
-            for record in records:
-                result.append(record.key_iid)
-            return result
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
 
-    def has_access(self, obj_id, identity):
+            # get list of ids of identities that have access
+            records = session.query(DORPermission).filter_by(obj_id=obj_id).all()
+            return [record.key_iid for record in records]
+
+    def has_access(self, obj_id: str, identity: Identity) -> bool:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
             return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
 
-    def grant_access(self, obj_id, identity):
+    def grant_access(self, obj_id: str, identity: Identity) -> None:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # grant access (if it hasn't already been granted)
             item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first()
             if item is None:
                 session.add(DORPermission(obj_id=obj_id, key_iid=identity.id))
+                session.commit()
+
+    def revoke_access(self, obj_id: str, identity: Identity = None) -> list[str]:
+        with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # query for all or a specific identity
+            q = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id) if identity else \
+                session.query(DORPermission).filter_by(obj_id=obj_id)
+
+            # determine the ids of identities that have their access revoked
+            result = [record.key_iid for record in q.all()]
+
+            # revoke access
+            q.delete()
             session.commit()
-            return identity.id
 
-    def revoke_access(self, obj_id, identity=None):
-        with self._Session() as session:
-            if not identity:
-                session.query(DORPermission).filter_by(obj_id=obj_id).delete()
-                session.commit()
-                return '*'
-            else:
-                session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).delete()
-                session.commit()
-                return identity.id
+            return result
 
-    def add_data_object(self, obj_id, d_hash, c_hash, owner_iid,
-                        access_restricted, content_encrypted,
-                        data_type, data_format):
+    def add_data_object(self, obj_id: str, d_hash: str, c_hash: str, owner_iid: str,
+                        access_restricted: bool, content_encrypted: bool,
+                        data_type: str, data_format: str) -> None:
         with self._Session() as session:
-            item = session.query(DORObject).get(obj_id)
-            if not item:
-                # add a new data object record
-                session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
-                                      access_restricted=access_restricted, content_encrypted=content_encrypted,
-                                      data_type=data_type, data_format=data_format))
-                session.commit()
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is not None:
+                raise DataObjectAlreadyExistsError({
+                    'obj_id': obj_id
+                })
 
-    def remove_data_object(self, obj_id):
+            # add a new data object record
+            session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
+                                  access_restricted=access_restricted, content_encrypted=content_encrypted,
+                                  data_type=data_type, data_format=data_format))
+            session.commit()
+
+    def remove_data_object(self, obj_id: str) -> None:
         with self._Session() as session:
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
+
+            # delete the data object
             session.query(DORObject).filter_by(obj_id=obj_id).delete()
             session.commit()
-  
-    def get_object_by_id(self, obj_id):
-        with self._Session() as session:
-            return session.query(DORObject).filter_by(obj_id=obj_id).first()
 
-    def get_objects_by_content_hash(self, c_hash):
+    def get_object_by_id(self, obj_id: str) -> Optional[dict]:
         with self._Session() as session:
-            return session.query(DORObject).filter_by(c_hash=c_hash).all()
+            record = session.query(DORObject).get(obj_id)
+            return {
+                'obj_id': record.obj_id,
+                'd_hash': record.d_hash,
+                'c_hash': record.c_hash,
+                'owner_iid': record.owner_iid,
+                'access_restricted': record.access_restricted,
+                'content_encrypted': record.content_encrypted,
+                'data_type': record.data_type,
+                'data_format': record.data_format
+            } if record else None
 
-    def get_content_key(self, obj_id):
+    def get_objects_by_content_hash(self, c_hash: str) -> list[dict]:
         with self._Session() as session:
-            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            return record.content_key if record else None
+            records = session.query(DORObject).filter_by(c_hash=c_hash).all()
+            return [{
+                'obj_id': record.obj_id,
+                'd_hash': record.d_hash,
+                'c_hash': record.c_hash,
+                'owner_iid': record.owner_iid,
+                'access_restricted': record.access_restricted,
+                'content_encrypted': record.content_encrypted,
+                'data_type': record.data_type,
+                'data_format': record.data_format
+            } for record in records]
 
-    def delete_content_key(self, obj_id):
+    def get_owner(self, obj_id: str) -> Identity:
         with self._Session() as session:
-            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if record.content_key is not None:
-                content_key = record.content_key
-                record.content_key = None
-                session.commit()
-                return content_key
-            else:
-                return None
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
 
-    def get_owner(self, obj_id):
+            return self.get_identity(obj_record.owner_iid)
+
+    def update_ownership(self, obj_id: str, new_owner: Identity, content_key: str = None) -> None:
         with self._Session() as session:
-            item = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if item:
-                return self.get_identity(iid=item.owner_iid)
-            else:
-                return None
+            # does the data object exist?
+            obj_record = session.query(DORObject).get(obj_id)
+            if obj_record is None:
+                raise DataObjectNotFoundError({
+                    'obj_id': obj_id
+                })
 
-    def update_ownership(self, obj_id, new_owner, content_key):
-        # get the current owner (i.e., previous owner to be) and check if it is the same as the new owner
-        prev_owner = self.get_owner(obj_id)
-        if prev_owner.id == new_owner.id:
-            logger.warning(f"Ignoring ownership transfer between same identity: "
-                           f"current={prev_owner.id} new={new_owner.id}")
-            return True
+            # transfer of ownership between same identities?
+            prev_owner = self.get_identity(obj_record.owner_iid)
+            if prev_owner.id == new_owner.id:
+                return
 
-        with self._Session() as session:
-            # get the record for the data object
-            record = session.query(DORObject).filter_by(obj_id=obj_id).first()
-            if record is None:
-                return False
+            # send notification emails
+            self._node.email.send_ownership_transfer_notifications(new_owner, prev_owner, obj_id,
+                                                                   self._node.identity(),
+                                                                   self._node.p2p.address(),
+                                                                   content_key)
 
             # update ownership
-            record.owner_iid = new_owner.id
-
-            # do we need to send a request?
-            if content_key is not None:
-                # create the request content and encrypt it using the owners key
-                req_id = generate_random_string(16)
-                request = json.dumps({
-                    'type': 'import_content_key',
-                    'req_id': req_id,
-                    'obj_id': obj_id,
-                    'content_key': content_key,
-                    'prev_owner_iid': prev_owner.id,
-                    'prev_owner_name': prev_owner.name,
-                    'prev_owner_email': prev_owner.email,
-                    'node_id': self._node.identity().id,
-                    'node_address': self._node.rest.address()
-
-                })
-                request = new_owner.encrypt(request.encode('utf-8')).decode('utf-8')
-
-            else:
-                request = None
-
-            # send an email to the owner
-            if not self._node.email.send_ownership_transfer_notification_to_new_owner(new_owner, prev_owner, obj_id,
-                                                                                      self._node.rest.address(),
-                                                                                      request):
-                error = f"sending content key request failed."
-                logger.error(error)
-
-                # if it failed, we need to change the ownership record back
-                record.owner_iid = prev_owner.id
-
-                session.commit()
-                return False
-
-            # send email to the previous owner
-            self._node.email.send_ownership_transfer_notification_to_prev_owner(new_owner, prev_owner, obj_id,
-                                                                                self._node.rest.address())
-
-            # revoke all access to this data object
-            self.revoke_access(obj_id)
-
-            # grant access to the new owner
-            self.grant_access(obj_id, new_owner)
-
+            obj_record.owner_iid = new_owner.id
             session.commit()
-            return True
+
+        # revoke all access to this data object
+        self.revoke_access(obj_id)
+
+        # grant access to the new owner
+        self.grant_access(obj_id, new_owner)
 
     # END: things that do NOT require synchronisation/propagation
 
     # BEGIN: things that DO require synchronisation/propagation: Identity, NetworkNode
 
-    def get_identity(self, iid=None, public_key=None):
+    def get_identity(self, iid: str = None) -> Optional[Identity]:
         with self._Session() as session:
-            if iid is not None:
-                record = session.query(IdentityRecord).filter_by(iid=iid).first()
-            elif public_key is not None:
-                record = session.query(IdentityRecord).filter_by(public_key=public_key).first()
-            else:
-                record = None
+            record = session.query(IdentityRecord).filter_by(iid=iid).first()
+            return Identity(record.iid, record.name, record.email,
+                            ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
+                            RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None,
+                            record.nonce, record.signature) if record else None
 
-            if record is not None:
-                return Identity(record.iid, record.name, record.email,
-                                ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
-                                RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None,
-                                record.nonce, record.signature)
-
-            else:
-                return None
-
-    def get_all_identities(self):
-        result = {}
+    def get_all_identities(self) -> dict[str, Identity]:
         with self._Session() as session:
-            for record in session.query(IdentityRecord).all():
-                result[record.iid] = Identity(record.iid, record.name, record.email,
-                                              ECKeyPair.from_public_key_string(record.s_public_key),
-                                              RSAKeyPair.from_public_key_string(record.e_public_key),
-                                              record.nonce, record.signature)
+            records = session.query(IdentityRecord).all()
+            return {record.iid: Identity(record.iid, record.name, record.email,
+                                         ECKeyPair.from_public_key_string(record.s_public_key),
+                                         RSAKeyPair.from_public_key_string(record.e_public_key),
+                                         record.nonce, record.signature) for record in records}
 
-        return result
-
-    def update_identity(self, serialised_identity, propagate=True):
-        identity = Identity.deserialise(serialised_identity)
-
-        # verify the signature
+    def update_identity(self, identity: Union[Identity, dict]) -> None:
+        # deserialise the identity (if necessary) and verify its authenticity
+        identity = Identity.deserialise(identity) if not isinstance(identity, Identity) else identity
         if not identity.is_authentic():
-            logger.warning(f"ignoring identity update (invalid signature): identity={identity.serialise()}")
-            return False
+            raise InvalidIdentityError({
+                'identity': identity
+            })
 
         # update the db
         with self._Session() as session:
@@ -345,87 +348,126 @@ class NodeDBService:
                                            nonce=identity.nonce, signature=identity.signature))
                 session.commit()
 
+            elif identity.nonce > record.nonce:
+                record.name = identity.name
+                record.email = identity.email
+                record.nonce = identity.nonce
+                record.s_key = identity.s_public_key_as_string()
+                record.e_key = identity.e_public_key_as_string()
+                record.signature = identity.signature
+                session.commit()
+
             else:
-                if identity.nonce > record.nonce:
-                    record.name = identity.name
-                    record.email = identity.email
-                    record.nonce = identity.nonce
-                    record.s_key = identity.s_public_key_as_string()
-                    record.e_key = identity.e_public_key_as_string()
-                    record.signature = identity.signature
-                    session.commit()
+                logger.debug("Ignore identity update as nonce on record is more recent.")
 
-                else:
-                    logger.debug(f"ignoring identity update (more recent nonce={record.nonce} on record): "
-                                 f"identity={identity.serialise()}")
-                    return False
-
-        # propagate only if flag is set
-        if propagate:
-            self.protocol.broadcast_update('update_identity', {
-                'serialised_identity': identity.serialise(),
-                'propagate': False
-            })
-
-        return True
-
-    def update_network_node(self, node_iid, last_seen, dor_service: bool, rti_service: bool,
-                            p2p_address, rest_address=None, propagate=True):
+    def update_network(self, node_iid: str, last_seen: int, dor_service: bool, rti_service: bool,
+                       p2p_address: (str, int), rest_address: (str, int) = None) -> None:
         with self._Session() as session:
+            # TRACE: usefule for debugging
+            # network = session.query(NetworkNode).all()
+            # for record in network:
+            #     print(f"R: {record.iid} {record.p2p_address} {record.rest_address} {record.last_seen}")
+            # print(f"+: {node_iid} {p2p_address} {rest_address} {last_seen}")
+            # print()
+
+            # do we have conflicting records (i.e., records of a node with a different iid but on the same P2P/REST
+            # address but different)?
+            conflicting_records = session.query(NetworkNode).filter(
+                (NetworkNode.iid != node_iid) & (
+                    (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
+                    ((NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
+                )
+            ).all()
+
+            for record in conflicting_records:
+                if record.last_seen > last_seen:
+                    logger.debug(f"ignoring network node update -> record with conflicting address but more recent "
+                                 f"timestamp found: "
+                                 f"\nrecord.iid={record.iid} <> {node_iid}"
+                                 f"\nrecord.last_seen={record.last_seen} > {last_seen}"
+                                 f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                                 f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
+                    return
+
+            # the pending update is more recent than any of the conflicting records -> delete the outdated conflicts
+            for record in conflicting_records:
+                session.query(NetworkNode).filter_by(iid=record.iid).delete()
+                session.commit()
+
             # do we already have a record for this node? only update if either the record does not exist yet OR if
             # the information provided is more recent.
             record = session.query(NetworkNode).filter_by(iid=node_iid).first()
             if record is None:
                 session.add(NetworkNode(iid=node_iid, last_seen=last_seen,
                                         dor_service=dor_service, rti_service=rti_service,
-                                        p2p_address=p2p_address, rest_address=rest_address))
+                                        p2p_address=f"{p2p_address[0]}:{p2p_address[1]}",
+                                        rest_address=f"{rest_address[0]}:{rest_address[1]}" if rest_address else None))
                 session.commit()
 
             elif last_seen > record.last_seen:
                 record.last_seen = last_seen
                 record.dor_service = dor_service
                 record.rti_service = rti_service
-                record.p2p_address = p2p_address
-                record.rest_address = rest_address
+                record.p2p_address = f"{p2p_address[0]}:{p2p_address[1]}"
+                record.rest_address = f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
                 session.commit()
 
             else:
-                logger.debug(f"ignoring network node update (more recent timestamp={record.last_seen} on record)")
+                logger.debug(f"ignoring network node update -> more recent record found: "
+                             f"\nrecord.iid={record.iid} <> {node_iid}"
+                             f"\nrecord.last_seen={record.last_seen} > {last_seen}"
+                             f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                             f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
+                return
 
-        # propagate only if flag is set
-        if propagate:
-            self.protocol.broadcast_update('update_network_node', {
-                'node_iid': node_iid,
-                'last_seen': last_seen,
-                'dor_service': dor_service,
-                'rti_service': rti_service,
-                'p2p_address': p2p_address,
-                'rest_address': rest_address,
-                'propagate': False
-            })
-
-    def get_network_node(self, node_iid):
+    def remove_network(self, node_iid: str) -> None:
         with self._Session() as session:
-            return session.query(NetworkNode).filter_by(iid=node_iid).first()
+            record = session.query(NetworkNode).get(node_iid)
+            if record is not None:
+                session.query(NetworkNode).filter_by(iid=node_iid).delete()
+                session.commit()
 
-    def get_network(self):
+    def resolve_network(self, p2p_address: (str, int)) -> Optional[str]:
         with self._Session() as session:
-            return session.query(NetworkNode).all()
+            record = session.query(NetworkNode).filter_by(p2p_address=f"{p2p_address[0]}:{p2p_address[1]}").first()
+            return record.iid if record else None
 
-    def remove_network_node(self, node_iid):
+    def get_network(self, node_iid: str) -> Optional[dict]:
         with self._Session() as session:
-            session.query(NetworkNode).filter_by(iid=node_iid).delete()
-            session.commit()
+            record = session.query(NetworkNode).get(node_iid)
+            return {
+                'iid': record.iid,
+                'last_seen': record.iid,
+                'p2p_address': record.p2p_address.split(':') if record.p2p_address else None,
+                'rest_address': record.rest_address.split(':') if record.rest_address else None,
+                'dor_service': record.dor_service,
+                'rti_service': record.rti_service
+            } if record else None
+
+    def get_network_all(self) -> list[dict]:
+        with self._Session() as session:
+            records = session.query(NetworkNode).all()
+            return [{
+                'iid': record.iid,
+                'last_seen': record.iid,
+                'p2p_address': record.p2p_address.split(':') if record.p2p_address else None,
+                'rest_address': record.rest_address.split(':') if record.rest_address else None,
+                'dor_service': record.dor_service,
+                'rti_service': record.rti_service
+            } for record in records]
 
     # END: things that DO require synchronisation/propagation
 
-    def create_sync_snapshot(self):
+    def create_sync_snapshot(self, exclude_self: bool = False) -> dict:
         identity_items = []
-        network_node_items = []
+        network_items = []
         with self._Session() as session:
             for item in session.query(IdentityRecord).all():
+                if exclude_self and item.iid == self._node.identity().id:
+                    continue
+
                 identity_items.append({
-                    'serialised_identity': {
+                    'identity': {
                         'iid': item.iid,
                         'name': item.name,
                         'email': item.email,
@@ -433,22 +475,25 @@ class NodeDBService:
                         's_public_key': item.s_public_key,
                         'e_public_key': item.e_public_key,
                         'signature': item.signature
-                    },
-                    'propagate': False
-                  })
+                    }
+                })
 
             for item in session.query(NetworkNode).all():
-                network_node_items.append({
+                if exclude_self and item.iid == self._node.identity().id:
+                    continue
+
+                p2p_address = item.p2p_address.split(':')
+                rest_address = item.rest_address.split(':') if item.rest_address else None
+                network_items.append({
                     'node_iid': item.iid,
                     'last_seen': item.last_seen,
                     'dor_service': item.dor_service,
                     'rti_service': item.rti_service,
-                    'p2p_address': item.p2p_address,
-                    'rest_address': item.rest_address,
-                    'propagate': False
+                    'p2p_address': [p2p_address[0], int(p2p_address[1])],
+                    'rest_address': [rest_address[0], int(rest_address[1])] if rest_address else None
                 })
 
         return {
             'update_identity': identity_items,
-            'update_network_node': network_node_items
+            'update_network': network_items
         }
