@@ -2,7 +2,6 @@ import logging
 
 from flask import Response
 
-from saas.exceptions import RTIServiceNotSupportedError
 from saas.keystore.identity import Identity
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
@@ -66,45 +65,30 @@ class RTIBlueprint(SaaSBlueprint):
 
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
 
+    @request_manager.require_rti()
     def get_deployed(self) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
         return create_ok_response(self._node.rti.get_deployed())
 
+    @request_manager.require_rti()
     @request_manager.verify_request_body(deployment_specification)
-    def deploy(self, proc_id) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
+    def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
         deployment = body['deployment']
 
         return create_ok_response(self._node.rti.deploy(proc_id, deployment))
 
-    def undeploy(self, proc_id) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
+    @request_manager.require_rti()
+    def undeploy(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.undeploy(proc_id))
 
-    def get_descriptor(self, proc_id) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
+    @request_manager.require_rti()
+    def get_descriptor(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_descriptor(proc_id))
 
+    @request_manager.require_rti()
     @request_manager.verify_request_body(task_descriptor_schema)
-    def submit_job(self, proc_id) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
+    def submit_job(self, proc_id: str) -> (Response, int):
         task_descriptor = request_manager.get_request_variable('body')
         job_id = self._node.rti.submit(proc_id, task_descriptor)
 
@@ -114,30 +98,21 @@ class RTIBlueprint(SaaSBlueprint):
             'task': task_descriptor
         })
 
-    def get_jobs(self, proc_id) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
+    @request_manager.require_rti()
+    def get_jobs(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_jobs(proc_id))
 
+    @request_manager.require_rti()
     def get_job_info(self, job_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
         job_info = self._node.rti.get_job_info(job_id)
         return create_ok_response({
             'job_descriptor': job_info['job_descriptor'],
             'status': job_info['status']
         })
 
+    @request_manager.require_rti()
     @request_manager.verify_request_body(put_permission_body_schema)
     def put_permission(self, req_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise RTIServiceNotSupportedError()
-
         permission = request_manager.get_request_variable('body')
         self._node.rti.put_permission(req_id, permission)
         return create_ok_response()

@@ -10,6 +10,7 @@ from flask import request, Flask, g
 from jsonschema import validate, ValidationError
 
 from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
+from saas.exceptions import RTIServiceNotSupportedError, DORServiceNotSupportedError
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
@@ -187,6 +188,30 @@ class RequestManager:
 
                 return func(*args, **kwargs)
             return wrapper
+        return decorated_func
+
+    def require_dor(self):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                if self.node.dor is None:
+                    raise DORServiceNotSupportedError()
+
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def require_rti(self):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                if self.node.rti is None:
+                    raise RTIServiceNotSupportedError()
+
+                return func(*args, **kwargs)
+
+            return wrapper
+
         return decorated_func
 
 

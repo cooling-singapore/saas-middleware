@@ -5,7 +5,6 @@ from flask import Response
 
 from saas.dor.exceptions import DataObjectDescriptorNotFoundError, DataObjectNotFoundError, \
     DataObjectContentNotFoundError, OwnerIdentityNotFoundError, IdentityNotFoundError
-from saas.exceptions import DORServiceNotSupportedError
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
@@ -146,24 +145,18 @@ class DORBlueprint(SaaSBlueprint):
         self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'], response_schema=tags_response_schema)
         self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'], response_schema=tags_response_schema)
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(search_body_specification)
     def search(self) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         body = request_manager.get_request_variable('body')
         patterns = body['patterns'] if 'patterns' in body else None
         owner_iid = body['owner_iid'] if 'owner_iid' in body else None
         return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid))
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(add_body_specification)
     @request_manager.verify_request_files(['attachment'])
     def add(self) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         body = request_manager.get_request_variable('body')
         files = request_manager.get_request_variable('files')
 
@@ -176,12 +169,9 @@ class DORBlueprint(SaaSBlueprint):
         return create_ok_response(self._node.dor.add(owner_iid, descriptor, content_path, access_restricted,
                                                      content_encrypted))
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(add_gpp_body_specification)
     def add_gpp(self) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         body = request_manager.get_request_variable('body')
 
         owner_iid = body['owner_iid']
@@ -190,19 +180,13 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_response(self._node.dor.add_gpp(owner_iid, descriptor, gpp))
 
+    @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def delete(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         return create_ok_response(self._node.dor.delete(obj_id))
 
+    @request_manager.require_dor()
     def get_descriptor(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
@@ -216,12 +200,9 @@ class DORBlueprint(SaaSBlueprint):
             'descriptor': read_json_from_file(descriptor_path)
         })
 
+    @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
         if not record:
@@ -235,23 +216,17 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_attachment(content_path)
 
+    @request_manager.require_dor()
     def get_access_overview(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
 
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id: str, iid: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
@@ -264,12 +239,9 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.grant_access(obj_id, identity)
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
         if not record:
@@ -283,11 +255,8 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.revoke_access(obj_id, identity)
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.require_dor()
     def get_owner(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
@@ -302,13 +271,10 @@ class DORBlueprint(SaaSBlueprint):
             'owner_iid': owner.id
         })
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def transfer_ownership(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
         if not record:
@@ -329,24 +295,18 @@ class DORBlueprint(SaaSBlueprint):
             'owner_iid': owner.id
         })
 
+    @request_manager.require_dor()
     def get_tags(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
 
         return create_ok_response(self._node.db.get_tags(obj_id))
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def update_tags(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
@@ -355,13 +315,10 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_tags(obj_id, body)
         return create_ok_response(self._node.db.get_tags(obj_id))
 
+    @request_manager.require_dor()
     @request_manager.verify_request_body(delete_tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def remove_tags(self, obj_id: str) -> (Response, int):
-        # does this node have a DOR?
-        if not self._node.dor:
-            raise DORServiceNotSupportedError()
-
         # do we have this data object?
         if not self._node.db.get_object_by_id(obj_id):
             raise DataObjectNotFoundError(obj_id)
