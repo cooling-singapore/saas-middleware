@@ -3,18 +3,22 @@ import os
 import json
 import tempfile
 import time
+import traceback
 
 import flask
-from flask import request, Flask, g
+from flask import request, Flask, g, Response
 
 from jsonschema import validate, ValidationError
 
 from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
-from saas.exceptions import RTIServiceNotSupportedError, DORServiceNotSupportedError
+from saas.exceptions import RTIServiceNotSupportedError, DORServiceNotSupportedError, SaaSException
+from saas.helpers import validate_json
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
-from saas.rest.exceptions import MalformedRequestError, AuthorisationFailedError
+from saas.rest.blueprint import create_error_response
+from saas.rest.exceptions import MalformedRequestError, AuthorisationFailedError, EndpointNotSupportedError, \
+    MissingResponseSchemaError, MalformedResponseError
 
 logger = Logging.get('rest.request_manager')
 
@@ -209,6 +213,48 @@ class RequestManager:
                     raise RTIServiceNotSupportedError()
 
                 return func(*args, **kwargs)
+
+            return wrapper
+
+        return decorated_func
+
+    def handle_request(self, schema: dict):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                try:
+                    # call the function that handles this endpoint
+                    response: (Response, int) = func(*args, **kwargs)
+
+                    # if we have a response content, check if it is valid
+                    if response[0].headers['Content-Type'] == 'application/json':
+                        envelope = response[0].json
+                        if envelope['status'] == 'ok' and 'response' in envelope:
+                            # do we have a schema?
+                            if schema is None:
+                                raise MissingResponseSchemaError({
+                                    'rule': f"{request.method}:{request.url_rule}",
+                                    'response': envelope['response']
+                                })
+
+                            # is the response content valid?
+                            if not validate_json(envelope['response'], schema):
+                                raise MalformedResponseError({
+                                    'rule': f"{request.method}:{request.url_rule}",
+                                    'response': envelope['response'],
+                                    'schema': schema
+                                })
+
+                    return response
+
+                except SaaSException as e:
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[endpoint_error:{e.id}] {e.reason}\n{e.details}\n{trace}")
+
+                    return create_error_response(
+                        reason=e.reason,
+                        exception_id=e.id
+                    )
 
             return wrapper
 

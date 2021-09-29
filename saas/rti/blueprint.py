@@ -11,6 +11,18 @@ from saas.schemas import task_descriptor_schema, job_descriptor_schema, processo
 logger = logging.getLogger('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
+deployed_processors_schema = {
+    'type': 'array',
+    'items': {
+        'type': 'object',
+        'properties': {
+            'proc_id': {'type': 'string'},
+            'proc_descriptor': processor_descriptor_schema
+        },
+        'required': ['proc_id', 'proc_descriptor']
+    }
+}
+
 put_permission_body_schema = {
     'type': 'string'
 }
@@ -23,52 +35,41 @@ deployment_specification = {
     'required': ['deployment']
 }
 
+jobs_descriptor_schema = {
+    'type': 'array',
+    'items': job_descriptor_schema
+}
+
+job_details_schema = {
+    'type': 'object',
+    'properties': {
+        'job_descriptor': job_descriptor_schema,
+        'status': {'type': 'object'}
+    },
+    'required': ['job_descriptor', 'status']
+}
+
 
 class RTIBlueprint(SaaSBlueprint):
     def __init__(self, node):
         super().__init__('processor', __name__, endpoint_prefix)
         self._node = node
 
-        self.add_rule('', self.get_deployed, ['GET'], response_schema={
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'proc_id': {'type': 'string'},
-                    'proc_descriptor': processor_descriptor_schema
-                },
-                'required': ['proc_id', 'proc_descriptor']
-            }
-        })
-
-        self.add_rule('<proc_id>', self.deploy, ['POST'], response_schema=processor_descriptor_schema)
-
-        self.add_rule('<proc_id>', self.undeploy, ['DELETE'], response_schema=processor_descriptor_schema)
-
-        self.add_rule('<proc_id>/descriptor', self.get_descriptor, ['GET'], response_schema=processor_descriptor_schema)
-
-        self.add_rule('<proc_id>/jobs', self.submit_job, ['POST'], response_schema=job_descriptor_schema)
-
-        self.add_rule('<proc_id>/jobs', self.get_jobs, ['GET'], response_schema={
-            'type': 'array',
-            'items': job_descriptor_schema
-        })
-
-        self.add_rule('job/<job_id>', self.get_job_info, ['GET'], response_schema={
-            'type': 'object',
-            'properties': {
-                'job_descriptor': job_descriptor_schema,
-                'status': {'type': 'object'}
-            },
-            'required': ['job_descriptor', 'status']
-        })
-
+        self.add_rule('', self.get_deployed, ['GET'])
+        self.add_rule('<proc_id>', self.deploy, ['POST'])
+        self.add_rule('<proc_id>', self.undeploy, ['DELETE'])
+        self.add_rule('<proc_id>/descriptor', self.get_descriptor, ['GET'])
+        self.add_rule('<proc_id>/jobs', self.submit_job, ['POST'])
+        self.add_rule('<proc_id>/jobs', self.get_jobs, ['GET'])
+        self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
 
+    @request_manager.handle_request(deployed_processors_schema)
     @request_manager.require_rti()
     def get_deployed(self) -> (Response, int):
         return create_ok_response(self._node.rti.get_deployed())
 
+    @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
     @request_manager.verify_request_body(deployment_specification)
     def deploy(self, proc_id: str) -> (Response, int):
@@ -78,14 +79,17 @@ class RTIBlueprint(SaaSBlueprint):
 
         return create_ok_response(self._node.rti.deploy(proc_id, deployment))
 
+    @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
     def undeploy(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.undeploy(proc_id))
 
+    @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
     def get_descriptor(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_descriptor(proc_id))
 
+    @request_manager.handle_request(job_descriptor_schema)
     @request_manager.require_rti()
     @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id: str) -> (Response, int):
@@ -98,10 +102,12 @@ class RTIBlueprint(SaaSBlueprint):
             'task': task_descriptor
         })
 
+    @request_manager.handle_request(jobs_descriptor_schema)
     @request_manager.require_rti()
     def get_jobs(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_jobs(proc_id))
 
+    @request_manager.handle_request(job_details_schema)
     @request_manager.require_rti()
     def get_job_info(self, job_id: str) -> (Response, int):
         job_info = self._node.rti.get_job_info(job_id)
@@ -110,6 +116,7 @@ class RTIBlueprint(SaaSBlueprint):
             'status': job_info['status']
         })
 
+    @request_manager.handle_request(None)
     @request_manager.require_rti()
     @request_manager.verify_request_body(put_permission_body_schema)
     def put_permission(self, req_id: str) -> (Response, int):
