@@ -18,3 +18,13 @@ class SaaSException(Exception):
     @property
     def id(self):
         return self._id
+
+
+class DORServiceNotSupportedError(SaaSException):
+    def __init__(self) -> None:
+        super().__init__('DOR service is not supported by node')
+
+
+class RTIServiceNotSupportedError(SaaSException):
+    def __init__(self) -> None:
+        super().__init__('RTI service is not supported by node')
