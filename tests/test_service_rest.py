@@ -15,18 +15,21 @@ endpoint_prefix = "/api/v1/test"
 
 
 class TestBlueprint(SaaSBlueprint):
+    info_response_schema = {
+        'type': 'object',
+        'properties': {
+            'message': {'type': 'string'}
+        },
+        'required': ['message']
+    }
+
     def __init__(self):
         super().__init__('test', __name__, endpoint_prefix)
 
-        self.add_rule('info/<value>', self.get_info, ['GET'], {
-            'type': 'object',
-            'properties': {
-                'message': {'type': 'string'}
-            },
-            'required': ['message']
-        })
+        self.add_rule('info/<value>', self.get_info, ['GET'])
 
     @request_manager.verify_request_body({'type': 'object'})
+    @request_manager.handle_request(info_response_schema)
     def get_info(self, value: str):
         body = request_manager.get_request_variable('body')
 

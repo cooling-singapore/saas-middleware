@@ -130,21 +130,22 @@ class DORBlueprint(SaaSBlueprint):
         super().__init__('repository', __name__, endpoint_prefix)
         self._node = node
 
-        self.add_rule('', self.search, ['GET'], response_schema=search_response_schema)
-        self.add_rule('add', self.add, ['POST'], response_schema=obj_response_schema)
-        self.add_rule('add-gpp', self.add_gpp, ['POST'], response_schema=obj_response_schema)
-        self.add_rule('<obj_id>', self.delete, ['DELETE'], response_schema=obj_response_schema)
-        self.add_rule('<obj_id>/descriptor', self.get_descriptor, ['GET'], response_schema=obj_response_schema)
+        self.add_rule('', self.search, ['GET'])
+        self.add_rule('add', self.add, ['POST'])
+        self.add_rule('add-gpp', self.add_gpp, ['POST'])
+        self.add_rule('<obj_id>', self.delete, ['DELETE'])
+        self.add_rule('<obj_id>/descriptor', self.get_descriptor, ['GET'])
         self.add_rule('<obj_id>/content', self.get_content, ['GET'])
-        self.add_rule('<obj_id>/access', self.get_access_overview, ['GET'], response_schema=access_response_schema)
-        self.add_rule('<obj_id>/access/<iid>', self.grant_access, ['POST'], response_schema=access_response_schema)
-        self.add_rule('<obj_id>/access/<iid>', self.revoke_access, ['DELETE'], response_schema=access_response_schema)
-        self.add_rule('<obj_id>/owner', self.get_owner, ['GET'], response_schema=owner_response_schema)
-        self.add_rule('<obj_id>/owner', self.transfer_ownership, ['PUT'], response_schema=owner_response_schema)
-        self.add_rule('<obj_id>/tags', self.get_tags, ['GET'], response_schema=tags_response_schema)
-        self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'], response_schema=tags_response_schema)
-        self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'], response_schema=tags_response_schema)
+        self.add_rule('<obj_id>/access', self.get_access_overview, ['GET'])
+        self.add_rule('<obj_id>/access/<iid>', self.grant_access, ['POST'])
+        self.add_rule('<obj_id>/access/<iid>', self.revoke_access, ['DELETE'])
+        self.add_rule('<obj_id>/owner', self.get_owner, ['GET'])
+        self.add_rule('<obj_id>/owner', self.transfer_ownership, ['PUT'])
+        self.add_rule('<obj_id>/tags', self.get_tags, ['GET'])
+        self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'])
+        self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'])
 
+    @request_manager.handle_request(search_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(search_body_specification)
     def search(self) -> (Response, int):
@@ -153,6 +154,7 @@ class DORBlueprint(SaaSBlueprint):
         owner_iid = body['owner_iid'] if 'owner_iid' in body else None
         return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid))
 
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(add_body_specification)
     @request_manager.verify_request_files(['attachment'])
@@ -169,6 +171,7 @@ class DORBlueprint(SaaSBlueprint):
         return create_ok_response(self._node.dor.add(owner_iid, descriptor, content_path, access_restricted,
                                                      content_encrypted))
 
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(add_gpp_body_specification)
     def add_gpp(self) -> (Response, int):
@@ -180,11 +183,13 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_response(self._node.dor.add_gpp(owner_iid, descriptor, gpp))
 
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def delete(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.dor.delete(obj_id))
 
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     def get_descriptor(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -200,6 +205,7 @@ class DORBlueprint(SaaSBlueprint):
             'descriptor': read_json_from_file(descriptor_path)
         })
 
+    @request_manager.handle_request(None)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
@@ -216,6 +222,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_attachment(content_path)
 
+    @request_manager.handle_request(access_response_schema)
     @request_manager.require_dor()
     def get_access_overview(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -224,6 +231,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.handle_request(access_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -239,6 +247,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.grant_access(obj_id, identity)
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.handle_request(access_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -255,6 +264,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.revoke_access(obj_id, identity)
         return create_ok_response(self._node.db.get_access_list(obj_id))
 
+    @request_manager.handle_request(owner_response_schema)
     @request_manager.require_dor()
     def get_owner(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -271,6 +281,7 @@ class DORBlueprint(SaaSBlueprint):
             'owner_iid': owner.id
         })
 
+    @request_manager.handle_request(owner_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -295,6 +306,7 @@ class DORBlueprint(SaaSBlueprint):
             'owner_iid': owner.id
         })
 
+    @request_manager.handle_request(tags_response_schema)
     @request_manager.require_dor()
     def get_tags(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -303,6 +315,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_response(self._node.db.get_tags(obj_id))
 
+    @request_manager.handle_request(tags_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -315,6 +328,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_tags(obj_id, body)
         return create_ok_response(self._node.db.get_tags(obj_id))
 
+    @request_manager.handle_request(tags_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(delete_tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
