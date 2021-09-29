@@ -66,6 +66,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 1)
+        tags = {i['key']: i['value'] for i in tags}
         assert('k0' in tags)
 
         self.node.db.update_tags(obj_id0, [
@@ -82,6 +83,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 3)
+        tags = {i['key']: i['value'] for i in tags}
         assert(tags['k0'] == '999')
 
         self.node.db.remove_tags(obj_id0, ['k3'])

@@ -64,7 +64,7 @@ class RuntimeInfrastructureService:
 
                 # lookup the processor id
                 proxy = DORProxy(network_node['rest_address'])
-                descriptor = proxy.get_descriptor(proc_id)
+                _, descriptor = proxy.get_descriptor(proc_id)
                 if descriptor:
                     content_path = self.proc_content_path(descriptor['c_hash'])
                     protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -99,13 +99,14 @@ class RuntimeInfrastructureService:
 
                 # stop the processor and wait for shutdown to complete
                 processor = self._deployed_processors[proc_id]
+                descriptor = processor.descriptor()
                 processor.stop()
                 processor.join()
 
                 # remove the processor
                 self._deployed_processors.pop(proc_id)
 
-                return processor
+                return descriptor
             else:
                 return None
 
@@ -115,13 +116,16 @@ class RuntimeInfrastructureService:
 
     def get_deployed(self):
         with self._mutex:
-            return [*self._deployed_processors]
+            return [{
+                'proc_id': proc_id,
+                'proc_descriptor': adapter.descriptor()
+            } for proc_id, adapter in self._deployed_processors.items()]
 
     def get_descriptor(self, proc_id):
         with self._mutex:
             return self._deployed_processors[proc_id].descriptor() if proc_id in self._deployed_processors else None
 
-    def submit(self, proc_id, descriptor):
+    def submit(self, proc_id, task_descriptor):
         with self._mutex:
             # get the processor for that job
             processor = self._deployed_processors[proc_id]
@@ -135,7 +139,7 @@ class RuntimeInfrastructureService:
             job_descriptor = {
                 'id': job_id,
                 'proc_id': proc_id,
-                'descriptor': descriptor
+                'task': task_descriptor
             }
 
             # create working directory
@@ -163,7 +167,7 @@ class RuntimeInfrastructureService:
             processor = self._deployed_processors[proc_id]
             return processor.get_pending()
 
-    def get_job_info(self, job_id):
+    def get_job_info(self, job_id: str):
         with self._mutex:
             descriptor_path = os.path.join(self._jobs_path, str(job_id), 'job_descriptor.json')
             status_path = os.path.join(self._jobs_path, str(job_id), 'job_status.json')

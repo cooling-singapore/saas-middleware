@@ -110,7 +110,7 @@ class NodeDBService:
 
             session.commit()
 
-    def get_tags(self, obj_id: str) -> dict[str, str]:
+    def get_tags(self, obj_id: str) -> list[dict]:
         with self._Session() as session:
             # does the data object exist?
             obj_record = session.query(DORObject).get(obj_id)
@@ -121,9 +121,9 @@ class NodeDBService:
 
             # get all tags
             tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
-            return {tag.key: tag.value for tag in tags}
+            return [{'key': tag.key, 'value': tag.value} for tag in tags]
 
-    def find_data_objects(self, patterns: list[str], owner_iid: str = None) -> dict[str, list]:
+    def find_data_objects(self, patterns: list[str], owner_iid: str = None) -> list[dict]:
         with self._Session() as session:
             # first, get records of all potential data objects
             if owner_iid is not None:
@@ -132,7 +132,7 @@ class NodeDBService:
                 object_records = session.query(DORObject).all()
 
             # second, filter data objects by patterns (if any)
-            result = {}
+            result = []
             for obj_record in object_records:
                 # prepare a tags array for the result dict
                 tag_records = session.query(DORTag).filter_by(obj_id=obj_record.obj_id).all()
@@ -143,7 +143,10 @@ class NodeDBService:
                 # if we don't have patterns then always add the object.
                 flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
                 if patterns is None or any(pattern in flattened for pattern in patterns):
-                    result[obj_record.obj_id] = tags
+                    result.append({
+                        'obj_id': obj_record.obj_id,
+                        'tags': tags
+                    })
 
             return result
 
@@ -438,23 +441,34 @@ class NodeDBService:
             return {
                 'iid': record.iid,
                 'last_seen': record.iid,
-                'p2p_address': record.p2p_address.split(':') if record.p2p_address else None,
+                'p2p_address': record.p2p_address.split(':'),
                 'rest_address': record.rest_address.split(':') if record.rest_address else None,
                 'dor_service': record.dor_service,
                 'rti_service': record.rti_service
             } if record else None
 
-    def get_network_all(self) -> list[dict]:
+    def get_network_all(self, valid_json: bool = False) -> list[dict]:
         with self._Session() as session:
             records = session.query(NetworkNode).all()
-            return [{
+            result = [{
                 'iid': record.iid,
-                'last_seen': record.iid,
-                'p2p_address': record.p2p_address.split(':') if record.p2p_address else None,
+                'last_seen': record.last_seen,
+                'p2p_address': record.p2p_address.split(':'),
                 'rest_address': record.rest_address.split(':') if record.rest_address else None,
                 'dor_service': record.dor_service,
                 'rti_service': record.rti_service
             } for record in records]
+
+            # make it a valid JSON object?
+            if valid_json:
+                for record in result:
+                    record['p2p_address'] = f"{record['p2p_address'][0]}:{record['p2p_address'][1]}"
+                    if record['rest_address'] is None:
+                        record.pop('rest_address')
+                    else:
+                        record['rest_address'] = f"{record['rest_address'][0]}:{record['rest_address'][1]}"
+
+            return result
 
     # END: things that DO require synchronisation/propagation
 

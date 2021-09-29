@@ -4,6 +4,8 @@ import subprocess
 import json
 
 from saas.cryptography.hashing import hash_json_object, hash_file_content, hash_byte_objects
+from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, DataObjectDescriptorNotFoundError, \
+    InvalidDataObjectDescriptorError, OwnerIdentityNotFoundError, DataObjectNotFoundError
 from saas.helpers import write_json_to_file, read_json_from_file, validate_json
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.assets.credentials import GithubCredentials, CredentialsAsset
@@ -68,28 +70,29 @@ class DataObjectRepositoryService:
         # try to clone the repository
         result = subprocess.run(['git', 'clone', url, target_path], capture_output=True)
         if result.returncode != 0:
-            return 500, {'reason': 'could not clone repository',
-                         'stdout': result.stdout.decode('utf-8'),
-                         'stderr': result.stderr.decode('utf-8')}
+            raise CloneRepositoryError({
+                'stdout': result.stdout.decode('utf-8'),
+                'stderr': result.stderr.decode('utf-8')
+            })
 
         # try to checkout the commit
         result = subprocess.run(['git', 'checkout', gpp['commit_id']], capture_output=True, cwd=target_path)
         if result.returncode != 0:
-            return 500, {'reason': f"could not checkout commit '{gpp['commit-id']}'",
-                         'stdout': result.stdout.decode('utf-8'),
-                         'stderr': result.stderr.decode('utf-8')}
+            raise CheckoutCommitError({
+                'commit-id': gpp['commit-id'],
+                'stdout': result.stdout.decode('utf-8'),
+                'stderr': result.stderr.decode('utf-8')
+            })
 
         # does the processor descriptor exist?
         proc_descriptor_path = os.path.join(target_path, gpp['proc_path'], 'descriptor.json')
         if not os.path.isfile(proc_descriptor_path):
-            return 500, {'reason': f"could not find processor descriptor at '{proc_descriptor_path}'"}
+            raise DataObjectDescriptorNotFoundError(proc_descriptor_path)
 
         # read the processor descriptor
         proc_descriptor = read_json_from_file(proc_descriptor_path)
         if not validate_json(proc_descriptor, processor_descriptor_schema):
-            return 500, {'reason': 'invalid processor descriptor',
-                         'descriptor': proc_descriptor,
-                         'schema': processor_descriptor_schema}
+            raise InvalidDataObjectDescriptorError(proc_descriptor)
 
         # write the content of the data object
         content_path = os.path.join(target_path, 'gpp.json')
@@ -135,7 +138,10 @@ class DataObjectRepositoryService:
             # or not. question is whether this matters or not. the important point is that after calling
             # 'add' the data object is in the DOR.
             logger.info(f"data object '{obj_id}' already exists. not adding to DOR.")
-            return 200, {'data_object_id': obj_id, 'descriptor': descriptor}
+            return {
+                'data_object_id': obj_id,
+                'descriptor': descriptor
+            }
 
         # check if there are already data objects with the same content
         if self.node.db.get_objects_by_content_hash(c_hash):
@@ -160,8 +166,7 @@ class DataObjectRepositoryService:
         # try to resolve the owner identity
         owner = self.node.db.get_identity(owner_iid)
         if owner is None:
-            logger.info(f"no identity found for owner '{owner_iid}'. not adding to DOR.")
-            return 404, {'owner_iid': owner_iid}
+            raise OwnerIdentityNotFoundError(obj_id=obj_id, owner_iid=owner_iid)
 
         # add data object to database
         self.node.db.add_data_object(obj_id, d_hash, c_hash, owner.id,
@@ -171,18 +176,21 @@ class DataObjectRepositoryService:
         # grant permission to access this data object to the owner, using the content key (if any)
         self.node.db.grant_access(obj_id, owner)
 
-        return 201, {'data_object_id': obj_id, 'descriptor': descriptor}
+        return {
+            'obj_id': obj_id,
+            'descriptor': descriptor
+        }
 
     def delete(self, obj_id):
         # do we have a record for this data object?
         record = self.node.db.get_object_by_id(obj_id)
         if not record:
-            return 404, f"Database record for data object '{obj_id}' not found."
+            raise DataObjectNotFoundError(obj_id)
 
         # do we have a descriptor for this data object?
         descriptor_path = self.obj_descriptor_path(obj_id)
         if not os.path.isfile(descriptor_path):
-            return 500, f"Descriptor for data object '{obj_id}' not found."
+            raise DataObjectDescriptorNotFoundError(descriptor_path)
 
         # read the descriptor content before deleting it
         with open(descriptor_path, 'r') as f:
@@ -203,4 +211,7 @@ class DataObjectRepositoryService:
             os.remove(content_path)
             logger.info(f"data object content '{record['c_hash']}' for data object '{obj_id}' deleted.")
 
-        return 200, descriptor
+        return {
+            'obj_id': obj_id,
+            'descriptor': descriptor
+        }
