@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import time
+from abc import abstractmethod
 from enum import Enum
 from threading import Lock, Thread
 from typing import Optional
@@ -10,8 +11,10 @@ from saas.cryptography.helpers import encrypt_file, decrypt_file
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.identity import Identity
+from saas.rti.exceptions import ProcessorNotAcceptingJobsError
 from saas.rti.status import State, StatusLogger
 from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string
 
@@ -28,68 +31,84 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread):
-    def __init__(self, proc_id, proc_descriptor, node):
+    def __init__(self, proc_id: str, proc_descriptor: dict, node):
         Thread.__init__(self, daemon=True)
 
-        self._node = node
+        self._mutex = Lock()
         self._proc_id = proc_id
         self._proc_descriptor = proc_descriptor
-        self._mutex = Lock()
+        self._node = node
+
+        self._input_interface = {item['name']: item for item in proc_descriptor['input']}
+        self._output_interface = {item['name']: item for item in proc_descriptor['output']}
         self._pending = []
         self._state = ProcessorState.UNINITIALISED
 
-    def state(self):
-        return self._state
+    @property
+    def id(self) -> str:
+        return self._proc_id
 
-    def descriptor(self):
+    @property
+    def descriptor(self) -> dict:
         return self._proc_descriptor
 
-    def startup(self):
-        return True
+    @property
+    def state(self) -> ProcessorState:
+        return self._state
 
-    def shutdown(self):
-        return True
-
-    def pre_execute(self, task_or_wf_descriptor, working_directory, status):
-        return True
-
-    def post_execute(self, task_or_wf_descriptor, working_directory, job_id, status):
-        return True
-
-    def execute(self, job_descriptor, working_directory, status):
+    @abstractmethod
+    def startup(self) -> None:
         pass
 
-    def add(self, job_descriptor, status):
-        with self._mutex:
-            if self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
-                self._pending.append((job_descriptor, status))
-                return True
-            else:
-                return False
+    @abstractmethod
+    def shutdown(self) -> None:
+        pass
 
-    def get_pending(self):
-        with self._mutex:
-            return [job_descriptor for job_descriptor, _ in self._pending]
+    @abstractmethod
+    def execute(self, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        pass
 
-    def stop(self):
+    def stop(self) -> None:
         logger.info(f"adapter {self._proc_id} received stop signal.")
         self._state = ProcessorState.STOPPING
 
-    def _wait_for_pending_job(self):
-        while True:
-            with self._mutex:
-                # if the adapter has become inactive, return immediately.
-                if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
-                    return None
+    def pre_execute(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        # store 'value' input data objects to disk
+        self._store_value_input_data_objects(task_descriptor, working_directory, status)
 
-                # if there is a job, return it
-                elif len(self._pending) > 0:
-                    job_descriptor, status = self._pending.pop(0)
-                    return [job_descriptor, status]
+        # fetch 'reference' input data objects
+        ephemeral_key = RSAKeyPair.create_new()
+        pending_list = []
+        self._fetch_reference_input_data_objects(ephemeral_key, pending_list, task_descriptor, working_directory, status)
 
-            time.sleep(0.2)
+        self._decrypt_reference_input_data_objects(ephemeral_key, pending_list, status)
 
-    def run(self):
+        # third, verify that data types of input data objects match
+        self._verify_input_data_objects_types_and_formats(task_descriptor, working_directory, status)
+
+        # fourth, verify the output owner identities
+        self._verify_output_data_object_owner_identities(task_descriptor, status)
+
+    def post_execute(self, task_descriptor: dict, working_directory: str, job_id: str, status: StatusLogger) -> None:
+        # push output data objects to DOR
+        self._push_output_data_objects(task_descriptor, working_directory, job_id, status)
+
+    def add(self, job_descriptor: dict, status: StatusLogger) -> None:
+        with self._mutex:
+            # are we accepting jobs?
+            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+                raise ProcessorNotAcceptingJobsError({
+                    'proc_id': self._proc_id,
+                    'job_descriptor': job_descriptor
+                })
+
+            self._pending.append((job_descriptor, status))
+
+    def pending_jobs(self) -> list[dict]:
+        with self._mutex:
+            return [job_descriptor for job_descriptor, _ in self._pending]
+
+    def run(self) -> None:
         logger.info(f"adapter {self._proc_id} starting up...")
         self._state = ProcessorState.STARTING
         self.startup()
@@ -98,14 +117,14 @@ class RTIProcessorAdapter(Thread):
         while self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
             # wait for a pending job (or for adapter to become inactive)
             self._state = ProcessorState.WAITING
-            result = self._wait_for_pending_job()
-            if not result:
+            pending_job = self._wait_for_pending_job()
+            if not pending_job:
                 break
 
             # process a job
             self._state = ProcessorState.BUSY
-            job_descriptor = result[0]
-            status = result[1]
+            job_descriptor = pending_job[0]
+            status = pending_job[1]
 
             # set job state
             status.update_state(State.RUNNING)
@@ -132,10 +151,31 @@ class RTIProcessorAdapter(Thread):
 
         logger.info(f"adapter {self._proc_id} shutting down...")
         self._state = ProcessorState.STOPPING
+        self._purge_pending_jobs()
         self.shutdown()
 
         logger.info(f"adapter {self._proc_id} shut down.")
         self._state = ProcessorState.STOPPED
+
+    def _wait_for_pending_job(self) -> Optional[(dict, StatusLogger)]:
+        while True:
+            with self._mutex:
+                # if the adapter has become inactive, return immediately.
+                if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+                    return None
+
+                # if there is a job, return it
+                elif len(self._pending) > 0:
+                    job_descriptor, status = self._pending.pop(0)
+                    return job_descriptor, status
+
+            time.sleep(0.1)
+
+    def _purge_pending_jobs(self) -> None:
+        with self._mutex:
+            while len(self._pending) > 0:
+                job_descriptor, status = self._pending.pop(0)
+                logger.info(f"purged pending job: {job_descriptor}")
 
     def push_output_data_object(self, output_descriptor: dict, output_content_path: str, owner: Identity,
                                 task_descriptor: dict, job_id: str) -> Optional[str]:
@@ -188,20 +228,6 @@ class RTIProcessorAdapter(Thread):
 
         return None
 
-
-class RTITaskProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, proc_id, proc_descriptor, node):
-        super().__init__(proc_id, proc_descriptor, node)
-
-        self._input_interface = {}
-        self._output_interface = {}
-
-        for item in proc_descriptor['input']:
-            self._input_interface[item['name']] = item
-
-        for item in proc_descriptor['output']:
-            self._output_interface[item['name']] = item
-
     def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
         status.update('input_status', f"storing value data objects")
         for item in task_descriptor['input']:
@@ -226,10 +252,8 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
         # get the user identity
         user = self._node.db.get_identity(task_descriptor['user_iid'])
         if user is None:
-            error = f"could not find user identity: iid={task_descriptor['user_iid']}"
-            logger.error(error)
-            status.update('error', error)
-            return False
+            status.update('error', f"could not find user identity: iid={task_descriptor['user_iid']}")
+            raise IdentityNotFoundError(task_descriptor['user_iid'])
 
         # initialise summary for referenced data objects
         names = {}
@@ -296,25 +320,26 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
             destination_descriptor_path = os.path.join(working_directory, f"{item['name']}.descriptor")
             destination_content_path = os.path.join(working_directory, item['name'])
 
-            # try to fetch the data object
-            result = protocol.send_fetch(item['custodian_address'], obj_id,
-                                         destination_descriptor_path, destination_content_path,
-                                         user_iid=user.id, user_signature=item['user_signature'])
+            # fetch the meta information record of the data object
+            record = protocol.lookup_data_object(item['custodian_address'], obj_id)
+
+            # fetch the data object
+            protocol.fetch_data_object(item['custodian_address'], obj_id, destination_descriptor_path, destination_content_path)
 
             # if the result is None, something went wrong...
-            if result['code'] != 200:
-                error = f"attempt to fetch data object {obj_id} failed. reason: {result['reason']}"
-                logger.error(error)
-                status.update('error', error)
-                return False
+            # if result['code'] != 200:
+            #     error = f"attempt to fetch data object {obj_id} failed. reason: {result['reason']}"
+            #     logger.error(error)
+            #     status.update('error', error)
+            #     return False
 
             # is the data object content encrypted? if yes, then we need to request the content key
-            if result['record']['content_encrypted']:
+            if record['content_encrypted']:
                 # get the owner identity
-                owner = self._node.db.get_identity(result['record']['owner_iid'])
+                owner = self._node.db.get_identity(record['owner_iid'])
                 if owner is None:
                     error = f"could not find owner identity for data object: " \
-                            f"iid={result['record']['owner_iid']} " \
+                            f"iid={record['owner_iid']} " \
                             f"obj_id={obj_id}"
                     logger.error(error)
                     status.update('error', error)
@@ -408,37 +433,6 @@ class RTITaskProcessorAdapter(RTIProcessorAdapter):
                 logger.error(error)
                 status.update('error', error)
                 return False
-
-        return True
-
-    def pre_execute(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
-        # store 'value' input data objects to disk
-        self._store_value_input_data_objects(task_descriptor, working_directory, status)
-
-        # fetch 'reference' input data objects
-        ephemeral_key = RSAKeyPair.create_new()
-        pending_list = []
-        if not self._fetch_reference_input_data_objects(ephemeral_key, pending_list,
-                                                        task_descriptor, working_directory, status):
-            return False
-
-        if not self._decrypt_reference_input_data_objects(ephemeral_key, pending_list, status):
-            return False
-
-        # third, verify that data types of input data objects match
-        if not self._verify_input_data_objects_types_and_formats(task_descriptor, working_directory, status):
-            return False
-
-        # fourth, verify the output owner identities
-        if not self._verify_output_data_object_owner_identities(task_descriptor, status):
-            return False
-
-        return True
-
-    def post_execute(self, task_descriptor: dict, working_directory: str, job_id: str, status: StatusLogger):
-        # push output data objects to DOR
-        if not self._push_output_data_objects(task_descriptor, working_directory, job_id, status):
-            return False
 
         return True
 
