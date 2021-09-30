@@ -9,7 +9,7 @@ from saas.exceptions import RunCommandError
 from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.rti.adapters.adapters import RTIProcessorAdapter
-from saas.rti.exceptions import AdapterRuntimeError
+from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
 from saas.rti.status import StatusLogger
 from saas.schemas import git_proc_pointer_schema
 
@@ -44,6 +44,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])
 
     def startup(self) -> None:
+        # test the ssh connection (if applicable)
+        self._test_ssh_connection()
+
         url = self._gpp['source']
         commit_id = self._gpp['commit_id']
 
@@ -89,6 +92,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
         # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
         if self._ssh_credentials is not None:
+            # test the connection
+            self._test_ssh_connection()
+
             # create the remote working directory
             status_logger.update('task', f"create remote working directory at {working_directory}")
             self._execute_command(f"mkdir -p {working_directory}")
@@ -130,6 +136,17 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
         status_logger.remove('task')
 
+    def _test_ssh_connection(self):
+        if self._ssh_credentials:
+            command = ['ssh', '-i', self._ssh_credentials.key_path,
+                       f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", 'exit']
+            result = run_command(command, suppress_exception=True)
+            if result.returncode != 0:
+                raise SSHConnectionError({
+                    'command': command,
+                    'result': result
+                })
+
     def _execute_command(self, command: str, cwd: str = None, console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
             command = f"cd {cwd} && {command}" if cwd else command
@@ -166,17 +183,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                    ] if self._ssh_credentials else ['bash', '-c', f"ls {path}"]
 
         result = run_command(command, suppress_exception=True)
-        if result.returncode == 0:
-            return True
-
-        elif result.returncode == 1:
-            return False
-
-        else:
-            raise AdapterRuntimeError({
-                'command': command,
-                'result': result
-            })
+        return result.returncode == 0
 
     def _echo_to_file(self, path: str, content: str) -> None:
         self._execute_command(f"echo \"{content}\" > {path}")

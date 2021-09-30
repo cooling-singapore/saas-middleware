@@ -65,3 +65,8 @@ class MismatchingDataTypeOrFormatError(RTIException):
 class InvalidJSONDataObjectError(SaaSException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object JSON content does not comply with schema', details=details)
+
+
+class SSHConnectionError(SaaSException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('SSH connection cannot be established', details=details)
