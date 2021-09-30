@@ -70,3 +70,9 @@ class MismatchingRequestIdError(P2PException):
 class PeerUnavailableError(P2PException):
     def __init__(self, details: dict) -> None:
         super().__init__('Peer is not available', details=details)
+
+
+class AttachmentNotFoundError(P2PException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Attachment expected but not found', details=details)
+
