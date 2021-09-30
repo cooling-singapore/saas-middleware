@@ -62,6 +62,6 @@ class MismatchingDataTypeOrFormatError(RTIException):
         super().__init__('Data type/format of processor input and data object do not match', details=details)
 
 
-class InvalidJSONDataObject(SaaSException):
+class InvalidJSONDataObjectError(SaaSException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object JSON content does not comply with schema', details=details)
