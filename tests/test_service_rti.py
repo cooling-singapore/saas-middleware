@@ -153,11 +153,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 1)
-
         result = wait_for_job(rti, job_id)
         return job_id, result
 
@@ -195,8 +190,11 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
@@ -785,14 +783,18 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {item['proc_id']: item for item in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
