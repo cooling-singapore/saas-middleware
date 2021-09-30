@@ -2,10 +2,12 @@ import logging
 
 from flask import Response
 
+from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saas.keystore.identity import Identity
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
+from saas.rti.exceptions import SSHCredentialsNotFoundError
 from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
 
 logger = logging.getLogger('rti.blueprint')
@@ -31,6 +33,7 @@ deployment_specification = {
     'type': 'object',
     'properties': {
         'deployment': {'type': 'string', 'enum': ['native', 'docker']},
+        'ssh_profile': {'type': 'string'}
     },
     'required': ['deployment']
 }
@@ -75,8 +78,22 @@ class RTIBlueprint(SaaSBlueprint):
     def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
-        deployment = body['deployment']
-        return create_ok_response(self._node.rti.deploy(proc_id, deployment))
+
+        # are we supposed to use an ssh profile?
+        if 'ssh_profile' in body:
+            asset: CredentialsAsset = self._node.keystore.get_asset('ssh-credentials')
+            ssh_credentials: SSHCredentials = asset.get(body['ssh_profile'])
+            if ssh_credentials is None:
+                raise SSHCredentialsNotFoundError({
+                    'ssh_profile': body['ssh_profile'],
+                    'iid': self._node.identity().id
+                })
+
+            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment'],
+                                                            ssh_credentials=ssh_credentials))
+
+        else:
+            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment']))
 
     @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
@@ -125,10 +142,15 @@ class RTIProxy(EndpointProxy):
     def get_deployed(self):
         return self.get(f"")
 
-    def deploy(self, proc_id: str, deployment: str = "native") -> dict:
-        return self.post(f"/{proc_id}", body={
+    def deploy(self, proc_id: str, deployment: str = "native", ssh_profile: str = None) -> dict:
+        body = {
             'deployment': deployment,
-        })
+        }
+
+        if ssh_profile:
+            body['ssh_profile'] = ssh_profile
+
+        return self.post(f"/{proc_id}", body=body)
 
     def undeploy(self, proc_id: str) -> dict:
         return self.delete(f"/{proc_id}")

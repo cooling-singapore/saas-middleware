@@ -846,7 +846,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_deployment_undeployment(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
@@ -871,7 +871,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        descriptor = rti.deploy(proc_id, ssh_profile='nscc')
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -903,7 +903,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_processor_execution_value(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
@@ -927,7 +927,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        descriptor = rti.deploy(proc_id, ssh_profile='nscc')
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
