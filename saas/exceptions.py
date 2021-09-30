@@ -30,6 +30,6 @@ class RTIServiceNotSupportedError(SaaSException):
         super().__init__('RTI service is not supported by node')
 
 
-class SymbolicLinkCreationError(SaaSException):
+class RunCommandError(SaaSException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Cannot create symbolic link', details=details)
+        super().__init__('Error while running command', details=details)
