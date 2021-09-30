@@ -319,8 +319,8 @@ class RTIProcessorAdapter(Thread):
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
                                               status: StatusLogger) -> None:
-
         status.update('step', f"decrypt by-reference input data objects")
+
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -342,11 +342,13 @@ class RTIProcessorAdapter(Thread):
                 time.sleep(1)
 
     def push_output_data_object(self, output_descriptor: dict, output_content_path: str, owner: Identity,
-                                task_descriptor: dict, job_id: str) -> Optional[str]:
+                                task_descriptor: dict, job_id: str, status: StatusLogger) -> Optional[str]:
         output_name = output_descriptor['name']
         data_type = output_descriptor['data_type']
         data_format = output_descriptor['data_format']
         created_by = self._node.identity().id
+
+        status.update('step', f"push output data object {output_name}")
 
         for item in task_descriptor['output']:
             if item['name'] == output_name:
@@ -393,7 +395,8 @@ class RTIProcessorAdapter(Thread):
         return None
 
     def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
-        status.update('input_status', f"storing value data objects")
+        status.update('step', f"store by-value input data objects")
+
         for item in task_descriptor['input']:
             obj_name = item['name']
 
@@ -410,7 +413,9 @@ class RTIProcessorAdapter(Thread):
         return True
 
     def _verify_input_data_objects_types_and_formats(self, task_descriptor: dict, working_directory: str,
-                                                     status: StatusLogger):
+                                                     status: StatusLogger) -> None:
+        status.update('step', 'verify input data object types and formats')
+
         for item in task_descriptor['input']:
             obj_name = item['name']
 
@@ -482,7 +487,7 @@ class RTIProcessorAdapter(Thread):
 
             # push the output data object to the DOR
             obj_id = self.push_output_data_object(output_descriptor, output_content_path, owner,
-                                                  task_descriptor, job_id)
+                                                  task_descriptor, job_id, status)
             if not obj_id:
                 error = f"worker[{self.name}]: failed to add data object '{output_descriptor['name']}'to DOR."
                 logger.error(error)
