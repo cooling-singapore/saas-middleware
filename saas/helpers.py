@@ -19,6 +19,8 @@ from getpass import getpass
 
 import jsonschema
 
+import saas.exceptions as exceptions
+
 logger = logging.getLogger('helpers')
 
 
@@ -106,10 +108,15 @@ def all_in_dict(required, dictionary):
     return all(r in dictionary for r in required)
 
 
-def create_symbolic_link(source_path, destination_path):
-    if os.path.exists(destination_path):
-        subprocess.check_output(['rm', destination_path])
-    subprocess.check_output(['ln', '-s', source_path, destination_path])
+def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None):
+    result = subprocess.run(['ln', '-sf', target_path, link_path], cwd=working_directory, capture_output=True)
+    if result.returncode != 0:
+        raise exceptions.SymbolicLinkCreationError({
+            'link_path': link_path,
+            'target_path': target_path,
+            'cwd': working_directory,
+            'result': result
+        })
 
 
 def prompt(question, valid_answers=None, valid_range=None, hidden=False, multi_selection=False):
