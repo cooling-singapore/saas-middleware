@@ -51,3 +51,8 @@ class MissingUserSignatureError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Missing user signature for access to data object', details=details)
 
+
+class AdapterRuntimeError(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Error while executing shell command by adapter', details=details)
+
