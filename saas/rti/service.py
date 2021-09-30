@@ -29,21 +29,20 @@ class RuntimeInfrastructureService:
     def proc_descriptor_path(self, obj_id: str) -> str:
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
 
-    def __init__(self, node, ssh_credentials: SSHCredentials = None) -> None:
+    def __init__(self, node) -> None:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
         self._content_keys = {}
-        self._ssh_credentials = ssh_credentials
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
         os.makedirs(os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path), exist_ok=True)
 
-    def deploy(self, proc_id: str, deployment: str) -> dict:
-        # is the processor already deployed?
+    def deploy(self, proc_id: str, deployment: str, ssh_credentials: SSHCredentials = None) -> dict:
         with self._mutex:
+            # is the processor already deployed?
             if proc_id in self._deployed_processors:
                 logger.warning(f"processor {proc_id} already deployed -> do no redeploy and return descriptor only")
                 return self._deployed_processors[proc_id].get_descriptor()
@@ -88,7 +87,7 @@ class RuntimeInfrastructureService:
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                             RTINativeProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
                                                       self._jobs_path, self._node,
-                                                      ssh_credentials=self._ssh_credentials)
+                                                      ssh_credentials=ssh_credentials)
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \

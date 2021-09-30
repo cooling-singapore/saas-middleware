@@ -70,3 +70,8 @@ class InvalidJSONDataObjectError(SaaSException):
 class SSHConnectionError(SaaSException):
     def __init__(self, details: dict) -> None:
         super().__init__('SSH connection cannot be established', details=details)
+
+
+class SSHCredentialsNotFoundError(SaaSException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('SSH credentials not found', details=details)
