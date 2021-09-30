@@ -17,7 +17,7 @@ from saas.exceptions import SaaSException
 from saas.keystore.identity import Identity
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
-    AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObject
+    AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError
 from saas.rti.status import State, StatusLogger
 from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
     validate_json
@@ -440,7 +440,7 @@ class RTIProcessorAdapter(Thread):
             if d0['data_type'] == 'JSONObject' and 'schema' in d1:
                 content = read_json_from_file(os.path.join(working_directory, obj_name))
                 if not validate_json(content, d1['schema']):
-                    raise InvalidJSONDataObject({
+                    raise InvalidJSONDataObjectError({
                         'obj_name': obj_name,
                         'content': content,
                         'schema': d1['schema']
@@ -500,7 +500,7 @@ class RTIProcessorAdapter(Thread):
             if output_descriptor['data_type'] == 'JSONObject' and 'schema' in output_descriptor:
                 content = read_json_from_file(output_content_path)
                 if not validate_json(content, output_descriptor['schema']):
-                    raise InvalidJSONDataObject({
+                    raise InvalidJSONDataObjectError({
                         'obj_name': output_name,
                         'content': content,
                         'schema': output_descriptor['schema']
