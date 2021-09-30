@@ -51,7 +51,7 @@ job_details_schema = {
 
 
 class RTIBlueprint(SaaSBlueprint):
-    def __init__(self, node):
+    def __init__(self, node) -> None:
         super().__init__('processor', __name__, endpoint_prefix)
         self._node = node
 
@@ -76,7 +76,6 @@ class RTIBlueprint(SaaSBlueprint):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
         deployment = body['deployment']
-
         return create_ok_response(self._node.rti.deploy(proc_id, deployment))
 
     @request_manager.handle_request(processor_descriptor_schema)
@@ -94,13 +93,7 @@ class RTIBlueprint(SaaSBlueprint):
     @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id: str) -> (Response, int):
         task_descriptor = request_manager.get_request_variable('body')
-        job_id = self._node.rti.submit(proc_id, task_descriptor)
-
-        return create_ok_response({
-            'id': job_id,
-            'proc_id': proc_id,
-            'task': task_descriptor
-        })
+        return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
     @request_manager.handle_request(jobs_descriptor_schema)
     @request_manager.require_rti()
@@ -126,7 +119,7 @@ class RTIBlueprint(SaaSBlueprint):
 
 
 class RTIProxy(EndpointProxy):
-    def __init__(self, remote_address):
+    def __init__(self, remote_address: (str, int)) -> None:
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_deployed(self):
