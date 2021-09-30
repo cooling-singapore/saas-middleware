@@ -13,6 +13,10 @@ from saas.helpers import get_timestamp_now, read_json_from_file
 logger = logging.getLogger('tests.base_testcase')
 
 
+def load_test_credentials() -> dict:
+    return read_json_from_file('credentials.json')
+
+
 class TestCaseBase:
     def __init__(self):
         self._mutex = Lock()
