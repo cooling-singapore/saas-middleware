@@ -44,7 +44,7 @@ def wait_for_job(rti, job_id):
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
     source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = '972bd54'
+    commit_id = 'f75bb32'
     proc_path = 'processor_test'
     proc_config = config
     created_t = get_timestamp_now()
