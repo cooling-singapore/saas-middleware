@@ -908,7 +908,6 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
 
-        # create proxies
         db = NodeDBProxy(node.rest.address())
         rti = RTIProxy(node.rest.address())
         dor = DORProxy(node.rest.address())
@@ -936,6 +935,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -969,7 +969,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
@@ -988,9 +989,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
