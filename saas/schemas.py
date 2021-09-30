@@ -76,6 +76,14 @@ io_variable_schema = {
         'data_type': {'type': 'string'},
         'data_format': {'type': 'string'}
     },
+    'if': {
+        'properties': {'data_type': {'const': 'JSONObject'}}
+    },
+    'then': {
+        'properties': {
+            'schema': {'type': 'object'}
+        }
+    },
     'required': ['name', 'data_type', 'data_format']
 }
 

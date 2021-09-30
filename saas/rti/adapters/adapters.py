@@ -17,9 +17,10 @@ from saas.exceptions import SaaSException
 from saas.keystore.identity import Identity
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
-    AccessNotPermittedError, MissingUserSignatureError
+    AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObject
 from saas.rti.status import State, StatusLogger
-from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link
+from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
+    validate_json
 
 logger = logging.getLogger('rti.adapters')
 
@@ -419,21 +420,31 @@ class RTIProcessorAdapter(Thread):
         for item in task_descriptor['input']:
             obj_name = item['name']
 
-            descriptor_path = os.path.join(working_directory, f"{obj_name}.descriptor")
-            d0 = read_json_from_file(descriptor_path)
+            # check if data type/format indicated in processor descriptor and data object descriptor match
+            d0 = read_json_from_file(os.path.join(working_directory, f"{obj_name}.descriptor"))
             d1 = self._input_interface[obj_name]
-
             if d0['data_type'] != d1['data_type'] or d0['data_format'] != d1['data_format']:
+                raise MismatchingDataTypeOrFormatError({
+                    'obj_name': obj_name,
+                    'expected': {
+                        'data_type': d1['data_type'],
+                        'data_format': d1['data_format']
+                    },
+                    'actual': {
+                        'data_type': d0['data_type'],
+                        'data_format': d0['data_format']
+                    }
+                })
 
-                error = f"mismatching type or format for input data object '{obj_name}': " \
-                        f"processor_descriptor={(d1['data_type'], d1['data_format'])} " \
-                        f"object_descriptor={(d0['data_type'], d0['data_format'])}"
-
-                logger.error(error)
-                status.update('error', error)
-                return False
-
-        return True
+            # in case of JSONObject data type, verify using the schema (if any)
+            if d0['data_type'] == 'JSONObject' and 'schema' in d1:
+                content = read_json_from_file(os.path.join(working_directory, obj_name))
+                if not validate_json(content, d1['schema']):
+                    raise InvalidJSONDataObject({
+                        'obj_name': obj_name,
+                        'content': content,
+                        'schema': d1['schema']
+                    })
 
     def _verify_output_data_object_owner_identities(self, task_descriptor: dict, status: StatusLogger):
         for item in task_descriptor['output']:
@@ -484,6 +495,16 @@ class RTIProcessorAdapter(Thread):
                 status.update('error', error)
                 successful = False
                 break
+
+            # is the output a JSONObject?
+            if output_descriptor['data_type'] == 'JSONObject' and 'schema' in output_descriptor:
+                content = read_json_from_file(output_content_path)
+                if not validate_json(content, output_descriptor['schema']):
+                    raise InvalidJSONDataObject({
+                        'obj_name': output_name,
+                        'content': content,
+                        'schema': output_descriptor['schema']
+                    })
 
             # push the output data object to the DOR
             obj_id = self.push_output_data_object(output_descriptor, output_content_path, owner,
