@@ -35,7 +35,7 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread):
-    def __init__(self, proc_id: str, proc_descriptor: dict, job_wd_path: str, node):
+    def __init__(self, proc_id: str, proc_descriptor: dict, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()
