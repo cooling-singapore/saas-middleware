@@ -62,16 +62,36 @@ class MismatchingDataTypeOrFormatError(RTIException):
         super().__init__('Data type/format of processor input and data object do not match', details=details)
 
 
-class InvalidJSONDataObjectError(SaaSException):
+class InvalidJSONDataObjectError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object JSON content does not comply with schema', details=details)
 
 
-class SSHConnectionError(SaaSException):
+class SSHConnectionError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('SSH connection cannot be established', details=details)
 
 
-class SSHCredentialsNotFoundError(SaaSException):
+class SSHCredentialsNotFoundError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('SSH credentials not found', details=details)
+
+
+class DataObjectContentNotFoundError(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Content of data object not found', details=details)
+
+
+class DataObjectOwnerNotFoundError(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Identity of data object owner not found', details=details)
+
+
+class DockerRuntimeError(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Error while running Docker processor', details=details)
+
+
+class BuildDockerImageError(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Error while building Docker image', details=details)

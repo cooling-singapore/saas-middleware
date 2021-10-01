@@ -91,7 +91,8 @@ class RuntimeInfrastructureService:
 
                     elif deployment == 'docker':
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTIDockerProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path, self._node)
+                            RTIDockerProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
+                                                      self._jobs_path, self._node)
 
                     # start the processor
                     processor = self._deployed_processors[proc_id]
