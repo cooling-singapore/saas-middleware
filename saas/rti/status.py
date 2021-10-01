@@ -4,7 +4,7 @@ import logging
 import saas.helpers as helpers
 
 from enum import Enum
-from typing import Union, Any
+from typing import Union
 
 logger = logging.getLogger('rti.status')
 

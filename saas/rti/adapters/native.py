@@ -148,7 +148,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
         status.remove('task')
 
-    def _test_ssh_connection(self):
+    def _test_ssh_connection(self) -> None:
         if self._ssh_credentials:
             command = ['ssh', '-i', self._ssh_credentials.key_path,
                        f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", 'exit']
@@ -159,7 +159,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                     'result': result
                 })
 
-    def _monitor_command(self, command: str, context: dict, stdout_path: str, stderr_path: str, cwd: str = None):
+    def _monitor_command(self, command: str, context: dict,
+                         stdout_path: str, stderr_path: str, cwd: str = None) -> None:
+
         command = f"cd {cwd} && {command}" if cwd else command
         command = ['ssh', '-i', self._ssh_credentials.key_path,
                    f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command
@@ -172,7 +174,8 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
         monitor_command(command, triggers, stdout_path=stdout_path, stderr_path=stderr_path)
 
-    def _execute_command(self, command: str, cwd: str = None, console_log_prefix: str = None) -> subprocess.CompletedProcess:
+    def _execute_command(self, command: str, cwd: str = None,
+                         console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
             command = f"cd {cwd} && {command}" if cwd else command
             command = ['ssh', '-i', self._ssh_credentials.key_path,
