@@ -14,10 +14,10 @@ from saas.dor.blueprint import DORProxy
 from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.exceptions import SaaSException
-from saas.keystore.identity import Identity
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
-    AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError
+    AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
+    DataObjectContentNotFoundError, DataObjectOwnerNotFoundError
 from saas.rti.status import State, StatusLogger
 from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
     validate_json
@@ -70,7 +70,7 @@ class RTIProcessorAdapter(Thread):
         pass
 
     @abstractmethod
-    def execute(self, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+    def execute(self, job_id: str, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         pass
 
     def stop(self) -> None:
@@ -93,14 +93,13 @@ class RTIProcessorAdapter(Thread):
         self._decrypt_reference_input_data_objects(ephemeral_key, pending_content_keys, status)
 
         # verify that data types of input data objects match
-        self._verify_input_data_objects_types_and_formats(task_descriptor, working_directory, status)
+        self._verify_inputs(task_descriptor, working_directory, status)
 
         # verify the output owner identities
-        self._verify_output_data_object_owner_identities(task_descriptor, status)
+        self._verify_outputs(task_descriptor, status)
 
-    def post_execute(self, task_descriptor: dict, working_directory: str, job_id: str, status: StatusLogger) -> None:
-        # push output data objects to DOR
-        self._push_output_data_objects(task_descriptor, working_directory, job_id, status)
+    def post_execute(self, job_id: str, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        pass
 
     def add(self, job_descriptor: dict, status: StatusLogger) -> None:
         with self._mutex:
@@ -147,10 +146,10 @@ class RTIProcessorAdapter(Thread):
                 self.pre_execute(task_descriptor, wd_path, status)
 
                 # instruct processor adapter to execute the job
-                self.execute(task_descriptor, wd_path, status)
+                self.execute(job_id, task_descriptor, wd_path, status)
 
                 # perform post-execute routine
-                self.post_execute(task_descriptor, wd_path, job_id, status)
+                self.post_execute(job_id, task_descriptor, wd_path, status)
 
                 status.update_state(State.SUCCESSFUL)
 
@@ -342,80 +341,22 @@ class RTIProcessorAdapter(Thread):
             if need_sleep:
                 time.sleep(1)
 
-    def push_output_data_object(self, output_descriptor: dict, output_content_path: str, owner: Identity,
-                                task_descriptor: dict, job_id: str, status: StatusLogger) -> Optional[str]:
-        output_name = output_descriptor['name']
-        data_type = output_descriptor['data_type']
-        data_format = output_descriptor['data_format']
-        created_by = self._node.identity().id
-
-        status.update('step', f"push output data object {output_name}")
-
-        for item in task_descriptor['output']:
-            if item['name'] == output_name:
-                restricted_access = item['restricted_access']
-                content_encrypted = item['content_encrypted']
-
-                # TODO: figure out what is supposed to happen with the content key here
-                content_key = encrypt_file(output_content_path, encrypt_for=owner,
-                                           delete_source=True) if content_encrypted else None
-
-                # do we have a target node specified for storing the data object?
-                target_address = self._node.rest.address()
-                if 'target_node_iid' in item:
-                    # check with the node db to see if we know about this node
-                    node_record = self._node.db.get_network(item['target_node_iid'])
-
-                    # extract the rest address from that node record
-                    target_address = node_record['rest_address']
-
-                # upload the data object to the DOR (the owner is the node for now
-                # so we can update tags in the next step)
-                proxy = DORProxy(target_address)
-                obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
-                                                  restricted_access, content_encrypted,
-                                                  data_type, data_format, created_by,
-                                                  recipe={
-                                                      'task_descriptor': task_descriptor,
-                                                      'output_name': output_name
-                                                  })
-
-                # update tags with information from the job
-                proxy.update_tags(obj_id, self._node.keystore, {
-                    'name': f"{item['name']}",
-                    'job_id': job_id,
-                    'data-type': data_type,
-                    'data-format': data_format
-                })
-
-                # transfer ownership to the new owner
-                proxy.transfer_ownership(obj_id, self._node.keystore, owner)
-
-                return obj_id
-
-        return None
-
-    def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str, status: StatusLogger):
+    def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str,
+                                        status: StatusLogger) -> None:
         status.update('step', f"store by-value input data objects")
 
         for item in task_descriptor['input']:
-            obj_name = item['name']
-
             # if it is a 'value' input then store it to the working directory
             if item['type'] == 'value':
-                input_content_path = os.path.join(working_directory, obj_name)
+                input_content_path = os.path.join(working_directory, item['name'])
                 write_json_to_file(item['value'], input_content_path)
                 write_json_to_file({
                     'data_type': 'JSONObject',
                     'data_format': 'json'
                 }, f"{input_content_path}.descriptor")
 
-        status.remove('input_status')
-        return True
-
-    def _verify_input_data_objects_types_and_formats(self, task_descriptor: dict, working_directory: str,
-                                                     status: StatusLogger) -> None:
-        status.update('step', 'verify input data object types and formats')
+    def _verify_inputs(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        status.update('step', 'verify inputs: data object types and formats')
 
         for item in task_descriptor['input']:
             obj_name = item['name']
@@ -446,84 +387,94 @@ class RTIProcessorAdapter(Thread):
                         'schema': d1['schema']
                     })
 
-    def _verify_output_data_object_owner_identities(self, task_descriptor: dict, status: StatusLogger):
+    def _verify_outputs(self, task_descriptor: dict, status: StatusLogger) -> None:
+        status.update('step', 'verify outputs: data object owner identities')
+
         for item in task_descriptor['output']:
             owner = self._node.db.get_identity(item['owner_iid'])
             if owner is None:
-                error = f"could not find owner identity: iid={item['owner_iid']} " \
-                        f"for output data object: name='{item['name']}'"
-                logger.error(error)
-                status.update('error', error)
-                return False
+                raise DataObjectOwnerNotFoundError({
+                    'output_name': item['name'],
+                    'owner_iid': item['owner_iid']
+                })
 
-        return True
+    def _push_data_object(self, job_id: str, obj_name: str, task_descriptor: dict, working_directory: str,
+                          status: StatusLogger) -> None:
 
-    def _push_output_data_objects(self, task_descriptor: dict, working_directory: str, job_id: str,
-                                  status: StatusLogger):
-        status.update('stage', 'push output data objects')
+        # convenience variables
+        task_out_items = {item['name']: item for item in task_descriptor['output']}
+        task_out = task_out_items[obj_name]
+        proc_out = self._output_interface[obj_name]
 
-        # map the output items in the task descriptor
-        output_items = {}
-        for item in task_descriptor['output']:
-            output_items[item['name']] = item
-
-        successful = True
-        output = []
-        for output_descriptor in self._output_interface.values():
-            output_name = output_descriptor['name']
-
-            output_content_path = os.path.join(working_directory, output_name)
-            status.update('pending_output_item', {
-                'descriptor': output_descriptor,
-                'content_path': output_content_path,
+        # check if the output data object exists
+        output_content_path = os.path.join(working_directory, obj_name)
+        if not os.path.isfile(output_content_path):
+            raise DataObjectContentNotFoundError({
+                'output_name': obj_name,
+                'content_path': output_content_path
             })
 
-            # check if the output data object exists
-            if not os.path.isfile(output_content_path):
-                error = f"worker[{self.name}]: output data object '{output_name}' not available."
-                logger.error(error)
-                status.update('error', error)
-                successful = False
-                break
-
-            # get the owner
-            owner = self._node.db.get_identity(iid=output_items[output_name]['owner_iid'])
-            if owner is None:
-                error = f"could not find owner identity: iid={output_items[output_name]['owner_iid']} " \
-                        f"for output data object: name='{output_name}'"
-                logger.error(error)
-                status.update('error', error)
-                successful = False
-                break
-
-            # is the output a JSONObject?
-            if output_descriptor['data_type'] == 'JSONObject' and 'schema' in output_descriptor:
-                content = read_json_from_file(output_content_path)
-                if not validate_json(content, output_descriptor['schema']):
-                    raise InvalidJSONDataObjectError({
-                        'obj_name': output_name,
-                        'content': content,
-                        'schema': output_descriptor['schema']
-                    })
-
-            # push the output data object to the DOR
-            obj_id = self.push_output_data_object(output_descriptor, output_content_path, owner,
-                                                  task_descriptor, job_id, status)
-            if not obj_id:
-                error = f"worker[{self.name}]: failed to add data object '{output_descriptor['name']}'to DOR."
-                logger.error(error)
-                status.update('error', error)
-                successful = False
-                break
-
-            output.append({
-                'name': output_descriptor['name'],
-                'obj_id': obj_id
+        # get the owner
+        owner = self._node.db.get_identity(iid=task_out['owner_iid'])
+        if owner is None:
+            raise DataObjectOwnerNotFoundError({
+                'output_name': obj_name,
+                'owner_iid': task_out['owner_iid']
             })
 
-        # set the output data object ids
+        # is the output a JSONObject?
+        if proc_out['data_type'] == 'JSONObject' and 'schema' in proc_out:
+            content = read_json_from_file(output_content_path)
+            if not validate_json(content, proc_out['schema']):
+                raise InvalidJSONDataObjectError({
+                    'obj_name': obj_name,
+                    'content': content,
+                    'schema': proc_out['schema']
+                })
+
+        restricted_access = task_out['restricted_access']
+        content_encrypted = task_out['content_encrypted']
+
+        # TODO: figure out what is supposed to happen with the content key here
+        content_key = encrypt_file(output_content_path, encrypt_for=owner,
+                                   delete_source=True) if content_encrypted else None
+
+        # do we have a target node specified for storing the data object?
+        target_address = self._node.rest.address()
+        if 'target_node_iid' in task_out:
+            # check with the node db to see if we know about this node
+            node_record = self._node.db.get_network(task_out['target_node_iid'])
+
+            # extract the rest address from that node record
+            target_address = node_record['rest_address']
+
+        # upload the data object to the DOR (the owner is the node for now
+        # so we can update tags in the next step)
+        proxy = DORProxy(target_address)
+        obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
+                                          restricted_access, content_encrypted,
+                                          proc_out['data_type'], proc_out['data_format'], self._node.identity().id,
+                                          recipe={
+                                              'task_descriptor': task_descriptor,
+                                              'output_name': obj_name
+                                          })
+
+        # update tags with information from the job
+        proxy.update_tags(obj_id, self._node.keystore, {
+            'name': f"{obj_name}",
+            'job_id': job_id,
+            'data-type': proc_out['data_type'],
+            'data-format': proc_out['data_format']
+        })
+
+        # transfer ownership to the new owner
+        proxy.transfer_ownership(obj_id, self._node.keystore, owner)
+
+        # set the output data object ids in the status
+        output = status.get('output', default=[])
+        output.append({
+            'name': obj_name,
+            'obj_id': obj_id
+        })
         status.update('output', output)
 
-        # clean up transient status information
-        status.remove('pending_output_item')
-        return successful
