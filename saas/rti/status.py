@@ -4,8 +4,7 @@ import logging
 import saas.helpers as helpers
 
 from enum import Enum
-from typing import Union
-
+from typing import Union, Any
 
 logger = logging.getLogger('rti.status')
 
@@ -53,8 +52,8 @@ class StatusLogger:
         self._content.update(content)
         helpers.write_json_to_file(self._content, self._path)
 
-    def get(self, key: str = None) -> Union[str, dict]:
-        return self._content[key] if key else self._content
+    def get(self, key: str = None, default: Union[str, dict, list] = None) -> Union[str, dict, list]:
+        return (self._content[key] if key in self._content else default) if key else self._content
 
     def remove(self, key: str) -> None:
         self._content.pop(key, None)

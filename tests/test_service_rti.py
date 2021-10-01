@@ -8,6 +8,7 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.exceptions import SaaSException
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
@@ -44,7 +45,7 @@ def wait_for_job(rti, job_id):
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
     source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = 'f75bb32'
+    commit_id = '7a87928'
     proc_path = 'processor_test'
     proc_config = config
     created_t = get_timestamp_now()
@@ -768,6 +769,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert (proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -801,7 +803,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert (job_id is not None)
 
@@ -823,7 +826,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
