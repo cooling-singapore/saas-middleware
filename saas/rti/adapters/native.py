@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import subprocess
+import threading
+import time
 
 from jsonschema import validate
 
-from saas.exceptions import RunCommandError
-from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local
+from saas.exceptions import RunCommandError, SaaSException
+from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
@@ -86,55 +88,65 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, task_descriptor: dict, local_working_directory: str, status_logger: StatusLogger) -> None:
+    def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
         # specify the working directory
         working_directory = local_working_directory.replace(os.environ['HOME'], '$HOME')
 
         # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
         if self._ssh_credentials is not None:
             # test the connection
+            status.update('task', f"test SSH connection")
             self._test_ssh_connection()
 
             # create the remote working directory
-            status_logger.update('task', f"create remote working directory at {working_directory}")
+            status.update('task', f"create remote working directory at {working_directory}")
             self._execute_command(f"mkdir -p {working_directory}")
 
             # copy the input data objects to the remote working directory
             for obj_name in self._input_interface:
                 local_path = os.path.join(local_working_directory, obj_name)
-                status_logger.update('task', f"copy data objects: {local_path} -> {working_directory}")
+                status.update('task', f"copy data objects: {local_path} -> {working_directory}")
                 scp_local_to_remote(local_path, working_directory,
                                     login=self._ssh_credentials.login,
                                     host=self._ssh_credentials.host,
                                     ssh_key_path=self._ssh_credentials.key_path)
 
         # run execute script
-        status_logger.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
-                                     f"working_directory={working_directory} "
-                                     f"processor_path={self._processor_path}")
-        self._execute_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
+        status.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
+                              f"working_directory={working_directory} "
+                              f"processor_path={self._processor_path}")
+
+        # create the context information for this job
+        context = {
+            'task_descriptor': task_descriptor,
+            'local_working_directory': local_working_directory,
+            'working_directory': working_directory,
+            'job_id': job_id,
+            'status': status,
+            'threads': {}
+        }
+
+        # run the execute.sh script while monitoring its output
+        self._monitor_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}", context,
                               cwd=self._processor_path,
-                              console_log_prefix=os.path.join(working_directory, "execute.sh"))
+                              stdout_path=os.path.join(local_working_directory, "execute.sh.stdout"),
+                              stderr_path=os.path.join(local_working_directory, "execute.sh.stderr"))
+
+        # wait for all outputs to be processed
+        status.update('task', f"wait for all outputs to be processed")
+        while len(context['threads']) > 0:
+            time.sleep(0.1)
 
         # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
         if self._ssh_credentials is not None:
-            # copy the output data objects to the local working directory
-            for obj_name in self._output_interface:
-                remote_path = os.path.join(working_directory, obj_name)
-                status_logger.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
-                scp_remote_to_local(remote_path, local_working_directory,
-                                    login=self._ssh_credentials.login,
-                                    host=self._ssh_credentials.host,
-                                    ssh_key_path=self._ssh_credentials.key_path)
-
             # delete remote working directory
-            status_logger.update('task', f"delete remote working directory: {working_directory}")
+            status.update('task', f"delete remote working directory: {working_directory}")
             self._execute_command(f"rm -rf {working_directory}")
 
             msg = f"delete remote working directory at {working_directory}"
-            status_logger.update('status', msg)
+            status.update('status', msg)
 
-        status_logger.remove('task')
+        status.remove('task')
 
     def _test_ssh_connection(self):
         if self._ssh_credentials:
@@ -146,6 +158,19 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                     'command': command,
                     'result': result
                 })
+
+    def _monitor_command(self, command: str, context: dict, stdout_path: str, stderr_path: str, cwd: str = None):
+        command = f"cd {cwd} && {command}" if cwd else command
+        command = ['ssh', '-i', self._ssh_credentials.key_path,
+                   f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command
+                   ] if self._ssh_credentials else ['bash', '-c', command]
+
+        triggers = {
+            'trigger:output': {'func': self._handle_trigger_output, 'context': context},
+            'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+        }
+
+        monitor_command(command, triggers, stdout_path=stdout_path, stderr_path=stderr_path)
 
     def _execute_command(self, command: str, cwd: str = None, console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
@@ -187,3 +212,47 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
     def _echo_to_file(self, path: str, content: str) -> None:
         self._execute_command(f"echo \"{content}\" > {path}")
+
+    def _handle_trigger_output(self, line: str, context: dict) -> None:
+        obj_name = line.split(':')[2]
+        context['obj_name'] = obj_name
+        context['threads'][obj_name] = threading.Thread(target=self._process_output, kwargs=context)
+        context['threads'][obj_name].start()
+
+    def _handle_trigger_progress(self, line: str, context: dict) -> None:
+        status: StatusLogger = context['status']
+        status.update('progress', line.split(':')[2])
+
+    def _process_output(self, **context) -> None:
+        obj_name = context['obj_name']
+        job_id = context['job_id']
+        task_descriptor = context['task_descriptor']
+        working_directory = context['working_directory']
+        local_working_directory = context['local_working_directory']
+        status: StatusLogger = context['status']
+
+        status.update(f"process_output:{obj_name}", 'started')
+
+        # if ssh_auth IS present, then we perform a remote execution
+        # -> copy output data to local working directory
+        if self._ssh_credentials is not None:
+            status.update(f"process_output:{obj_name}", 'retrieve')
+
+            remote_path = os.path.join(working_directory, obj_name)
+            status.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
+            scp_remote_to_local(remote_path, local_working_directory,
+                                login=self._ssh_credentials.login,
+                                host=self._ssh_credentials.host,
+                                ssh_key_path=self._ssh_credentials.key_path)
+
+        # upload the data object to the target DOR
+        try:
+            status.update(f"process_output:{obj_name}", 'push')
+            self._push_data_object(job_id, obj_name, task_descriptor, local_working_directory, status)
+            status.update(f"process_output:{obj_name}", 'done')
+
+        except SaaSException as e:
+            status.update(f"process_output:{obj_name}", f"failed: id={e.id} reason={e.reason}")
+
+        # remove this thread
+        context['threads'].pop(obj_name)
