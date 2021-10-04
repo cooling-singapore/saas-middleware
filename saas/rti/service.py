@@ -54,54 +54,59 @@ class RuntimeInfrastructureService:
                     continue
 
                 # try to fetch the data object using the P2P protocol
-                try:
-                    protocol = DataObjectRepositoryP2PProtocol(self._node)
+                protocol = DataObjectRepositoryP2PProtocol(self._node)
 
-                    # does the remote DOR have the data object?
+                # lookup the data object
+                try:
                     records = protocol.lookup(network_node['p2p_address'], [proc_id])
                     if proc_id not in records:
                         continue
 
-                    # GPP data objects should not have restricted access, nor should they be encrypted. they should also
-                    # have data type 'Git-Processor-Pointer' and format 'json'
-                    record = records[proc_id]
-                    if record['access_restricted'] or record['content_encrypted'] or \
-                            record['data_type'] != 'Git-Processor-Pointer' or record['data_format'] != 'json':
-                        raise UnexpectedGPPMetaInformation({
-                            'proc_id': proc_id,
-                            'record': record
-                        })
+                # ignore peers that are not available
+                except PeerUnavailableError:
+                    continue
 
-                    # fetch the data object
+                # GPP data objects should not have restricted access, nor should they be encrypted. they should also
+                # have data type 'Git-Processor-Pointer' and format 'json'
+                record = records[proc_id]
+                if record['access_restricted'] or record['content_encrypted'] or \
+                        record['data_type'] != 'Git-Processor-Pointer' or record['data_format'] != 'json':
+                    raise UnexpectedGPPMetaInformation({
+                        'proc_id': proc_id,
+                        'record': record
+                    })
+
+                # fetch the data object
+                try:
                     descriptor_path = self.proc_descriptor_path(proc_id)
                     content_path = self.proc_content_path(record['c_hash'])
                     protocol.fetch(network_node['p2p_address'], proc_id, descriptor_path, content_path)
 
-                    # load the descriptor
-                    descriptor = read_json_from_file(descriptor_path)
-
-                    # create an RTI adapter instance
-                    if deployment == 'native':
-                        self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTINativeProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
-                                                      self._jobs_path, self._node,
-                                                      ssh_credentials=ssh_credentials)
-
-                    elif deployment == 'docker':
-                        self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                            RTIDockerProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
-                                                      self._jobs_path, self._node)
-
-                    # start the processor
-                    processor = self._deployed_processors[proc_id]
-                    processor.start()
-
-                    # return the descriptor
-                    return descriptor['proc_descriptor']
-
                 # ignore peers that are not available
                 except PeerUnavailableError:
                     continue
+
+                # load the descriptor
+                descriptor = read_json_from_file(descriptor_path)
+
+                # create an RTI adapter instance
+                if deployment == 'native':
+                    self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                        RTINativeProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
+                                                  self._jobs_path, self._node,
+                                                  ssh_credentials=ssh_credentials)
+
+                elif deployment == 'docker':
+                    self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                        RTIDockerProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
+                                                  self._jobs_path, self._node)
+
+                # start the processor
+                processor = self._deployed_processors[proc_id]
+                processor.start()
+
+                # return the descriptor
+                return descriptor['proc_descriptor']
 
             # if we reach here, the GPP could not be found
             raise GPPDataObjectNotFound({
