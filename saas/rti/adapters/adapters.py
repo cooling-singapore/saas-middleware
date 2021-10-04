@@ -136,11 +136,11 @@ class RTIProcessorAdapter(Thread, ABC):
             # set job state
             status.update_state(State.RUNNING)
 
-            try:
-                job_id = str(job_descriptor['id'])
-                task_descriptor = job_descriptor['task']
-                wd_path = os.path.join(self._job_wd_path, job_id)
+            job_id = str(job_descriptor['id'])
+            task_descriptor = job_descriptor['task']
+            wd_path = os.path.join(self._job_wd_path, job_id)
 
+            try:
                 # perform pre-execute routine
                 self.pre_execute(task_descriptor, wd_path, status)
 
@@ -150,14 +150,15 @@ class RTIProcessorAdapter(Thread, ABC):
                 # perform post-execute routine
                 self.post_execute(job_id, task_descriptor, wd_path, status)
 
-                status.update_state(State.SUCCESSFUL)
-
             except SaaSException as e:
                 status.update('error', f"error while running job:\n"
                                        f"id: {e.id}\n"
                                        f"reason: {e.reason}\n"
                                        f"details: {e.details}")
                 status.update_state(State.FAILED)
+
+            else:
+                status.update_state(State.SUCCESSFUL)
 
         logger.info(f"[adapter:{self._proc_id}] shutting down...")
         self._state = ProcessorState.STOPPING
