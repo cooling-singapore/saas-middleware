@@ -4,6 +4,7 @@ import os
 
 from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
+from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnexpectedHTTPError, AuthorisationFailedError, UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
@@ -323,19 +324,27 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         fake_obj_id = 'abcdef'
         descriptor_path = os.path.join(self.wd_path, f"{fake_obj_id}.descriptor")
         content_path = os.path.join(self.wd_path, fake_obj_id)
-        result = protocol.send_fetch(self.node.p2p.address(), fake_obj_id,
-                                     destination_descriptor_path=descriptor_path,
-                                     destination_content_path=content_path)
-        assert result['code'] != 200
+        try:
+            protocol.fetch(self.node.p2p.address(), fake_obj_id,
+                           destination_descriptor_path=descriptor_path,
+                           destination_content_path=content_path)
+            assert False
+
+        except FetchDataObjectFailedError:
+            assert True
 
         descriptor_path = os.path.join(self.wd_path, f"{obj_id}.descriptor")
         content_path = os.path.join(self.wd_path, f"{obj_id}.content")
 
         # the receiver does not have permission at this point to receive the data object
-        result = protocol.send_fetch(self.node.p2p.address(), obj_id,
-                                     destination_descriptor_path=descriptor_path,
-                                     destination_content_path=content_path)
-        assert result['code'] != 200
+        try:
+            protocol.fetch(self.node.p2p.address(), obj_id,
+                           destination_descriptor_path=descriptor_path,
+                           destination_content_path=content_path)
+            assert False
+
+        except FetchDataObjectFailedError:
+            assert True
 
         # grant permission
         result = self.dor_proxy.grant_access(obj_id, self.extras[1], receiver_identity)
@@ -346,11 +355,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         signature = receiver.keystore.sign(token.encode('utf-8'))
 
         # the receiver does have permission at this point to receive the data object
-        result = protocol.send_fetch(self.node.p2p.address(), obj_id,
-                                     destination_descriptor_path=descriptor_path,
-                                     destination_content_path=content_path,
-                                     user_signature=signature, user_iid=receiver_identity.id)
-        assert result['code'] == 200
+        protocol.fetch(self.node.p2p.address(), obj_id,
+                       destination_descriptor_path=descriptor_path,
+                       destination_content_path=content_path,
+                       user_signature=signature, user_iid=receiver_identity.id)
         assert os.path.isfile(descriptor_path)
         assert os.path.isfile(content_path)
 

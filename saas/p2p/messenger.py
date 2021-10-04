@@ -47,7 +47,7 @@ class SecureMessenger:
         :param identity: the identity of the peer's counterparty
         :param storage_path: path to where attachments are being stored
         :return: the identity of the peer and the SecureMessenger object if successful.
-        :raise ConnectionRefusedError
+        :raise PeerUnavailableError
         :raise HandshakeFailedError
         """
         try:

@@ -8,6 +8,7 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.exceptions import SaaSException
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
@@ -44,7 +45,7 @@ def wait_for_job(rti, job_id):
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
     source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = '972bd54'
+    commit_id = '7a87928'
     proc_path = 'processor_test'
     proc_config = config
     created_t = get_timestamp_now()
@@ -153,11 +154,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 1)
-
         result = wait_for_job(rti, job_id)
         return job_id, result
 
@@ -195,8 +191,11 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
@@ -503,6 +502,106 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(deployed is not None)
         assert(len(deployed) == 0)
 
+    def test_processor_execution_same_reference(self):
+        # test for issue #110: https://github.com/cooling-singapore/saas-middleware/issues/110
+
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(2)
+        owner = keystores[0]
+        user = keystores[1]
+        db.update_identity(owner.identity)
+        db.update_identity(user.identity)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = rti.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
+        assert(proc_id in deployed)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        # add data object
+        obj_id_ref, obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        logger.info(f"obj_id={obj_id}")
+        assert obj_id == obj_id_ref
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'reference',
+                'obj_id': obj_id
+            },
+            {
+                'name': 'b',
+                'type': 'reference',
+                'obj_id': obj_id
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 1)
+
+        result = wait_for_job(rti, job_id)
+        assert(result is True)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        input_path_a = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'a')
+        input_path_b = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'b')
+        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        assert(os.path.isfile(input_path_a))
+        assert(os.path.isfile(input_path_b))
+        assert(os.path.isfile(output_path))
+
+        result = rti.undeploy(proc_id)
+        assert result is not None
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
     def test_processor_execution_reference_restricted(self):
         # create node
         node = self.get_node('node', enable_rest=True)
@@ -670,6 +769,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert (proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -703,7 +803,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert (job_id is not None)
 
@@ -725,7 +826,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -748,7 +848,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_deployment_undeployment(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
@@ -773,7 +873,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        descriptor = rti.deploy(proc_id, ssh_profile='nscc')
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -785,14 +885,18 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {item['proc_id']: item for item in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -801,12 +905,11 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_processor_execution_value(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
 
-        # create proxies
         db = NodeDBProxy(node.rest.address())
         rti = RTIProxy(node.rest.address())
         dor = DORProxy(node.rest.address())
@@ -826,7 +929,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        descriptor = rti.deploy(proc_id, ssh_profile='nscc')
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -834,6 +937,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -867,7 +971,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
@@ -886,9 +991,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")

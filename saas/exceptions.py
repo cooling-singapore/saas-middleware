@@ -1,11 +1,11 @@
-from saas.helpers import generate_random_string
+import saas.helpers as helpers
 
 
 class SaaSException(Exception):
     def __init__(self, reason: str, details: dict = None):
         self._reason = reason
         self._details = details
-        self._id = generate_random_string(16)
+        self._id = helpers.generate_random_string(16)
 
     @property
     def reason(self):
@@ -28,3 +28,8 @@ class DORServiceNotSupportedError(SaaSException):
 class RTIServiceNotSupportedError(SaaSException):
     def __init__(self) -> None:
         super().__init__('RTI service is not supported by node')
+
+
+class RunCommandError(SaaSException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Error while running command', details=details)
