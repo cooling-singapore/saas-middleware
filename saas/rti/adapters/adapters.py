@@ -131,8 +131,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
             # process a job
             self._state = ProcessorState.BUSY
-            job_descriptor = pending_job[0]
-            status = pending_job[1]
+            job_descriptor, status = pending_job
 
             # set job state
             status.update_state(State.RUNNING)
