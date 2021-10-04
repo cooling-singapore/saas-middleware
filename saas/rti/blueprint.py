@@ -2,10 +2,12 @@ import logging
 
 from flask import Response
 
+from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saas.keystore.identity import Identity
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
+from saas.rti.exceptions import SSHCredentialsNotFoundError
 from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
 
 logger = logging.getLogger('rti.blueprint')
@@ -31,6 +33,7 @@ deployment_specification = {
     'type': 'object',
     'properties': {
         'deployment': {'type': 'string', 'enum': ['native', 'docker']},
+        'ssh_profile': {'type': 'string'}
     },
     'required': ['deployment']
 }
@@ -51,7 +54,7 @@ job_details_schema = {
 
 
 class RTIBlueprint(SaaSBlueprint):
-    def __init__(self, node):
+    def __init__(self, node) -> None:
         super().__init__('processor', __name__, endpoint_prefix)
         self._node = node
 
@@ -75,9 +78,22 @@ class RTIBlueprint(SaaSBlueprint):
     def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
-        deployment = body['deployment']
 
-        return create_ok_response(self._node.rti.deploy(proc_id, deployment))
+        # are we supposed to use an ssh profile?
+        if 'ssh_profile' in body:
+            asset: CredentialsAsset = self._node.keystore.get_asset('ssh-credentials')
+            ssh_credentials: SSHCredentials = asset.get(body['ssh_profile'])
+            if ssh_credentials is None:
+                raise SSHCredentialsNotFoundError({
+                    'ssh_profile': body['ssh_profile'],
+                    'iid': self._node.identity().id
+                })
+
+            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment'],
+                                                            ssh_credentials=ssh_credentials))
+
+        else:
+            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment']))
 
     @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
@@ -94,13 +110,7 @@ class RTIBlueprint(SaaSBlueprint):
     @request_manager.verify_request_body(task_descriptor_schema)
     def submit_job(self, proc_id: str) -> (Response, int):
         task_descriptor = request_manager.get_request_variable('body')
-        job_id = self._node.rti.submit(proc_id, task_descriptor)
-
-        return create_ok_response({
-            'id': job_id,
-            'proc_id': proc_id,
-            'task': task_descriptor
-        })
+        return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
     @request_manager.handle_request(jobs_descriptor_schema)
     @request_manager.require_rti()
@@ -126,16 +136,21 @@ class RTIBlueprint(SaaSBlueprint):
 
 
 class RTIProxy(EndpointProxy):
-    def __init__(self, remote_address):
+    def __init__(self, remote_address: (str, int)) -> None:
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def get_deployed(self):
         return self.get(f"")
 
-    def deploy(self, proc_id: str, deployment: str = "native") -> dict:
-        return self.post(f"/{proc_id}", body={
+    def deploy(self, proc_id: str, deployment: str = "native", ssh_profile: str = None) -> dict:
+        body = {
             'deployment': deployment,
-        })
+        }
+
+        if ssh_profile:
+            body['ssh_profile'] = ssh_profile
+
+        return self.post(f"/{proc_id}", body=body)
 
     def undeploy(self, proc_id: str) -> dict:
         return self.delete(f"/{proc_id}")

@@ -16,8 +16,11 @@ import random
 import string
 
 from getpass import getpass
+from typing import IO, AnyStr, TextIO
 
 import jsonschema
+
+import saas.exceptions as exceptions
 
 logger = logging.getLogger('helpers')
 
@@ -106,10 +109,59 @@ def all_in_dict(required, dictionary):
     return all(r in dictionary for r in required)
 
 
-def create_symbolic_link(source_path, destination_path):
-    if os.path.exists(destination_path):
-        subprocess.check_output(['rm', destination_path])
-    subprocess.check_output(['ln', '-s', source_path, destination_path])
+def run_command(command: list[str], cwd: str = None, suppress_exception: bool = False) -> subprocess.CompletedProcess:
+    result = subprocess.run(command, cwd=cwd, capture_output=True)
+    if not suppress_exception and result.returncode != 0:
+        raise exceptions.RunCommandError({
+            'command': command,
+            'cwd': cwd,
+            'result': result
+        })
+    return result
+
+
+def parse_stream(pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None):
+    while True:
+        # read the line, strip the '\n' and break if nothing left
+        line = pipe.readline().rstrip()
+        if not line:
+            break
+
+        # if we have a file
+        if file is not None:
+            file.write(line)
+
+        # parse the lines for this round
+        if triggers is not None:
+            for pattern, info in triggers.items():
+                if pattern in line:
+                    info['func'](line, info['context'])
+
+
+def monitor_command(command: list[str], triggers: dict, cwd: str = None,
+                    stdout_path: str = None, stderr_path: str = None) -> (list[str], list[str]):
+
+    with open(stdout_path, 'x') as f_stdout:
+        with open(stderr_path, 'x') as f_stderr:
+            proc = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            while proc.poll() is None:
+                parse_stream(proc.stdout, file=f_stdout, triggers=triggers)
+                parse_stream(proc.stderr, file=f_stderr)
+
+            proc.stdout.close()
+            proc.stderr.close()
+
+
+def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None) -> None:
+    run_command(['ln', '-sf', target_path, link_path], cwd=working_directory)
+
+
+def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str, ssh_key_path: str) -> None:
+    run_command(['scp', '-i', ssh_key_path, local_path, f"{login}@{host}:{remote_path}"])
+
+
+def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path: str) -> None:
+    run_command(['scp', '-i', ssh_key_path, f"{login}@{host}:{remote_path}", local_path])
 
 
 def prompt(question, valid_answers=None, valid_range=None, hidden=False, multi_selection=False):

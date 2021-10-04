@@ -47,7 +47,7 @@ class Node:
     def datastore(self):
         return self._datastore_path
 
-    def startup(self, server_address, enable_dor, enable_rti, rest_address=None, boot_node_address=None, ssh_profile=None):
+    def startup(self, server_address, enable_dor, enable_rti, rest_address=None, boot_node_address=None):
         logger.info("starting P2P service.")
         self.p2p = P2PService(self, server_address)
         self.p2p.start_service()
@@ -63,20 +63,8 @@ class Node:
             self.p2p.add(DataObjectRepositoryP2PProtocol(self))
 
         if enable_rti:
-            # are we supposed to use an ssh profile?
-            if ssh_profile:
-                asset: CredentialsAsset = self._keystore.get_asset('ssh-credentials')
-                ssh_credentials: SSHCredentials = asset.get(ssh_profile)
-                if ssh_credentials is None:
-                    raise RuntimeError(f"SSH profile '{ssh_profile}' but no credentials found for "
-                                       f"identity '{self._keystore.identity.id}'.")
-
-                logger.info(f"starting RTI service using SSH profile: {ssh_profile}.")
-                self.rti = RuntimeInfrastructureService(self, ssh_credentials=ssh_credentials)
-
-            else:
-                logger.info("starting RTI service.")
-                self.rti = RuntimeInfrastructureService(self)
+            logger.info("starting RTI service.")
+            self.rti = RuntimeInfrastructureService(self)
 
         if rest_address is not None:
             blueprint_dor = dor_blueprint.DORBlueprint(self)
@@ -139,10 +127,10 @@ class Node:
 
     @classmethod
     def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None,
-               enable_dor=False, enable_rti=False, ssh_profile: str = None):
+               enable_dor=False, enable_rti=False):
         node = Node(keystore, storage_path)
 
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
-                     rest_address=rest_address, boot_node_address=boot_node_address, ssh_profile=ssh_profile)
+                     rest_address=rest_address, boot_node_address=boot_node_address)
 
         return node

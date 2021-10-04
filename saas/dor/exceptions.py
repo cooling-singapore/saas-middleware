@@ -60,6 +60,9 @@ class CheckoutCommitError(DORException):
         super().__init__('Error encountered while trying to checkout commit', details=details)
 
 
+class FetchDataObjectFailedError(DORException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Data object could not be fetched', details=details)
 
 
 

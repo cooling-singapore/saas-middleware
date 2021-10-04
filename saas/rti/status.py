@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import logging
+import saas.helpers as helpers
 
 from enum import Enum
-from saas.helpers import write_json_to_file
+from typing import Union
 
 logger = logging.getLogger('rti.status')
 
@@ -13,7 +16,7 @@ class State(Enum):
     SUCCESSFUL = 'successful'
 
     @staticmethod
-    def from_string(label):
+    def from_string(label: str) -> State:
         for s in [State.INITIALISED, State.RUNNING, State.FAILED, State.SUCCESSFUL]:
             if label == s.value:
                 return s
@@ -27,51 +30,36 @@ class StatusLogger:
     basically just a wrapper of a dictionary providing convenient functions.
     """
 
-    def __init__(self, path):
-        self.path = path
-        self.content = {}
+    def __init__(self, path: str) -> None:
+        self._path = path
+        self._content = {}
         self.update_all({
             'state': State.RUNNING.value
         })
 
-    def update_state(self, state):
-        self.content['state'] = state.value
-        write_json_to_file(self.content, self.path)
+    def update_state(self, state: State) -> None:
+        self._content['state'] = state.value
+        helpers.write_json_to_file(self._content, self._path)
 
-    def get_state(self):
-        return State(self.content['state'])
+    def get_state(self) -> State:
+        return State(self._content['state'])
 
-    def update(self, key, value):
-        """
-        Update the job status with a given key and value. The updated job status is synced to disk.
-        """
-        self.content[key] = value
-        write_json_to_file(self.content, self.path)
+    def update(self, key: str, value: Union[str, dict, list]) -> None:
+        self._content[key] = value
+        helpers.write_json_to_file(self._content, self._path)
 
-    def update_all(self, content):
-        """
-        Update the job status with given content (i.e., dictionary). The updated job status is synced to disk.
-        """
-        self.content.update(content)
-        write_json_to_file(self.content, self.path)
+    def update_all(self, content: dict) -> None:
+        self._content.update(content)
+        helpers.write_json_to_file(self._content, self._path)
 
-    def get(self, key=None):
-        """
-        Returns the value for a given key.
-        """
-        return self.content[key] if key else self.content
+    def get(self, key: str = None, default: Union[str, dict, list] = None) -> Union[str, dict, list]:
+        return self._content.get(key, default) if key else self._content
 
-    def remove(self, key):
-        """
-        Removes an entry (if they exists)
-        """
-        self.content.pop(key, None)
-        write_json_to_file(self.content, self.path)
+    def remove(self, key: str) -> None:
+        self._content.pop(key, None)
+        helpers.write_json_to_file(self._content, self._path)
 
-    def remove_all(self, keys):
-        """
-        Removes multiple entries (if they exists) using a list of key.
-        """
+    def remove_all(self, keys: list[str]) -> None:
         for key in keys:
-            self.content.pop(key, None)
-        write_json_to_file(self.content, self.path)
+            self._content.pop(key, None)
+        helpers.write_json_to_file(self._content, self._path)
