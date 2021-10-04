@@ -53,7 +53,7 @@ class StatusLogger:
         helpers.write_json_to_file(self._content, self._path)
 
     def get(self, key: str = None, default: Union[str, dict, list] = None) -> Union[str, dict, list]:
-        return (self._content[key] if key in self._content else default) if key else self._content
+        return self._content.get(key, default) if key else self._content
 
     def remove(self, key: str) -> None:
         self._content.pop(key, None)
