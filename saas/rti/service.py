@@ -82,8 +82,6 @@ class RuntimeInfrastructureService:
 
                     # create an RTI adapter instance
                     if deployment == 'native':
-                        # do we have a ssh profile to use?
-
                         self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                             RTINativeProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
                                                       self._jobs_path, self._node,
