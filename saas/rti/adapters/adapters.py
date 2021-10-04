@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
 from typing import Optional
@@ -34,7 +34,7 @@ class ProcessorState(Enum):
     STOPPED = 'stopped'
 
 
-class RTIProcessorAdapter(Thread):
+class RTIProcessorAdapter(Thread, ABC):
     def __init__(self, proc_id: str, proc_descriptor: dict, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
 
