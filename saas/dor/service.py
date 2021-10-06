@@ -37,12 +37,9 @@ class DataObjectRepositoryService:
         self.protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise directories
-        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
-                                                             DataObjectRepositoryService.infix_master_path)])
-        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
-                                                             DataObjectRepositoryService.infix_cache_path)])
-        subprocess.check_output(['mkdir', '-p', os.path.join(self.node.datastore(),
-                                                             DataObjectRepositoryService.infix_repo_path)])
+        os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path), exist_ok=True)
+        os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path), exist_ok=True)
+        os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_repo_path), exist_ok=True)
 
     def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict) -> (int, dict):
         # in case of a GPP, we verify validity first before adding the data object
