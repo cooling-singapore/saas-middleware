@@ -19,19 +19,19 @@ class DataObjectRepositoryService:
     infix_cache_path = 'dor-cache'
     infix_repo_path = 'dor-repositories'
 
-    def obj_content_path(self, c_hash, cache=False):
+    def obj_content_path(self, c_hash: str, cache: bool = False) -> str:
         if cache:
             return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path, f"{c_hash}.content")
         else:
             return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, f"{c_hash}.content")
 
-    def obj_descriptor_path(self, obj_id, cache=False):
+    def obj_descriptor_path(self, obj_id: str, cache: bool = False) -> str:
         if cache:
             return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path, f"{obj_id}.descriptor")
         else:
             return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, f"{obj_id}.descriptor")
 
-    def __init__(self, node):
+    def __init__(self, node) -> None:
         # initialise properties
         self.node = node
         self.protocol = DataObjectRepositoryP2PProtocol(node)
@@ -178,7 +178,7 @@ class DataObjectRepositoryService:
             'descriptor': descriptor
         }
 
-    def delete(self, obj_id):
+    def delete(self, obj_id: str) -> dict:
         # do we have a record for this data object?
         record = self.node.db.get_object_by_id(obj_id)
         if not record:

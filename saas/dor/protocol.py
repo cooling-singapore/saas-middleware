@@ -13,7 +13,7 @@ logger = logging.getLogger('dor.protocol')
 class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
-    def __init__(self, node):
+    def __init__(self, node) -> None:
         super().__init__(node, DataObjectRepositoryP2PProtocol.id, {
             'lookup': self._handle_lookup,
             'fetch': self._handle_fetch
