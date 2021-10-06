@@ -411,7 +411,7 @@ class DORProxy(EndpointProxy):
         r = self.get(f"/{obj_id}/descriptor")
         return r['obj_id'], r['descriptor']
 
-    def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str):
+    def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str) -> dict:
         return self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
 
     def get_access_overview(self, obj_id: str) -> list:
@@ -426,7 +426,8 @@ class DORProxy(EndpointProxy):
     def get_owner(self, obj_id: str) -> dict:
         return self.get(f"/{obj_id}/owner")
 
-    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity, content_key: str = None):
+    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity,
+                           content_key: str = None) -> dict:
         body = {
             'new_owner_iid': new_owner.id
         }
