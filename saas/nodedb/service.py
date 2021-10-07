@@ -70,17 +70,20 @@ class NodeDBService:
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-    # BEGIN: things that do NOT require synchronisation/propagation: DORObject, DORTag, DORPermission
-
-    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
+    def _require_data_object(self, obj_id: str) -> DataObjectRecord:
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
+            obj_record = session.query(DataObjectRecord).get(obj_id)
             if obj_record is None:
                 raise DataObjectNotFoundError({
                     'obj_id': obj_id
                 })
+            return obj_record
 
+    # BEGIN: things that do NOT require synchronisation/propagation: DORObject, DORTag, DORPermission
+
+    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
+        self._require_data_object(obj_id)
+        with self._Session() as session:
             # update the tags
             for tag in tags:
                 item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
@@ -91,14 +94,8 @@ class NodeDBService:
             session.commit()
 
     def remove_tags(self, obj_id: str, keys: list[str] = None) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # remove specific tags
             if keys:
                 for key in keys:
@@ -111,14 +108,8 @@ class NodeDBService:
             session.commit()
 
     def get_tags(self, obj_id: str) -> list[dict]:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # get all tags
             tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
             return [{'key': tag.key, 'value': tag.value} for tag in tags]
@@ -151,38 +142,20 @@ class NodeDBService:
             return result
 
     def get_access_list(self, obj_id: str) -> list[str]:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # get list of ids of identities that have access
             records = session.query(DORPermission).filter_by(obj_id=obj_id).all()
             return [record.key_iid for record in records]
 
     def has_access(self, obj_id: str, identity: Identity) -> bool:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
+            return session.query(DataObjectPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
 
     def grant_access(self, obj_id: str, identity: Identity) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # grant access (if it hasn't already been granted)
             item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first()
             if item is None:
@@ -190,14 +163,8 @@ class NodeDBService:
                 session.commit()
 
     def revoke_access(self, obj_id: str, identity: Identity = None) -> list[str]:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # query for all or a specific identity
             q = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id) if identity else \
                 session.query(DORPermission).filter_by(obj_id=obj_id)
@@ -214,14 +181,8 @@ class NodeDBService:
     def add_data_object(self, obj_id: str, d_hash: str, c_hash: str, owner_iid: str,
                         access_restricted: bool, content_encrypted: bool,
                         data_type: str, data_format: str) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is not None:
-                raise DataObjectAlreadyExistsError({
-                    'obj_id': obj_id
-                })
-
             # add a new data object record
             session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
                                   access_restricted=access_restricted, content_encrypted=content_encrypted,
@@ -229,14 +190,8 @@ class NodeDBService:
             session.commit()
 
     def remove_data_object(self, obj_id: str) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # delete the data object
             session.query(DORObject).filter_by(obj_id=obj_id).delete()
             session.commit()
@@ -270,17 +225,12 @@ class NodeDBService:
             } for record in records]
 
     def get_owner(self, obj_id: str) -> Identity:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            return self.get_identity(obj_record.owner_iid)
+            return self.get_identity(DataObjectRecord.owner_iid)
 
     def update_ownership(self, obj_id: str, new_owner: Identity, content_key: str = None) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
             # does the data object exist?
             obj_record = session.query(DORObject).get(obj_id)
