@@ -41,7 +41,7 @@ class DataObjectRepositoryService:
         os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_cache_path), exist_ok=True)
         os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_repo_path), exist_ok=True)
 
-    def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict) -> (int, dict):
+    def add_gpp(self, owner_iid: str, descriptor: dict, gpp: dict) -> dict:
         # in case of a GPP, we verify validity first before adding the data object
 
         # calculate the hash for the data object content
@@ -102,7 +102,7 @@ class DataObjectRepositoryService:
         return self._add(owner_iid, c_hash, descriptor, content_path, False, False)
 
     def add(self, owner_iid: str, descriptor: dict, content_path: str,
-            access_restricted: bool, content_encrypted: bool) -> (int, dict):
+            access_restricted: bool, content_encrypted: bool) -> dict:
 
         # calculate the hash for the data object content
         c_hash = hash_file_content(content_path)
@@ -113,7 +113,7 @@ class DataObjectRepositoryService:
         return self._add(owner_iid, c_hash, descriptor, content_path, access_restricted, content_encrypted)
 
     def _add(self, owner_iid: str, c_hash: bytes, descriptor: dict, content_path: str,
-             access_restricted: bool, content_encrypted: bool) -> (int, dict):
+             access_restricted: bool, content_encrypted: bool) -> dict:
 
         # calculate the hash for the descriptor
         d_hash = hash_json_object(descriptor)
