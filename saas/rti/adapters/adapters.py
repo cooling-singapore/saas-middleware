@@ -451,13 +451,13 @@ class RTIProcessorAdapter(Thread, ABC):
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
-                                          restricted_access, content_encrypted,
-                                          proc_out['data_type'], proc_out['data_format'], self._node.identity().id,
-                                          recipe={
-                                              'task_descriptor': task_descriptor,
-                                              'output_name': obj_name
-                                          })
+        meta = proxy.add_data_object(output_content_path, self._node.identity(), restricted_access, content_encrypted,
+                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id,
+                                     recipe={
+                                         'task_descriptor': task_descriptor,
+                                         'output_name': obj_name
+                                     })
+        obj_id = meta['obj_id']
 
         # update tags with information from the job
         proxy.update_tags(obj_id, self._node.keystore, {
