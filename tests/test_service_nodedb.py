@@ -52,10 +52,13 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # add dummy data object
         owner = self.node.identity()
-        obj_id0, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
-                                              False, False, 'type', 'format', owner.name)
-        obj_id1, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
-                                              False, False, 'type', 'format', owner.name)
+        meta0 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                         False, False, 'type', 'format', owner.name)
+        meta1 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                         False, False, 'type', 'format', owner.name)
+
+        obj_id0 = meta0['obj_id']
+        obj_id1 = meta1['obj_id']
 
         tags = self.node.db.get_tags(obj_id0)
         assert(len(tags) == 0)
@@ -105,8 +108,10 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def test_grant_revoke_permissions(self):
         # add dummy data object
         owner = self.node.identity()
-        obj_id, _ = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
-                                             False, False, 'type', 'format', owner.name)
+        meta = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                        False, False, 'type', 'format', owner.name)
+
+        obj_id = meta['obj_id']
 
         result = self.node.db.get_access_list(obj_id)
         assert(len(result) == 1)

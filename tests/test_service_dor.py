@@ -6,7 +6,7 @@ from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
 from saas.dor.blueprint import DORProxy
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.nodedb.blueprint import NodeDBProxy
-from saas.rest.exceptions import UnexpectedHTTPError, AuthorisationFailedError, UnsuccessfulRequestError
+from saas.rest.exceptions import UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
 from saas.helpers import object_to_ordered_list
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -49,27 +49,27 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create some test data
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
+        ref_obj_id = 'e8da1a97e1f4e79bd09bdfd22d90f32f35ce6f8a3f90094faf7a67926fafc872'
 
         # create the data object
-        obj_id, descriptor = self.dor_proxy.add_data_object(test_file_path, self.extras[0].identity,
-                                                            False, False,
-                                                            data_type, data_format, created_by, created_t)
+        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[0].identity,
+                                              False, False, data_type, data_format, created_by, created_t)
+        assert meta is not None
+        obj_id = meta['obj_id']
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
-        assert obj_id is not None
         assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
-        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
-        logger.info(f"descriptor1={descriptor1}")
-        assert descriptor1 is not None
+        meta1 = self.dor_proxy.get_meta(obj_id)
+        logger.info(f"meta1={meta1}")
+        assert meta1 is not None
 
         # delete the data object
-        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
-        logger.info(f"descriptor2={descriptor2}")
-        assert descriptor2 is not None
-        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+        meta2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
+        logger.info(f"meta2={meta2}")
+        assert meta2 is not None
+        assert object_to_ordered_list(meta1) == object_to_ordered_list(meta2)
 
     def test_add_delete_gpp_data_object(self):
         created_t = 21342342
@@ -80,28 +80,30 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         proc_path = 'processor_test'
         proc_config = 'default'
 
-        ref_obj_id = '989451bdcf0e624d6487ce5a132f109ecce9dfd6af21c04d7d2d6fb62ea4fed4'
+        ref_obj_id = 'c5615ab60a0d77ca554650afa7c28c9a18bdabfbec4e14d86aa301ed4dc06308'
 
         # create the data object
-        obj_id, descriptor = self.dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config,
-                                                                self.extras[0].identity, created_by, created_t)
+        meta = self.dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config,
+                                                  self.extras[0].identity, created_by, created_t)
 
+        assert meta is not None
+        obj_id = meta['obj_id']
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
-        assert obj_id is not None
         assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
-        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
-        logger.info(f"descriptor1={descriptor1}")
-        assert descriptor1 is not None
-        assert('proc_descriptor' in descriptor1)
+        meta1 = self.dor_proxy.get_meta(obj_id)
+        logger.info(f"descriptor1={meta1}")
+        assert meta1 is not None
+        assert('gpp' in meta1)
+        assert('proc_descriptor' in meta1['gpp'])
 
         # delete the data object
-        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
-        logger.info(f"descriptor2={descriptor2}")
-        assert descriptor2 is not None
-        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+        meta2 = self.dor_proxy.delete_data_object(obj_id, self.extras[0])
+        logger.info(f"meta2={meta2}")
+        assert meta2 is not None
+        assert object_to_ordered_list(meta1) == object_to_ordered_list(meta2)
 
     def test_grant_revoke_access(self):
         data_type = 'map'
@@ -111,14 +113,14 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create some test data
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
+        ref_obj_id = 'e8da1a97e1f4e79bd09bdfd22d90f32f35ce6f8a3f90094faf7a67926fafc872'
 
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False,
-                                                   data_type, data_format, created_by, created_t)
+        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
+                                              data_type, data_format, created_by, created_t)
+        assert meta is not None
+        obj_id = meta['obj_id']
         logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
         assert ref_obj_id is not None
-        assert obj_id is not None
         assert obj_id == ref_obj_id
 
         permissions = self.dor_proxy.get_access_overview(obj_id)
@@ -153,9 +155,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"permissions={permissions}")
         assert len(permissions) == 1
 
-        _, descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
-        logger.info(f"descriptor={descriptor}")
-        assert descriptor is not None
+        meta = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        logger.info(f"descriptor={meta}")
+        assert meta is not None
 
     def test_transfer_ownership(self):
         owner0_k = self.extras[0]
@@ -168,11 +170,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create the data object
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, owner0,
-                                                   False, False,
-                                                   'map', 'json', owner0.name, 21342342)
+        meta = self.dor_proxy.add_data_object(test_file_path, owner0, False, False, 'map', 'json', owner0.name, 2132)
+        assert meta is not None
+        obj_id = meta['obj_id']
         logger.info(f"obj_id={obj_id}")
-        assert obj_id is not None
 
         # check the ownership
         owner_info = self.dor_proxy.get_owner(obj_id)
@@ -209,9 +210,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
             assert True
 
         # perform DELETE w/ correct owner
-        _, descriptor = self.dor_proxy.delete_data_object(obj_id, owner1_k)
-        logger.info(f"descriptor={descriptor}")
-        assert descriptor is not None
+        self.dor_proxy.delete_data_object(obj_id, owner1_k)
 
     def test_get_content(self):
         data_type = 'map'
@@ -221,20 +220,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create some test data
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
-
-        # create the data object
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False,
-                                                   data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id is not None
-        assert obj_id == ref_obj_id
-
-        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
-        logger.info(f"descriptor1={descriptor1}")
-        assert descriptor1 is not None
+        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
+                                              data_type, data_format, created_by, created_t)
+        assert meta is not None
+        obj_id = meta['obj_id']
+        logger.info(f"obj_id={obj_id}")
 
         # only the OWNER can get the content via the REST API
 
@@ -250,10 +240,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert result is not None
         assert os.path.isfile(destination)
 
-        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
-        logger.info(f"descriptor2={descriptor2}")
-        assert descriptor2 is not None
-        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+        self.dor_proxy.delete_data_object(obj_id, self.extras[1])
 
     def test_content_encryption(self):
         # create content for the data object and encrypt it
@@ -268,12 +255,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         owner_k1 = self.extras[1]
         owner1 = self.extras[1].identity
         protected_content_key1 = owner1.encrypt(content_key).decode('utf-8')
-        obj_id, descriptor = self.dor_proxy.add_data_object(content_enc_path, owner1,
-                                                            False, True,
-                                                            'map', 'json', owner1.name)
-        assert obj_id is not None
-        assert descriptor is not None
-        logger.info(f"descriptor={descriptor}")
+        meta = self.dor_proxy.add_data_object(content_enc_path, owner1, False, True, 'map', 'json', owner1.name)
+        assert meta is not None
+        logger.info(f"descriptor={meta}")
+        obj_id = meta['obj_id']
 
         # transfer ownership now
         owner_k2 = self.extras[2]
@@ -286,9 +271,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         unprotected_content = symmetric_decrypt(content_enc, unprotected_content_key).decode('utf-8')
         assert(unprotected_content == content_plain)
 
-        _, descriptor = self.dor_proxy.delete_data_object(obj_id, owner_k2)
-        assert descriptor is not None
-        logger.info(f"descriptor={descriptor}")
+        self.dor_proxy.delete_data_object(obj_id, owner_k2)
 
     def test_fetch_data_object(self):
         data_type = 'map'
@@ -298,21 +281,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create some test data
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
 
         # create the data object (set access_restricted to True which means permission needs to be granted
         # before fetching is possible)
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   True, False,
-                                                   data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id is not None
-        assert obj_id == ref_obj_id
-
-        _, descriptor1 = self.dor_proxy.get_descriptor(obj_id)
-        logger.info(f"descriptor1={descriptor1}")
-        assert descriptor1 is not None
+        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, True, False,
+                                              data_type, data_format, created_by, created_t)
+        assert meta is not None
+        obj_id = meta['obj_id']
 
         # create the receiving node
         receiver = self.get_node('receiver')
@@ -322,24 +297,24 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         # try to fetch a data object that doesn't exist
         protocol = DataObjectRepositoryP2PProtocol(receiver)
         fake_obj_id = 'abcdef'
-        descriptor_path = os.path.join(self.wd_path, f"{fake_obj_id}.descriptor")
+        meta_path = os.path.join(self.wd_path, f"{fake_obj_id}.meta")
         content_path = os.path.join(self.wd_path, fake_obj_id)
         try:
             protocol.fetch(self.node.p2p.address(), fake_obj_id,
-                           destination_descriptor_path=descriptor_path,
+                           destination_meta_path=meta_path,
                            destination_content_path=content_path)
             assert False
 
         except FetchDataObjectFailedError:
             assert True
 
-        descriptor_path = os.path.join(self.wd_path, f"{obj_id}.descriptor")
+        meta_path = os.path.join(self.wd_path, f"{obj_id}.meta")
         content_path = os.path.join(self.wd_path, f"{obj_id}.content")
 
         # the receiver does not have permission at this point to receive the data object
         try:
             protocol.fetch(self.node.p2p.address(), obj_id,
-                           destination_descriptor_path=descriptor_path,
+                           destination_meta_path=meta_path,
                            destination_content_path=content_path)
             assert False
 
@@ -356,16 +331,13 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # the receiver does have permission at this point to receive the data object
         protocol.fetch(self.node.p2p.address(), obj_id,
-                       destination_descriptor_path=descriptor_path,
+                       destination_meta_path=meta_path,
                        destination_content_path=content_path,
                        user_signature=signature, user_iid=receiver_identity.id)
-        assert os.path.isfile(descriptor_path)
+        assert os.path.isfile(meta_path)
         assert os.path.isfile(content_path)
 
-        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
-        logger.info(f"descriptor2={descriptor2}")
-        assert descriptor2 is not None
-        assert object_to_ordered_list(descriptor1) == object_to_ordered_list(descriptor2)
+        self.dor_proxy.delete_data_object(obj_id, self.extras[1])
 
     def test_add_tag_delete_data_object(self):
         data_type = 'map'
@@ -375,16 +347,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create some test data
         test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478'
-
-        # create the data object
-        obj_id, _ = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity,
-                                                   False, False,
-                                                   data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id is not None
-        assert obj_id == ref_obj_id
+        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
+                                              data_type, data_format, created_by, created_t)
+        assert meta is not None
+        obj_id = meta['obj_id']
 
         # get tags for that data object
         tags = self.dor_proxy.get_tags(obj_id)
@@ -423,9 +389,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert 'b' not in tags
 
         # delete the data object
-        _, descriptor = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
-        logger.info(f"descriptor={descriptor}")
-        assert descriptor is not None
+        self.dor_proxy.delete_data_object(obj_id, self.extras[1])
 
     def test_add_tag_search_delete_data_object(self):
         data_type = 'map'
@@ -439,11 +403,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         test_file_path2 = self.generate_random_file('test002.dat', 1024*1024)
 
         # create the data object 0
-        obj_id0, _ = self.dor_proxy.add_data_object(test_file_path0, self.extras[1].identity,
-                                                    False, False,
-                                                    data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id0: {obj_id0}")
-        assert obj_id0 is not None
+        meta0 = self.dor_proxy.add_data_object(test_file_path0, self.extras[1].identity, False, False,
+                                               data_type, data_format, created_by, created_t)
+        assert meta0 is not None
+        print(meta0)
+        obj_id0 = meta0['obj_id']
 
         # update tags for that data object
         self.dor_proxy.update_tags(obj_id0, self.extras[1], {
@@ -456,11 +420,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert len(tags0) == 3
 
         # create the data object 1
-        obj_id1, _ = self.dor_proxy.add_data_object(test_file_path1, self.extras[1].identity,
-                                                    False, False,
-                                                    data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id1: {obj_id1}")
-        assert obj_id1 is not None
+        meta1 = self.dor_proxy.add_data_object(test_file_path1, self.extras[1].identity, False, False,
+                                               data_type, data_format, created_by, created_t)
+        assert meta1 is not None
+        print(meta1)
+        obj_id1 = meta1['obj_id']
 
         # update tags for that data object
         self.dor_proxy.update_tags(obj_id1, self.extras[1], {
@@ -473,11 +437,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert len(tags1) == 3
 
         # create the data object 2
-        obj_id2, _ = self.dor_proxy.add_data_object(test_file_path2, self.extras[2].identity,
-                                                    False, False,
-                                                    data_type, data_format, created_by, created_t)
-        logger.info(f"obj_id2: {obj_id2}")
-        assert obj_id2 is not None
+        meta2 = self.dor_proxy.add_data_object(test_file_path2, self.extras[2].identity, False, False,
+                                               data_type, data_format, created_by, created_t)
+        assert meta2 is not None
+        print(meta2)
+        obj_id2 = meta2['obj_id']
 
         # update tags for that data object
         self.dor_proxy.update_tags(obj_id2, self.extras[2], {
@@ -523,20 +487,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"result={result}")
         assert len(result) == 2
 
-        # delete the data object 0
-        _, descriptor0 = self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
-        logger.info(f"descriptor0={descriptor0}")
-        assert descriptor0 is not None
-
-        # delete the data object 1
-        _, descriptor1 = self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
-        logger.info(f"descriptor1={descriptor1}")
-        assert descriptor1 is not None
-
-        # delete the data object 2
-        _, descriptor2 = self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
-        logger.info(f"descriptor2={descriptor2}")
-        assert descriptor2 is not None
+        self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
+        self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
+        self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
 
 
 if __name__ == '__main__':
