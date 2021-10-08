@@ -50,23 +50,13 @@ task_descriptor_schema = {
     'required': ['processor_id', 'input', 'output', 'user_iid']
 }
 
-data_object_descriptor_schema = {
+recipe_schema = {
     'type': 'object',
     'properties': {
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'created_t': {'type': 'number'},
-        'created_by': {'type': 'string'},
-        'recipe': {
-            'type': 'object',
-            'properties': {
-                'task_descriptor': task_descriptor_schema,
-                'output_name': {'type': 'string'}
-            },
-            'required': ['task_descriptor', 'output_name']
-        }
+        'task_descriptor': task_descriptor_schema,
+        'output_name': {'type': 'string'}
     },
-    'required': ['data_type', 'data_format', 'created_t', 'created_by']
+    'required': ['task_descriptor', 'output_name']
 }
 
 io_variable_schema = {
@@ -113,7 +103,8 @@ git_proc_pointer_schema = {
         'source': {'type': 'string'},
         'commit_id': {'type': 'string'},
         'proc_path': {'type': 'string'},
-        'proc_config': {'type': 'string'}
+        'proc_config': {'type': 'string'},
+        'proc_descriptor': {'type': 'object'}
     },
     'required': ['source', 'commit_id', 'proc_path', 'proc_config']
 }

@@ -26,8 +26,8 @@ class RuntimeInfrastructureService:
     def proc_content_path(self, c_hash: str) -> str:
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
 
-    def proc_descriptor_path(self, obj_id: str) -> str:
-        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.descriptor")
+    def proc_meta_path(self, obj_id: str) -> str:
+        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
 
     def __init__(self, node) -> None:
         self._mutex = Lock()
@@ -78,27 +78,27 @@ class RuntimeInfrastructureService:
 
                 # fetch the data object
                 try:
-                    descriptor_path = self.proc_descriptor_path(proc_id)
+                    meta_path = self.proc_meta_path(proc_id)
                     content_path = self.proc_content_path(record['c_hash'])
-                    protocol.fetch(network_node['p2p_address'], proc_id, descriptor_path, content_path)
+                    protocol.fetch(network_node['p2p_address'], proc_id, meta_path, content_path)
 
                 # ignore peers that are not available
                 except PeerUnavailableError:
                     continue
 
-                # load the descriptor
-                descriptor = read_json_from_file(descriptor_path)
+                # load the meta information
+                meta = read_json_from_file(meta_path)
 
                 # create an RTI adapter instance
                 if deployment == 'native':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                        RTINativeProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
+                        RTINativeProcessorAdapter(proc_id, meta['gpp']['proc_descriptor'], content_path,
                                                   self._jobs_path, self._node,
                                                   ssh_credentials=ssh_credentials)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                        RTIDockerProcessorAdapter(proc_id, descriptor['proc_descriptor'], content_path,
+                        RTIDockerProcessorAdapter(proc_id, meta['gpp']['proc_descriptor'], content_path,
                                                   self._jobs_path, self._node)
 
                 # start the processor
@@ -106,7 +106,7 @@ class RuntimeInfrastructureService:
                 processor.start()
 
                 # return the descriptor
-                return descriptor['proc_descriptor']
+                return meta['gpp']['proc_descriptor']
 
             # if we reach here, the GPP could not be found
             raise GPPDataObjectNotFound({

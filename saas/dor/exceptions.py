@@ -15,21 +15,6 @@ class DataObjectNotFoundError(DORException):
         })
 
 
-class DataObjectDescriptorNotFoundError(DORException):
-    def __init__(self, path: str) -> None:
-        super().__init__('Data object descriptor not found', details={
-            'path': path
-        })
-
-
-class InvalidDataObjectDescriptorError(DORException):
-    def __init__(self, descriptor: str) -> None:
-        super().__init__('Data object descriptor is not valid', details={
-            'descriptor': descriptor,
-            'schema': processor_descriptor_schema
-        })
-
-
 class DataObjectContentNotFoundError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object content not found', details=details)
@@ -48,6 +33,21 @@ class OwnerIdentityNotFoundError(DORException):
             'obj_id': obj_id,
             'owner_iid': owner_iid
         })
+
+
+class ProcessorDescriptorNotFoundError(DORException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Processor descriptor not found', details=details)
+
+
+class InvalidProcessorDescriptorError(DORException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Processor descriptor not valid', details=details)
+
+
+class InvalidGPPDataObjectError(DORException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('GPP data object not valid', details=details)
 
 
 class CloneRepositoryError(DORException):
