@@ -157,10 +157,15 @@ class NodeDBService:
                 tag_records = session.query(DataObjectTag).filter_by(obj_id=obj_record.obj_id).all()
                 tags = [{'key': tag.key, 'value': tag.value} for tag in tag_records]
 
-                # check if any of the patterns can be found in the tags. for this purpose, flatten all tags (keys
-                # values) into a single string and check if any of the patterns is a substring the flattened string.
-                # if we don't have patterns then always add the object.
+                # flatten all tags (keys values) into a single string for search purposes
                 flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
+
+                # add meta information to make them searchable
+                flattened += f" {obj_record.data_type}"
+                flattened += f" {obj_record.data_format}"
+
+                # check if any of the patterns is a substring the flattened string.
+                # if we don't have patterns then always add the object.
                 if patterns is None or any(pattern in flattened for pattern in patterns):
                     result.append({
                         'obj_id': obj_record.obj_id,
