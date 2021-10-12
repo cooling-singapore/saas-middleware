@@ -267,11 +267,11 @@ class RTIProcessorAdapter(Thread, ABC):
         protocol = DataObjectRepositoryP2PProtocol(self._node)
         pending_content_keys = []
         for obj_id, record in obj_records.items():
-            descriptor_path = os.path.join(working_directory, f"{obj_id}.descriptor")
+            meta_path = os.path.join(working_directory, f"{obj_id}.meta")
             content_path = os.path.join(working_directory, f"{obj_id}.content")
 
             # fetch the data object
-            protocol.fetch(record['custodian']['p2p_address'], obj_id, descriptor_path, content_path,
+            protocol.fetch(record['custodian']['p2p_address'], obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
@@ -312,7 +312,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 create_symbolic_link(item['name'], f"{item['obj_id']}.content",
                                      working_directory=working_directory)
 
-                create_symbolic_link(f"{item['name']}.descriptor", f"{item['obj_id']}.descriptor",
+                create_symbolic_link(f"{item['name']}.meta", f"{item['obj_id']}.meta",
                                      working_directory=working_directory)
 
         return pending_content_keys
@@ -353,7 +353,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 write_json_to_file({
                     'data_type': 'JSONObject',
                     'data_format': 'json'
-                }, f"{input_content_path}.descriptor")
+                }, f"{input_content_path}.meta")
 
     def _verify_inputs(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         status.update('step', 'verify inputs: data object types and formats')
@@ -362,7 +362,7 @@ class RTIProcessorAdapter(Thread, ABC):
             obj_name = item['name']
 
             # check if data type/format indicated in processor descriptor and data object descriptor match
-            d0 = read_json_from_file(os.path.join(working_directory, f"{obj_name}.descriptor"))
+            d0 = read_json_from_file(os.path.join(working_directory, f"{obj_name}.meta"))
             d1 = self._input_interface[obj_name]
             if d0['data_type'] != d1['data_type'] or d0['data_format'] != d1['data_format']:
                 raise MismatchingDataTypeOrFormatError({
