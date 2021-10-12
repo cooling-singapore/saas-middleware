@@ -92,14 +92,12 @@ class RuntimeInfrastructureService:
                 # create an RTI adapter instance
                 if deployment == 'native':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                        RTINativeProcessorAdapter(proc_id, meta['gpp']['proc_descriptor'], content_path,
-                                                  self._jobs_path, self._node,
+                        RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
                                                   ssh_credentials=ssh_credentials)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
-                        RTIDockerProcessorAdapter(proc_id, meta['gpp']['proc_descriptor'], content_path,
-                                                  self._jobs_path, self._node)
+                        RTIDockerProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node)
 
                 # start the processor
                 processor = self._deployed_processors[proc_id]
@@ -128,7 +126,7 @@ class RuntimeInfrastructureService:
             processor.stop()
             processor.join()
 
-            return processor.descriptor
+            return processor.gpp['proc_descriptor']
 
     def is_deployed(self, proc_id: str) -> bool:
         with self._mutex:
@@ -138,7 +136,7 @@ class RuntimeInfrastructureService:
         with self._mutex:
             return [{
                 'proc_id': proc_id,
-                'proc_descriptor': adapter.descriptor
+                'proc_descriptor': adapter.gpp['proc_descriptor']
             } for proc_id, adapter in self._deployed_processors.items()]
 
     def get_descriptor(self, proc_id: str) -> dict:
@@ -149,7 +147,7 @@ class RuntimeInfrastructureService:
                     'proc_id': proc_id
                 })
 
-            return self._deployed_processors[proc_id].descriptor
+            return self._deployed_processors[proc_id].gpp['proc_descriptor']
 
     def submit(self, proc_id: str, task_descriptor: dict) -> dict:
         with self._mutex:

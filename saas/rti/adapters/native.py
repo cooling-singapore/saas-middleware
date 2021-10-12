@@ -19,10 +19,10 @@ logger = logging.getLogger('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, proc_id: str, proc_descriptor: dict, obj_content_path: str, jobs_path: str, node,
+    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
                  ssh_credentials: SSHCredentials = None,
                  github_credentials: GithubCredentials = None) -> None:
-        super().__init__(proc_id, proc_descriptor, jobs_path, node)
+        super().__init__(proc_id, gpp, jobs_path, node)
 
         # set credentials
         self._ssh_credentials = ssh_credentials

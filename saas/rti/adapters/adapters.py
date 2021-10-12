@@ -35,17 +35,17 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, proc_descriptor: dict, job_wd_path: str, node) -> None:
+    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()
         self._proc_id = proc_id
-        self._proc_descriptor = proc_descriptor
+        self._gpp = gpp
         self._job_wd_path = job_wd_path
         self._node = node
 
-        self._input_interface = {item['name']: item for item in proc_descriptor['input']}
-        self._output_interface = {item['name']: item for item in proc_descriptor['output']}
+        self._input_interface = {item['name']: item for item in gpp['proc_descriptor']['input']}
+        self._output_interface = {item['name']: item for item in gpp['proc_descriptor']['output']}
         self._pending = []
         self._state = ProcessorState.UNINITIALISED
 
@@ -54,8 +54,8 @@ class RTIProcessorAdapter(Thread, ABC):
         return self._proc_id
 
     @property
-    def descriptor(self) -> dict:
-        return self._proc_descriptor
+    def gpp(self) -> dict:
+        return self._gpp
 
     @property
     def state(self) -> ProcessorState:
