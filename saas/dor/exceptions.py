@@ -65,4 +65,9 @@ class FetchDataObjectFailedError(DORException):
         super().__init__('Data object could not be fetched', details=details)
 
 
+class NodeNotDataObjectCustodianError(DORException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Node is not the custodian of data object', details=details)
+
+
 

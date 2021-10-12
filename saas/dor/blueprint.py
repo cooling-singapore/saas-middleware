@@ -11,7 +11,6 @@ from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_att
 from saas.schemas import git_proc_pointer_schema, recipe_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.helpers import get_timestamp_now
 
 logger = logging.getLogger('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
@@ -33,14 +32,12 @@ add_body_specification = {
         'data_type': {'type': 'string'},
         'data_format': {'type': 'string'},
         'created_by': {'type': 'string'},
-        'created_t': {'type': 'number'},
         'recipe': recipe_schema,
         'owner_iid': {'type': 'string'},
         'access_restricted': {'type': 'boolean'},
         'content_encrypted': {'type': 'boolean'}
     },
-    'required': ['data_type', 'data_format', 'created_by', 'created_t',
-                 'owner_iid', 'access_restricted', 'content_encrypted']
+    'required': ['data_type', 'data_format', 'created_by', 'owner_iid', 'access_restricted', 'content_encrypted']
 }
 
 add_gpp_body_specification = {
@@ -49,12 +46,11 @@ add_gpp_body_specification = {
         'data_type': {'type': 'string'},
         'data_format': {'type': 'string'},
         'created_by': {'type': 'string'},
-        'created_t': {'type': 'number'},
         'recipe': recipe_schema,
         'owner_iid': {'type': 'string'},
         'gpp': git_proc_pointer_schema
     },
-    'required': ['data_type', 'data_format', 'created_by', 'created_t', 'owner_iid', 'gpp']
+    'required': ['data_type', 'data_format', 'created_by', 'owner_iid', 'gpp']
 }
 
 transfer_ownership_body_specification = {
@@ -97,15 +93,6 @@ tags_response_schema = {
     }
 }
 
-owner_response_schema = {
-    'type': 'object',
-    'properties': {
-        'obj_id': {'type': 'string'},
-        'owner_iid': {'type': 'string'}
-    },
-    'required': ['obj_id', 'owner_iid']
-}
-
 access_response_schema = {
     'type': 'array',
     'items': {'type': 'string'}
@@ -115,19 +102,21 @@ obj_response_schema = {
     'type': 'object',
     'properties': {
         'obj_id': {'type': 'string'},
-        'm_hash': {'type': 'string'},
         'c_hash': {'type': 'string'},
         'data_type': {'type': 'string'},
         'data_format': {'type': 'string'},
         'created_by': {'type': 'string'},
         'created_t': {'type': 'number'},
+        'gpp': git_proc_pointer_schema,
         'recipe': recipe_schema,
         'owner_iid': {'type': 'string'},
         'access_restricted': {'type': 'boolean'},
         'content_encrypted': {'type': 'boolean'},
+        'tags': tags_response_schema,
+        'access': access_response_schema
     },
-    'required': ['obj_id', 'm_hash', 'c_hash', 'data_type', 'data_format', 'created_by', 'created_t',
-                 'owner_iid', 'access_restricted', 'content_encrypted']
+    'required': ['obj_id', 'c_hash', 'data_type', 'data_format', 'created_by', 'created_t',
+                 'owner_iid', 'access_restricted', 'content_encrypted', 'tags', 'access']
 }
 
 search_response_schema = {
@@ -154,12 +143,9 @@ class DORBlueprint(SaaSBlueprint):
         self.add_rule('<obj_id>', self.delete, ['DELETE'])
         self.add_rule('<obj_id>/meta', self.get_meta, ['GET'])
         self.add_rule('<obj_id>/content', self.get_content, ['GET'])
-        self.add_rule('<obj_id>/access', self.get_access_overview, ['GET'])
         self.add_rule('<obj_id>/access/<iid>', self.grant_access, ['POST'])
         self.add_rule('<obj_id>/access/<iid>', self.revoke_access, ['DELETE'])
-        self.add_rule('<obj_id>/owner', self.get_owner, ['GET'])
         self.add_rule('<obj_id>/owner', self.transfer_ownership, ['PUT'])
-        self.add_rule('<obj_id>/tags', self.get_tags, ['GET'])
         self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'])
         self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'])
 
@@ -180,8 +166,7 @@ class DORBlueprint(SaaSBlueprint):
         body = request_manager.get_request_variable('body')
         files = request_manager.get_request_variable('files')
         return create_ok_response(self._node.dor.add(files['attachment'],
-                                                     body['data_type'], body['data_format'],
-                                                     body['created_by'], body['created_t'],
+                                                     body['data_type'], body['data_format'], body['created_by'],
                                                      body['recipe'] if 'recipe' in body else None,
                                                      body['owner_iid'],
                                                      body['access_restricted'], body['content_encrypted']))
@@ -191,8 +176,7 @@ class DORBlueprint(SaaSBlueprint):
     @request_manager.verify_request_body(add_gpp_body_specification)
     def add_gpp(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
-        return create_ok_response(self._node.dor.add_gpp(body['created_by'], body['created_t'],
-                                                         body['gpp'], body['owner_iid'],
+        return create_ok_response(self._node.dor.add_gpp(body['created_by'], body['gpp'], body['owner_iid'],
                                                          body['recipe'] if 'recipe' in body else None))
 
     @request_manager.handle_request(obj_response_schema)
@@ -226,16 +210,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_attachment(content_path)
 
-    @request_manager.handle_request(access_response_schema)
-    @request_manager.require_dor()
-    def get_access_overview(self, obj_id: str) -> (Response, int):
-        # do we have this data object?
-        if not self._node.db.get_object_by_id(obj_id):
-            raise DataObjectNotFoundError(obj_id)
-
-        return create_ok_response(self._node.db.get_access_list(obj_id))
-
-    @request_manager.handle_request(access_response_schema)
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -249,9 +224,9 @@ class DORBlueprint(SaaSBlueprint):
             raise IdentityNotFoundError(iid)
 
         self._node.db.grant_access(obj_id, identity)
-        return create_ok_response(self._node.db.get_access_list(obj_id))
+        return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(access_response_schema)
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -266,26 +241,9 @@ class DORBlueprint(SaaSBlueprint):
             raise IdentityNotFoundError(iid)
 
         self._node.db.revoke_access(obj_id, identity)
-        return create_ok_response(self._node.db.get_access_list(obj_id))
+        return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(owner_response_schema)
-    @request_manager.require_dor()
-    def get_owner(self, obj_id: str) -> (Response, int):
-        # do we have this data object?
-        if not self._node.db.get_object_by_id(obj_id):
-            raise DataObjectNotFoundError(obj_id)
-
-        # do we have the owner identity
-        owner = self._node.db.get_owner(obj_id)
-        if not owner:
-            raise OwnerIdentityNotFoundError(obj_id, owner.id)
-
-        return create_ok_response({
-            'obj_id': obj_id,
-            'owner_iid': owner.id
-        })
-
-    @request_manager.handle_request(owner_response_schema)
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -303,23 +261,9 @@ class DORBlueprint(SaaSBlueprint):
         content_key = body['content_key'] if 'content_key' in body else None
         self._node.db.update_ownership(obj_id, new_owner, content_key)
 
-        # retrieve the owner of the data object
-        owner = self._node.db.get_owner(obj_id)
-        return create_ok_response({
-            'obj_id': obj_id,
-            'owner_iid': owner.id
-        })
+        return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(tags_response_schema)
-    @request_manager.require_dor()
-    def get_tags(self, obj_id: str) -> (Response, int):
-        # do we have this data object?
-        if not self._node.db.get_object_by_id(obj_id):
-            raise DataObjectNotFoundError(obj_id)
-
-        return create_ok_response(self._node.db.get_tags(obj_id))
-
-    @request_manager.handle_request(tags_response_schema)
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -330,9 +274,9 @@ class DORBlueprint(SaaSBlueprint):
 
         body = request_manager.get_request_variable('body')
         self._node.db.update_tags(obj_id, body)
-        return create_ok_response(self._node.db.get_tags(obj_id))
+        return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(tags_response_schema)
+    @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
     @request_manager.verify_request_body(delete_tags_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
@@ -343,7 +287,7 @@ class DORBlueprint(SaaSBlueprint):
 
         body = request_manager.get_request_variable('body')
         self._node.db.remove_tags(obj_id, body)
-        return create_ok_response(self._node.db.get_tags(obj_id))
+        return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
 
 class DORProxy(EndpointProxy):
@@ -362,13 +306,11 @@ class DORProxy(EndpointProxy):
         return self.get('', body=body)
 
     def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
-                        data_type: str, data_format: str, created_by: str,
-                        created_t: int = None, recipe: dict = None) -> (str, dict):
+                        data_type: str, data_format: str, created_by: str, recipe: dict = None) -> (str, dict):
         body = {
             'data_type': data_type,
             'data_format': data_format,
             'created_by': created_by,
-            'created_t': created_t if created_t else get_timestamp_now(),
             'owner_iid': owner.id,
             'access_restricted': access_restricted,
             'content_encrypted': content_encrypted
@@ -380,12 +322,11 @@ class DORProxy(EndpointProxy):
         return self.post('/add', body=body, attachment_path=content_path)
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            created_by: str, created_t: int = None, recipe: dict = None) -> (str, dict):
+                            created_by: str, recipe: dict = None) -> (str, dict):
         body = {
             'data_type': 'Git-Processor-Pointer',
             'data_format': 'json',
             'created_by': created_by,
-            'created_t': created_t if created_t else get_timestamp_now(),
             'owner_iid': owner.id,
             'gpp': {
                 'source': source,
@@ -409,17 +350,11 @@ class DORProxy(EndpointProxy):
     def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str) -> dict:
         return self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
 
-    def get_access_overview(self, obj_id: str) -> list:
-        return self.get(f"/{obj_id}/access")
-
     def grant_access(self, obj_id: str, authority: Keystore, identity: Identity) -> dict:
         return self.post(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
 
     def revoke_access(self, obj_id: str, authority: Keystore, identity: Identity) -> dict:
         return self.delete(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
-
-    def get_owner(self, obj_id: str) -> dict:
-        return self.get(f"/{obj_id}/owner")
 
     def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity,
                            content_key: str = None) -> dict:
@@ -431,9 +366,6 @@ class DORProxy(EndpointProxy):
             body['content_key'] = content_key
 
         return self.put(f"/{obj_id}/owner", body, with_authorisation_by=authority)
-
-    def get_tags(self, obj_id: str) -> dict:
-        return self.get(f"/{obj_id}/tags")
 
     def update_tags(self, obj_id: str, authority: Keystore, tags: dict) -> dict:
         body = []
