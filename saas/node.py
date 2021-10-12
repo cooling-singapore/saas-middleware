@@ -4,8 +4,6 @@ from threading import Lock
 from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.email.service import EmailService
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saas.keystore.identity import Identity
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
@@ -35,7 +33,6 @@ class Node:
         self.rest: Optional[RESTService] = None
         self.dor: Optional[DataObjectRepositoryService] = None
         self.rti: Optional[RuntimeInfrastructureService] = None
-        self.email: Optional[EmailService] = None
 
     @property
     def keystore(self):
@@ -87,8 +84,6 @@ class Node:
         # join an existing network of nodes?
         if boot_node_address:
             self.join_network(boot_node_address)
-
-        self.email = EmailService(self._keystore)
 
     def shutdown(self, leave_network=True):
         if leave_network:
