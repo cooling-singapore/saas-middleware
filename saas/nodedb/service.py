@@ -265,7 +265,7 @@ class NodeDBService:
         record = self._require_data_object(obj_id)
         return self.get_identity(record.owner_iid)
 
-    def update_ownership(self, obj_id: str, new_owner: Identity, content_key: str = None) -> None:
+    def update_ownership(self, obj_id: str, new_owner: Identity) -> None:
         self._require_data_object(obj_id)
         with self._Session() as session:
             # does the data object exist?
@@ -275,16 +275,10 @@ class NodeDBService:
                     'obj_id': obj_id
                 })
 
-            # transfer of ownership between same identities?
+            # transfer of ownership between same identities? --> nothing to do here.
             prev_owner = self.get_identity(obj_record.owner_iid)
             if prev_owner.id == new_owner.id:
                 return
-
-            # send notification emails
-            self._node.email.send_ownership_transfer_notifications(new_owner, prev_owner, obj_id,
-                                                                   self._node.identity(),
-                                                                   self._node.p2p.address(),
-                                                                   content_key)
 
             # update ownership
             obj_record.owner_iid = new_owner.id

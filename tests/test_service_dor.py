@@ -203,7 +203,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         owner_k2 = self.extras[2]
         owner2 = self.extras[2].identity
         protected_content_key2 = owner2.encrypt(content_key).decode('utf-8')
-        self.dor_proxy.transfer_ownership(obj_id, owner_k1, owner2, protected_content_key2)
+        self.dor_proxy.transfer_ownership(obj_id, owner_k1, owner2)
 
         # we should be able to use this content key to decrypt the content
         unprotected_content_key = owner_k2.decrypt(protected_content_key2.encode('utf-8'))
