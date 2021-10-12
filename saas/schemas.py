@@ -50,15 +50,6 @@ task_descriptor_schema = {
     'required': ['processor_id', 'input', 'output', 'user_iid']
 }
 
-recipe_schema = {
-    'type': 'object',
-    'properties': {
-        'task_descriptor': task_descriptor_schema,
-        'output_name': {'type': 'string'}
-    },
-    'required': ['task_descriptor', 'output_name']
-}
-
 io_variable_schema = {
     'type': 'object',
     'properties': {
@@ -130,4 +121,46 @@ job_descriptor_schema = {
         'task': task_descriptor_schema
     },
     'required': ['id', 'proc_id', 'task']
+}
+
+recipe_schema = {
+    'type': 'object',
+    'properties': {
+        'processor': {
+            'type': 'object',
+            'properties': {
+                'source': {'type': 'string'},
+                'commit_id': {'type': 'string'},
+                'proc_path': {'type': 'string'},
+                'proc_config': {'type': 'string'},
+                'proc_descriptor': {'type': 'object'}
+            },
+            'required': ['source', 'commit_id', 'proc_path', 'proc_config', 'proc_descriptor']
+        },
+        'input': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string'}
+                },
+                'if': {
+                    'properties': {'type': {'const': 'reference'}}
+                },
+                'then': {
+                    'properties': {
+                        'c_hash': {'type': 'string'}
+                    }
+                },
+                'else': {
+                    'properties': {
+                        'value': {'type': 'object'}
+                    }
+                },
+                'required': ['name']
+            }
+        },
+        'output': {'type': 'string'}
+    },
+    'required': ['processor', 'input', 'output']
 }

@@ -266,6 +266,7 @@ class RTIProcessorAdapter(Thread, ABC):
         # fetch input data objects one by one using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
         pending_content_keys = []
+        c_hashes = {}
         for obj_id, record in obj_records.items():
             meta_path = os.path.join(working_directory, f"{obj_id}.meta")
             content_path = os.path.join(working_directory, f"{obj_id}.content")
@@ -274,6 +275,10 @@ class RTIProcessorAdapter(Thread, ABC):
             protocol.fetch(record['custodian']['p2p_address'], obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
+
+            # obtain the content hash for this data object
+            meta = read_json_from_file(meta_path)
+            c_hashes[obj_id] = meta['c_hash']
 
             # is the data object content encrypted? if yes, then we need to request the content key
             if record['content_encrypted']:
@@ -306,7 +311,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'path': content_path
                 })
 
-        # create symbolic links to the contents for every input
+        # create symbolic links to the contents for every input AND update references with c_hash
         for item in task_descriptor['input']:
             if item['type'] == 'reference':
                 create_symbolic_link(item['name'], f"{item['obj_id']}.content",
@@ -314,6 +319,8 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 create_symbolic_link(f"{item['name']}.meta", f"{item['obj_id']}.meta",
                                      working_directory=working_directory)
+
+                item['c_hash'] = c_hashes[item['obj_id']]
 
         return pending_content_keys
 
@@ -448,15 +455,37 @@ class RTIProcessorAdapter(Thread, ABC):
             # extract the rest address from that node record
             target_address = node_record['rest_address']
 
+        # determine recipe
+        recipe = {
+            'processor': {
+                'source': self._gpp['source'],
+                'commit_id': self._gpp['commit_id'],
+                'proc_path': self._gpp['proc_path'],
+                'proc_config': self._gpp['proc_config'],
+                'proc_descriptor': self._gpp['proc_descriptor']
+            },
+            'input': [],
+            'output': obj_name
+        }
+
+        # update recipe inputs
+        for item in task_descriptor['input']:
+            if item['type'] == 'value':
+                recipe['input'].append({
+                    'name': item['name'],
+                    'value': item['value']
+                })
+            else:
+                recipe['input'].append({
+                    'name': item['name'],
+                    'c_hash': item['c_hash']
+                })
+
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
         meta = proxy.add_data_object(output_content_path, self._node.identity(), restricted_access, content_encrypted,
-                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id,
-                                     recipe={
-                                         'task_descriptor': task_descriptor,
-                                         'output_name': obj_name
-                                     })
+                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id, recipe)
         obj_id = meta['obj_id']
 
         # update tags with information from the job
