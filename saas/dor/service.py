@@ -5,9 +5,9 @@ import subprocess
 from stat import S_IREAD, S_IRGRP
 from typing import Optional
 
-from saas.cryptography.hashing import hash_file_content, hash_string_object
-from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, DataObjectNotFoundError, \
-    ProcessorDescriptorNotFoundError, InvalidProcessorDescriptorError, InvalidGPPDataObjectError, IdentityNotFoundError
+from saas.cryptography.hashing import hash_file_content
+from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
+    InvalidProcessorDescriptorError, InvalidGPPDataObjectError, IdentityNotFoundError
 from saas.helpers import write_json_to_file, read_json_from_file, validate_json, generate_random_string
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.assets.credentials import GithubCredentials, CredentialsAsset
@@ -33,7 +33,7 @@ class DataObjectRepositoryService:
     def obj_content_path(self, c_hash: str) -> str:
         return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, c_hash)
 
-    def add_gpp(self, created_by: str, created_t: int, gpp: dict, owner_iid: str, recipe: Optional[dict]) -> dict:
+    def add_gpp(self, created_by: str, gpp: dict, owner_iid: str, recipe: Optional[dict]) -> dict:
         # get the owner identity
         owner = self.node.db.get_identity(owner_iid)
         if owner is None:
@@ -98,10 +98,10 @@ class DataObjectRepositoryService:
         write_json_to_file(gpp, gpp_path)
         c_hash = hash_file_content(gpp_path).hex()
 
-        return self._add(c_hash, gpp_path, 'Git-Processor-Pointer', 'json', created_by, created_t,
+        return self._add(c_hash, gpp_path, 'Git-Processor-Pointer', 'json', created_by,
                          recipe, gpp, owner, False, False)
 
-    def add(self, temp_content_path: str, data_type: str, data_format: str, created_by: str, created_t: int,
+    def add(self, temp_content_path: str, data_type: str, data_format: str, created_by: str,
             recipe: Optional[dict], owner_iid: str, access_restricted: bool, content_encrypted: bool) -> dict:
 
         # get the owner identity
@@ -112,46 +112,25 @@ class DataObjectRepositoryService:
         # calculate the hash for the data object content
         c_hash = hash_file_content(temp_content_path).hex()
 
-        return self._add(c_hash, temp_content_path, data_type, data_format, created_by, created_t,
+        return self._add(c_hash, temp_content_path, data_type, data_format, created_by,
                          recipe, None, owner, access_restricted, content_encrypted)
 
     def _add(self, c_hash: str, temp_content_path: str, data_type: str, data_format: str,
-             created_by: str, created_t: int, recipe: Optional[dict], gpp: Optional[dict],
+             created_by: str, recipe: Optional[dict], gpp: Optional[dict],
              owner: Identity, access_restricted: bool, content_encrypted: bool) -> dict:
 
-        # calculate the hash for the meta information
-        m_hash = hash_string_object(f"{data_type}{data_format}{created_by}{created_t}"
-                                    f"{recipe if recipe is not None else ''}").hex()
-
-        # calculate the data object id as a hash of the meta information and content hashes
-        obj_id = hash_string_object(f"{m_hash}{c_hash}").hex()
-
-        logger.debug(f"attempt to add object with id={obj_id} (m_hash={m_hash} and c_hash={c_hash})")
-
-        # check if there is already a data object with the same id
-        record = self.node.db.get_object_by_id(obj_id)
-        if record is not None:
-            # the data object already exists, nothing to do here.
-            # TODO: decide if this is correct behaviour - in the meantime, just return the object id
-            # current behaviour makes it impossible for the caller to know if a data object already existed
-            # or not. question is whether this matters or not. the important point is that after calling
-            # 'add' the data object is in the DOR.
-            logger.info(f"data object '{obj_id}' already exists -> not adding to DOR.")
-            return record
-
         # check if there are already data objects with the same content
-        records = self.node.db.get_objects_by_content_hash(c_hash)
-        if len(records) > 0:
+        if len(self.node.db.get_objects_by_content_hash(c_hash)) > 0:
             # it is possible for cases like this to happen. despite the exact same content, this may well be
             # a legitimate different data object. for example, different provenance has led to the exact same
             # outcome. we thus create a new data object
-            logger.info(f"data object content '{c_hash}' already exists -> not adding to DOR.")
+            logger.info(f"data object content '{c_hash}' already exists -> not adding content to DOR.")
 
             # delete the temporary content as it is not needed
             os.remove(temp_content_path)
 
         else:
-            logger.info(f"data object content '{c_hash}' does not exist yet -> adding to DOR.")
+            logger.info(f"data object content '{c_hash}' does not exist yet -> adding content to DOR.")
 
             # move the temporary content to its destination and make it read-only
             destination_path = self.obj_content_path(c_hash)
@@ -159,32 +138,37 @@ class DataObjectRepositoryService:
             os.chmod(destination_path, S_IREAD | S_IRGRP)
 
         # add data object to database
-        record = self.node.db.add_data_object(obj_id, m_hash, c_hash, data_type, data_format,
-                                              created_by, created_t, recipe, gpp, owner,
-                                              access_restricted, content_encrypted)
+        record = self.node.db.add_data_object(c_hash, data_type, data_format, created_by, gpp,
+                                              owner, access_restricted, content_encrypted)
+        obj_id = record['obj_id']
+        logger.info(f"database records for data object '{obj_id}' added with c_hash={c_hash}.")
 
-        # grant access permission to the owner
-        self.node.db.grant_access(obj_id, owner)
+        # add the recipe (if any) and broadcast it
+        if recipe is not None:
+            self.node.db.add_recipe(c_hash, recipe)
+            self.node.db.protocol.broadcast_update('add_recipe', {
+                'c_hash': c_hash,
+                'recipe': recipe
+            })
 
         return record
 
     def delete(self, obj_id: str) -> dict:
-        # do we have a record for this data object?
-        record = self.node.db.get_object_by_id(obj_id)
-        if not record:
-            raise DataObjectNotFoundError(obj_id)
-
-        # we delete the database entries associated with this data object
-        self.node.db.revoke_access(obj_id)
-        self.node.db.remove_tags(obj_id)
-        self.node.db.remove_data_object(obj_id)
+        # delete the database entries associated with this data object EXCEPT for the provenance information
+        record = self.node.db.remove_data_object(obj_id)
         logger.info(f"database records for data object '{obj_id}' deleted.")
 
         # next we need to check if there are other data objects that point to the same content (very unlikely but
-        # not impossible). if not, then we can also safely delete the data object content.
-        if len(self.node.db.get_objects_by_content_hash(record['c_hash'])) == 0:
+        # not impossible) AND still expect the data object content to be available. if so, then do NOT delete the
+        # data object content. otherwise delete it.
+        referenced = [r['obj_id'] for r in self.node.db.get_objects_by_content_hash(record['c_hash'])]
+
+        if len(referenced) == 0:
+            logger.info(f"data object content '{record['c_hash']}' not referenced by any data object -> delete.")
             content_path = self.obj_content_path(record['c_hash'])
             os.remove(content_path)
-            logger.info(f"data object content '{record['c_hash']}' for data object '{obj_id}' deleted.")
+        else:
+            logger.info(f"data object content '{record['c_hash']}' referenced by data objects ({referenced}) -> "
+                        f"do not delete.")
 
         return record
