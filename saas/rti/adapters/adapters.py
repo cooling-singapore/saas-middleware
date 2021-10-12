@@ -289,22 +289,27 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 # create the request content and encrypt it using the owners key
                 req_id = generate_random_string(16)
-                node_address = self._node.rest.address()
                 request = json.dumps({
                     'type': 'request_content_key',
                     'req_id': req_id,
                     'obj_id': obj_id,
                     'ephemeral_public_key': ephemeral_key.public_as_string(),
-                    'user_name': user.name,
-                    'user_email': user.email,
-                    'node_id': self._node.identity().id,
-                    'node_address': node_address
+                    'user_iid': user.id,
+                    'node_id': self._node.identity().id
                 })
                 request = owner.encrypt(request.encode('utf-8')).decode('utf-8')
 
-                # send an email to the owner
-                self._node.email.send_content_key_request(owner, obj_id, user, node_address, request)
+                # publish the request
+                # TODO: this should eventually be replaced by a proper event notification interface
+                requests = status.get('requests', default=[])
+                requests.append({
+                    'req_id': req_id,
+                    'receiver': user.id,
+                    'request': request
+                })
+                status.update('requests', requests)
 
+                # add on to the list of pending items
                 pending_content_keys.append({
                     'req_id': req_id,
                     'obj_id': obj_id,
