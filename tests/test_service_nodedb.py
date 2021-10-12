@@ -44,12 +44,6 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(network[0]['iid'] == self.node.identity().id)
 
     def test_add_update_remove_tags(self):
-        try:
-            self.node.db.get_tags('invalid-object-id')
-            assert False
-        except DataObjectNotFoundError:
-            assert True
-
         # add dummy data object
         owner = self.node.identity()
         meta0 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
@@ -60,88 +54,76 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_id0 = meta0['obj_id']
         obj_id1 = meta1['obj_id']
 
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 0)
+        assert(len(meta0['tags']) == 0)
 
         self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': 'v0'}
         ])
-
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 1)
-        tags = {i['key']: i['value'] for i in tags}
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 1)
+        tags = {i['key']: i['value'] for i in meta0['tags']}
         assert('k0' in tags)
 
         self.node.db.update_tags(obj_id0, [
             {'key': 'k1', 'value': 'v1'},
             {'key': 'k2', 'value': 'v2'}
         ])
-
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 3)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
         self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': '999'}
         ])
-
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 3)
-        tags = {i['key']: i['value'] for i in tags}
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
+        tags = {i['key']: i['value'] for i in meta0['tags']}
         assert(tags['k0'] == '999')
 
         self.node.db.remove_tags(obj_id0, ['k3'])
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 3)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
         self.node.db.remove_tags(obj_id1, ['k2'])
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 3)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
         self.node.db.remove_tags(obj_id0, ['k2'])
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 2)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 2)
 
         self.node.db.remove_tags(obj_id0, ['k0', 'k1'])
-        tags = self.node.db.get_tags(obj_id0)
-        assert(len(tags) == 0)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 0)
 
     def test_grant_revoke_permissions(self):
-        # add dummy data object
         owner = self.node.identity()
         meta = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
                                         False, False, 'type', 'format', owner.name)
-
         obj_id = meta['obj_id']
 
-        result = self.node.db.get_access_list(obj_id)
-        assert(len(result) == 1)
-        assert(owner.id in result)
+        assert(len(meta['access']) == 1)
+        assert(owner.id in meta['access'])
 
-        result = self.node.db.has_access(obj_id, self.extras[0].identity)
-        assert(not result)
+        assert not self.node.db.has_access(obj_id, self.extras[0].identity)
 
-        result = self.node.db.has_access(obj_id, self.extras[1].identity)
-        assert(not result)
+        assert not self.node.db.has_access(obj_id, self.extras[1].identity)
 
         self.node.db.grant_access(obj_id, self.extras[0].identity)
-
-        result = self.node.db.get_access_list(obj_id)
-        assert(len(result) == 2)
-        assert(owner.id in result)
-        assert(self.extras[0].identity.id in result)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 2)
+        assert(owner.id in meta['access'])
+        assert(self.extras[0].identity.id in meta['access'])
 
         self.node.db.revoke_access(obj_id, self.extras[1].identity)
-
-        result = self.node.db.get_access_list(obj_id)
-        assert(len(result) == 2)
-        assert(owner.id in result)
-        assert(self.extras[0].identity.id in result)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 2)
+        assert(owner.id in meta['access'])
+        assert(self.extras[0].identity.id in meta['access'])
 
         self.node.db.revoke_access(obj_id, self.extras[0].identity)
-
-        result = self.node.db.get_access_list(obj_id)
-        assert(len(result) == 1)
-        assert(owner.id in result)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 1)
+        assert(owner.id in meta['access'])
 
     def test_update_identity(self):
         # check identities known to nodes (they should all know of each other)
