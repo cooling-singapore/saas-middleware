@@ -42,23 +42,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.cleanup()
 
     def test_add_delete_data_object(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'e8da1a97e1f4e79bd09bdfd22d90f32f35ce6f8a3f90094faf7a67926fafc872'
-
-        # create the data object
-        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[0].identity,
-                                              False, False, data_type, data_format, created_by, created_t)
+        owner = self.extras[0].identity
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024), owner,
+                                              False, False, 'map', 'json', owner.name)
         assert meta is not None
         obj_id = meta['obj_id']
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
         meta1 = self.dor_proxy.get_meta(obj_id)
@@ -72,25 +60,16 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert object_to_ordered_list(meta1) == object_to_ordered_list(meta2)
 
     def test_add_delete_gpp_data_object(self):
-        created_t = 21342342
-        created_by = 'heiko'
-
         source = 'https://github.com/cooling-singapore/saas-processor-template'
         commit_id = '972bd54'
         proc_path = 'processor_test'
         proc_config = 'default'
 
-        ref_obj_id = 'c5615ab60a0d77ca554650afa7c28c9a18bdabfbec4e14d86aa301ed4dc06308'
-
         # create the data object
-        meta = self.dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config,
-                                                  self.extras[0].identity, created_by, created_t)
-
+        owner = self.extras[0].identity
+        meta = self.dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, owner.name)
         assert meta is not None
         obj_id = meta['obj_id']
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id == ref_obj_id
 
         # get the descriptor of the data object
         meta1 = self.dor_proxy.get_meta(obj_id)
@@ -106,26 +85,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert object_to_ordered_list(meta1) == object_to_ordered_list(meta2)
 
     def test_grant_revoke_access(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        ref_obj_id = 'e8da1a97e1f4e79bd09bdfd22d90f32f35ce6f8a3f90094faf7a67926fafc872'
-
-        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
-                                              data_type, data_format, created_by, created_t)
-        assert meta is not None
+        owner = self.extras[1].identity
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                              owner, False, False, 'map', 'json', owner.name)
         obj_id = meta['obj_id']
-        logger.info(f"obj_id: reference={ref_obj_id} actual={obj_id}")
-        assert ref_obj_id is not None
-        assert obj_id == ref_obj_id
 
-        permissions = self.dor_proxy.get_access_overview(obj_id)
-        logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
+        assert len(meta['access']) == 1
 
         try:
             self.dor_proxy.grant_access(obj_id, self.extras[0], self.extras[2].identity)
@@ -134,29 +99,23 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert True
 
-        permissions = self.dor_proxy.get_access_overview(obj_id)
-        logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
+        meta = self.dor_proxy.get_meta(obj_id)
+        assert len(meta['access']) == 1
 
-        reply = self.dor_proxy.grant_access(obj_id, self.extras[1], self.extras[2].identity)
-        assert reply is not None
-        assert self.extras[2].identity.id in reply
+        meta = self.dor_proxy.grant_access(obj_id, self.extras[1], self.extras[2].identity)
+        assert self.extras[2].identity.id in meta['access']
 
-        permissions = self.dor_proxy.get_access_overview(obj_id)
-        logger.info(f"permissions={permissions}")
-        assert len(permissions) == 2
-        assert self.extras[2].identity.id in permissions
+        meta = self.dor_proxy.get_meta(obj_id)
+        assert len(meta['access']) == 2
+        assert self.extras[2].identity.id in meta['access']
 
-        reply = self.dor_proxy.revoke_access(obj_id, self.extras[1], self.extras[2].identity)
-        assert reply is not None
-        assert self.extras[2].identity.id not in reply
+        meta = self.dor_proxy.revoke_access(obj_id, self.extras[1], self.extras[2].identity)
+        assert self.extras[2].identity.id not in meta['access']
 
-        permissions = self.dor_proxy.get_access_overview(obj_id)
-        logger.info(f"permissions={permissions}")
-        assert len(permissions) == 1
+        meta = self.dor_proxy.get_meta(obj_id)
+        assert len(meta['access']) == 1
 
         meta = self.dor_proxy.delete_data_object(obj_id, self.extras[1])
-        logger.info(f"descriptor={meta}")
         assert meta is not None
 
     def test_transfer_ownership(self):
@@ -168,18 +127,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         owner1 = owner1_k.update_profile(name="User1", email=self.node.identity().email)
         self.db_proxy.update_identity(owner1)
 
-        # create the data object
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        meta = self.dor_proxy.add_data_object(test_file_path, owner0, False, False, 'map', 'json', owner0.name, 2132)
-        assert meta is not None
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                              owner0, False, False, 'map', 'json', owner0.name)
         obj_id = meta['obj_id']
-        logger.info(f"obj_id={obj_id}")
 
         # check the ownership
-        owner_info = self.dor_proxy.get_owner(obj_id)
-        logger.info(f"owner_info={owner_info}")
-        assert owner_info is not None
-        assert owner_info['owner_iid'] == owner0.id
+        assert meta['owner_iid'] == owner0.id
 
         # perform TRANSFER w/ non-owner auth key
         try:
@@ -190,16 +143,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
             assert True
 
         # perform TRANSFER
-        owner_info = self.dor_proxy.transfer_ownership(obj_id, owner0_k, owner1)
-        logger.info(f"owner_info={owner_info}")
-        assert owner_info is not None
-        assert owner_info['owner_iid'] == owner1.id
+        meta = self.dor_proxy.transfer_ownership(obj_id, owner0_k, owner1)
+        assert meta['owner_iid'] == owner1.id
 
         # check the ownership
-        owner_info = self.dor_proxy.get_owner(obj_id)
-        logger.info(f"owner_info={owner_info}")
-        assert owner_info is not None
-        assert owner_info['owner_iid'] == owner1.id
+        meta = self.dor_proxy.get_meta(obj_id)
+        assert meta['owner_iid'] == owner1.id
 
         # perform DELETE w/ wrong owner
         try:
@@ -213,18 +162,10 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id, owner1_k)
 
     def test_get_content(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
-                                              data_type, data_format, created_by, created_t)
-        assert meta is not None
+        owner = self.extras[1].identity
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                              owner, False, False, 'map', 'json', owner.name)
         obj_id = meta['obj_id']
-        logger.info(f"obj_id={obj_id}")
 
         # only the OWNER can get the content via the REST API
 
@@ -256,8 +197,6 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         owner1 = self.extras[1].identity
         protected_content_key1 = owner1.encrypt(content_key).decode('utf-8')
         meta = self.dor_proxy.add_data_object(content_enc_path, owner1, False, True, 'map', 'json', owner1.name)
-        assert meta is not None
-        logger.info(f"descriptor={meta}")
         obj_id = meta['obj_id']
 
         # transfer ownership now
@@ -274,19 +213,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id, owner_k2)
 
     def test_fetch_data_object(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-
-        # create the data object (set access_restricted to True which means permission needs to be granted
-        # before fetching is possible)
-        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, True, False,
-                                              data_type, data_format, created_by, created_t)
-        assert meta is not None
+        owner = self.extras[1].identity
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                              owner, True, False, 'map', 'json', owner.name)
         obj_id = meta['obj_id']
 
         # create the receiving node
@@ -294,11 +223,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         receiver_identity = receiver.update_identity()
         self.db_proxy.update_identity(receiver_identity)
 
-        # try to fetch a data object that doesn't exist
         protocol = DataObjectRepositoryP2PProtocol(receiver)
+
+        # try to fetch a data object that doesn't exist
         fake_obj_id = 'abcdef'
         meta_path = os.path.join(self.wd_path, f"{fake_obj_id}.meta")
-        content_path = os.path.join(self.wd_path, fake_obj_id)
+        content_path = os.path.join(self.wd_path, f"{fake_obj_id}.content")
         try:
             protocol.fetch(self.node.p2p.address(), fake_obj_id,
                            destination_meta_path=meta_path,
@@ -308,10 +238,9 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         except FetchDataObjectFailedError:
             assert True
 
+        # the receiver does not have permission at this point to receive the data object
         meta_path = os.path.join(self.wd_path, f"{obj_id}.meta")
         content_path = os.path.join(self.wd_path, f"{obj_id}.content")
-
-        # the receiver does not have permission at this point to receive the data object
         try:
             protocol.fetch(self.node.p2p.address(), obj_id,
                            destination_meta_path=meta_path,
@@ -322,8 +251,8 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
             assert True
 
         # grant permission
-        result = self.dor_proxy.grant_access(obj_id, self.extras[1], receiver_identity)
-        assert receiver_identity.id in result
+        meta = self.dor_proxy.grant_access(obj_id, self.extras[1], receiver_identity)
+        assert receiver_identity.id in meta['access']
 
         # create user signature to delegate access rights
         token = f"{receiver_identity.id}:{obj_id}"
@@ -340,51 +269,38 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id, self.extras[1])
 
     def test_add_tag_delete_data_object(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path = self.generate_zero_file('test000.dat', 1024*1024)
-        meta = self.dor_proxy.add_data_object(test_file_path, self.extras[1].identity, False, False,
-                                              data_type, data_format, created_by, created_t)
-        assert meta is not None
+        owner = self.extras[1].identity
+        meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                              owner, False, False, 'map', 'json', owner.name)
         obj_id = meta['obj_id']
 
-        # get tags for that data object
-        tags = self.dor_proxy.get_tags(obj_id)
-        logger.info(f"tags={tags}")
-        assert len(tags) == 0
+        assert len(meta['tags']) == 0
 
         # update tags for that data object
-        tags = self.dor_proxy.update_tags(obj_id, self.extras[1], {
+        meta = self.dor_proxy.update_tags(obj_id, self.extras[1], {
             'a': '123',
             'b': '567'
         })
-        logger.info(f"tags={tags}")
-        assert len(tags) == 2
-        tags = {tag['key']: tag['value'] for tag in tags}
+        assert len(meta['tags']) == 2
+        tags = {tag['key']: tag['value'] for tag in meta['tags']}
         assert 'a' in tags
         assert 'b' in tags
         assert tags['a'] == '123'
 
         # update tags for that data object
-        tags = self.dor_proxy.update_tags(obj_id, self.extras[1], {
+        meta = self.dor_proxy.update_tags(obj_id, self.extras[1], {
             'a': '567'
         })
-        logger.info(f"tags={tags}")
-        assert len(tags) == 2
-        tags = {tag['key']: tag['value'] for tag in tags}
+        assert len(meta['tags']) == 2
+        tags = {tag['key']: tag['value'] for tag in meta['tags']}
         assert 'a' in tags
         assert 'b' in tags
         assert tags['a'] == '567'
 
         # remove a tag
-        tags = self.dor_proxy.remove_tags(obj_id, self.extras[1], ['b'])
-        logger.info(f"tags={tags}")
-        assert len(tags) == 1
-        tags = {tag['key']: tag['value'] for tag in tags}
+        meta = self.dor_proxy.remove_tags(obj_id, self.extras[1], ['b'])
+        assert len(meta['tags']) == 1
+        tags = {tag['key']: tag['value'] for tag in meta['tags']}
         assert 'a' in tags
         assert 'b' not in tags
 
@@ -392,66 +308,47 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id, self.extras[1])
 
     def test_add_tag_search_delete_data_object(self):
-        data_type = 'map'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        # create some test data
-        test_file_path0 = self.generate_random_file('test000.dat', 1024*1024)
-        test_file_path1 = self.generate_random_file('test001.dat', 1024*1024)
-        test_file_path2 = self.generate_random_file('test002.dat', 1024*1024)
+        owner1 = self.extras[1].identity
+        owner2 = self.extras[2].identity
 
         # create the data object 0
-        meta0 = self.dor_proxy.add_data_object(test_file_path0, self.extras[1].identity, False, False,
-                                               data_type, data_format, created_by, created_t)
-        assert meta0 is not None
-        print(meta0)
+        meta0 = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                               owner1, False, False, 'map', 'json', owner1.name)
         obj_id0 = meta0['obj_id']
 
         # update tags for that data object
-        self.dor_proxy.update_tags(obj_id0, self.extras[1], {
+        meta0 = self.dor_proxy.update_tags(obj_id0, self.extras[1], {
             'hellox': '123',
             'whazzup': '567',
             'a': '123'
         })
-        tags0 = self.dor_proxy.get_tags(obj_id0)
-        logger.info(f"tags0={tags0}")
-        assert len(tags0) == 3
+        assert len(meta0['tags']) == 3
 
         # create the data object 1
-        meta1 = self.dor_proxy.add_data_object(test_file_path1, self.extras[1].identity, False, False,
-                                               data_type, data_format, created_by, created_t)
-        assert meta1 is not None
-        print(meta1)
+        meta1 = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                               owner1, False, False, 'map', 'json', owner1.name)
         obj_id1 = meta1['obj_id']
 
         # update tags for that data object
-        self.dor_proxy.update_tags(obj_id1, self.extras[1], {
+        meta1 = self.dor_proxy.update_tags(obj_id1, self.extras[1], {
             'hello': '123',
             'world': '567',
             'a': '124'
         })
-        tags1 = self.dor_proxy.get_tags(obj_id1)
-        logger.info(f"tags1={tags1}")
-        assert len(tags1) == 3
+        assert len(meta1['tags']) == 3
 
         # create the data object 2
-        meta2 = self.dor_proxy.add_data_object(test_file_path2, self.extras[2].identity, False, False,
-                                               data_type, data_format, created_by, created_t)
-        assert meta2 is not None
-        print(meta2)
+        meta2 = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
+                                               owner2, False, False, 'map', 'json', owner2.name)
         obj_id2 = meta2['obj_id']
 
         # update tags for that data object
-        self.dor_proxy.update_tags(obj_id2, self.extras[2], {
+        meta2 = self.dor_proxy.update_tags(obj_id2, self.extras[2], {
             'hello': '789',
             'world': '5675',
             'a': '56756'
         })
-        tags2 = self.dor_proxy.get_tags(obj_id2)
-        logger.info(f"tags2={tags2}")
-        assert len(tags2) == 3
+        assert len(meta2['tags']) == 3
 
         # search for data objects
         result = self.dor_proxy.search(["hellox"])
@@ -469,7 +366,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         assert obj_id2 in result
 
         # the case where the owner is restricted
-        result = self.dor_proxy.search(["hello"], owner_iid=self.extras[2].identity.id)
+        result = self.dor_proxy.search(["hello"], owner_iid=owner2.id)
         logger.info(f"result={result}")
         assert len(result) == 1
         result = {i['obj_id']: i['tags'] for i in result}
