@@ -15,7 +15,7 @@ from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.helpers import get_timestamp_now, prompt
+from saas.helpers import read_json_from_file
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -64,21 +64,29 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
-    def prompt_for_request(self, rti: RTIProxy, owner_k: Keystore, content_key: str):
-        request = prompt("Copy and paste the request received by email")
+    def handle_content_key_request(self, rti: RTIProxy, owner_k: Keystore, status_path: str, content_key: str):
+        while True:
+            time.sleep(1)
 
-        # we should be able to decrypt it
-        request = owner_k.decrypt(request.encode('utf-8')).decode('utf-8')
-        request = json.loads(request)
-        print(request)
+            status = read_json_from_file(status_path)
+            if 'requests' in status:
+                for r in status['requests']:
+                    # assert(r['receiver'] == owner_k.identity.id)
 
-        # get the ephemeral key and encrypt the content key with the ephemeral key
-        key = RSAKeyPair.from_public_key_string(request['ephemeral_public_key'])
-        content_key = owner_k.decrypt(content_key.encode('utf-8')).decode('utf-8')
-        content_key = key.encrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                    # we should be able to decrypt it
+                    request = owner_k.decrypt(r['request'].encode('utf-8')).decode('utf-8')
+                    request = json.loads(request)
+                    print(request)
 
-        # submit the content key
-        rti.put_permission(request['req_id'], content_key)
+                    # get the ephemeral key and encrypt the content key with the ephemeral key
+                    key = RSAKeyPair.from_public_key_string(request['ephemeral_public_key'])
+                    content_key = owner_k.decrypt(content_key.encode('utf-8')).decode('utf-8')
+                    content_key = key.encrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+                    # submit the content key
+                    rti.put_permission(r['req_id'], content_key)
+
+                    return
 
     def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
         meta = dor.add_data_object(self.create_file_with_content('a.dat', json.dumps({'v': 1})),
@@ -92,8 +100,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         meta = dor.add_data_object(test_file_path, owner, True, True, 'JSONObject', 'json', owner.name)
         return meta['obj_id'], content_key
 
-    def submit_job_and_wait(self, db: NodeDBProxy, rti: RTIProxy, proc_id, a_obj_id, output_owner: Identity,
-                            user: Keystore, generate_valid_signature: bool):
+    def submit_job(self, db: NodeDBProxy, rti: RTIProxy, proc_id, a_obj_id, output_owner: Identity,
+                   user: Keystore, generate_valid_signature: bool):
         rti_node_info = db.get_node()
         if generate_valid_signature:
             a_access_token = f"{rti_node_info['iid']}:{a_obj_id}"
@@ -133,8 +141,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        result = wait_for_job(rti, job_id)
-        return job_id, result
+        return job_id
 
     def test_deployment_undeployment(self):
         # create node
@@ -622,7 +629,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"a_obj_id={a_obj_id}")
 
         # valid signature but no access rights
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        result = wait_for_job(rti, job_id)
         assert(result is False)
 
         # grant access
@@ -630,11 +638,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(user.identity.id in meta['access'])
 
         # invalid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, False)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, False)
+        result = wait_for_job(rti, job_id)
         assert(result is False)
 
         # valid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        result = wait_for_job(rti, job_id)
         assert(result is True)
 
         jobs = rti.get_jobs(proc_id)
@@ -682,13 +692,17 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         meta = dor.grant_access(a_obj_id, owner, user.identity)
         assert(user.identity.id in meta['access'])
 
-        # start a separate thread to
-        thread = Thread(target=self.prompt_for_request, args=[rti, owner, a_content_key])
+        # valid signature
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+
+        status_path = os.path.join(node.datastore(), 'jobs', job_id, 'job_status.json')
+        assert(os.path.isfile(status_path))
+
+        # run monitoring thread
+        thread = Thread(target=self.handle_content_key_request, args=[rti, owner, status_path, a_content_key])
         thread.start()
 
-        # valid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
-        assert(result is True)
+        wait_for_job(rti, job_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
