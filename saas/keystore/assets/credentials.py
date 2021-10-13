@@ -62,31 +62,6 @@ class SSHCredentials(Credentials):
         return self._record['key_path']
 
 
-class SMTPCredentials(Credentials):
-    def __init__(self, server: str, login: str, password: str):
-        super().__init__({
-            'server': server,
-            'login': login,
-            'password': password
-        })
-
-    @classmethod
-    def from_record(cls, record: dict) -> SMTPCredentials:
-        return SMTPCredentials(record['server'], record['login'], record['password'])
-
-    @property
-    def server(self):
-        return self._record['server']
-
-    @property
-    def login(self):
-        return self._record['login']
-
-    @property
-    def password(self):
-        return self._record['password']
-
-
 T = TypeVar('T')
 
 

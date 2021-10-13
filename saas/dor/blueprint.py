@@ -53,15 +53,6 @@ add_gpp_body_specification = {
     'required': ['data_type', 'data_format', 'created_by', 'owner_iid', 'gpp']
 }
 
-transfer_ownership_body_specification = {
-    'type': 'object',
-    'properties': {
-        'new_owner_iid': {'type': 'string'},
-        'content_key': {'type': 'string'}
-    },
-    'required': ['new_owner_iid']
-}
-
 tags_body_specification = {
     'type': 'array',
     'items': {
@@ -145,7 +136,7 @@ class DORBlueprint(SaaSBlueprint):
         self.add_rule('<obj_id>/content', self.get_content, ['GET'])
         self.add_rule('<obj_id>/access/<iid>', self.grant_access, ['POST'])
         self.add_rule('<obj_id>/access/<iid>', self.revoke_access, ['DELETE'])
-        self.add_rule('<obj_id>/owner', self.transfer_ownership, ['PUT'])
+        self.add_rule('<obj_id>/owner/<iid>', self.transfer_ownership, ['PUT'])
         self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'])
         self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'])
 
@@ -245,22 +236,20 @@ class DORBlueprint(SaaSBlueprint):
 
     @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(transfer_ownership_body_specification)
     @request_manager.verify_authorisation_by_owner('obj_id')
-    def transfer_ownership(self, obj_id: str) -> (Response, int):
+    def transfer_ownership(self, obj_id: str, iid: str) -> (Response, int):
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
         if not record:
             raise DataObjectNotFoundError(obj_id)
 
-        body = request_manager.get_request_variable('body')
-        new_owner = self._node.db.get_identity(body['new_owner_iid'])
+        # get the identity of the new owner
+        new_owner = self._node.db.get_identity(iid)
         if new_owner is None:
-            raise OwnerIdentityNotFoundError(obj_id, body['new_owner_iid'])
+            raise OwnerIdentityNotFoundError(obj_id, iid)
 
-        content_key = body['content_key'] if 'content_key' in body else None
-        self._node.db.update_ownership(obj_id, new_owner, content_key)
-
+        # transfer ownership
+        self._node.db.update_ownership(obj_id, new_owner)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
     @request_manager.handle_request(obj_response_schema)
@@ -356,16 +345,9 @@ class DORProxy(EndpointProxy):
     def revoke_access(self, obj_id: str, authority: Keystore, identity: Identity) -> dict:
         return self.delete(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
 
-    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity,
-                           content_key: str = None) -> dict:
-        body = {
-            'new_owner_iid': new_owner.id
-        }
-
-        if content_key is not None:
-            body['content_key'] = content_key
-
-        return self.put(f"/{obj_id}/owner", body, with_authorisation_by=authority)
+    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity) -> dict:
+        # TODO: reminder that the application layer is responsible to transfer the content_key to the new owner
+        return self.put(f"/{obj_id}/owner/{new_owner.id}", with_authorisation_by=authority)
 
     def update_tags(self, obj_id: str, authority: Keystore, tags: dict) -> dict:
         body = []

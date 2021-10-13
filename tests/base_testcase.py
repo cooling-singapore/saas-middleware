@@ -5,7 +5,7 @@ import logging
 
 from multiprocessing import Lock
 
-from saas.keystore.assets.credentials import CredentialsAsset, SMTPCredentials, SSHCredentials, GithubCredentials
+from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.helpers import get_timestamp_now, read_json_from_file
@@ -123,16 +123,6 @@ class TestCaseBase:
             if use_credentials:
                 credentials = read_json_from_file('credentials.json')
                 keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
-
-                # do we have SMTP credentials?
-                if 'smtp-credentials' in credentials:
-                    smtp_cred = CredentialsAsset[SMTPCredentials].create('smtp-credentials', SMTPCredentials)
-                    smtp_cred.update(credentials['email'], SMTPCredentials(
-                        credentials['smtp-credentials']['server'],
-                        credentials['smtp-credentials']['login'],
-                        credentials['smtp-credentials']['password']
-                    ))
-                    keystore.update_asset(smtp_cred)
 
                 # do we have SSH credentials?
                 if 'ssh-credentials' in credentials:
