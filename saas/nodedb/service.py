@@ -456,10 +456,10 @@ class NodeDBService:
 
             return result
 
-    def add_recipe(self, c_hash: str, recipe: Union[dict, str]) -> None:
+    def add_recipe(self, c_hash: str, recipe: dict) -> None:
         with self._Session() as session:
-            # convert recipe into string (if necessary)
-            recipe = canonicaljson.encode_canonical_json(recipe) if isinstance(recipe, dict) else recipe
+            # convert recipe into string
+            recipe = canonicaljson.encode_canonical_json(recipe)
             recipe = recipe.decode('utf-8')
 
             # calculate recipe hash
