@@ -458,12 +458,8 @@ class NodeDBService:
 
     def add_recipe(self, c_hash: str, recipe: dict) -> None:
         with self._Session() as session:
-            # convert recipe into string
-            recipe = canonicaljson.encode_canonical_json(recipe)
-            recipe = recipe.decode('utf-8')
-
             # calculate recipe hash
-            r_hash = hash_string_object(recipe).hex()
+            r_hash = hash_json_object(recipe).hex()
 
             # do we already have this recipe for the given content hash?
             if r_hash in self.get_recipe(c_hash):
