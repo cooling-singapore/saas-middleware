@@ -1,13 +1,3 @@
-"""
-Contains a number of helper functions and classes used throughout the SaaS Middleware.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
-import os
-import shutil
 import time
 import logging
 import json
@@ -23,19 +13,6 @@ import jsonschema
 import saas.exceptions as exceptions
 
 logger = logging.getLogger('helpers')
-
-
-def remove_path(path):
-    """
-    Removes a filesystem element (file or directory) including all its contents
-    (in case of a directory)
-    :param path:
-    :return:
-    """
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    elif os.path.isfile(path):
-        os.remove(path)
 
 
 def get_timestamp_now():
@@ -98,15 +75,6 @@ def object_to_ordered_list(obj):
         return sorted(object_to_ordered_list(x) for x in obj)
     else:
         return obj
-
-
-def get_address_from_string(address_string):
-    temp = address_string.split(":")
-    return temp[0], int(temp[1])
-
-
-def all_in_dict(required, dictionary):
-    return all(r in dictionary for r in required)
 
 
 def run_command(command: list[str], cwd: str = None, suppress_exception: bool = False) -> subprocess.CompletedProcess:

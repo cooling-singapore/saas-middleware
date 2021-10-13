@@ -8,7 +8,6 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
-from saas.exceptions import SaaSException
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
@@ -48,11 +47,10 @@ def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
     commit_id = '7a87928'
     proc_path = 'processor_test'
     proc_config = config
-    created_t = get_timestamp_now()
     created_by = 'test_user'
 
-    proc_id, _ = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by, created_t)
-    return proc_id
+    meta = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by)
+    return meta['obj_id']
 
 
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -83,35 +81,16 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         rti.put_permission(request['req_id'], content_key)
 
     def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
-        test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
-        test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
-
-        data_type = 'JSONObject'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        access_restricted, False,
-                                        data_type, data_format, created_by, created_t)
-
-        return test_obj_id, obj_id
+        meta = dor.add_data_object(self.create_file_with_content('a.dat', json.dumps({'v': 1})),
+                                   owner, access_restricted, False, 'JSONObject', 'json', owner.name)
+        return meta['obj_id']
 
     def add_encrypted_dummy_data_object(self, dor: DORProxy, owner: Identity):
         test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
-
-        data_type = 'JSONObject'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
         content_key = encrypt_file(test_file_path, encrypt_for=owner, delete_source=True)
 
-        obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        True, True,
-                                        data_type, data_format, created_by, created_t)
-
-        return obj_id, content_key
+        meta = dor.add_data_object(test_file_path, owner, True, True, 'JSONObject', 'json', owner.name)
+        return meta['obj_id'], content_key
 
     def submit_job_and_wait(self, db: NodeDBProxy, rti: RTIProxy, proc_id, a_obj_id, output_owner: Identity,
                             user: Keystore, generate_valid_signature: bool):
@@ -390,13 +369,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # the output data object should be with nodes[1]
         try:
-            dor.get_descriptor(obj_id)
+            dor.get_meta(obj_id)
             assert False
         except UnsuccessfulRequestError:
             assert True
 
-        _, obj_descriptor1 = target_dor.get_descriptor(obj_id)
-        assert(obj_descriptor1 is not None)
+        meta1 = target_dor.get_meta(obj_id)
+        assert(meta1 is not None)
 
         proc_descriptor = rti.undeploy(proc_id)
         assert proc_descriptor is not None
@@ -445,9 +424,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        a_obj_id = self.add_dummy_data_object(dor, owner.identity, False)
         logger.info(f"a_obj_id={a_obj_id}")
-        assert a_obj_id == a_obj_id_ref
 
         job_input = [
             {
@@ -543,9 +521,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        obj_id_ref, obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        obj_id = self.add_dummy_data_object(dor, owner.identity, False)
         logger.info(f"obj_id={obj_id}")
-        assert obj_id == obj_id_ref
 
         job_input = [
             {
@@ -641,18 +618,16 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(dor, owner.identity, True)
+        a_obj_id = self.add_dummy_data_object(dor, owner.identity, True)
         logger.info(f"a_obj_id={a_obj_id}")
-        assert a_obj_id == a_obj_id_ref
 
         # valid signature but no access rights
         job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
         assert(result is False)
 
         # grant access
-        access = dor.grant_access(a_obj_id, owner, user.identity)
-        assert(access is not None)
-        assert(user.identity.id in access)
+        meta = dor.grant_access(a_obj_id, owner, user.identity)
+        assert(user.identity.id in meta['access'])
 
         # invalid signature
         job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, False)
@@ -704,9 +679,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"a_obj_id={a_obj_id}")
 
         # grant access
-        access = dor.grant_access(a_obj_id, owner, user.identity)
-        assert(access is not None)
-        assert(user.identity.id in access)
+        meta = dor.grant_access(a_obj_id, owner, user.identity)
+        assert(user.identity.id in meta['access'])
 
         # start a separate thread to
         thread = Thread(target=self.prompt_for_request, args=[rti, owner, a_content_key])

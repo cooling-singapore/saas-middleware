@@ -1,42 +1,59 @@
+import json
 from typing import Optional, Union
 
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean
+import canonicaljson
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
+from saas.cryptography.hashing import hash_json_object, hash_string_object
 from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.helpers import get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.logging import Logging
-from saas.nodedb.exceptions import DataObjectNotFoundError, DataObjectAlreadyExistsError, InvalidIdentityError
+from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
 
 logger = Logging.get('nodedb.service')
 
 Base = declarative_base()
 
 
-class DORObject(Base):
-    __tablename__ = 'dor_object'
+class DataObjectRecord(Base):
+    __tablename__ = 'obj_record'
     obj_id = Column(String(64), primary_key=True)
-    d_hash = Column(String(64), nullable=False)
+
+    # IMMUTABLE part of meta information:
     c_hash = Column(String(64), nullable=False)
+    data_type = Column(String(64), nullable=False)
+    data_format = Column(String(64), nullable=False)
+    created_by = Column(String(64), nullable=False)
+    created_t = Column(Integer, nullable=False)
+    gpp = Column(Text, nullable=True)
+
+    # MUTABLE part of meta information:
     owner_iid = Column(String(64), nullable=False)
     access_restricted = Column(Boolean, nullable=False)
     content_encrypted = Column(Boolean, nullable=False)
-    data_type = Column(String(64), nullable=False)
-    data_format = Column(String(64), nullable=False)
 
 
-class DORTag(Base):
-    __tablename__ = 'dor_tag'
+class DataObjectRecipe(Base):
+    __tablename__ = 'obj_recipe'
+    c_hash = Column(String(64), primary_key=True)
+    r_hash = Column(String(64), primary_key=True)
+    recipe = Column(Text, nullable=False)
+
+
+class DataObjectTag(Base):
+    __tablename__ = 'obj_tag'
     obj_id = Column(String(64), primary_key=True)
     key = Column(String(64), primary_key=True)
     value = Column(String(256))
 
 
-class DORPermission(Base):
-    __tablename__ = 'dor_permission'
+class DataObjectAccess(Base):
+    __tablename__ = 'obj_access'
     obj_id = Column(String(64), primary_key=True)
     key_iid = Column(String(64), primary_key=True)
 
@@ -70,78 +87,67 @@ class NodeDBService:
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-    # BEGIN: things that do NOT require synchronisation/propagation: DORObject, DORTag, DORPermission
-
-    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
+    def _require_data_object(self, obj_id: str) -> DataObjectRecord:
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
+            obj_record = session.query(DataObjectRecord).get(obj_id)
             if obj_record is None:
                 raise DataObjectNotFoundError({
                     'obj_id': obj_id
                 })
+            return obj_record
 
+    # BEGIN: things that do NOT require synchronisation
+
+    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
+        self._require_data_object(obj_id)
+        with self._Session() as session:
             # update the tags
             for tag in tags:
-                item = session.query(DORTag).filter_by(obj_id=obj_id, key=tag['key']).first()
+                item = session.query(DataObjectTag).filter_by(obj_id=obj_id, key=tag['key']).first()
                 if item:
                     item.value = tag['value']
                 else:
-                    session.add(DORTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
+                    session.add(DataObjectTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
             session.commit()
 
     def remove_tags(self, obj_id: str, keys: list[str] = None) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # remove specific tags
             if keys:
                 for key in keys:
-                    session.query(DORTag).filter_by(obj_id=obj_id, key=key).delete()
+                    session.query(DataObjectTag).filter_by(obj_id=obj_id, key=key).delete()
 
             # remove all tags
             else:
-                session.query(DORTag).filter_by(obj_id=obj_id).delete()
+                session.query(DataObjectTag).filter_by(obj_id=obj_id).delete()
 
             session.commit()
-
-    def get_tags(self, obj_id: str) -> list[dict]:
-        with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            # get all tags
-            tags = session.query(DORTag).filter_by(obj_id=obj_id).all()
-            return [{'key': tag.key, 'value': tag.value} for tag in tags]
 
     def find_data_objects(self, patterns: list[str], owner_iid: str = None) -> list[dict]:
         with self._Session() as session:
             # first, get records of all potential data objects
             if owner_iid is not None:
-                object_records = session.query(DORObject).filter_by(owner_iid=owner_iid).all()
+                object_records = session.query(DataObjectRecord).filter_by(owner_iid=owner_iid).all()
             else:
-                object_records = session.query(DORObject).all()
+                object_records = session.query(DataObjectRecord).all()
 
             # second, filter data objects by patterns (if any)
             result = []
             for obj_record in object_records:
                 # prepare a tags array for the result dict
-                tag_records = session.query(DORTag).filter_by(obj_id=obj_record.obj_id).all()
+                tag_records = session.query(DataObjectTag).filter_by(obj_id=obj_record.obj_id).all()
                 tags = [{'key': tag.key, 'value': tag.value} for tag in tag_records]
 
-                # check if any of the patterns can be found in the tags. for this purpose, flatten all tags (keys
-                # values) into a single string and check if any of the patterns is a substring the flattened string.
-                # if we don't have patterns then always add the object.
+                # flatten all tags (keys values) into a single string for search purposes
                 flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
+
+                # add meta information to make them searchable
+                flattened += f" {obj_record.data_type}"
+                flattened += f" {obj_record.data_format}"
+
+                # check if any of the patterns is a substring the flattened string.
+                # if we don't have patterns then always add the object.
                 if patterns is None or any(pattern in flattened for pattern in patterns):
                     result.append({
                         'obj_id': obj_record.obj_id,
@@ -150,57 +156,26 @@ class NodeDBService:
 
             return result
 
-    def get_access_list(self, obj_id: str) -> list[str]:
-        with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            # get list of ids of identities that have access
-            records = session.query(DORPermission).filter_by(obj_id=obj_id).all()
-            return [record.key_iid for record in records]
-
     def has_access(self, obj_id: str, identity: Identity) -> bool:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            return session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
+            return session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
 
     def grant_access(self, obj_id: str, identity: Identity) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # grant access (if it hasn't already been granted)
-            item = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id).first()
+            item = session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id).first()
             if item is None:
-                session.add(DORPermission(obj_id=obj_id, key_iid=identity.id))
+                session.add(DataObjectAccess(obj_id=obj_id, key_iid=identity.id))
                 session.commit()
 
     def revoke_access(self, obj_id: str, identity: Identity = None) -> list[str]:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
             # query for all or a specific identity
-            q = session.query(DORPermission).filter_by(obj_id=obj_id, key_iid=identity.id) if identity else \
-                session.query(DORPermission).filter_by(obj_id=obj_id)
+            q = session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id) if identity else \
+                session.query(DataObjectAccess).filter_by(obj_id=obj_id)
 
             # determine the ids of identities that have their access revoked
             result = [record.key_iid for record in q.all()]
@@ -211,79 +186,90 @@ class NodeDBService:
 
             return result
 
-    def add_data_object(self, obj_id: str, d_hash: str, c_hash: str, owner_iid: str,
-                        access_restricted: bool, content_encrypted: bool,
-                        data_type: str, data_format: str) -> None:
+    def add_data_object(self, c_hash: str, data_type: str, data_format: str, created_by: str,
+                        gpp: Optional[dict], owner: Identity, access_restricted: bool, content_encrypted: bool) -> dict:
+
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is not None:
-                raise DataObjectAlreadyExistsError({
-                    'obj_id': obj_id
-                })
+            created_t = get_timestamp_now()
+
+            # determine object id
+            gpp_hash = hash_json_object(gpp).hex() if gpp else ''
+            obj_id = hash_string_object(f"{c_hash}{data_type}{data_format}{created_by}{created_t}{gpp_hash}").hex()
 
             # add a new data object record
-            session.add(DORObject(obj_id=obj_id, d_hash=d_hash, c_hash=c_hash, owner_iid=owner_iid,
-                                  access_restricted=access_restricted, content_encrypted=content_encrypted,
-                                  data_type=data_type, data_format=data_format))
+            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash, data_type=data_type, data_format=data_format,
+                                         created_by=created_by, created_t=created_t,
+                                         gpp=json.dumps(gpp) if gpp else None,
+                                         owner_iid=owner.id, access_restricted=access_restricted,
+                                         content_encrypted=content_encrypted))
+
+            # grant access permission to the owner
+            session.add(DataObjectAccess(obj_id=obj_id, key_iid=owner.id))
+
             session.commit()
 
-    def remove_data_object(self, obj_id: str) -> None:
+        return self.get_object_by_id(obj_id)
+
+    def remove_data_object(self, obj_id: str) -> dict:
+        self._require_data_object(obj_id)
         with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
+            record = self.get_object_by_id(obj_id)
 
-            # delete the data object
-            session.query(DORObject).filter_by(obj_id=obj_id).delete()
+            # remove the record, all tags and all access
+            session.query(DataObjectRecord).filter_by(obj_id=obj_id).delete()
+            session.query(DataObjectTag).filter_by(obj_id=obj_id).delete()
+            session.query(DataObjectAccess).filter_by(obj_id=obj_id).delete()
             session.commit()
+
+            return record
 
     def get_object_by_id(self, obj_id: str) -> Optional[dict]:
         with self._Session() as session:
-            record = session.query(DORObject).get(obj_id)
-            return {
+            # do we have an object with this id?
+            record = session.query(DataObjectRecord).get(obj_id)
+            if record is None:
+                return None
+
+            # get all tags
+            tags = session.query(DataObjectTag).filter_by(obj_id=obj_id).all()
+
+            # get list of all identities that have access
+            access = session.query(DataObjectAccess).filter_by(obj_id=obj_id).all()
+
+            # prepare the data object information
+            result = {
                 'obj_id': record.obj_id,
-                'd_hash': record.d_hash,
                 'c_hash': record.c_hash,
+                'data_type': record.data_type,
+                'data_format': record.data_format,
+                'created_by': record.created_by,
+                'created_t': record.created_t,
                 'owner_iid': record.owner_iid,
                 'access_restricted': record.access_restricted,
                 'content_encrypted': record.content_encrypted,
-                'data_type': record.data_type,
-                'data_format': record.data_format
-            } if record else None
+                'tags': [{'key': tag.key, 'value': tag.value} for tag in tags],
+                'access': [record.key_iid for record in access]
+            }
+
+            if record.gpp is not None:
+                result['gpp'] = json.loads(record.gpp)
+
+            return result
 
     def get_objects_by_content_hash(self, c_hash: str) -> list[dict]:
         with self._Session() as session:
-            records = session.query(DORObject).filter_by(c_hash=c_hash).all()
-            return [{
-                'obj_id': record.obj_id,
-                'd_hash': record.d_hash,
-                'c_hash': record.c_hash,
-                'owner_iid': record.owner_iid,
-                'access_restricted': record.access_restricted,
-                'content_encrypted': record.content_encrypted,
-                'data_type': record.data_type,
-                'data_format': record.data_format
-            } for record in records]
+            records = session.query(DataObjectRecord).filter_by(c_hash=c_hash).all()
+            return [self.get_object_by_id(record.obj_id) for record in records]
 
     def get_owner(self, obj_id: str) -> Identity:
-        with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            return self.get_identity(obj_record.owner_iid)
+        record = self._require_data_object(obj_id)
+        return self.get_identity(record.owner_iid)
 
     def update_ownership(self, obj_id: str, new_owner: Identity, content_key: str = None) -> None:
+        self._require_data_object(obj_id)
         with self._Session() as session:
             # does the data object exist?
-            obj_record = session.query(DORObject).get(obj_id)
+            obj_record = session.query(DataObjectRecord).get(obj_id)
             if obj_record is None:
                 raise DataObjectNotFoundError({
                     'obj_id': obj_id
@@ -310,9 +296,9 @@ class NodeDBService:
         # grant access to the new owner
         self.grant_access(obj_id, new_owner)
 
-    # END: things that do NOT require synchronisation/propagation
+    # END: things that do NOT require synchronisation
 
-    # BEGIN: things that DO require synchronisation/propagation: Identity, NetworkNode
+    # BEGIN: things that DO require synchronisation
 
     def get_identity(self, iid: str = None) -> Optional[Identity]:
         with self._Session() as session:
@@ -470,12 +456,38 @@ class NodeDBService:
 
             return result
 
-    # END: things that DO require synchronisation/propagation
+    def add_recipe(self, c_hash: str, recipe: dict) -> None:
+        with self._Session() as session:
+            # convert recipe into string
+            recipe = canonicaljson.encode_canonical_json(recipe)
+            recipe = recipe.decode('utf-8')
+
+            # calculate recipe hash
+            r_hash = hash_string_object(recipe).hex()
+
+            # do we already have this recipe for the given content hash?
+            if r_hash in self.get_recipe(c_hash):
+                logger.info(f"recipe {r_hash} for content {c_hash} already exists -> not adding")
+                return
+
+            # add the provenance record
+            record = DataObjectRecipe(c_hash=c_hash, r_hash=r_hash, recipe=recipe)
+            session.add(record)
+            session.commit()
+
+    def get_recipe(self, c_hash: str) -> dict[str, dict]:
+        with self._Session() as session:
+            return {record.r_hash: json.loads(record.recipe) for record in
+                    session.query(DataObjectRecipe).filter_by(c_hash=c_hash).all()}
+
+    # END: things that DO require synchronisation
 
     def create_sync_snapshot(self, exclude_self: bool = False) -> dict:
         identity_items = []
         network_items = []
+        recipe_items = []
         with self._Session() as session:
+            # add identity records
             for item in session.query(IdentityRecord).all():
                 if exclude_self and item.iid == self._node.identity().id:
                     continue
@@ -492,6 +504,7 @@ class NodeDBService:
                     }
                 })
 
+            # add network records
             for item in session.query(NetworkNode).all():
                 if exclude_self and item.iid == self._node.identity().id:
                     continue
@@ -507,7 +520,15 @@ class NodeDBService:
                     'rest_address': [rest_address[0], int(rest_address[1])] if rest_address else None
                 })
 
+            # add recipe records
+            for item in session.query(DataObjectRecipe).all():
+                recipe_items.append({
+                    'c_hash': item.c_hash,
+                    'recipe': item.recipe
+                })
+
         return {
             'update_identity': identity_items,
-            'update_network': network_items
+            'update_network': network_items,
+            'add_recipe': recipe_items
         }
