@@ -5,7 +5,7 @@ from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.keystore.identity import Identity
 from saas.p2p.exceptions import AttachmentNotFoundError
 from saas.p2p.protocol import P2PProtocol
-from saas.helpers import write_json_to_file, read_json_from_file
+from saas.helpers import write_json_to_file
 
 logger = logging.getLogger('dor.protocol')
 
@@ -13,7 +13,7 @@ logger = logging.getLogger('dor.protocol')
 class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
-    def __init__(self, node):
+    def __init__(self, node) -> None:
         super().__init__(node, DataObjectRepositoryP2PProtocol.id, {
             'lookup': self._handle_lookup,
             'fetch': self._handle_fetch
@@ -53,7 +53,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         return self.prepare_message('lookup_response', records)
 
     def fetch(self, peer_address: (str, int), obj_id: str,
-              destination_descriptor_path: str, destination_content_path: str,
+              destination_meta_path: str, destination_content_path: str,
               user_iid: str = None, user_signature: str = None) -> None:
 
         response, attachment_path = self.request(peer_address, self.prepare_message("fetch", {
@@ -83,7 +83,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # write the data object descriptor to the destination path
-        write_json_to_file(response['descriptor'], destination_descriptor_path)
+        write_json_to_file(response['meta'], destination_meta_path)
 
         # move the data object content to the destination path
         os.rename(attachment_path, destination_content_path)
@@ -143,27 +143,9 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 'c_hash': obj_record['c_hash']
             })
 
-        # we send the descriptor in the reply and stream the contents of the data object
-        descriptor_path = self.node.dor.obj_descriptor_path(obj_id)
-        if not os.path.isfile(descriptor_path):
-            return self.prepare_message('fetch_data_object_response', {
-                'successful': False,
-                'reason': 'data object descriptor not found',
-                'user_iid': message['user_iid'],
-                'object_id': obj_id
-            })
-
-        # if all is good, send a reply followed by the data object content as attachment
-        descriptor = read_json_from_file(descriptor_path)
+        # if all is good, send a reply with the meta information followed by the data object content as attachment
+        record = self.node.db.get_object_by_id(obj_id)
         return self.prepare_message('fetch_data_object_response', {
             'successful': True,
-            'descriptor': descriptor,
-            'record': {
-                'obj_id': obj_record['obj_id'],
-                'c_hash': obj_record['c_hash'],
-                'd_hash': obj_record['d_hash'],
-                'owner_iid': obj_record['owner_iid'],
-                'access_restricted': obj_record['access_restricted'],
-                'content_encrypted': obj_record['content_encrypted']
-            }
+            'meta': record
         }, content_path)

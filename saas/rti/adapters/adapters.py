@@ -35,17 +35,17 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, proc_descriptor: dict, job_wd_path: str, node) -> None:
+    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()
         self._proc_id = proc_id
-        self._proc_descriptor = proc_descriptor
+        self._gpp = gpp
         self._job_wd_path = job_wd_path
         self._node = node
 
-        self._input_interface = {item['name']: item for item in proc_descriptor['input']}
-        self._output_interface = {item['name']: item for item in proc_descriptor['output']}
+        self._input_interface = {item['name']: item for item in gpp['proc_descriptor']['input']}
+        self._output_interface = {item['name']: item for item in gpp['proc_descriptor']['output']}
         self._pending = []
         self._state = ProcessorState.UNINITIALISED
 
@@ -54,8 +54,8 @@ class RTIProcessorAdapter(Thread, ABC):
         return self._proc_id
 
     @property
-    def descriptor(self) -> dict:
-        return self._proc_descriptor
+    def gpp(self) -> dict:
+        return self._gpp
 
     @property
     def state(self) -> ProcessorState:
@@ -266,14 +266,19 @@ class RTIProcessorAdapter(Thread, ABC):
         # fetch input data objects one by one using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
         pending_content_keys = []
+        c_hashes = {}
         for obj_id, record in obj_records.items():
-            descriptor_path = os.path.join(working_directory, f"{obj_id}.descriptor")
+            meta_path = os.path.join(working_directory, f"{obj_id}.meta")
             content_path = os.path.join(working_directory, f"{obj_id}.content")
 
             # fetch the data object
-            protocol.fetch(record['custodian']['p2p_address'], obj_id, descriptor_path, content_path,
+            protocol.fetch(record['custodian']['p2p_address'], obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
+
+            # obtain the content hash for this data object
+            meta = read_json_from_file(meta_path)
+            c_hashes[obj_id] = meta['c_hash']
 
             # is the data object content encrypted? if yes, then we need to request the content key
             if record['content_encrypted']:
@@ -306,14 +311,16 @@ class RTIProcessorAdapter(Thread, ABC):
                     'path': content_path
                 })
 
-        # create symbolic links to the contents for every input
+        # create symbolic links to the contents for every input AND update references with c_hash
         for item in task_descriptor['input']:
             if item['type'] == 'reference':
                 create_symbolic_link(item['name'], f"{item['obj_id']}.content",
                                      working_directory=working_directory)
 
-                create_symbolic_link(f"{item['name']}.descriptor", f"{item['obj_id']}.descriptor",
+                create_symbolic_link(f"{item['name']}.meta", f"{item['obj_id']}.meta",
                                      working_directory=working_directory)
+
+                item['c_hash'] = c_hashes[item['obj_id']]
 
         return pending_content_keys
 
@@ -353,7 +360,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 write_json_to_file({
                     'data_type': 'JSONObject',
                     'data_format': 'json'
-                }, f"{input_content_path}.descriptor")
+                }, f"{input_content_path}.meta")
 
     def _verify_inputs(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         status.update('step', 'verify inputs: data object types and formats')
@@ -362,7 +369,7 @@ class RTIProcessorAdapter(Thread, ABC):
             obj_name = item['name']
 
             # check if data type/format indicated in processor descriptor and data object descriptor match
-            d0 = read_json_from_file(os.path.join(working_directory, f"{obj_name}.descriptor"))
+            d0 = read_json_from_file(os.path.join(working_directory, f"{obj_name}.meta"))
             d1 = self._input_interface[obj_name]
             if d0['data_type'] != d1['data_type'] or d0['data_format'] != d1['data_format']:
                 raise MismatchingDataTypeOrFormatError({
@@ -448,16 +455,38 @@ class RTIProcessorAdapter(Thread, ABC):
             # extract the rest address from that node record
             target_address = node_record['rest_address']
 
+        # determine recipe
+        recipe = {
+            'processor': {
+                'source': self._gpp['source'],
+                'commit_id': self._gpp['commit_id'],
+                'proc_path': self._gpp['proc_path'],
+                'proc_config': self._gpp['proc_config'],
+                'proc_descriptor': self._gpp['proc_descriptor']
+            },
+            'input': [],
+            'output': obj_name
+        }
+
+        # update recipe inputs
+        for item in task_descriptor['input']:
+            if item['type'] == 'value':
+                recipe['input'].append({
+                    'name': item['name'],
+                    'value': item['value']
+                })
+            else:
+                recipe['input'].append({
+                    'name': item['name'],
+                    'c_hash': item['c_hash']
+                })
+
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        obj_id, _ = proxy.add_data_object(output_content_path, self._node.identity(),
-                                          restricted_access, content_encrypted,
-                                          proc_out['data_type'], proc_out['data_format'], self._node.identity().id,
-                                          recipe={
-                                              'task_descriptor': task_descriptor,
-                                              'output_name': obj_name
-                                          })
+        meta = proxy.add_data_object(output_content_path, self._node.identity(), restricted_access, content_encrypted,
+                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id, recipe)
+        obj_id = meta['obj_id']
 
         # update tags with information from the job
         proxy.update_tags(obj_id, self._node.keystore, {

@@ -26,8 +26,8 @@ def prune_image(proc_id: str) -> None:
 
 
 class RTIDockerProcessorAdapter(RTIProcessorAdapter):
-    def __init__(self, proc_id: str, proc_descriptor: dict, obj_content_path: str, jobs_path: str, node) -> None:
-        super().__init__(proc_id, proc_descriptor, jobs_path, node)
+    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node) -> None:
+        super().__init__(proc_id, gpp, jobs_path, node)
 
         with open(obj_content_path, 'rb') as f:
             self._gpp = json.load(f)
