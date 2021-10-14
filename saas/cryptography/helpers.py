@@ -7,8 +7,6 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 
-from saas.keystore.identity import Identity
-
 
 def symmetric_encrypt(content: bytes) -> (bytes, bytes):
     key = Fernet.generate_key()
@@ -21,7 +19,7 @@ def symmetric_decrypt(content: bytes, key: bytes) -> bytes:
     return cipher.decrypt(content)
 
 
-def encrypt_file(source_path: str, destination_path: str = None, encrypt_for: Identity = None,
+def encrypt_file(source_path: str, destination_path: str = None, encrypt_for=None,
                  delete_source: bool = False, chunk_size: int = 1024 * 1024) -> bytes:
 
     # create key, cipher and encrypt to (temporary) location
