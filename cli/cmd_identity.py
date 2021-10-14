@@ -1,4 +1,3 @@
-import logging
 import os
 import requests
 from tabulate import tabulate
@@ -8,13 +7,14 @@ from cli.helpers import CLICommand, Argument, prompt_for_string, \
     prompt_for_password, prompt_if_missing, unlock_keystore, \
     prompt_for_keystore_selection, prompt_for_selection
 from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, SMTPCredentials, GithubCredentials
+from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
+from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
 
-logger = logging.getLogger('cli.identity')
+logger = Logging.get('cli.identity')
 
 
 class IdentityCreate(CLICommand):
@@ -270,18 +270,6 @@ class CredentialsAdd(CLICommand):
                         'personal_access_token': None
                     },
                     'hide-when-prompt': ['personal_access_token']
-                },
-                {
-                    'label': 'SMTP Credentials',
-                    'asset-key': 'smtp-credentials',
-                    'c-type': SMTPCredentials,
-                    'cred-key': 'email address',
-                    'template': {
-                        'server': None,
-                        'login': None,
-                        'password': None
-                    },
-                    'hide-when-prompt': ['password']
                 }
             ]
             item = prompt_for_selection(items, 'Select the type of credential to add:')

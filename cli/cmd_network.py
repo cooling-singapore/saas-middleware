@@ -1,15 +1,14 @@
-import logging
-
 from tabulate import tabulate
 
 from cli.helpers import CLICommand, prompt_for_string, prompt_if_missing
+from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
-logger = logging.getLogger('cli.service')
+logger = Logging.get('cli.service')
 
 
 class NetworkShow(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('show', 'shows the known nodes in the network', arguments=[])
 
     def execute(self, args: dict) -> None:
