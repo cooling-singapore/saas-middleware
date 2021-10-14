@@ -527,7 +527,7 @@ class NodeDBService:
             for item in session.query(DataObjectRecipe).all():
                 recipe_items.append({
                     'c_hash': item.c_hash,
-                    'recipe': item.recipe
+                    'recipe': json.loads(item.recipe)
                 })
 
         return {
