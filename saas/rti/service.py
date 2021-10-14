@@ -1,5 +1,4 @@
 import os
-import logging
 import json
 
 from threading import Lock
@@ -7,6 +6,7 @@ from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.assets.credentials import SSHCredentials
+from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.adapters.docker import RTIDockerProcessorAdapter
@@ -17,7 +17,7 @@ from saas.rti.status import StatusLogger, State
 
 from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
 
-logger = logging.getLogger('rti.service')
+logger = Logging.get('rti.service')
 
 
 class RuntimeInfrastructureService:

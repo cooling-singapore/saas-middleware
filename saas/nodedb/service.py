@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.hashing import hash_json_object, hash_string_object
+from saas.cryptography.helpers import hash_json_object, hash_string_object
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.helpers import get_timestamp_now
 from saas.keystore.identity import Identity

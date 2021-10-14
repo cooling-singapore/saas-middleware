@@ -1,6 +1,9 @@
-import logging
+from __future__ import annotations
+
+from typing import Optional
 
 import cryptography.hazmat.primitives.serialization as serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey, EllipticCurvePublicKey
 
 from saas.cryptography.keypair import KeyPair
 
@@ -9,7 +12,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-logger = logging.getLogger('cryptography.ECKeyPair')
+from saas.logging import Logging
+
+logger = Logging.get('cryptography.ECKeyPair')
 
 
 class ECKeyPair(KeyPair):
@@ -20,14 +25,14 @@ class ECKeyPair(KeyPair):
     a number of methods for creating and verifying signatures and authentication/authorisation tokens.
     """
 
-    def __init__(self, private_key, public_key):
+    def __init__(self, private_key: Optional[EllipticCurvePrivateKey], public_key: EllipticCurvePublicKey) -> None:
         KeyPair.__init__(self, private_key, public_key)
 
     def info(self) -> str:
         return f"EC/{self.private_key.curve.name}/{self.private_key.curve.key_size}/{self.iid}"
 
     @classmethod
-    def create_new(cls):
+    def create_new(cls) -> ECKeyPair:
         """
         Creates an ECKeyPair instance with a randomly generated private key.
         :return: ECKeyPair instance
@@ -39,7 +44,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair.from_private_key(private_key)
 
     @classmethod
-    def from_private_key(cls, private_key):
+    def from_private_key(cls, private_key: EllipticCurvePrivateKey) -> ECKeyPair:
         """
         Creates an ECKeyPair instance based on a given private key.
         :param private_key:
@@ -49,7 +54,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair(private_key, public_key)
 
     @classmethod
-    def from_private_key_string(cls, private_key_string, password=None):
+    def from_private_key_string(cls, private_key_string: str, password: str = None) -> ECKeyPair:
         """
         Creates an ECKeyPair instance based on a given private key string.
         :param private_key_string:
@@ -77,7 +82,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair(private_key, public_key)
 
     @classmethod
-    def from_private_key_file(cls, path, password):
+    def from_private_key_file(cls, path: str, password: str) -> ECKeyPair:
         """
         Creates an ECKeyPair instance by reading a private key from a PEM file.
         :param path: the path to the file containing the private key
@@ -93,7 +98,7 @@ class ECKeyPair(KeyPair):
             return ECKeyPair.from_private_key(private_key)
 
     @classmethod
-    def from_public_key(cls, public_key):
+    def from_public_key(cls, public_key: EllipticCurvePublicKey) -> ECKeyPair:
         """
         Creates an ECKeyPair instance based on a given public key. Note that the private key cannot be derived
         from the public key. An ECKeyPair instance generated this way cannot be used for creating signatures, only
@@ -104,7 +109,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair(None, public_key)
 
     @classmethod
-    def from_public_key_bytes(cls, public_key_bytes):
+    def from_public_key_bytes(cls, public_key_bytes: bytes) -> ECKeyPair:
         """
         Creates an ECKeyPair instance based on a given public key presented as byte array. Note that the private key
         cannot be derived from the public key. An ECKeyPair instance generated this way cannot be used for creating
@@ -119,7 +124,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair.from_public_key(public_key)
 
     @classmethod
-    def from_public_key_string(cls, public_key_string):
+    def from_public_key_string(cls, public_key_string: str) -> ECKeyPair:
         """
         Creates an ECKeyPair instance based on a given public key presented as string. Note that the private key
         cannot be derived from the public key. An ECKeyPair instance generated this way cannot be used for creating
@@ -134,7 +139,7 @@ class ECKeyPair(KeyPair):
         return ECKeyPair.from_public_key_bytes(public_key_string.encode('utf-8'))
 
     @classmethod
-    def from_public_key_file(cls, path):
+    def from_public_key_file(cls, path: str) -> ECKeyPair:
         """
         Creates an ECKeyPair instance by reading a public key from a PEM file. Public keys are not password protected,
         so password is required. An ECKeyPair instance generated this way cannot be used for creating signatures, only

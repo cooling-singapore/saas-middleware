@@ -270,7 +270,7 @@ class CLITestCase(unittest.TestCase, TestCaseBase):
         # decrypt the file
         destination_path = os.path.join(self.wd_path, f"{obj_id}")
         content_key = keystore.get_object_key(obj_id)
-        decrypt_file(download_path, destination=destination_path, key=content_key)
+        decrypt_file(download_path, destination_path=destination_path, key=content_key)
         assert(filecmp.cmp(path, destination_path))
 
         # perform REMOVE operation

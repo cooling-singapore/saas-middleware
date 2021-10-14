@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import base64
-import logging
 import math
+from typing import Optional
+
 import cryptography.hazmat.primitives.serialization as serialization
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
 from saas.cryptography.keypair import KeyPair
 
@@ -11,7 +15,9 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-logger = logging.getLogger('cryptography.RSAKeyPair')
+from saas.logging import Logging
+
+logger = Logging.get('cryptography.RSAKeyPair')
 
 
 class RSAKeyPair(KeyPair):
@@ -22,14 +28,14 @@ class RSAKeyPair(KeyPair):
     a number of methods for creating and verifying signatures and authentication/authorisation tokens.
     """
 
-    def __init__(self, private_key, public_key):
+    def __init__(self, private_key: Optional[RSAPrivateKey], public_key: RSAPublicKey) -> None:
         KeyPair.__init__(self, private_key, public_key)
 
     def info(self) -> str:
         return f"RSA/{self.private_key.key_size}/{self.iid}"
 
     @classmethod
-    def create_new(cls, key_size=4096):
+    def create_new(cls, key_size: int = 4096) -> RSAKeyPair:
         private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=key_size
@@ -37,12 +43,12 @@ class RSAKeyPair(KeyPair):
         return RSAKeyPair.from_private_key(private_key)
 
     @classmethod
-    def from_private_key(cls, private_key):
+    def from_private_key(cls, private_key: RSAPrivateKey) -> RSAKeyPair:
         public_key = private_key.public_key()
         return RSAKeyPair(private_key, public_key)
 
     @classmethod
-    def from_private_key_string(cls, private_key_string, password=None):
+    def from_private_key_string(cls, private_key_string: str, password: str = None) -> RSAKeyPair:
         if password:
             password = password.encode('utf-8')
 
@@ -64,7 +70,7 @@ class RSAKeyPair(KeyPair):
         return RSAKeyPair(private_key, public_key)
 
     @classmethod
-    def from_private_key_file(cls, path, password):
+    def from_private_key_file(cls, path: str, password: str) -> RSAKeyPair:
         with open(path, "rb") as f:
             private_key = serialization.load_pem_private_key(
                 data=f.read(),
@@ -74,11 +80,11 @@ class RSAKeyPair(KeyPair):
             return RSAKeyPair.from_private_key(private_key)
 
     @classmethod
-    def from_public_key(cls, public_key):
+    def from_public_key(cls, public_key: RSAPublicKey) -> RSAKeyPair:
         return RSAKeyPair(None, public_key)
 
     @classmethod
-    def from_public_key_bytes(cls, public_key_bytes):
+    def from_public_key_bytes(cls, public_key_bytes: bytes) -> RSAKeyPair:
         public_key = serialization.load_pem_public_key(
             data=public_key_bytes,
             backend=default_backend()
@@ -86,7 +92,7 @@ class RSAKeyPair(KeyPair):
         return RSAKeyPair.from_public_key(public_key)
 
     @classmethod
-    def from_public_key_string(cls, public_key_string):
+    def from_public_key_string(cls, public_key_string: str) -> RSAKeyPair:
         if '-----BEGIN PUBLIC KEY-----' not in public_key_string:
             public_key_string = '\n'.join(public_key_string[i:i + 64] for i in range(0, len(public_key_string), 64))
             public_key_string = f"-----BEGIN PUBLIC KEY-----\n{public_key_string}\n-----END PUBLIC KEY-----"
@@ -94,7 +100,7 @@ class RSAKeyPair(KeyPair):
         return RSAKeyPair.from_public_key_bytes(public_key_string.encode('utf-8'))
 
     @classmethod
-    def from_public_key_file(cls, path):
+    def from_public_key_file(cls, path: str) -> RSAKeyPair:
         with open(path, "rb") as f:
             public_key = serialization.load_pem_public_key(
                 data=f.read(),
@@ -157,10 +163,7 @@ class RSAKeyPair(KeyPair):
             )
             result += bytearray(chunk)
 
-        if base64_encoded:
-            return base64.b64encode(bytes(result))
-        else:
-            return bytes(result)
+        return base64.b64encode(bytes(result)) if base64_encoded else bytes(result)
 
     def decrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
         """

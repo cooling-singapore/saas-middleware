@@ -1,17 +1,17 @@
-import logging
 from typing import Optional
 
 from requests import Response
 
 from saas.keystore.identity import Identity
 from saas.keystore.schemas import identity_schema
+from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 
 from saas.rest.request_manager import request_manager
 from saas.schemas import network_node_schema
 
-logger = logging.getLogger('nodedb.blueprint')
+logger = Logging.get('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
 
 
