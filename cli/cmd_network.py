@@ -30,7 +30,12 @@ class NetworkShow(CLICommand):
 
         # list
         lines += [
-            [node['iid'], node['dor_service'], node['rti_service'], node['rest_address'], node['p2p_address'], node['last_seen']] for node in network
+            [node['iid'],
+             'Yes' if node['dor_service'] else 'No',
+             'Yes' if node['rti_service'] else 'No',
+             node['rest_address'],
+             node['p2p_address'],
+             node['last_seen']] for node in network
         ]
 
         print(tabulate(lines, tablefmt="plain"))

@@ -87,6 +87,17 @@ class NodeDBService:
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
+        self._print_statistics()
+
+    def _print_statistics(self):
+        with self._Session() as session:
+            logger.debug(f"- DataObjectRecord: {session.query(DataObjectRecord).count()}")
+            logger.debug(f"- DataObjectRecipe: {session.query(DataObjectRecipe).count()}")
+            logger.debug(f"- DataObjectTag: {session.query(DataObjectTag).count()}")
+            logger.debug(f"- DataObjectAccess: {session.query(DataObjectAccess).count()}")
+            logger.debug(f"- IdentityRecord: {session.query(IdentityRecord).count()}")
+            logger.debug(f"- NetworkNode: {session.query(NetworkNode).count()}")
+
     def _require_data_object(self, obj_id: str) -> DataObjectRecord:
         with self._Session() as session:
             obj_record = session.query(DataObjectRecord).get(obj_id)
