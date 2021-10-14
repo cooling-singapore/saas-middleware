@@ -1,20 +1,20 @@
 import json
-import logging
 import os
 from typing import Optional
 
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
+from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
 from saas.schemas import task_descriptor_schema
 
-logger = logging.getLogger('cli.rti')
+logger = Logging.get('cli.rti')
 
 
 class RTIProcDeploy(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('deploy', 'deploys a processor', arguments=[
             Argument('--proc-id', dest='proc-id', action='store', required=False,
                      help=f"the id of the processor to be deployed"),
@@ -46,12 +46,12 @@ class RTIProcDeploy(CLICommand):
             choices = []
             dor = DORProxy(dor_node['rest_address'].split(':'))
             result = dor.search(patterns=['Git-Processor-Pointer'])
-            for obj_id, tags in result.items():
-                tags = {tag.split('=')[0]: tag.split('=')[1] for tag in tags}
-                if tags['data-type'] == 'Git-Processor-Pointer':
+            for item in result:
+                if item['data_type'] == 'Git-Processor-Pointer':
+                    tags = {tag['key']: tag['value'] for tag in item['tags']}
                     choices.append({
                         'label': f"{tags['name']} from {tags['repository']} at {tags['path']}",
-                        'proc-id': obj_id
+                        'proc-id': item['obj_id']
                     })
 
             # do we have processors?
@@ -95,6 +95,7 @@ class RTIProcUndeploy(CLICommand):
         # get the deployed processors
         rti = RTIProxy(args['address'].split(':'))
         deployed = rti.get_deployed()
+        deployed = {item['proc_id']: item for item in deployed}
         if len(deployed) == 0:
             print(f"No processors deployed at {args['address']}. Aborting.")
             return None
@@ -120,15 +121,12 @@ class RTIProcUndeploy(CLICommand):
 
         # undeploy the processor
         print(f"Undeploy processor...", end='')
-        result = rti.undeploy(args['proc-id'])
-        if result == args['proc-id']:
-            print("Done")
-        else:
-            print("Failed")
+        rti.undeploy(args['proc-id'])
+        print("Done")
 
 
 class RTIProcList(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('list', 'retrieves a list of all deployed processors', arguments=[])
 
     def execute(self, args: dict) -> None:
@@ -142,19 +140,19 @@ class RTIProcList(CLICommand):
             print(f"No processors deployed at {args['address']}")
         else:
             print(f"Found {len(deployed)} processor(s) deployed at {args['address']}:")
-            for proc_id in deployed:
-                descriptor = rti.get_descriptor(proc_id)
-                print(f"{proc_id}: {json.dumps(descriptor, indent=4)}")
+            for item in deployed:
+                descriptor = rti.get_descriptor(item['proc_id'])
+                print(f"{item['proc_id']}: {json.dumps(descriptor, indent=4)}")
 
 
 class RTIJobSubmit(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('submit', 'submit a new job', arguments=[
             Argument('--job', dest='job', action='store',
                      help=f"path to the job descriptor")
         ])
 
-    def _prepare(self, address: str):
+    def _prepare(self, address: str) -> None:
         self._address = address
         self._db = NodeDBProxy(address.split(':'))
         self._rti = RTIProxy(address.split(':'))
@@ -268,6 +266,7 @@ class RTIJobSubmit(CLICommand):
 
         # get the deployed processors
         deployed = self._rti.get_deployed()
+        deployed = {item['proc_id']: item for item in deployed}
         if len(deployed) == 0:
             print(f"No processors deployed at {args['address']}. Aborting.")
             return None

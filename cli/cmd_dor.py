@@ -1,5 +1,5 @@
-import logging
 import os
+import shutil
 import subprocess
 
 import jsonschema
@@ -13,14 +13,15 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file
 from saas.keystore.assets.contentkeys import ContentKeysAsset
 from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
+from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.schemas import processor_descriptor_schema
 
-logger = logging.getLogger('cli.dor')
+logger = Logging.get('cli.dor')
 
 
 class DORAdd(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('add', 'adds a data object', arguments=[
             Argument('--restrict-access', dest="restrict_access", action='store_const', const=True,
                      help=f"indicates that access to this data object should be restricted"),
@@ -82,10 +83,9 @@ class DORAdd(CLICommand):
 
             # connect to the DOR and add the data object
             dor = DORProxy(args['address'].split(':'))
-            obj_id, descriptor = dor.add_data_object(obj_path, keystore.identity,
-                                                     restrict_access, content_encrypted,
-                                                     args['data-type'], args['data-format'],
-                                                     keystore.identity.name)
+            meta = dor.add_data_object(obj_path, keystore.identity, restrict_access, content_encrypted,
+                                       args['data-type'], args['data-format'], keystore.identity.name)
+            obj_id = meta['obj_id']
 
             # do some simple tagging
             dor.update_tags(obj_id, keystore, {
@@ -99,15 +99,15 @@ class DORAdd(CLICommand):
 
                 os.remove(obj_path)
 
-            print(f"Data object added: id={obj_id} descriptor={descriptor}")
+            print(f"Data object added: {meta}")
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
 
 
 class DORAddProc(CLICommand):
-    def __init__(self):
-        super().__init__('add-proc', 'adds a Processor Git Pointer data object', arguments=[
+    def __init__(self) -> None:
+        super().__init__('add-gpp', 'adds a Git Processor Pointer (GPP) data object', arguments=[
             Argument('--url', dest='url', action='store',
                      help=f"the URL where to find the git repository that contains the processor"),
 
@@ -158,7 +158,7 @@ class DORAddProc(CLICommand):
                     repo_path = os.path.join(args['temp-dir'], repo_name)
                     if os.path.exists(repo_path):
                         print(f"Deleting already existing path '{repo_path}'...", end='')
-                        subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+                        shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
                         print(f"Done")
 
                     # get the URL
@@ -188,13 +188,13 @@ class DORAddProc(CLICommand):
                             print(f"Failed: {result}")
                             return None
                         else:
-                            default_commmit_id = result.stdout.decode('utf-8').strip()
-                            print(f"Done: {default_commmit_id}")
+                            default_commit_id = result.stdout.decode('utf-8').strip()
+                            print(f"Done: {default_commit_id}")
 
                         # which commit id to use?
                         prompt_if_missing(args, 'commit-id', prompt_for_string,
                                           message="Enter commit id:",
-                                          default=default_commmit_id)
+                                          default=default_commit_id)
 
                     # checkout commit-id
                     print(f"Checkout commit id {args['commit-id']}...", end='')
@@ -288,7 +288,7 @@ class DORAddProc(CLICommand):
                         args['name'] = descriptor['name']
 
                     # clean up
-                    subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+                    shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
 
                 else:
                     prompt_if_missing(args, 'commit-id', prompt_for_string,
@@ -301,12 +301,12 @@ class DORAddProc(CLICommand):
                                       message="Enter the name of the configuration profile to be used:")
 
             # connect to the DOR and add the data object
-            credentials: GithubCredentials = asset.get(args['url']) if asset else None
             dor = DORProxy(args['address'].split(':'))
-            obj_id, descriptor = dor.add_gpp_data_object(
+            meta = dor.add_gpp_data_object(
                 args['url'], args['commit-id'], args['path'], args['config'],
                 keystore.identity, keystore.identity.name
             )
+            obj_id = meta['obj_id']
 
             # set some tags
             dor.update_tags(obj_id, keystore, {
@@ -317,14 +317,14 @@ class DORAddProc(CLICommand):
                 'config': args['config']
             })
 
-            print(f"GPP Data object added: id={obj_id} descriptor={descriptor}")
+            print(f"GPP Data object added: {meta}")
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
 
 
 class DORRemove(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('remove', 'removes a data object', arguments=[
             Argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
                      help="the ids of the data object that are to be deleted")
@@ -386,7 +386,7 @@ class DORRemove(CLICommand):
 
 
 class DORTag(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('tag', 'add/update tags of a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store',
                      help=f"the id of the data object"),
@@ -450,15 +450,16 @@ class DORTag(CLICommand):
                 return None
 
             # update the tags
-            tags = dor.update_tags(args['obj-id'], keystore, valid_tags)
-            print(f"Updated tags of data object {args['obj-id']}: tags={tags}")
+            meta = dor.update_tags(args['obj-id'], keystore, valid_tags)
+            tags = [f"{i['key']}={i['value']}" for i in meta['tags']]
+            print(f"Updated tags of data object {args['obj-id']}: {tags}")
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
 
 
 class DORUntag(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('untag', 'removes tags from a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store',
                      help=f"the id of the data object"),
@@ -503,13 +504,13 @@ class DORUntag(CLICommand):
                     return None
 
             # do we have tags?
-            tags = dor.get_tags(args['obj-id'])
+            meta = dor.get_meta(args['obj-id'])
             if len(args['keys']) == 0:
                 choices = []
-                for key, value in tags.items():
+                for tag in meta['tags']:
                     choices.append({
-                        'label': f"{key} : {value}",
-                        'key': key
+                        'label': f"{tag['key']} : {tag['value']}",
+                        'key': tag['key']
                     })
 
                 for item in prompt_for_selection(choices, "Select tags to be removed:", allow_multiple=True):
@@ -517,6 +518,7 @@ class DORUntag(CLICommand):
 
             # check if the tags are valid
             valid_keys = []
+            tags = [tag['key'] for tag in meta['tags']]
             for key in args['keys']:
                 if key not in tags:
                     print(f"Invalid key '{key}' -> ignoring.")
@@ -529,15 +531,16 @@ class DORUntag(CLICommand):
                 return None
 
             # update the tags
-            tags = dor.remove_tags(args['obj-id'], keystore, valid_keys)
-            print(f"Removed tags from data object {args['obj-id']}: remaining tags={tags}")
+            meta = dor.remove_tags(args['obj-id'], keystore, valid_keys)
+            tags = [f"{tag['key']}={tag['value']}" for tag in meta['tags']]
+            print(f"Removed tags from data object {args['obj-id']}: {tags}")
 
         else:
             print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
 
 
 class DORSearch(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('search', 'searches for data objects', arguments=[
             Argument('--own', dest="own", action='store_const', const=True,
                      help=f"limits the search to data objects owned by the identity used (refer to --keystore-id)"),
@@ -584,8 +587,9 @@ class DORSearch(CLICommand):
             # perform the search
             result = node_dor.search(patterns=args['pattern'], owner_iid=owner_iid)
             items = []
-            for obj_id, tags in result.items():
-                owner_iid = node_dor.get_owner(obj_id)['owner_iid']
+            for item in result:
+                meta = node_dor.get_meta(item['obj_id'])
+                owner_iid = meta['owner_iid']
                 owner = node_db.get_identity(owner_iid)
 
                 # add an item
@@ -594,7 +598,7 @@ class DORSearch(CLICommand):
                     'data_type': item['data_type'],
                     'data_format': item['data_format'],
                     'owner': owner,
-                    'tags': tags
+                    'tags': item['tags']
                 })
 
             search_result.append({
@@ -626,7 +630,7 @@ class DORSearch(CLICommand):
 
 
 class DORAccessShow(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('show', 'shows the identities who have been granted access to a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store', required=False,
                      help=f"the id of the data object"),
@@ -667,21 +671,22 @@ class DORAccessShow(CLICommand):
             else:
                 # check if the object ids exist/owned by this entity
                 result = dor.search(owner_iid=keystore.identity.id)
+                result = [item['obj_id'] for item in result]
                 if args['obj-id'] not in result:
                     print(f"Data object '{args['obj-id']}' does not exist or is not owned by "
                           f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Aborting.")
                     return None
 
-            # get the identities known to the node
+            # get the ids of the identities that have access and resolve them
+            meta = dor.get_meta(args['obj-id'])
             identities = db.get_identities()
+            identities = [identities[iid] for iid in meta['access']]
 
-            # get the identities that have access
-            access = dor.get_access_overview(args['obj-id'])
-            if len(access) == 0:
+            if len(identities) == 0:
                 print(f"No access granted to any identity.")
 
             else:
-                print(f"Access granted to {len(access)} identities:")
+                print(f"Access granted to {len(identities)} identities:")
 
                 # headers
                 lines = [
@@ -691,7 +696,7 @@ class DORAccessShow(CLICommand):
 
                 # list
                 lines += [
-                    [item.name, item.email, item.id] for item in identities.values()
+                    [item.name, item.email, item.id] for item in identities
                 ]
 
                 print(tabulate(lines, tablefmt="plain"))
@@ -701,7 +706,7 @@ class DORAccessShow(CLICommand):
 
 
 class DORAccessGrant(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('grant', 'grants access to one or more data objects', arguments=[
             Argument('--iid', dest='iid', action='store',
                      help=f"the id of the identity who will be granted access"),
@@ -776,8 +781,8 @@ class DORAccessGrant(CLICommand):
             # grant access
             for obj_id in args['obj-ids']:
                 print(f"Granting access to data object {obj_id} for identity {args['iid']}...", end='')
-                result = dor.grant_access(obj_id, keystore, identities[args['iid']])
-                if obj_id not in result or result[obj_id] != args['iid']:
+                meta = dor.grant_access(obj_id, keystore, identities[args['iid']])
+                if args['iid'] not in meta['access']:
                     print(f"Failed")
                 else:
                     print(f"Done")
@@ -787,7 +792,7 @@ class DORAccessGrant(CLICommand):
 
 
 class DORAccessRevoke(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('revoke', 'revokes access to a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store',
                      help="the id of the data objects to which access will be revoked"),
@@ -832,6 +837,7 @@ class DORAccessRevoke(CLICommand):
             else:
                 # check if the object ids exist/owned by this entity
                 result = dor.search(owner_iid=keystore.identity.id)
+                result = [item['obj_id'] for item in result]
                 for obj_id in args['obj-id']:
                     if obj_id not in result:
                         print(f"Data object {obj_id} does not exist or is not owned by "
@@ -844,7 +850,8 @@ class DORAccessRevoke(CLICommand):
             if not args['iids']:
                 # get the identities that have currently access
                 choices = []
-                access = dor.get_access_overview(args['obj-id'])
+                meta = dor.get_meta(args['obj-id'])
+                access = meta['access']
                 for iid in access:
                     identity = identities[iid]
                     choices.append({
@@ -860,8 +867,8 @@ class DORAccessRevoke(CLICommand):
             # revoke access
             for iid in args['iids']:
                 print(f"Revoking access to data object {args['obj-id']} for identity {iid}...", end='')
-                result = dor.revoke_access(args['obj-id'], keystore, identities[iid])
-                if args['obj-id'] not in result or result[args['obj-id']] != iid:
+                meta = dor.revoke_access(args['obj-id'], keystore, identities[iid])
+                if iid in meta['access']:
                     print(f"Failed")
                 else:
                     print(f"Done")
