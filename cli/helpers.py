@@ -313,9 +313,13 @@ def prompt_for_data_object_selection(address: str, owner: Identity, message: str
 
     # determine choices
     choices = []
-    for obj_id, tags in result.items():
+    for item in result:
+        obj_id = item['obj_id']
+        data_type = item['data_type']
+        data_format = item['data_format']
+        tags = [f"{tag['key']}={tag['value']}" for tag in item['tags']]
         choices.append({
-            'label': f"{obj_id} {tags}",
+            'label': f"{obj_id} [{data_type}/{data_format}] {tags}",
             'obj-id': obj_id
         })
 

@@ -496,9 +496,7 @@ class RTIProcessorAdapter(Thread, ABC):
         # update tags with information from the job
         proxy.update_tags(obj_id, self._node.keystore, {
             'name': f"{obj_name}",
-            'job_id': job_id,
-            'data-type': proc_out['data_type'],
-            'data-format': proc_out['data_format']
+            'job_id': job_id
         })
 
         # transfer ownership to the new owner

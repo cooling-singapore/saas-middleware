@@ -19,6 +19,8 @@ search_body_specification = {
     'type': 'object',
     'properties': {
         'owner_iid': {'type': 'string'},
+        'data_type': {'type': 'string'},
+        'data_format': {'type': 'string'},
         'patterns': {
             'type': 'array',
             'items': {'type': 'string'}
@@ -147,7 +149,9 @@ class DORBlueprint(SaaSBlueprint):
         body = request_manager.get_request_variable('body')
         patterns = body['patterns'] if 'patterns' in body else None
         owner_iid = body['owner_iid'] if 'owner_iid' in body else None
-        return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid))
+        data_type = body['data_type'] if 'data_type' in body else None
+        data_format = body['data_format'] if 'data_format' in body else None
+        return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid, data_type, data_format))
 
     @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
@@ -283,7 +287,8 @@ class DORProxy(EndpointProxy):
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
-    def search(self, patterns: list[str] = None, owner_iid: str = None) -> dict:
+    def search(self, patterns: list[str] = None, owner_iid: str = None,
+               data_type: str = None, data_format: str = None) -> dict:
         body = {}
 
         if patterns is not None and len(patterns) > 0:
@@ -291,6 +296,12 @@ class DORProxy(EndpointProxy):
 
         if owner_iid is not None:
             body['owner_iid'] = owner_iid
+
+        if data_type is not None:
+            body['data_type'] = data_type
+
+        if data_format is not None:
+            body['data_format'] = data_format
 
         return self.get('', body=body)
 
