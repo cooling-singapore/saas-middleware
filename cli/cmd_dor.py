@@ -616,13 +616,13 @@ class DORSearch(CLICommand):
 
             for obj in item['objects']:
                 print()
-                print(f"{obj['obj_id']}")
+                print(f"{obj['obj_id']} [{obj['data_type']}/{obj['data_format']}]")
                 print(f"  - HOST: {item['node']['iid']}/{item['node']['rest_address']}/{item['node']['p2p_address']}")
                 print(f"  - OWNER: {obj['owner'].name}/{obj['owner'].email}/{obj['owner'].id}")
                 print(f"  - TAGS:")
                 for tag in obj['tags']:
-                    tag = tag.split('=')
-                    print(f"      {tag[0]}: {tag[1]}")
+                    # tag = tag.split('=')
+                    print(f"      {tag['key']}: {tag['value']}")
 
 
 class DORAccessShow(CLICommand):

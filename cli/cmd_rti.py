@@ -208,11 +208,12 @@ class RTIJobSubmit(CLICommand):
             else:
                 # get the data object choices for this input item
                 object_choices = []
-                result = self._dor.search(patterns=[item['data_type'], item['data_format']])
-                for obj_id, tags in result.items():
+                result = self._dor.search(data_type=item['data_type'], data_format=item['data_format'])
+                for found in result:
+                    tags = [f"{tag['key']}={tag['value']}" for tag in found['tags']]
                     object_choices.append({
-                        'label': f"{obj_id} {tags}",
-                        'obj_id': obj_id
+                        'label': f"{found['obj_id']} [{found['data_type']}/{found['data_format']}] {tags}",
+                        'obj_id': found['obj_id']
                     })
 
                 # do we have any matching objects?

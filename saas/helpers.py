@@ -97,7 +97,8 @@ def parse_stream(pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -
 
         # if we have a file
         if file is not None:
-            file.write(line)
+            file.write(line+'\n')
+            file.flush()
 
         # parse the lines for this round
         if triggers is not None:
