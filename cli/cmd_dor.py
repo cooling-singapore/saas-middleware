@@ -89,9 +89,7 @@ class DORAdd(CLICommand):
 
             # do some simple tagging
             dor.update_tags(obj_id, keystore, {
-                'name': os.path.basename(args['file'][0]),
-                'data-type': args['data-type'],
-                'data-format': args['data-format']
+                'name': os.path.basename(args['file'][0])
             })
 
             # if we used encryption, store the content key
@@ -316,9 +314,7 @@ class DORAddProc(CLICommand):
                 'repository': args['url'],
                 'commit-id': args['commit-id'],
                 'path': args['path'],
-                'config': args['config'],
-                'data-type': 'Git-Processor-Pointer',
-                'data-format': 'json'
+                'config': args['config']
             })
 
             print(f"GPP Data object added: id={obj_id} descriptor={descriptor}")
@@ -594,7 +590,9 @@ class DORSearch(CLICommand):
 
                 # add an item
                 items.append({
-                    'obj_id': obj_id,
+                    'obj_id': item['obj_id'],
+                    'data_type': item['data_type'],
+                    'data_format': item['data_format'],
                     'owner': owner,
                     'tags': tags
                 })
