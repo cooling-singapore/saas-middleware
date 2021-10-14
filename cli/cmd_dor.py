@@ -99,7 +99,7 @@ class DORAdd(CLICommand):
                 asset: ContentKeysAsset = keystore.get_asset('content-keys')
                 asset.update(obj_id, content_key)
 
-                subprocess.run(['rm', '-f', obj_path])
+                os.remove(obj_path)
 
             print(f"Data object added: id={obj_id} descriptor={descriptor}")
 
