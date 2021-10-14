@@ -1,7 +1,6 @@
 import unittest
 import logging
 import os
-import time
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
