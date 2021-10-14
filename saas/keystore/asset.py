@@ -32,5 +32,5 @@ class Asset:
         self._key = key
 
     @property
-    def key(self):
+    def key(self) -> str:
         return self._key

@@ -1,5 +1,4 @@
 from saas.exceptions import SaaSException
-from saas.schemas import processor_descriptor_schema
 
 
 class DORException(SaaSException):

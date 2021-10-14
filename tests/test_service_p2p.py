@@ -5,7 +5,7 @@ import time
 import unittest
 from threading import Thread
 
-from saas.cryptography.hashing import hash_file_content
+from saas.cryptography.helpers import hash_file_content
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.p2p.exceptions import ReceiveDataError, PeerUnavailableError, MismatchingRequestIdError

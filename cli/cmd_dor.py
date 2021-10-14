@@ -77,7 +77,7 @@ class DORAdd(CLICommand):
             if content_encrypted:
                 # create key for this data object and encrypt data object in chunks
                 obj_path_temp = os.path.join(args['temp-dir'], 'obj.protected')
-                content_key = encrypt_file(obj_path, destination=obj_path_temp).decode('utf-8')
+                content_key = encrypt_file(obj_path, destination_path=obj_path_temp).decode('utf-8')
                 obj_path = obj_path_temp
 
             # connect to the DOR and add the data object
