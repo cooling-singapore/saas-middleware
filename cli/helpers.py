@@ -302,7 +302,7 @@ def prompt_for_tags(message: str) -> list[str]:
 
 
 def prompt_for_data_object_selection(address: str, owner: Identity, message: str,
-                                     allow_multiple=False) -> Union[Optional[str],list[str]]:
+                                     allow_multiple=False) -> Union[Optional[str], list[str]]:
     # find all data objects owned by the identity
     dor = DORProxy(address.split(':'))
     result = dor.search(owner_iid=owner.id)
@@ -417,7 +417,7 @@ class CLICommandGroup(CLIExecutable, ABC):
 
 
 class CLIArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
+    def error(self, message: str) -> None:
         self.print_help()
         sys.exit(1)
 
@@ -444,4 +444,3 @@ class CLIParser(CLICommandGroup):
 
         except argparse.ArgumentError:
             parser.print_help()
-            return None
