@@ -1,5 +1,5 @@
 import os
-import subprocess
+import shutil
 import time
 import logging
 
@@ -41,7 +41,7 @@ class TestCaseBase:
             raise Exception(f"path to working directory for testing '{self.wd_path}' already exists!")
 
         # create working directory
-        subprocess.check_output(['mkdir', '-p', self.wd_path])
+        os.makedirs(self.wd_path, exist_ok=True)
 
         self.host = host
         self.nodes = {}
@@ -57,7 +57,7 @@ class TestCaseBase:
             node.shutdown()
 
         # delete working directory
-        subprocess.check_output(['rm', '-rf', self.wd_path])
+        shutil.rmtree(self.wd_path)
 
     def generate_p2p_address(self):
         with self._mutex:
@@ -118,7 +118,7 @@ class TestCaseBase:
             rest_address = self.generate_rest_address()
 
             storage_path = os.path.join(self.wd_path, name)
-            subprocess.check_output(['mkdir', '-p', storage_path])
+            os.makedirs(storage_path, exist_ok=True)
 
             if use_credentials:
                 credentials = read_json_from_file('credentials.json')
