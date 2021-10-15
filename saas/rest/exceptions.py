@@ -45,3 +45,8 @@ class UnexpectedContentType(RESTException):
 class MissingResponseSchemaError(RESTException):
     def __init__(self, details: dict) -> None:
         super().__init__('Response schema is missing', details=details)
+
+
+class UnsuccessfulConnectionError(RESTException):
+    def __init__(self, url: str, details: dict = None) -> None:
+        super().__init__(f"Cannot establish connection to '{url}'", details=details)
