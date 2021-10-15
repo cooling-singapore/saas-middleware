@@ -11,12 +11,14 @@ from typing import Optional, Union
 import requests
 from PyInquirer import prompt
 
+from cli.exceptions import CLIRuntimeError
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = logging.getLogger('cli.helpers')
 
@@ -131,26 +133,48 @@ def prompt_for_identity_selection(address: str, message: str, id_name: str) -> O
         return None
 
 
-def unlock_keystore(path: str, keystore_id: str, password: str) -> Optional[Keystore]:
+def load_keystore(args: dict, ensure_publication: bool) -> Keystore:
+    # prompt for the keystore and id (if missing)
+    prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                      path=args['keystore'],
+                      message="Select the keystore:")
+
+    prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+
+    # try to unlock the keystore
     try:
-        return Keystore.load(path, keystore_id, password)
+        keystore = Keystore.load(args['keystore'], args['keystore-id'], args['password'])
 
-    except TypeError:
-        return None
+    except Exception:
+        raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']}. "
+                              f"Incorrect password? Keystore corrupted? Aborting.")
 
-    except ValueError:
-        return None
+    if ensure_publication:
+        # prompt for the address (if missing)
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the node's REST address",
+                          default='127.0.0.1:5001')
 
+        # try to ensure check if the identity is known and prompt to publish (if otherwise)
+        try:
+            # check if node knows about identity
+            db = NodeDBProxy(args['address'].split(":"))
+            if db.get_identity(keystore.identity.id) is None:
+                if prompt_for_confirmation(
+                        message=f"Identity {keystore.identity.id} is not known to the node at {args['address']}. "
+                                f"Publish identity?",
+                        default=True
+                ):
+                    db.update_identity(keystore.identity)
+                    print(f"Identity {keystore.identity.id} published to node at {args['address']}.")
+                else:
+                    raise CLIRuntimeError(f"Cannot proceed without node ")
 
-def get_keystore_content(path: str, keystore_id: str):
-    # load content and validate
-    keystore_path = os.path.join(path, f"{keystore_id}.json")
-    content = read_json_from_file(keystore_path)
-    if not validate_json(content, keystore_schema):
-        return None
+        except UnsuccessfulRequestError as e:
+            raise CLIRuntimeError(f"Could not ensure identity is known to node at {args['address']}. Aborting. "
+                                  f"(Hint: {e.reason})")
 
-    else:
-        return content
+    return keystore
 
 
 def prompt_for_string(message: str, default: str = None, hide: bool = False, allow_empty: bool = False) -> str:
@@ -345,6 +369,23 @@ def default_if_missing(args: dict, arg_key: str, default: str) -> str:
         args[arg_key] = default
 
     return args[arg_key]
+
+
+def get_nodes_by_service(address: [str, int]) -> dict[str, dict]:
+    result = {
+        'dor': {},
+        'rti': {}
+    }
+
+    db = NodeDBProxy(address)
+    for node in db.get_network():
+        if node['dor_service']:
+            result['dor'][node['iid']] = node
+
+        if node['rti_service']:
+            result['rti'][node['iid']] = node
+
+    return result
 
 
 class Argument:
