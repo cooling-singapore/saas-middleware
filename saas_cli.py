@@ -2,9 +2,8 @@
 
 import os
 import sys
-import traceback
 
-from cli.cmd_dor import DORAdd, DORAddProc, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
+from cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
 from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
@@ -12,7 +11,7 @@ from cli.cmd_network import NetworkShow
 from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
 from cli.cmd_service import Service
 from cli.helpers import CLIParser, Argument, CLICommandGroup
-
+from saas.exceptions import SaaSException
 
 if __name__ == "__main__":
     try:
@@ -56,7 +55,7 @@ if __name__ == "__main__":
             ], commands=[
                 DORSearch(),
                 DORAdd(),
-                DORAddProc(),
+                DORAddGPP(),
                 DORRemove(),
                 DORTag(),
                 DORUntag(),
@@ -70,15 +69,11 @@ if __name__ == "__main__":
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                CLICommandGroup('proc', 'manage processor deployment', commands=[
-                    RTIProcDeploy(),
-                    RTIProcUndeploy(),
-                    RTIProcList()
-                ]),
-                CLICommandGroup('job', 'submit jobs and retrieve status', commands=[
-                    RTIJobSubmit(),
-                    RTIJobStatus()
-                ])
+                RTIProcDeploy(),
+                RTIProcUndeploy(),
+                RTIProcList(),
+                RTIJobSubmit(),
+                RTIJobStatus()
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',
@@ -91,7 +86,8 @@ if __name__ == "__main__":
         cli.execute(sys.argv[1:])
         sys.exit(0)
 
-    except Exception as e:
-        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        print(trace)
+    except SaaSException as e:
+        print(e.reason)
+        # trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+        # print(trace)
         sys.exit(-1)
