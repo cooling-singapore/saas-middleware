@@ -2,7 +2,9 @@ import json
 import os
 from typing import Optional
 
-from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection
+from cli.exceptions import CLIRuntimeError
+from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
+    get_nodes_by_service, prompt_for_confirmation, prompt_for_keystore_selection, prompt_for_password, load_keystore
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
 from saas.logging import Logging
@@ -22,7 +24,7 @@ class RTIProcDeploy(CLICommand):
             Argument('--ssh-profile', dest='ssh-profile', action='store',
                      help=f"indicate the SSH profile to be used (if any)."),
             Argument('proc-id', metavar='proc-id', type=str, nargs='?',
-                     help="the id of the processor to be deployed")
+                     help="the id of the GPP data object of the processor to be deployed")
         ])
 
     def execute(self, args: dict) -> None:
@@ -30,42 +32,39 @@ class RTIProcDeploy(CLICommand):
                           message="Enter the target node's REST address:",
                           default="127.0.0.1:5001")
 
-        # do we have a processor id?
-        if args['proc-id'] is None:
-            # find a node with a DOR (that's because the target node may well be an execution node without DOR)
-            db = NodeDBProxy(args['address'].split(':'))
-            dor_node = None
-            for node in db.get_network():
-                if node['dor_service']:
-                    dor_node = node
-                    break
+        # discover nodes by service
+        nodes = get_nodes_by_service(args['address'].split(':'))
+        if len(nodes['dor']) == 0:
+            raise CLIRuntimeError("Could not find any nodes with a DOR service in the network. Try again later.")
 
-            # do we have a DOR node?
-            if dor_node is None:
-                print("Could not find a node with a DOR service in the network. Try again later.")
-                return None
-
-            # lookup all the data objects that are GPPs
-            choices = []
-            dor = DORProxy(dor_node['rest_address'].split(':'))
-            result = dor.search(patterns=['Git-Processor-Pointer'])
+        # lookup all the GPP data objects
+        choices = []
+        custodian = {}
+        for node in nodes['dor'].values():
+            dor = DORProxy(node['rest_address'].split(':'))
+            result = dor.search(data_type='Git-Processor-Pointer')
             for item in result:
                 if item['data_type'] == 'Git-Processor-Pointer':
                     tags = {tag['key']: tag['value'] for tag in item['tags']}
                     choices.append({
                         'label': f"{tags['name']} from {tags['repository']} at {tags['path']}",
-                        'proc-id': item['obj_id']
+                        'proc-id': item['obj_id'],
                     })
+                    custodian[item['obj_id']] = node
 
-            # do we have processors?
-            if len(choices) == 0:
-                print("No processors found for deployment. Aborting.")
-                return None
+        # do we have any processors to choose from?
+        if len(choices) == 0:
+            raise CLIRuntimeError("No processors found for deployment. Aborting.")
 
-            selection = prompt_for_selection(choices,
-                                             "Select the processor you would like to deploy:",
+        # do we have a processor id?
+        if args['proc-id'] is None:
+            selection = prompt_for_selection(choices, "Select the processor you would like to deploy:",
                                              allow_multiple=False)
             args['proc-id'] = selection['proc-id']
+
+        # do we have a custodian for this processor id?
+        if args['proc-id'] not in custodian:
+            raise CLIRuntimeError(f"Custodian of processor {args['proc-id']} not found. Aborting.")
 
         # do we have a type?
         prompt_if_missing(args, 'type', prompt_for_selection, items=[
@@ -102,8 +101,11 @@ class RTIProcDeploy(CLICommand):
             {'label': 'Docker Deployment', 'type': 'docker'}
         ], message="Select the deployment type:")
 
-        except UnsuccessfulRequestError as e:
-            print(f"Failed: {e.details['reason']}")
+        # deploy the processor
+        print(f"Deploying processor {args['proc-id']}...", end='')
+        rti = RTIProxy(args['address'].split(':'))
+        rti.deploy(args['proc-id'], deployment=args['type'], gpp_custodian=custodian[args['proc-id']]['iid'])
+        print(f"Done")
 
 
 class RTIProcUndeploy(CLICommand):
@@ -123,8 +125,7 @@ class RTIProcUndeploy(CLICommand):
         deployed = rti.get_deployed()
         deployed = {item['proc_id']: item for item in deployed}
         if len(deployed) == 0:
-            print(f"No processors deployed at {args['address']}. Aborting.")
-            return None
+            raise CLIRuntimeError(f"No processors deployed at {args['address']}. Aborting.")
 
         # do we have a processor id?
         if len(args['proc-id']) == 0:
@@ -144,18 +145,17 @@ class RTIProcUndeploy(CLICommand):
 
         # do we have a selection?
         if len(args['proc-id']) == 0:
-            print(f"No processors selected. Aborting.")
-            return None
+            raise CLIRuntimeError(f"No processors selected. Aborting.")
 
         # are the processors deployed?
         for proc_id in args['proc-id']:
             if proc_id not in deployed:
                 print(f"Processor {proc_id} is not deployed at {args['address']}. Skipping.")
 
-            else:
-                print(f"Undeploy processor {proc_id}...", end='')
-                rti.undeploy(proc_id)
-                print("Done")
+            # undeploy the processor
+            print(f"Undeploy processor {proc_id}...", end='')
+            rti.undeploy(proc_id)
+            print(f"Done")
 
 
 class RTIProcList(CLICommand):
@@ -219,7 +219,7 @@ class RTIJobSubmit(CLICommand):
                 'iid': node['iid']
             })
 
-    def _create_job_input(self, proc_descriptor: dict) -> Optional[list]:
+    def _create_job_input(self, proc_descriptor: dict) -> list:
         job_input = []
         for item in proc_descriptor['input']:
             selection = prompt_for_selection([
@@ -249,9 +249,8 @@ class RTIJobSubmit(CLICommand):
 
                 # do we have any matching objects?
                 if len(object_choices) == 0:
-                    print(f"No data objects found that match data type ({item['data_type']}) and "
-                          f"format ({item['data_format']}) of input '{item['name']}'. Aborting.")
-                    return None
+                    raise CLIRuntimeError(f"No data objects found that match data type ({item['data_type']}) and "
+                                          f"format ({item['data_format']}) of input '{item['name']}'. Aborting.")
 
                 # select an object
                 selection = prompt_for_selection(object_choices,
@@ -264,16 +263,14 @@ class RTIJobSubmit(CLICommand):
 
         return job_input
 
-    def _create_job_output(self, proc_descriptor: dict) -> Optional[list]:
+    def _create_job_output(self, proc_descriptor: dict) -> list:
         # select the owner for the output data objects
-        selected = prompt_for_selection(self._identity_choices,
-                                        "Select the owner for the output data objects:",
+        selected = prompt_for_selection(self._identity_choices, "Select the owner for the output data objects:",
                                         allow_multiple=False)
         owner = selected['identity']
 
         # select the target node for the output data objects
-        selected = prompt_for_selection(self._node_choices,
-                                        "Select the destination node for the output data objects:",
+        selected = prompt_for_selection(self._node_choices, "Select the destination node for the output data objects:",
                                         allow_multiple=False)
         target = selected['iid']
 
@@ -301,26 +298,22 @@ class RTIJobSubmit(CLICommand):
         deployed = self._rti.get_deployed()
         deployed = {item['proc_id']: item for item in deployed}
         if len(deployed) == 0:
-            print(f"No processors deployed at {args['address']}. Aborting.")
-            return None
+            raise CLIRuntimeError(f"No processors deployed at {args['address']}. Aborting.")
 
         # do we have a job descriptor?
         if args['job'] is not None:
             # does the file exist?
             if not os.path.isfile(args['job']):
-                print(f"No job descriptor at '{args['job']}'. Aborting.")
-                return None
+                raise CLIRuntimeError(f"No job descriptor at '{args['job']}'. Aborting.")
 
             # read the file and validate
             job_descriptor = read_json_from_file(args['job'])
             if not validate_json(job_descriptor, task_descriptor_schema):
-                print(f"Invalid job descriptor. Aborting.")
-                return None
+                raise CLIRuntimeError(f"Invalid job descriptor. Aborting.")
 
             # is the processor deployed?
             if job_descriptor['processor_id'] not in deployed:
-                print(f"Processor {job_descriptor['processor_id']} is not deployed at {args['address']}. Aborting.")
-                return None
+                raise CLIRuntimeError(f"Processor {job_descriptor['processor_id']} is not deployed at {args['address']}. Aborting.")
 
         # if we don't have a job descriptor then we obtain all the information interactively
         else:
@@ -340,15 +333,9 @@ class RTIJobSubmit(CLICommand):
             proc_descriptor = self._rti.get_descriptor(proc_id)
             print(f"Processor descriptor: {json.dumps(proc_descriptor, indent=4)}")
 
-            # create the job input
+            # create the job input and output
             job_input = self._create_job_input(proc_descriptor)
-            if job_input is None:
-                return None
-
-            # create the job output
             job_output = self._create_job_output(proc_descriptor)
-            if job_output is None:
-                return None
 
             # create the job descriptor template, then begin to fill it
             job_descriptor = {
@@ -375,7 +362,7 @@ class RTIJobSubmit(CLICommand):
 class RTIJobStatus(CLICommand):
     def __init__(self):
         super().__init__('status', 'retrieve the status of a job', arguments=[
-            Argument('--job-id', dest='job-id', action='store',
+            Argument('job-id', metavar='job-id', type=str, nargs='?',
                      help=f"the id of the job")
         ])
 
@@ -387,11 +374,10 @@ class RTIJobStatus(CLICommand):
 
         prompt_if_missing(args, 'job-id', prompt_for_string, message='Enter the job id:')
 
-        print(args)
-        descriptor, status = rti.get_job_info(args['job-id'])
-        if descriptor is None:
-            print(f"Job {args['job-id']} not found.")
-
-        else:
+        try:
+            descriptor, status = rti.get_job_info(args['job-id'])
             print(f"Job descriptor: {json.dumps(descriptor, indent=4)}")
             print(f"Status: {json.dumps(status, indent=4)}")
+
+        except UnsuccessfulRequestError:
+            print(f"Job {args['job-id']} not found.")
