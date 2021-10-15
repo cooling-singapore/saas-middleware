@@ -19,6 +19,8 @@ class RTIProcDeploy(CLICommand):
         super().__init__('deploy', 'deploys a processor', arguments=[
             Argument('--type', dest='type', action='store', choices=['native', 'docker'],
                      help=f"indicate the type of deployment: 'native' or 'docker'."),
+            Argument('--ssh-profile', dest='ssh-profile', action='store',
+                     help=f"indicate the SSH profile to be used (if any)."),
             Argument('proc-id', metavar='proc-id', type=str, nargs='?',
                      help="the id of the processor to be deployed")
         ])
@@ -71,12 +73,34 @@ class RTIProcDeploy(CLICommand):
             {'label': 'Docker Deployment', 'type': 'docker'}
         ], message="Select the deployment type:")
 
-        # deploy the processor
-        try:
-            print(f"Deploying processor {args['proc-id']}...", end='')
-            rti = RTIProxy(args['address'].split(':'))
-            rti.deploy(args['proc-id'], deployment=args['type'])
-            print(f"Done")
+        # should we use an SSH profile?
+        if args['ssh-profile'] is None:
+            if prompt_for_confirmation("Use an SSH profile for deployment?", default=False):
+                keystore = load_keystore(args, ensure_publication=False)
+
+                # get the SSH credentials
+                asset = keystore.get_asset('ssh-credentials')
+                choices = []
+                if asset is not None:
+                    print(asset.index())
+                    for key in asset.index():
+                        choices.append({
+                            'label': key,
+                            'ssh-profile': key,
+                        })
+
+                # do we have any profiles to choose from?
+                if len(choices) == 0:
+                    raise CLIRuntimeError("No SSH profiles found. Aborting.")
+
+                selection = prompt_for_selection(choices, "Select the SSH profile to be used for deployment:",
+                                                 allow_multiple=False)
+                args['ssh-profile'] = selection['ssh-profile']
+
+        prompt_if_missing(args, 'type', prompt_for_selection, items=[
+            {'label': 'Native Deployment', 'type': 'native'},
+            {'label': 'Docker Deployment', 'type': 'docker'}
+        ], message="Select the deployment type:")
 
         except UnsuccessfulRequestError as e:
             print(f"Failed: {e.details['reason']}")
