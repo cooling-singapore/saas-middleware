@@ -83,8 +83,8 @@ class RTIProcDeploy(CLICommand):
 class RTIProcUndeploy(CLICommand):
     def __init__(self):
         super().__init__('undeploy', 'undeploys a processor', arguments=[
-            Argument('--proc-id', dest='proc-id', action='store', required=False,
-                     help=f"the id of the processor to be undeployed")
+            Argument('proc-id', metavar='proc-id', type=str, nargs='*',
+                     help="the ids of the processors to be undeployed")
         ])
 
     def execute(self, args: dict) -> None:
@@ -100,29 +100,36 @@ class RTIProcUndeploy(CLICommand):
             print(f"No processors deployed at {args['address']}. Aborting.")
             return None
 
-        # create choices
-        choices = []
-        for proc_id in deployed:
-            descriptor = rti.get_descriptor(proc_id)
-            choices.append({
-                'label': f"{descriptor['name']}/{proc_id}",
-                'proc-id': proc_id
-            })
-
         # do we have a processor id?
-        prompt_if_missing(args, 'proc-id', prompt_for_selection,
-                          items=choices,
-                          message="Select the processor you would like to undeploy:")
+        if len(args['proc-id']) == 0:
+            # create choices
+            choices = []
+            for proc_id in deployed:
+                descriptor = rti.get_descriptor(proc_id)
+                choices.append({
+                    'label': f"{descriptor['name']}/{proc_id}",
+                    'proc-id': proc_id
+                })
 
-        # is the processor deployed
-        if args['proc-id'] not in deployed:
-            print(f"Processor {args['proc-id']} is not deployed at {args['address']}. Aborting.")
+            selection = prompt_for_selection(items=choices,
+                                             message="Select the processor(s) you would like to undeploy:",
+                                             allow_multiple=True)
+            args['proc-id'] = [item['proc-id'] for item in selection]
+
+        # do we have a selection?
+        if len(args['proc-id']) == 0:
+            print(f"No processors selected. Aborting.")
             return None
 
-        # undeploy the processor
-        print(f"Undeploy processor...", end='')
-        rti.undeploy(args['proc-id'])
-        print("Done")
+        # are the processors deployed?
+        for proc_id in args['proc-id']:
+            if proc_id not in deployed:
+                print(f"Processor {proc_id} is not deployed at {args['address']}. Skipping.")
+
+            else:
+                print(f"Undeploy processor {proc_id}...", end='')
+                rti.undeploy(proc_id)
+                print("Done")
 
 
 class RTIProcList(CLICommand):
