@@ -1,9 +1,8 @@
 import logging
 import os
 
-from cli.helpers import CLICommand, Argument, prompt_for_password, prompt_for_string, prompt_for_confirmation, \
-    prompt_if_missing, default_if_missing, prompt_for_keystore_selection, unlock_keystore, \
-    initialise_storage_folder, prompt_for_selection
+from cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
+    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore
 from saas.node import Node
 
 logger = logging.getLogger('cli.service')
@@ -63,41 +62,33 @@ class Service(CLICommand):
                 {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
             ], message="Select the type of service:")
 
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # initialise storage directory (if necessary)
-            initialise_storage_folder(args['datastore'], 'datastore')
+        # initialise storage directory (if necessary)
+        initialise_storage_folder(args['datastore'], 'datastore')
 
-            # extract host/ports
-            rest_service_address = args['rest-address'].split(':')
-            p2p_service_address = args['p2p-address'].split(':')
-            boot_node_address = args['boot-node'].split(':')
-            rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
-            p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
-            boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
+        # extract host/ports
+        rest_service_address = args['rest-address'].split(':')
+        p2p_service_address = args['p2p-address'].split(':')
+        boot_node_address = args['boot-node'].split(':')
+        rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
+        p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
+        boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
 
-            # create a node instance
-            node = Node.create(keystore, args['datastore'],
-                               p2p_address=p2p_service_address,
-                               rest_address=rest_service_address,
-                               boot_node_address=boot_node_address,
-                               enable_dor=args['type'] == 'full' or args['type'] == 'storage',
-                               enable_rti=args['type'] == 'full' or args['type'] == 'execution')
+        # create a node instance
+        node = Node.create(keystore, args['datastore'],
+                           p2p_address=p2p_service_address,
+                           rest_address=rest_service_address,
+                           boot_node_address=boot_node_address,
+                           enable_dor=args['type'] == 'full' or args['type'] == 'storage',
+                           enable_rti=args['type'] == 'full' or args['type'] == 'execution')
 
-            print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
+        print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-            # wait for confirmation to terminate the server
-            terminate = False
-            while not terminate:
-                terminate = prompt_for_confirmation("Terminate the server?", default=False)
+        # wait for confirmation to terminate the server
+        terminate = False
+        while not terminate:
+            terminate = prompt_for_confirmation("Terminate the server?", default=False)
 
-            print(f"Shutting down the node...")
-            node.shutdown()
-
-        else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+        print(f"Shutting down the node...")
+        node.shutdown()

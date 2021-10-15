@@ -1,11 +1,9 @@
 import os
-import requests
 from tabulate import tabulate
 
-from cli.helpers import CLICommand, Argument, prompt_for_string, \
-    get_available_keystores, prompt_for_confirmation, \
-    prompt_for_password, prompt_if_missing, unlock_keystore, \
-    prompt_for_keystore_selection, prompt_for_selection
+from cli.exceptions import CLIRuntimeError
+from cli.helpers import CLICommand, Argument, prompt_for_string, get_available_keystores, prompt_for_confirmation, \
+    prompt_for_password, prompt_if_missing, prompt_for_keystore_selection, prompt_for_selection, load_keystore
 from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
@@ -46,28 +44,19 @@ class IdentityRemove(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        load_keystore(args, ensure_publication=False)
 
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # confirm removal (if applicable)
-            confirm = prompt_if_missing(args, 'confirm',
-                                        prompt_for_confirmation,
-                                        message=f"Remove keystore {args['keystore-id']}?",
-                                        default=False)
-            if confirm:
-                # delete the keystore
-                keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
-                os.remove(keystore_path)
-                print(f"Keystore {args['keystore-id']} deleted.")
+        # confirm removal (if applicable)
+        if prompt_if_missing(args, 'confirm', prompt_for_confirmation,
+                             message=f"Remove keystore {args['keystore-id']}?", default=False):
 
-            else:
-                print(f"Aborting.")
+            # delete the keystore
+            keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
+            os.remove(keystore_path)
+            print(f"Keystore {args['keystore-id']} deleted.")
+
         else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+            print(f"Aborting.")
 
 
 class IdentityShow(CLICommand):
@@ -83,8 +72,7 @@ class IdentityShow(CLICommand):
         keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
         content = read_json_from_file(keystore_path)
         if not validate_json(content, keystore_schema):
-            print(f"Keystore {args['keystore-id']} content not compliant with json schema.")
-            return None
+            raise CLIRuntimeError(f"Keystore {args['keystore-id']} content not compliant with json schema.")
 
         # show the public information
         print(f"Keystore details:")
@@ -92,7 +80,6 @@ class IdentityShow(CLICommand):
         print(f"- Name: {content['profile']['name']}")
         print(f"- Email: {content['profile']['email']}")
         print(f"- Nonce: {content['nonce']}")
-        # print(f"- Signature: {content['signature']}")
         print(f"- Assets:")
         for asset in content['assets']:
             if asset['type'] in ['KeyPairAsset', 'MasterKeyPairAsset']:
@@ -133,30 +120,17 @@ class IdentityPublish(CLICommand):
                      help=f"the address (host:port) of the node")
         ])
 
-    def execute(self, args):
+    def execute(self, args: dict) -> None:
+        keystore = load_keystore(args, ensure_publication=False)
+
+        # prompt for the address (if missing)
         prompt_if_missing(args, 'address', prompt_for_string,
-                          message="Enter address of node for publication:",
-                          default="127.0.0.1:5001")
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
 
-        # load the keystore
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            try:
-                proxy = NodeDBProxy(args['address'].split(":"))
-                proxy.update_identity(keystore.identity)
-                print(f"Published identity of keystore {args['keystore-id']}")
-
-            except requests.exceptions.ConnectionError:
-                print(f"Could not connect to node at '{args['address']}'. Aborting.")
-
-            except requests.exceptions.InvalidURL:
-                print(f"Invalid node address: '{args['address']}'. Aborting.")
-        else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+        proxy = NodeDBProxy(args['address'].split(":"))
+        proxy.update_identity(keystore.identity)
+        print(f"Published identity of keystore {args['keystore-id']}")
 
 
 class IdentityDiscover(CLICommand):
@@ -171,32 +145,25 @@ class IdentityDiscover(CLICommand):
                           message="Enter address of node for discovery:",
                           default="127.0.0.1:5001")
 
-        try:
-            proxy = NodeDBProxy(args['address'].split(":"))
-            identities = proxy.get_identities()
-            if len(identities) == 0:
-                print(f"No identities discovered.")
-            else:
-                print(f"Discovered {len(identities)} identities:")
+        proxy = NodeDBProxy(args['address'].split(":"))
+        identities = proxy.get_identities()
+        if len(identities) == 0:
+            print(f"No identities discovered.")
+        else:
+            print(f"Discovered {len(identities)} identities:")
 
-                # headers
-                lines = [
-                    ['NAME', 'EMAIL', 'IDENTITY ID'],
-                    ['----', '-----', '-----------']
-                ]
+            # headers
+            lines = [
+                ['NAME', 'EMAIL', 'IDENTITY ID'],
+                ['----', '-----', '-----------']
+            ]
 
-                # list
-                lines += [
-                    [item.name, item.email, item.id] for item in identities.values()
-                ]
+            # list
+            lines += [
+                [item.name, item.email, item.id] for item in identities.values()
+            ]
 
-                print(tabulate(lines, tablefmt="plain"))
-
-        except requests.exceptions.ConnectionError:
-            print(f"Could not connect to node at '{args['address']}'. Aborting.")
-
-        except requests.exceptions.InvalidURL:
-            print(f"Invalid node address: '{args['address']}'. Aborting.")
+            print(tabulate(lines, tablefmt="plain"))
 
 
 class IdentityUpdate(CLICommand):
@@ -207,30 +174,20 @@ class IdentityUpdate(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        # load the keystore
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # show the public information
-            print(f"Keystore details:")
-            print(f"- Name: {keystore.identity.name}")
-            print(f"- Email: {keystore.identity.email}")
+        print(f"Keystore details:")
+        print(f"- Name: {keystore.identity.name}")
+        print(f"- Email: {keystore.identity.email}")
 
-            name = prompt_for_string("Enter name:", default=keystore.identity.name)
-            email = prompt_for_string("Enter email address:", default=keystore.identity.email)
-            if keystore.identity.name != name or keystore.identity.email != email:
-                print(f"Updating profile.")
-                keystore.update_profile(name=name, email=email)
-
-            else:
-                print(f"Nothing to update.")
+        name = prompt_for_string("Enter name:", default=keystore.identity.name)
+        email = prompt_for_string("Enter email address:", default=keystore.identity.email)
+        if keystore.identity.name != name or keystore.identity.email != email:
+            print(f"Updating profile.")
+            keystore.update_profile(name=name, email=email)
 
         else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+            print(f"Nothing to update.")
 
 
 class CredentialsAdd(CLICommand):
@@ -238,64 +195,54 @@ class CredentialsAdd(CLICommand):
         super().__init__('add', 'adds credentials to the keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        # load the keystore
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # define the items and select one
-            items = [
-                {
-                    'label': 'SSH Credentials',
-                    'asset-key': 'ssh-credentials',
-                    'c-type': SSHCredentials,
-                    'cred-key': 'SSH profile name',
-                    'template': {
-                        'host': None,
-                        'login': None,
-                        'key_path': None
-                    },
-                    'hide-when-prompt': []
+        # define the items and select one
+        items = [
+            {
+                'label': 'SSH Credentials',
+                'asset-key': 'ssh-credentials',
+                'c-type': SSHCredentials,
+                'cred-key': 'SSH profile name',
+                'template': {
+                    'host': None,
+                    'login': None,
+                    'key': None
                 },
-                {
-                    'label': 'Github Credentials',
-                    'asset-key': 'github-credentials',
-                    'c-type': GithubCredentials,
-                    'cred-key': 'repository URL',
-                    'template': {
-                        'login': None,
-                        'personal_access_token': None
-                    },
-                    'hide-when-prompt': ['personal_access_token']
-                }
-            ]
-            item = prompt_for_selection(items, 'Select the type of credential to add:')
+                'hide-when-prompt': []
+            },
+            {
+                'label': 'Github Credentials',
+                'asset-key': 'github-credentials',
+                'c-type': GithubCredentials,
+                'cred-key': 'repository URL',
+                'template': {
+                    'login': None,
+                    'personal_access_token': None
+                },
+                'hide-when-prompt': ['personal_access_token']
+            }
+        ]
+        item = prompt_for_selection(items, 'Select the type of credential to add:')
 
-            # do we already have credentials of that type? if no, create it
-            asset = keystore.get_asset(item['asset-key'])
-            if asset is None:
-                asset = CredentialsAsset.create(item['asset-key'], item['c-type'])
+        # do we already have credentials of that type? if no, create it
+        asset = keystore.get_asset(item['asset-key'])
+        if asset is None:
+            asset = CredentialsAsset.create(item['asset-key'], item['c-type'])
 
-            # create a credential
-            cred_key = prompt_for_string(f"Enter the key/name for which this credential is for "
-                                         f"(hint: {item['cred-key']}):")
-            for key in item['template'].keys():
-                item['template'][key] = prompt_for_string(f"Enter value for '{key}':",
-                                                          hide=key in item['hide-when-prompt'])
+        # create a credential
+        cred_key = prompt_for_string(f"Enter the key/name for which this credential is for "
+                                     f"(hint: {item['cred-key']}):")
+        for key in item['template'].keys():
+            item['template'][key] = prompt_for_string(f"Enter value for '{key}':",
+                                                      hide=key in item['hide-when-prompt'])
 
-            # update the asset
-            asset.update(cred_key, item['c-type'].from_record(item['template']))
+        # update the asset
+        asset.update(cred_key, item['c-type'].from_record(item['template']))
 
-            # update the keystore
-            keystore.update_asset(asset)
-
-            print(f"Credential successfully created.")
-
-        else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+        # update the keystore
+        keystore.update_asset(asset)
+        print(f"Credential successfully created.")
 
 
 class CredentialsRemove(CLICommand):
@@ -303,59 +250,47 @@ class CredentialsRemove(CLICommand):
         super().__init__('remove', 'removes credentials from a keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        # load the keystore
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # collect all the removable credentials
-            removable = []
-            credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
-            for c_type in credential_types:
-                asset = keystore.get_asset(c_type)
-                if asset is not None:
-                    index = asset.index()
-                    for key in index:
-                        removable.append({
-                            'asset': asset,
-                            'c_type': c_type,
-                            'key': key,
-                            'label': f"[{c_type}] {key}"
-                        })
+        # collect all the removable credentials
+        removable = []
+        credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
+        for c_type in credential_types:
+            asset = keystore.get_asset(c_type)
+            if asset is not None:
+                index = asset.index()
+                for key in index:
+                    removable.append({
+                        'asset': asset,
+                        'c_type': c_type,
+                        'key': key,
+                        'label': f"[{c_type}] {key}"
+                    })
 
-            # prompt for selection
-            if len(removable) == 0:
-                print(f"No credentials found.")
-                return None
+        # prompt for selection
+        if len(removable) == 0:
+            raise CLIRuntimeError("No credentials found. Aborting.")
 
-            else:
-                items = prompt_for_selection(removable, 'Select the credentials to be removed:', allow_multiple=True)
-                if len(items) == 0:
-                    print(f"Nothing to remove.")
-                    return None
+        # any items selected for removal?
+        items = prompt_for_selection(removable, 'Select the credentials to be removed:', allow_multiple=True)
+        if len(items) == 0:
+            raise CLIRuntimeError("Nothing to remove. Aborting.")
 
-                else:
-                    if prompt_for_confirmation("Remove the selected credentials?", default=False):
-                        modified_assets = []
-                        for item in items:
-                            print(f"Removing {item['label']}...", end='')
-                            item['asset'].remove(item['key'])
-                            if item['asset'] not in modified_assets:
-                                modified_assets.append(item['asset'])
-                            print("Done")
+        # confirm and remove
+        if prompt_for_confirmation("Remove the selected credentials?", default=False):
+            modified_assets = []
+            for item in items:
+                print(f"Removing {item['label']}...", end='')
+                item['asset'].remove(item['key'])
+                if item['asset'] not in modified_assets:
+                    modified_assets.append(item['asset'])
+                print("Done")
 
-                        for asset in modified_assets:
-                            keystore.update_asset(asset)
-
-                    else:
-                        print(f"Aborting.")
-                        return None
+            for asset in modified_assets:
+                keystore.update_asset(asset)
 
         else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+            print(f"Aborting.")
 
 
 class CredentialsList(CLICommand):
@@ -363,47 +298,37 @@ class CredentialsList(CLICommand):
         super().__init__('list', 'lists credentials of the keystore', arguments=[])
 
     def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        # load the keystore
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # collect all credentials
-            credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
-            credentials = []
-            for c_type in credential_types:
-                # print the credentials for this type
-                asset = keystore.get_asset(c_type)
-                if asset is not None:
-                    index = asset.index()
-                    for key in index:
-                        credentials.append({
-                            'type': c_type,
-                            'key': key
-                        })
+        # collect all credentials
+        credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
+        credentials = []
+        for c_type in credential_types:
+            # print the credentials for this type
+            asset: CredentialsAsset = keystore.get_asset(c_type)
+            if asset is not None:
+                index = asset.index()
+                for key in index:
+                    credentials.append({
+                        'type': c_type,
+                        'key': key
+                    })
 
-            # print the credentials
-            if len(credentials) == 0:
-                print(f"No credentials found in keystore.")
+        # print the credentials
+        if len(credentials) == 0:
+            raise CLIRuntimeError("No credentials found in keystore.")
 
-            else:
-                print(f"Found {len(credentials)} credentials in keystore:")
+        print(f"Found {len(credentials)} credentials in keystore:")
 
-                # headers
-                lines = [
-                    ['TYPE', 'CREDENTIAL KEY'],
-                    ['----', '--------------']
-                ]
+        # headers
+        lines = [
+            ['TYPE', 'CREDENTIAL KEY'],
+            ['----', '--------------']
+        ]
 
-                # list
-                lines += [
-                    [item['type'], item['key']] for item in credentials
-                ]
+        # list
+        lines += [
+            [item['type'], item['key']] for item in credentials
+        ]
 
-                print(tabulate(lines, tablefmt="plain"))
-
-        else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+        print(tabulate(lines, tablefmt="plain"))
