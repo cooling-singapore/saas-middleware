@@ -7,6 +7,7 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.blueprint import RTIProxy
 from saas.schemas import task_descriptor_schema
 
@@ -16,10 +17,10 @@ logger = Logging.get('cli.rti')
 class RTIProcDeploy(CLICommand):
     def __init__(self) -> None:
         super().__init__('deploy', 'deploys a processor', arguments=[
-            Argument('--proc-id', dest='proc-id', action='store', required=False,
-                     help=f"the id of the processor to be deployed"),
             Argument('--type', dest='type', action='store', choices=['native', 'docker'],
-                     help=f"indicate the type of deployment: 'native' or 'docker'.")
+                     help=f"indicate the type of deployment: 'native' or 'docker'."),
+            Argument('proc-id', metavar='proc-id', type=str, nargs='?',
+                     help="the id of the processor to be deployed")
         ])
 
     def execute(self, args: dict) -> None:
@@ -71,13 +72,14 @@ class RTIProcDeploy(CLICommand):
         ], message="Select the deployment type:")
 
         # deploy the processor
-        rti = RTIProxy(args['address'].split(':'))
-        print(f"Deploying processor {args['proc-id']}...", end='')
-        descriptor = rti.deploy(args['proc-id'], deployment=args['type'])
-        if descriptor:
+        try:
+            print(f"Deploying processor {args['proc-id']}...", end='')
+            rti = RTIProxy(args['address'].split(':'))
+            rti.deploy(args['proc-id'], deployment=args['type'])
             print(f"Done")
-        else:
-            print(f"Failed")
+
+        except UnsuccessfulRequestError as e:
+            print(f"Failed: {e.details['reason']}")
 
 
 class RTIProcUndeploy(CLICommand):
