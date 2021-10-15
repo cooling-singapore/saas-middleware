@@ -126,12 +126,17 @@ class TestCaseBase:
 
                 # do we have SSH credentials?
                 if 'ssh-credentials' in credentials:
+
                     ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
                     for item in credentials['ssh-credentials']:
+                        # read the ssh key from file
+                        with open(item['key_path'], 'r') as f:
+                            ssh_key = f.read()
+
                         ssh_cred.update(item['name'], SSHCredentials(
                             item['host'],
                             item['login'],
-                            item['key_path']
+                            ssh_key
                         ))
                     keystore.update_asset(ssh_cred)
 

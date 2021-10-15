@@ -32,7 +32,16 @@ deployment_specification = {
     'type': 'object',
     'properties': {
         'deployment': {'type': 'string', 'enum': ['native', 'docker']},
-        'ssh_profile': {'type': 'string'}
+        'ssh_credentials': {
+            'type': 'object',
+            'properties': {
+                'host': {'type': 'string'},
+                'login': {'type': 'string'},
+                'key': {'type': 'string'}
+            },
+            'required': ['host', 'login', 'key']
+        },
+        'gpp_custodian': {'type': 'string'}
     },
     'required': ['deployment']
 }
@@ -77,22 +86,15 @@ class RTIBlueprint(SaaSBlueprint):
     def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
+        gpp_custodian = body['gpp_custodian'] if 'gpp_custodian' in body else None
+        ssh_credentials = SSHCredentials(host=body['ssh_credentials']['host'],
+                                         login=body['ssh_credentials']['login'],
+                                         key=body['ssh_credentials']['key']) if 'ssh_credentials' in body else None
 
-        # are we supposed to use an ssh profile?
-        if 'ssh_profile' in body:
-            asset: CredentialsAsset = self._node.keystore.get_asset('ssh-credentials')
-            ssh_credentials: SSHCredentials = asset.get(body['ssh_profile'])
-            if ssh_credentials is None:
-                raise SSHCredentialsNotFoundError({
-                    'ssh_profile': body['ssh_profile'],
-                    'iid': self._node.identity().id
-                })
-
-            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment'],
-                                                            ssh_credentials=ssh_credentials))
-
-        else:
-            return create_ok_response(self._node.rti.deploy(proc_id, body['deployment']))
+        return create_ok_response(self._node.rti.deploy(proc_id,
+                                                        deployment=body['deployment'],
+                                                        ssh_credentials=ssh_credentials,
+                                                        gpp_custodian=gpp_custodian))
 
     @request_manager.handle_request(processor_descriptor_schema)
     @request_manager.require_rti()
@@ -141,13 +143,21 @@ class RTIProxy(EndpointProxy):
     def get_deployed(self):
         return self.get(f"")
 
-    def deploy(self, proc_id: str, deployment: str = "native", ssh_profile: str = None) -> dict:
+    def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
+               ssh_credentials: SSHCredentials = None) -> dict:
         body = {
             'deployment': deployment,
         }
 
-        if ssh_profile:
-            body['ssh_profile'] = ssh_profile
+        if gpp_custodian:
+            body['gpp_custodian'] = gpp_custodian
+
+        if ssh_credentials:
+            body['ssh_credentials'] = {
+                'host': ssh_credentials.host,
+                'login': ssh_credentials.login,
+                'key': ssh_credentials.key
+            }
 
         return self.post(f"/{proc_id}", body=body)
 
