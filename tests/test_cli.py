@@ -10,7 +10,6 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import write_json_to_file, get_timestamp_now, prompt
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rti.blueprint import RTIProxy
-from saas_cli import parse_args, load_keystore, exec_cmd_service
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(

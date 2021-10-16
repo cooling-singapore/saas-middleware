@@ -11,7 +11,6 @@ from saas.keystore.schemas import keystore_schema
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
-
 logger = Logging.get('cli.identity')
 
 

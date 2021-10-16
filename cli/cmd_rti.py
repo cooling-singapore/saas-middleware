@@ -4,7 +4,7 @@ from typing import Optional
 
 from cli.exceptions import CLIRuntimeError
 from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
-    get_nodes_by_service, prompt_for_confirmation, prompt_for_keystore_selection, prompt_for_password, load_keystore
+    get_nodes_by_service, prompt_for_confirmation, load_keystore
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
 from saas.logging import Logging

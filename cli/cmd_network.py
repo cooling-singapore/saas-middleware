@@ -4,7 +4,7 @@ from cli.helpers import CLICommand, prompt_for_string, prompt_if_missing
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
-logger = Logging.get('cli.service')
+logger = Logging.get('cli.network')
 
 
 class NetworkShow(CLICommand):
