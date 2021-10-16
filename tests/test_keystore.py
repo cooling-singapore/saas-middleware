@@ -107,7 +107,7 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         login = 'johndoe'
         personal_access_token = 'token'
         host = '192.168.0.1'
-        key_path = '/path/to/keyfile'
+        key = '<<<key here>>>'
 
         keystore = Keystore.create(self.wd_path, 'name', 'email', 'password')
         assert(keystore.identity.name == 'name')
@@ -117,7 +117,7 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         github.update(url, GithubCredentials(login, personal_access_token))
 
         ssh = CredentialsAsset[SSHCredentials].create('ssh-cred', SSHCredentials)
-        ssh.update('my-remote-machine', SSHCredentials(host, login, key_path))
+        ssh.update('my-remote-machine', SSHCredentials(host, login, key))
 
         keystore.update_asset(github)
         keystore.update_asset(ssh)
@@ -139,7 +139,7 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         assert(c is not None)
         assert(c.host == host)
         assert(c.login == login)
-        assert(c.key_path == key_path)
+        assert(c.key == key)
 
 
 if __name__ == '__main__':
