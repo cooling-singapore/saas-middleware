@@ -7,6 +7,7 @@ from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_stri
     get_nodes_by_service, prompt_for_confirmation, load_keystore
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
+from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
@@ -28,9 +29,12 @@ class RTIProcDeploy(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
+        # prompt for the address (if missing)
         prompt_if_missing(args, 'address', prompt_for_string,
-                          message="Enter the target node's REST address:",
-                          default="127.0.0.1:5001")
+                          message="Enter the node's REST address",
+                          default='127.0.0.1:5001')
+
+        keystore = load_keystore(args, ensure_publication=False)
 
         # discover nodes by service
         nodes = get_nodes_by_service(args['address'].split(':'))
@@ -40,6 +44,7 @@ class RTIProcDeploy(CLICommand):
         # lookup all the GPP data objects
         choices = []
         custodian = {}
+        repo_urls = {}
         for node in nodes['dor'].values():
             dor = DORProxy(node['rest_address'].split(':'))
             result = dor.search(data_type='Git-Processor-Pointer')
@@ -51,6 +56,7 @@ class RTIProcDeploy(CLICommand):
                         'proc-id': item['obj_id'],
                     })
                     custodian[item['obj_id']] = node
+                    repo_urls[item['obj_id']] = tags['repository']
 
         # do we have any processors to choose from?
         if len(choices) == 0:
@@ -73,12 +79,11 @@ class RTIProcDeploy(CLICommand):
         ], message="Select the deployment type:")
 
         # should we use an SSH profile?
+        ssh_credentials = None
         if args['ssh-profile'] is None:
             if prompt_for_confirmation("Use an SSH profile for deployment?", default=False):
-                keystore = load_keystore(args, ensure_publication=False)
-
                 # get the SSH credentials
-                asset = keystore.get_asset('ssh-credentials')
+                asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
                 choices = []
                 if asset is not None:
                     print(asset.index())
@@ -95,16 +100,27 @@ class RTIProcDeploy(CLICommand):
                 selection = prompt_for_selection(choices, "Select the SSH profile to be used for deployment:",
                                                  allow_multiple=False)
                 args['ssh-profile'] = selection['ssh-profile']
+                ssh_credentials = asset.get(args['ssh-profile'])
 
         prompt_if_missing(args, 'type', prompt_for_selection, items=[
             {'label': 'Native Deployment', 'type': 'native'},
             {'label': 'Docker Deployment', 'type': 'docker'}
         ], message="Select the deployment type:")
 
+        # check if we have Github credentials for this URL
+        url = repo_urls[args['proc-id']]
+        asset: CredentialsAsset = keystore.get_asset('github-credentials')
+        github_credentials: Optional[GithubCredentials] = asset.get(url)
+        if github_credentials is not None:
+            if not prompt_for_confirmation(f"Found Github credentials '{github_credentials.login}' for {url}. "
+                                           f"Use for deployment?", default=True):
+                github_credentials = None
+
         # deploy the processor
         print(f"Deploying processor {args['proc-id']}...", end='')
         rti = RTIProxy(args['address'].split(':'))
-        rti.deploy(args['proc-id'], deployment=args['type'], gpp_custodian=custodian[args['proc-id']]['iid'])
+        rti.deploy(args['proc-id'], deployment=args['type'], gpp_custodian=custodian[args['proc-id']]['iid'],
+                   ssh_credentials=ssh_credentials, github_credentials=github_credentials)
         print(f"Done")
 
 

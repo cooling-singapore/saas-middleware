@@ -1,6 +1,6 @@
 from flask import Response
 
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
+from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
@@ -39,6 +39,14 @@ deployment_specification = {
                 'key': {'type': 'string'}
             },
             'required': ['host', 'login', 'key']
+        },
+        'github_credentials': {
+            'type': 'object',
+            'properties': {
+                'login': {'type': 'string'},
+                'personal_access_token': {'type': 'string'}
+            },
+            'required': ['login', 'personal_access_token']
         },
         'gpp_custodian': {'type': 'string'}
     },
@@ -90,9 +98,14 @@ class RTIBlueprint(SaaSBlueprint):
                                          login=body['ssh_credentials']['login'],
                                          key=body['ssh_credentials']['key']) if 'ssh_credentials' in body else None
 
+        github_credentials = GithubCredentials(login=body['github_credentials']['login'],
+                                               personal_access_token=body['github_credentials']['personal_access_token']) \
+            if 'github_credentials' in body else None
+
         return create_ok_response(self._node.rti.deploy(proc_id,
                                                         deployment=body['deployment'],
                                                         ssh_credentials=ssh_credentials,
+                                                        github_credentials=github_credentials,
                                                         gpp_custodian=gpp_custodian))
 
     @request_manager.handle_request(processor_descriptor_schema)
@@ -143,7 +156,7 @@ class RTIProxy(EndpointProxy):
         return self.get(f"")
 
     def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
-               ssh_credentials: SSHCredentials = None) -> dict:
+               ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> dict:
         body = {
             'deployment': deployment,
         }
@@ -156,6 +169,12 @@ class RTIProxy(EndpointProxy):
                 'host': ssh_credentials.host,
                 'login': ssh_credentials.login,
                 'key': ssh_credentials.key
+            }
+
+        if github_credentials:
+            body['github_credentials'] = {
+                'login': github_credentials.login,
+                'personal_access_token': github_credentials.personal_access_token
             }
 
         return self.post(f"/{proc_id}", body=body)

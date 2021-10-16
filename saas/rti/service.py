@@ -6,7 +6,7 @@ from threading import Lock
 from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.assets.credentials import SSHCredentials
+from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.adapters.adapters import RTIProcessorAdapter
@@ -46,6 +46,11 @@ class RuntimeInfrastructureService:
         key_path = os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
         self._ssh_credentials_paths[proc_id] = key_path
 
+        # remove if the file already exists
+        if os.path.isfile(key_path):
+            os.remove(key_path)
+
+        # write the key to disk and change file permissions
         with open(key_path, 'w') as f:
             f.write(ssh_credentials.key)
         os.chmod(key_path, S_IREAD)
@@ -53,7 +58,7 @@ class RuntimeInfrastructureService:
         return key_path
 
     def deploy(self, proc_id: str, deployment: str, ssh_credentials: SSHCredentials = None,
-               gpp_custodian: str = None) -> dict:
+               github_credentials: GithubCredentials = None, gpp_custodian: str = None) -> dict:
         with self._mutex:
             # is the processor already deployed?
             if proc_id in self._deployed_processors:
@@ -121,7 +126,8 @@ class RuntimeInfrastructureService:
                 if deployment == 'native':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                         RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
-                                                  ssh_credentials=ssh_credentials)
+                                                  ssh_credentials=ssh_credentials,
+                                                  github_credentials=github_credentials)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
