@@ -57,14 +57,10 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             logger.debug(f"repository already exists at {self._repo_home} -> skip cloning")
         else:
             # do we have git credentials?
-            github_cred = self._node.keystore.get_asset('github-credentials')
-            if github_cred:
-                # do we have credentials for this repo?
-                cred = github_cred.get(url)
-                if cred:
-                    insert = f"{cred.login}:{cred.personal_access_token}@"
-                    index = url.find('github.com')
-                    url = url[:index] + insert + url[index:]
+            if self._github_credentials:
+                insert = f"{self._github_credentials.login}:{self._github_credentials.personal_access_token}@"
+                index = url.find('github.com')
+                url = url[:index] + insert + url[index:]
 
             # clone the repository
             logger.debug(f"repository does not exist at {self._repo_home} -> clone")
