@@ -88,6 +88,4 @@ if __name__ == "__main__":
 
     except SaaSException as e:
         print(e.reason)
-        # trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        # print(trace)
         sys.exit(-1)

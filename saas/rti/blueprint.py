@@ -6,7 +6,6 @@ from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.rti.exceptions import SSHCredentialsNotFoundError
 from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
 
 logger = Logging.get('rti.blueprint')
