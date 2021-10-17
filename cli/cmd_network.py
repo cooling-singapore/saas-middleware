@@ -1,15 +1,14 @@
-import logging
-
 from tabulate import tabulate
 
 from cli.helpers import CLICommand, prompt_for_string, prompt_if_missing
+from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
-logger = logging.getLogger('cli.service')
+logger = Logging.get('cli.network')
 
 
 class NetworkShow(CLICommand):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('show', 'shows the known nodes in the network', arguments=[])
 
     def execute(self, args: dict) -> None:
@@ -30,7 +29,12 @@ class NetworkShow(CLICommand):
 
         # list
         lines += [
-            [node['iid'], node['dor_service'], node['rti_service'], node['rest_address'], node['p2p_address'], node['last_seen']] for node in network
+            [node['iid'],
+             'Yes' if node['dor_service'] else 'No',
+             'Yes' if node['rti_service'] else 'No',
+             node['rest_address'],
+             node['p2p_address'],
+             node['last_seen']] for node in network
         ]
 
         print(tabulate(lines, tablefmt="plain"))

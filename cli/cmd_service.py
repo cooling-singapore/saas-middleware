@@ -1,13 +1,11 @@
-import logging
 import os
 
-from cli.helpers import CLICommand, Argument, prompt_for_password, prompt_for_string, prompt_for_confirmation, \
-    prompt_if_missing, default_if_missing, prompt_for_keystore_selection, unlock_keystore, \
-    initialise_storage_folder, prompt_for_selection
-from saas.keystore.assets.credentials import CredentialsAsset
+from cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
+    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore
+from saas.logging import Logging
 from saas.node import Node
 
-logger = logging.getLogger('cli.service')
+logger = Logging.get('cli.service')
 
 
 class Service(CLICommand):
@@ -31,8 +29,6 @@ class Service(CLICommand):
             Argument('--boot-node', dest='boot-node', action='store',
                      help=f"address of an existing node for joining a network "
                           f"(default: '{self.default_boot_node_address}')."),
-            Argument('--ssh-profile', dest='ssh-profile', action='store',
-                     help=f"indicate the SSH profile to use for starting an RTI (default: none)."),
             Argument('--type', dest='type', action='store', choices=['full', 'storage', 'execution'],
                      help=f"indicate the type of service provided by the node: 'storage' and 'execution' "
                           f"will only load the DOR or RTI modules, respectively; a 'full' node will provide "
@@ -66,64 +62,33 @@ class Service(CLICommand):
                 {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
             ], message="Select the type of service:")
 
-        prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
-                          path=args['keystore'],
-                          message="Select the keystore:")
-        prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+        keystore = load_keystore(args, ensure_publication=False)
 
-        keystore = unlock_keystore(args['keystore'], args['keystore-id'], args['password'])
-        if keystore is not None:
-            # are we running a 'full' or 'execution' node? ask for an SSH profile
-            if args['type'] in ['full', 'execution']:
-                # do we have SSH profiles?
-                asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
-                if asset is not None:
-                    ssh_profiles = asset.index()
+        # initialise storage directory (if necessary)
+        initialise_storage_folder(args['datastore'], 'datastore')
 
-                    # has a profile been specified?
-                    if args['ssh-profile']:
-                        # does it exist?
-                        if args['ssh-profile'] not in ssh_profiles:
-                            print(f"SSH profile '{args['ssh-profile']}' not found. Aborting.")
-                            return None
+        # extract host/ports
+        rest_service_address = args['rest-address'].split(':')
+        p2p_service_address = args['p2p-address'].split(':')
+        boot_node_address = args['boot-node'].split(':')
+        rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
+        p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
+        boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
 
-                    else:
-                        # select an ssh profile (include a none option)
-                        choices = [{'label': s, 'ssh-profile': s} for s in ssh_profiles]
-                        choices.append({'label': '(none)', 'ssh-profile': ''})
-                        prompt_if_missing(args, 'ssh-profile', prompt_for_selection,
-                                          items=choices,
-                                          message="Select the SSH profile to use for the RTI (if any):")
+        # create a node instance
+        node = Node.create(keystore, args['datastore'],
+                           p2p_address=p2p_service_address,
+                           rest_address=rest_service_address,
+                           boot_node_address=boot_node_address,
+                           enable_dor=args['type'] == 'full' or args['type'] == 'storage',
+                           enable_rti=args['type'] == 'full' or args['type'] == 'execution')
 
-            # initialise storage directory (if necessary)
-            initialise_storage_folder(args['datastore'], 'datastore')
+        print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-            # extract host/ports
-            rest_service_address = args['rest-address'].split(':')
-            p2p_service_address = args['p2p-address'].split(':')
-            boot_node_address = args['boot-node'].split(':')
-            rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
-            p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
-            boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
+        # wait for confirmation to terminate the server
+        terminate = False
+        while not terminate:
+            terminate = prompt_for_confirmation("Terminate the server?", default=False)
 
-            # create a node instance
-            node = Node.create(keystore, args['datastore'],
-                               p2p_address=p2p_service_address,
-                               rest_address=rest_service_address,
-                               boot_node_address=boot_node_address,
-                               enable_dor=args['type'] == 'full' or args['type'] == 'storage',
-                               enable_rti=args['type'] == 'full' or args['type'] == 'execution',
-                               ssh_profile=args['ssh-profile'] if args['ssh-profile'] != '' else None)
-
-            print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
-
-            # wait for confirmation to terminate the server
-            terminate = False
-            while not terminate:
-                terminate = prompt_for_confirmation("Terminate the server?", default=False)
-
-            print(f"Shutting down the node...")
-            node.shutdown()
-
-        else:
-            print(f"Could not open keystore. Incorrect password? Keystore corrupted? Aborting.")
+        print(f"Shutting down the node...")
+        node.shutdown()
