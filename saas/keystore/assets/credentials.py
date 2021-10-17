@@ -38,53 +38,28 @@ class GithubCredentials(Credentials):
 
 
 class SSHCredentials(Credentials):
-    def __init__(self, host: str, login: str, key_path: str):
+    def __init__(self, host: str, login: str, key: str) -> None:
         super().__init__({
             'host': host,
             'login': login,
-            'key_path': key_path
+            'key': key
         })
 
     @classmethod
     def from_record(cls, record: dict) -> SSHCredentials:
-        return SSHCredentials(record['host'], record['login'], record['key_path'])
+        return SSHCredentials(record['host'], record['login'], record['key'])
 
     @property
-    def host(self):
+    def host(self) -> str:
         return self._record['host']
 
     @property
-    def login(self):
+    def login(self) -> str:
         return self._record['login']
 
     @property
-    def key_path(self):
-        return self._record['key_path']
-
-
-class SMTPCredentials(Credentials):
-    def __init__(self, server: str, login: str, password: str):
-        super().__init__({
-            'server': server,
-            'login': login,
-            'password': password
-        })
-
-    @classmethod
-    def from_record(cls, record: dict) -> SMTPCredentials:
-        return SMTPCredentials(record['server'], record['login'], record['password'])
-
-    @property
-    def server(self):
-        return self._record['server']
-
-    @property
-    def login(self):
-        return self._record['login']
-
-    @property
-    def password(self):
-        return self._record['password']
+    def key(self) -> str:
+        return self._record['key']
 
 
 T = TypeVar('T')
@@ -125,7 +100,7 @@ class CredentialsAsset(Generic[T], Asset):
 
         return CredentialsAsset[T](key, credentials, ctype)
 
-    def serialise(self, protect_with: KeyPair):
+    def serialise(self, protect_with: KeyPair) -> dict:
         credentials = copy(self._credentials)
         for k, v in credentials.items():
             credentials[k] = v.record

@@ -8,13 +8,15 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
+from saas.keystore.assets.credentials import SSHCredentials, CredentialsAsset
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.helpers import get_timestamp_now, prompt
+from saas.helpers import read_json_from_file
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -43,14 +45,13 @@ def wait_for_job(rti, job_id):
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
     source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = '972bd54'
+    commit_id = '7a87928'
     proc_path = 'processor_test'
     proc_config = config
-    created_t = get_timestamp_now()
     created_by = 'test_user'
 
-    proc_id, _ = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by, created_t)
-    return proc_id
+    meta = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, created_by)
+    return meta['obj_id']
 
 
 class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -64,55 +65,44 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
     def tearDown(self):
         self.cleanup()
 
-    def prompt_for_request(self, rti: RTIProxy, owner_k: Keystore, content_key: str):
-        request = prompt("Copy and paste the request received by email")
+    def handle_content_key_request(self, rti: RTIProxy, owner_k: Keystore, status_path: str, content_key: str):
+        while True:
+            time.sleep(1)
 
-        # we should be able to decrypt it
-        request = owner_k.decrypt(request.encode('utf-8')).decode('utf-8')
-        request = json.loads(request)
-        print(request)
+            status = read_json_from_file(status_path)
+            if 'requests' in status:
+                for r in status['requests']:
+                    # assert(r['receiver'] == owner_k.identity.id)
 
-        # get the ephemeral key and encrypt the content key with the ephemeral key
-        key = RSAKeyPair.from_public_key_string(request['ephemeral_public_key'])
-        content_key = owner_k.decrypt(content_key.encode('utf-8')).decode('utf-8')
-        content_key = key.encrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+                    # we should be able to decrypt it
+                    request = owner_k.decrypt(r['request'].encode('utf-8')).decode('utf-8')
+                    request = json.loads(request)
+                    print(request)
 
-        # submit the content key
-        rti.put_permission(request['req_id'], content_key)
+                    # get the ephemeral key and encrypt the content key with the ephemeral key
+                    key = RSAKeyPair.from_public_key_string(request['ephemeral_public_key'])
+                    content_key = owner_k.decrypt(content_key.encode('utf-8')).decode('utf-8')
+                    content_key = key.encrypt(content_key.encode('utf-8'), base64_encoded=True).decode('utf-8')
+
+                    # submit the content key
+                    rti.put_permission(r['req_id'], content_key)
+
+                    return
 
     def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
-        test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
-        test_obj_id = 'c1cfe06853dae66d0340811947a7237d16983f5a4dbfa5608338eadfe423d3ae'
-
-        data_type = 'JSONObject'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
-        obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        access_restricted, False,
-                                        data_type, data_format, created_by, created_t)
-
-        return test_obj_id, obj_id
+        meta = dor.add_data_object(self.create_file_with_content('a.dat', json.dumps({'v': 1})),
+                                   owner, access_restricted, False, 'JSONObject', 'json', owner.name)
+        return meta['obj_id']
 
     def add_encrypted_dummy_data_object(self, dor: DORProxy, owner: Identity):
         test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
-
-        data_type = 'JSONObject'
-        data_format = 'json'
-        created_t = 21342342
-        created_by = 'heiko'
-
         content_key = encrypt_file(test_file_path, encrypt_for=owner, delete_source=True)
 
-        obj_id, _ = dor.add_data_object(test_file_path, owner,
-                                        True, True,
-                                        data_type, data_format, created_by, created_t)
+        meta = dor.add_data_object(test_file_path, owner, True, True, 'JSONObject', 'json', owner.name)
+        return meta['obj_id'], content_key
 
-        return obj_id, content_key
-
-    def submit_job_and_wait(self, db: NodeDBProxy, rti: RTIProxy, proc_id, a_obj_id, output_owner: Identity,
-                            user: Keystore, generate_valid_signature: bool):
+    def submit_job(self, db: NodeDBProxy, rti: RTIProxy, proc_id, a_obj_id, output_owner: Identity,
+                   user: Keystore, generate_valid_signature: bool):
         rti_node_info = db.get_node()
         if generate_valid_signature:
             a_access_token = f"{rti_node_info['iid']}:{a_obj_id}"
@@ -147,17 +137,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 1)
-
-        result = wait_for_job(rti, job_id)
-        return job_id, result
+        return job_id
 
     def test_deployment_undeployment(self):
         # create node
@@ -190,14 +175,17 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -234,6 +222,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -267,7 +256,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
@@ -286,9 +276,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -320,6 +309,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -360,9 +350,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
+
+        time.sleep(1)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
@@ -383,14 +376,17 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_id = output['c']
 
         # the output data object should be with nodes[1]
-        obj_descriptor0 = dor.get_descriptor(obj_id)
-        obj_descriptor1 = target_dor.get_descriptor(obj_id)
-        assert(obj_descriptor0 is None)
-        assert(obj_descriptor1 is not None)
+        try:
+            dor.get_meta(obj_id)
+            assert False
+        except UnsuccessfulRequestError:
+            assert True
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        meta1 = target_dor.get_meta(obj_id)
+        assert(meta1 is not None)
+
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -427,6 +423,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -435,9 +432,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        a_obj_id = self.add_dummy_data_object(dor, owner.identity, False)
         logger.info(f"a_obj_id={a_obj_id}")
-        assert a_obj_id == a_obj_id_ref
 
         job_input = [
             {
@@ -463,7 +459,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
@@ -485,7 +482,105 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+    def test_processor_execution_same_reference(self):
+        # test for issue #110: https://github.com/cooling-singapore/saas-middleware/issues/110
+
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(2)
+        owner = keystores[0]
+        user = keystores[1]
+        db.update_identity(owner.identity)
+        db.update_identity(user.identity)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 0)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = rti.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        deployed = rti.get_deployed()
+        logger.info(f"deployed={deployed}")
+        assert(deployed is not None)
+        assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
+        assert(proc_id in deployed)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        # add data object
+        obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        logger.info(f"obj_id={obj_id}")
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'reference',
+                'obj_id': obj_id
+            },
+            {
+                'name': 'b',
+                'type': 'reference',
+                'obj_id': obj_id
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 1)
+
+        result = wait_for_job(rti, job_id)
+        assert(result is True)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+        assert(jobs is not None)
+        assert(len(jobs) == 0)
+
+        input_path_a = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'a')
+        input_path_b = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'b')
+        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        assert(os.path.isfile(input_path_a))
+        assert(os.path.isfile(input_path_b))
+        assert(os.path.isfile(output_path))
+
+        result = rti.undeploy(proc_id)
+        assert result is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -522,6 +617,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -530,25 +626,26 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id_ref, a_obj_id = self.add_dummy_data_object(dor, owner.identity, True)
+        a_obj_id = self.add_dummy_data_object(dor, owner.identity, True)
         logger.info(f"a_obj_id={a_obj_id}")
-        assert a_obj_id == a_obj_id_ref
 
         # valid signature but no access rights
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        result = wait_for_job(rti, job_id)
         assert(result is False)
 
         # grant access
-        access = dor.grant_access(a_obj_id, owner, user.identity)
-        assert(access is not None)
-        assert(access[a_obj_id] == user.identity.id)
+        meta = dor.grant_access(a_obj_id, owner, user.identity)
+        assert(user.identity.id in meta['access'])
 
         # invalid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, False)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, False)
+        result = wait_for_job(rti, job_id)
         assert(result is False)
 
         # valid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+        result = wait_for_job(rti, job_id)
         assert(result is True)
 
         jobs = rti.get_jobs(proc_id)
@@ -559,9 +656,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -594,17 +690,20 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"a_obj_id={a_obj_id}")
 
         # grant access
-        access = dor.grant_access(a_obj_id, owner, user.identity)
-        assert(access is not None)
-        assert(access[a_obj_id] == user.identity.id)
-
-        # start a separate thread to
-        thread = Thread(target=self.prompt_for_request, args=[rti, owner, a_content_key])
-        thread.start()
+        meta = dor.grant_access(a_obj_id, owner, user.identity)
+        assert(user.identity.id in meta['access'])
 
         # valid signature
-        job_id, result = self.submit_job_and_wait(db, rti, proc_id, a_obj_id, owner.identity, user, True)
-        assert(result is True)
+        job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
+
+        status_path = os.path.join(node.datastore(), 'jobs', job_id, 'job_status.json')
+        assert(os.path.isfile(status_path))
+
+        # run monitoring thread
+        thread = Thread(target=self.handle_content_key_request, args=[rti, owner, status_path, a_content_key])
+        thread.start()
+
+        wait_for_job(rti, job_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
@@ -614,9 +713,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -660,6 +758,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert (deployed is not None)
         assert (len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert (proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -693,7 +792,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert (job_id is not None)
 
@@ -715,7 +815,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -738,7 +837,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_deployment_undeployment(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
@@ -763,7 +862,10 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
+
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity().id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -775,14 +877,18 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {item['proc_id']: item for item in deployed}
         assert(proc_id in deployed)
 
-        result = rti.undeploy('false proc id')
-        assert result is None
+        try:
+            rti.undeploy('false proc id')
+            assert False
+
+        except UnsuccessfulRequestError:
+            assert True
 
         result = rti.undeploy(proc_id)
         assert result is not None
-        assert result == proc_id
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
@@ -791,12 +897,11 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
     def test_processor_execution_value(self):
         # create node
-        node = self.get_node('node', enable_rest=True, ssh_profile='nscc')
+        node = self.get_node('node', enable_rest=True)
         if not node:
             logger.info("Cannot test NSCC remote execution without SSH credentials.")
             return
 
-        # create proxies
         db = NodeDBProxy(node.rest.address())
         rti = RTIProxy(node.rest.address())
         dor = DORProxy(node.rest.address())
@@ -816,7 +921,10 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        descriptor = rti.deploy(proc_id)
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
+
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity().id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -824,6 +932,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 1)
+        deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
         jobs = rti.get_jobs(proc_id)
@@ -857,7 +966,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
             }
         ]
 
-        job_id = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
@@ -876,9 +986,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        result = rti.undeploy(proc_id)
-        assert result is not None
-        assert result == proc_id
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")

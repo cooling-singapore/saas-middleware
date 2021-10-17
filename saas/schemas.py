@@ -50,31 +50,20 @@ task_descriptor_schema = {
     'required': ['processor_id', 'input', 'output', 'user_iid']
 }
 
-data_object_descriptor_schema = {
-    'type': 'object',
-    'properties': {
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'created_t': {'type': 'number'},
-        'created_by': {'type': 'string'},
-        'recipe': {
-            'type': 'object',
-            'properties': {
-                'task_descriptor': task_descriptor_schema,
-                'output_name': {'type': 'string'}
-            },
-            'required': ['task_descriptor', 'output_name']
-        }
-    },
-    'required': ['data_type', 'data_format', 'created_t', 'created_by']
-}
-
 io_variable_schema = {
     'type': 'object',
     'properties': {
         'name': {'type': 'string'},
         'data_type': {'type': 'string'},
         'data_format': {'type': 'string'}
+    },
+    'if': {
+        'properties': {'data_type': {'const': 'JSONObject'}}
+    },
+    'then': {
+        'properties': {
+            'schema': {'type': 'object'}
+        }
     },
     'required': ['name', 'data_type', 'data_format']
 }
@@ -105,7 +94,73 @@ git_proc_pointer_schema = {
         'source': {'type': 'string'},
         'commit_id': {'type': 'string'},
         'proc_path': {'type': 'string'},
-        'proc_config': {'type': 'string'}
+        'proc_config': {'type': 'string'},
+        'proc_descriptor': {'type': 'object'}
     },
     'required': ['source', 'commit_id', 'proc_path', 'proc_config']
+}
+
+network_node_schema = {
+    'type': 'object',
+    'properties': {
+        'iid': {'type': 'string'},
+        'last_seen': {'type': 'number'},
+        'p2p_address': {'type': 'string'},
+        'rest_address': {'type': 'string'},
+        'dor_service': {'type': 'boolean'},
+        'rti_service': {'type': 'boolean'}
+    },
+    'required': ['iid', 'last_seen', 'p2p_address', 'dor_service', 'rti_service']
+}
+
+job_descriptor_schema = {
+    'type': 'object',
+    'properties': {
+        'id': {'type': 'string'},
+        'proc_id': {'type': 'string'},
+        'task': task_descriptor_schema
+    },
+    'required': ['id', 'proc_id', 'task']
+}
+
+recipe_schema = {
+    'type': 'object',
+    'properties': {
+        'processor': {
+            'type': 'object',
+            'properties': {
+                'source': {'type': 'string'},
+                'commit_id': {'type': 'string'},
+                'proc_path': {'type': 'string'},
+                'proc_config': {'type': 'string'},
+                'proc_descriptor': {'type': 'object'}
+            },
+            'required': ['source', 'commit_id', 'proc_path', 'proc_config', 'proc_descriptor']
+        },
+        'input': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'name': {'type': 'string'}
+                },
+                'if': {
+                    'properties': {'type': {'const': 'reference'}}
+                },
+                'then': {
+                    'properties': {
+                        'c_hash': {'type': 'string'}
+                    }
+                },
+                'else': {
+                    'properties': {
+                        'value': {'type': 'object'}
+                    }
+                },
+                'required': ['name']
+            }
+        },
+        'output': {'type': 'string'}
+    },
+    'required': ['processor', 'input', 'output']
 }

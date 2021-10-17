@@ -29,7 +29,7 @@ class ContentKeysAsset(Asset):
 
         return ContentKeysAsset(key, content_keys)
 
-    def serialise(self, protect_with: KeyPair):
+    def serialise(self, protect_with: KeyPair) -> dict:
         return {
             'type': type(self).__name__,
             'key': self._key,

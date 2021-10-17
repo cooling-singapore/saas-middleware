@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import os
-import logging
 import string
 from threading import Lock
 from typing import Any
 
 from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.hashing import hash_json_object
+from saas.cryptography.helpers import hash_json_object
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
@@ -18,13 +17,13 @@ from saas.keystore.assets.keypair import KeyPairAsset, MasterKeyPairAsset
 from saas.keystore.exceptions import KeystoreException
 from saas.keystore.identity import Identity
 from saas.keystore.schemas import keystore_schema
+from saas.logging import Logging
 
-logger = logging.getLogger('keystore.Keystore')
+logger = Logging.get('keystore.Keystore')
 
 
 class Keystore:
-    def __init__(self, path: str, password: str, iid: str, assets: dict,
-                 profile: dict = None, nonce: int = 0) -> None:
+    def __init__(self, path: str, password: str, iid: str, assets: dict, profile: dict = None, nonce: int = 0) -> None:
         self._mutex = Lock()
         self._path = path
         self._password = password

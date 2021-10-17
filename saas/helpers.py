@@ -1,41 +1,20 @@
-"""
-Contains a number of helper functions and classes used throughout the SaaS Middleware.
-"""
-
-__author__ = "Heiko Aydt"
-__email__ = "heiko.aydt@gmail.com"
-__status__ = "development"
-
-import os
-import shutil
 import time
-import logging
 import json
 import subprocess
 import random
 import string
 
-from getpass import getpass
+from typing import IO, AnyStr, TextIO, Union
 
 import jsonschema
 
-logger = logging.getLogger('helpers')
+import saas.exceptions as exceptions
+from saas.logging import Logging
+
+logger = Logging.get('helpers')
 
 
-def remove_path(path):
-    """
-    Removes a filesystem element (file or directory) including all its contents
-    (in case of a directory)
-    :param path:
-    :return:
-    """
-    if os.path.isdir(path):
-        shutil.rmtree(path)
-    elif os.path.isfile(path):
-        os.remove(path)
-
-
-def get_timestamp_now():
+def get_timestamp_now() -> int:
     """
     Returns the current time in milliseconds since the beginning of the epoch
     :return: integer representing time in milliseconds
@@ -43,7 +22,7 @@ def get_timestamp_now():
     return int(round(time.time() * 1000))
 
 
-def validate_json(content, schema):
+def validate_json(content: dict, schema: dict) -> bool:
     try:
         jsonschema.validate(instance=content, schema=schema)
         return True
@@ -55,7 +34,7 @@ def validate_json(content, schema):
         return False
 
 
-def read_json_from_file(path, schema=None):
+def read_json_from_file(path: str, schema: dict = None) -> dict:
     with open(path, 'r') as f:
         content = json.load(f)
 
@@ -66,7 +45,7 @@ def read_json_from_file(path, schema=None):
         return content
 
 
-def write_json_to_file(content, path, schema=None, indent=4, sort_keys=False):
+def write_json_to_file(content: dict, path: str, schema: dict = None, indent: int = 4, sort_keys: bool = False):
     with open(path, 'w') as f:
         json.dump(content, f, indent=indent, sort_keys=sort_keys)
 
@@ -77,72 +56,77 @@ def write_json_to_file(content, path, schema=None, indent=4, sort_keys=False):
         return content
 
 
-def generate_random_string(length, characters=string.ascii_letters+string.digits):
+def generate_random_string(length: int, characters: str = string.ascii_letters+string.digits):
     return ''.join(random.choice(characters) for c in range(length))
 
 
-def object_to_ordered_list(obj):
+def object_to_ordered_list(obj: Union[dict, list]) -> Union[dict, list]:
     """
     Recursively sort any lists (and convert dictionaries to lists of (key, value) pairs so that they can be sorted)
     and return the result as a sorted list.
     Source: https://stackoverflow.com/questions/25851183/how-to-compare-two-json-objects-with-the-same-elements-in-a-different-order-equa
-    :param obj: a dictionary
+    :param obj: a dictionary or list
     :return:
     """
     if isinstance(obj, dict):
         return sorted((k, object_to_ordered_list(v)) for k, v in obj.items())
-    if isinstance(obj, list):
+    elif isinstance(obj, list):
         return sorted(object_to_ordered_list(x) for x in obj)
     else:
         return obj
 
 
-def get_address_from_string(address_string):
-    temp = address_string.split(":")
-    return temp[0], int(temp[1])
+def run_command(command: list[str], cwd: str = None, suppress_exception: bool = False) -> subprocess.CompletedProcess:
+    result = subprocess.run(command, cwd=cwd, capture_output=True)
+    if not suppress_exception and result.returncode != 0:
+        raise exceptions.RunCommandError({
+            'command': command,
+            'cwd': cwd,
+            'result': result
+        })
+    return result
 
 
-def all_in_dict(required, dictionary):
-    return all(r in dictionary for r in required)
-
-
-def create_symbolic_link(source_path, destination_path):
-    if os.path.exists(destination_path):
-        subprocess.check_output(['rm', destination_path])
-    subprocess.check_output(['ln', '-s', source_path, destination_path])
-
-
-def prompt(question, valid_answers=None, valid_range=None, hidden=False, multi_selection=False):
-    f = getpass if hidden else input
+def parse_stream(pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -> None:
     while True:
-        if valid_range:
-            answer = f(f"{question} ({valid_range[0]}:{valid_range[1]}) ")
-            answer.strip()
+        # read the line, strip the '\n' and break if nothing left
+        line = pipe.readline().rstrip()
+        if not line:
+            break
 
-            if multi_selection:
-                result = []
-                for item in answer.split(","):
-                    if item.isdigit():
-                        item = int(item)
-                        if valid_range[0] <= item <= valid_range[1]:
-                            result.append(item)
+        # if we have a file
+        if file is not None:
+            file.write(line+'\n')
+            file.flush()
 
-                if len(result) > 0:
-                    return result
+        # parse the lines for this round
+        if triggers is not None:
+            for pattern, info in triggers.items():
+                if pattern in line:
+                    info['func'](line, info['context'])
 
-            else:
-                if answer.isdigit():
-                    answer = int(answer)
-                    if valid_range[0] <= answer <= valid_range[1]:
-                        return answer
 
-        elif valid_answers:
-            joined_answers = "|".join(valid_answers)
-            answer = f(f"{question} ({joined_answers}) ")
+def monitor_command(command: list[str], triggers: dict, cwd: str = None,
+                    stdout_path: str = None, stderr_path: str = None) -> (list[str], list[str]):
 
-            if answer in valid_answers:
-                return answer
+    with open(stdout_path, 'x') as f_stdout:
+        with open(stderr_path, 'x') as f_stderr:
+            proc = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            while proc.poll() is None:
+                parse_stream(proc.stdout, file=f_stdout, triggers=triggers)
+                parse_stream(proc.stderr, file=f_stderr)
 
-        else:
-            answer = f(f"{question} ")
-            return answer
+            proc.stdout.close()
+            proc.stderr.close()
+
+
+def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None) -> None:
+    run_command(['ln', '-sf', target_path, link_path], cwd=working_directory)
+
+
+def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str, ssh_key_path: str) -> None:
+    run_command(['scp', '-i', ssh_key_path, local_path, f"{login}@{host}:{remote_path}"])
+
+
+def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path: str) -> None:
+    run_command(['scp', '-i', ssh_key_path, f"{login}@{host}:{remote_path}", local_path])

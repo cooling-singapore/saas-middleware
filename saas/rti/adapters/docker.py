@@ -1,19 +1,22 @@
 import json
-import logging
 import os
+import traceback
 
 import docker
 
-from saas.rti.adapters.adapters import RTITaskProcessorAdapter
+from saas.logging import Logging
+from saas.rti.adapters.adapters import RTIProcessorAdapter
+from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
+from saas.rti.status import StatusLogger
 
-logger = logging.getLogger('rti.adapters.docker')
+logger = Logging.get('rti.adapters.docker')
 
 
-def get_image_tag(proc_id):
+def get_image_tag(proc_id: str) -> str:
     return proc_id[:10]
 
 
-def prune_image(proc_id):
+def prune_image(proc_id: str) -> None:
     client = docker.from_env()
     # Remove image
     client.images.remove(get_image_tag(proc_id), noprune=False)
@@ -22,50 +25,53 @@ def prune_image(proc_id):
     client.close()
 
 
-class RTIDockerProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, proc_descriptor, content_path, node):
-        super().__init__(proc_id, proc_descriptor, node)
-        self.proc_id = proc_id
-        self.git_spec = self._read_git_spec(content_path)
+class RTIDockerProcessorAdapter(RTIProcessorAdapter):
+    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node) -> None:
+        super().__init__(proc_id, gpp, jobs_path, node)
+
+        with open(obj_content_path, 'rb') as f:
+            self._gpp = json.load(f)
 
         self.docker_image_tag = get_image_tag(proc_id)
 
-    @staticmethod
-    def _read_git_spec(git_spec_path):
-        with open(git_spec_path, 'rb') as f:
-            git_spec = json.load(f)
-        return git_spec
-
-    # TODO: Catch exceptions and log output for docker commands
-    def build_docker_image(self):
-        client = docker.from_env()
-        client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
-                            tag=self.docker_image_tag,
-                            forcerm=True,  # remove intermediate containers
-                            buildargs={"GIT_REPO": self.git_spec["source"],
-                                       "COMMIT_ID": self.git_spec["commit_id"],
-                                       "PROCESSOR_PATH": self.git_spec["proc_path"],
-                                       "PROC_ID": self.proc_id})
-        client.close()
-
-    def run_docker_container(self, working_directory):
-        client = docker.from_env()
-
-        full_working_directory = os.path.realpath(working_directory)
-        client.containers.run(self.docker_image_tag, full_working_directory,
-                              volumes={
-                                  full_working_directory: {'bind': '/working_directory', 'mode': 'rw'}
-                              },
-                              remove=True)
-        client.close()
-
-    def startup(self):
-        self.build_docker_image()
-
-    def execute(self, task_descriptor, working_directory, status_logger):
+    def startup(self) -> None:
         try:
-            self.run_docker_container(working_directory)
+            client = docker.from_env()
+            client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
+                                tag=self.docker_image_tag,
+                                forcerm=True,  # remove intermediate containers
+                                buildargs={"GIT_REPO": self._gpp["source"],
+                                           "COMMIT_ID": self._gpp["commit_id"],
+                                           "PROCESSOR_PATH": self._gpp["proc_path"],
+                                           "PROC_ID": self._proc_id})
+            client.close()
+
         except Exception as e:
-            logger.error(e)
-            return False
-        return True
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            raise BuildDockerImageError({
+                'trace': trace
+            })
+
+    def shutdown(self) -> None:
+        pass
+
+    def execute(self, job_id: str, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        try:
+            client = docker.from_env()
+
+            full_working_directory = os.path.realpath(working_directory)
+            client.containers.run(self.docker_image_tag, full_working_directory,
+                                  volumes={
+                                      full_working_directory: {'bind': '/working_directory', 'mode': 'rw'}
+                                  },
+                                  remove=True)
+            client.close()
+
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            raise DockerRuntimeError({
+                'job_id': job_id,
+                'job_descriptor': job_descriptor,
+                'working_directory': working_directory,
+                'trace': trace
+            })

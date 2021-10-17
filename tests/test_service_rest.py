@@ -2,47 +2,48 @@ import time
 import unittest
 import logging
 
-from flask import Blueprint, jsonify
-from flask_cors import CORS
-
-from saas.cryptography.eckeypair import ECKeyPair
+from saas.logging import Logging
+from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager, verify_authorisation_token, sign_authorisation_token
 from tests.base_testcase import TestCaseBase
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
-
+Logging.initialise(logging.DEBUG)
+Logging.get(__name__)
 
 endpoint_prefix = "/api/v1/test"
 
 
-class TestBlueprint:
-    def blueprint(self):
-        blueprint = Blueprint('test', __name__, url_prefix=endpoint_prefix)
-        blueprint.add_url_rule('/info', self.get_info.__name__, self.get_info, methods=['GET'])
-        CORS(blueprint)
-        return blueprint
+class TestBlueprint(SaaSBlueprint):
+    info_response_schema = {
+        'type': 'object',
+        'properties': {
+            'message': {'type': 'string'}
+        },
+        'required': ['message']
+    }
 
-    @request_manager.verify_request_body({'type':'string'})
-    def get_info(self):
-        return jsonify({
-            "message": "hello"
-        }), 200
+    def __init__(self):
+        super().__init__('test', __name__, endpoint_prefix)
+
+        self.add_rule('info/<value>', self.get_info, ['GET'])
+
+    @request_manager.verify_request_body({'type': 'object'})
+    @request_manager.handle_request(info_response_schema)
+    def get_info(self, value: str):
+        body = request_manager.get_request_variable('body')
+
+        return create_ok_response({
+            'message': f"{value} {body['value']}"
+        })
 
 
 class TestProxy(EndpointProxy):
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
-    def get_info(self):
-        code, r = self.get("/info", body="test")
-        return r['message'] if code == 200 else None
+    def get_info(self, value: str):
+        return self.get(f"/info/{value}", body={'value': 'world'})
 
 
 class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -61,10 +62,10 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
         proxy = TestProxy(node.rest.address())
 
         bp = TestBlueprint()
-        node.rest.add(bp.blueprint())
+        node.rest.add(bp.generate_blueprint())
 
-        result = proxy.get_info()
-        assert(result == 'hello')
+        result = proxy.get_info('hello')
+        assert(result['message'] == 'hello world')
 
     def test_authorisation(self):
         url = "/repository/345345345lk3j45345ef3f34r3984r"
