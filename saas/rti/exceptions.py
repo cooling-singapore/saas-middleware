@@ -72,11 +72,6 @@ class SSHConnectionError(RTIException):
         super().__init__('SSH connection cannot be established', details=details)
 
 
-class SSHCredentialsNotFoundError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('SSH credentials not found', details=details)
-
-
 class DataObjectContentNotFoundError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Content of data object not found', details=details)
