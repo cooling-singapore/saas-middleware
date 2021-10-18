@@ -2,8 +2,7 @@ import os
 
 from flask import Response
 
-from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFoundError, OwnerIdentityNotFoundError, \
-    IdentityNotFoundError
+from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFoundError, IdentityNotFoundError
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
@@ -250,7 +249,7 @@ class DORBlueprint(SaaSBlueprint):
         # get the identity of the new owner
         new_owner = self._node.db.get_identity(iid)
         if new_owner is None:
-            raise OwnerIdentityNotFoundError(obj_id, iid)
+            raise IdentityNotFoundError(iid)
 
         # transfer ownership
         self._node.db.update_ownership(obj_id, new_owner)
