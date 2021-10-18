@@ -1,71 +1,130 @@
 # Simulation-as-a-Service (SaaS) Middleware Developer Resources
 
 ## Exceptions Guidelines
- 
+Exceptions SHOULD be used throughout the code instead of using return codes to indicate errors that cause the normal
+flow of operation to be unable to continue. Exceptions SHOULD be handled on an appropriate level in the system
+hierarchy. In particular, interfaces MUST handle exceptions.  This includes the CLI subsystem (which is a user 
+interface) and the REST subsystem which is an API. The REST API needs to translate exceptions that occur during the
+execution of an API function into a corresponding result that provides sufficient information to the caller to 
+identify what the problem is. 
+
 ### Error handling
-The SaaS Middleware supports different interfaces/entrypoints, HTTP and CLI.  
-The main SaaS code (usually found in `service.py` files) SHOULD report errors to the interfaces by throwing exceptions. This shifts the responsibility of handling errors to the interfaces, so that the they can decide on the appropriate response, such as returning an appropriate error message or returning an appropriate null value.
+When raising exceptions, they SHOULD be as specific as possible and avoid using the builtin "catchall" base `Exception` 
+or similarly unspecific types. Exceptions SHOULD come with a useful and easy to read message that describes the error 
+so that a non-technical user could easily understand it. For example, `'key' not found in 'dict' object` vs `Input JSON 
+file is missing the property 'key'`.
 
-e.g.
-```python
-# SaaS codes
-class SaaSService:
-    def do_something(value: str) -> int:
-        if value != "a": # Some kind of specific error
-            raise ValueError("value is not a") # Raise exception here
-        return 123
+A base exception class `SaaSException` is defined to support any exceptions raised by the SaaS code. Any custom 
+exceptions defined in the SaaS code MUST inherit from `SaaSException`. Each subsystem SHOULD define its own
+subsystem-wide baseclass and corresponding specific exception types. It is RECOMMENDED to use custom exceptions 
+instead of the Python builtin exceptions, to store extra information such as custom variables or stack trace to the 
+exception instance.
 
-# Entrypoints
-app = SaaSService()
-value = "abc"
+### SaaSException
+`SaaSException` is the base class for all exceptions in the SaaS code. It provides key information about an error,
+including: the `reason` as a human-readable string, `details` as a dictionary that can be used to attach arbitrary,
+more technical information to provide the context in which this error happened, and an `id` which is automatically
+generated. The id allows referencing specific exception occurrences in logs which can help with debugging. The 
+class is defined as follows:
+```shell
+class SaaSException(Exception):
+    def __init__(self, reason: str, details: dict = None):
+        self._reason = reason
+        self._details = details
+        self._id = helpers.generate_random_string(16)
 
-def HTTPEntrypoint():
-    try:
-        result = app.do_something(value)
-    except ValueError as e: # Handle exception here
-        logger.error(e) # Client wants to log
-        result = 0 # Client wants 0 if error
+    @property
+    def reason(self):
+        return self._reason
 
-def CLIEntrypoint():
-    try:
-        result = app.do_something(value)
-    except ValueError as e: # Handle exception here
-        result = None # Client wants None if error
+    @property
+    def details(self):
+        return self._details
+
+    @property
+    def id(self):
+        return self._id
 ```
 
-When throwing exceptions in SaaS code, exceptions SHOULD try to be as specific as possible and avoid using the builtin "catchall" base `Exception` class.
-
-Exceptions SHOULD come with a useful and easy to read message that describes the error so that a non-technical user could easily understand it.  
-e.g. `'key' not found in 'dict' object` vs `Input JSON file is missing the property 'key'`.
-
-A base exception class `SaaSException` is defined to support exceptions thrown from SaaS code. Any custom exceptions defined in the SaaS code MUST inherit from `SaaSException` and each SaaS service SHOULD define its own exceptions from it.
-
-It is RECOMMENDED to use custom exceptions instead of the python builtin exceptions, to store extra information such as custom variables or stack trace to the exception instance.
 
 ### Exception Hierarchy
-`SaaSException`
-- `DORException`
-  - `ObjectNotFoundError`
-  - `InvalidDescriptorError`
-  - `GPPError`
-    - `RepositoryCreationError`
-    - `DescriptorNotFoundError`
-- `RTIException`
-  - `ProcessorError`
-    - `DeploymentError`
-      - `StartupError`
-      - `ShutdownError`
-    - `ExecutionError`
-- `NodeDBException`
-  - `TransactionError`
-  - `NetworkError`
-- `MessengerException`
-  - `InvalidProtcolError`
-  - `PeerUnavailableError` 
-  - `InvalidAddressError`
-- `CryptographyException`
-    - `InvalidKeyError`
-    - `InvalidSignatureError`
+`SaaSException` is the base class for all exception types defined in the SaaS Middleware. Most of the following 
+exception types are highly specific and occur in a single place only. Noteworthy exception types are described in more
+details.
+
+- `CLIException` is the baseclass for exceptions originating in the CLI subsystem.
+  - `CLIRuntimeError`  is used for all errors that happen during execution of CLI commands. It is very commonly used in
+  the CLI subsystem. Whenever a CLI command cannot be further executed, a`CLIRuntimeError` is raised. Other exceptions
+    (including `SaaSException` types) may be caught and translated into `CLIRuntimeError` exceptions. The SaaS CLI
+    subsystem catches all `SaaSException` types and prints the reason on `stdout` (see `main` in `saas_cli.py`). Since
+    it can't be ruled that there are exceptions that have not been translated into `CLIRuntimeError`, there is a 
+    general catch block for `Exception` types in `saas_cli.py`.
+    
+- `CryptographyException` is the baseclass for exceptions originating in the `cryptography` subsystem.
+  - `NoPrivateKeyFoundError` 
+
+- `KeystoreException` is the baseclass for exceptions originating in the `keystore` subsystem. There are currently
+  no specific exception types defined and used in the `keystore` subsystem.  
+
+- `NodeDBException` is the baseclass for exceptions originating in the `nodeb` subsystem. 
+  - `DataObjectNotFoundError`
+  - `InvalidIdentityError`
+  - `UnexpectedIdentityError`
+
+- `DORException` is the baseclass for exceptions originating in the `dor` subsystem. 
+  - `DataObjectNotFoundError`  
+  - `DataObjectContentNotFoundError`  
+  - `IdentityNotFoundError`  
+  - `ProcessorDescriptorNotFoundError`  
+  - `InvalidProcessorDescriptorError`  
+  - `InvalidGPPDataObjectError`  
+  - `CloneRepositoryError`  
+  - `CheckoutCommitError`  
+  - `FetchDataObjectFailedError`
+
+- `RTIException` is the baseclass for exceptions originating in the `dor` subsystem. 
+  - `UnexpectedGPPMetaInformation`
+  - `ProcessorNotDeployedError`
+  - `JobDescriptorNotFoundError`
+  - `JobStatusNotFoundError`
+  - `GPPDataObjectNotFound`
+  - `ProcessorNotAcceptingJobsError`
+  - `UnresolvedInputDataObjectsError`
+  - `MissingUserSignatureError`
+  - `AdapterRuntimeError`
+  - `MismatchingDataTypeOrFormatError`
+  - `InvalidJSONDataObjectError`
+  - `SSHConnectionError`
+  - `DataObjectContentNotFoundError`
+  - `DataObjectOwnerNotFoundError`
+  - `DockerRuntimeError`
+  - `BuildDockerImageError`
+
+- `RESTException` is the baseclass for exceptions originating in the `rest` subsystem.
+  - `UnexpectedHTTPError`  
+  - `MalformedRequestError`  
+  - `MalformedResponseError`  
+  - `UnsuccessfulRequestError`  
+  - `AuthorisationFailedError`  
+  - `UnexpectedContentType`  
+  - `MissingResponseSchemaError`  
+  - `UnsuccessfulConnectionError`  
+
+- `P2PException` is the baseclass for exceptions originating in the `p2p` subsystem.  
+  - `ReceiveDataError`
+  - `SendDataError`
+  - `MalformedPreambleError`
+  - `MismatchingBytesWrittenError`
+  - `ResourceNotFoundError`
+  - `DecodingJSONError`
+  - `EncodingJSONError`
+  - `HandshakeFailedError`
+  - `MalformedMessageError`
+  - `UnexpectedMessageTypeError`
+  - `UnsupportedProtocolError`
+  - `MismatchingRequestIdError`
+  - `PeerUnavailableError`
+  - `AttachmentNotFoundError`
 
 
 ## Logging Guidelines
