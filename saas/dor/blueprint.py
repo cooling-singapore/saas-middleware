@@ -124,6 +124,25 @@ search_response_schema = {
     }
 }
 
+statistics_response_schema = {
+    'type': 'object',
+    'properties': {
+        'data_types': {
+            'type': 'array',
+            'items': {'type':'string'}
+        },
+        'data_formats': {
+            'type': 'array',
+            'items': {'type':'string'}
+        },
+        'tag_keys': {
+            'type': 'array',
+            'items': {'type':'string'}
+        },
+    },
+    'required': ['data_types', 'data_formats', 'tag_keys']
+}
+
 
 class DORBlueprint(SaaSBlueprint):
     def __init__(self, node):
@@ -131,6 +150,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node = node
 
         self.add_rule('', self.search, ['GET'])
+        self.add_rule('statistics', self.statistics, ['GET'])
         self.add_rule('add', self.add, ['POST'])
         self.add_rule('add-gpp', self.add_gpp, ['POST'])
         self.add_rule('<obj_id>', self.delete, ['DELETE'])
@@ -152,6 +172,11 @@ class DORBlueprint(SaaSBlueprint):
         data_type = body['data_type'] if 'data_type' in body else None
         data_format = body['data_format'] if 'data_format' in body else None
         return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid, data_type, data_format))
+
+    @request_manager.handle_request(statistics_response_schema)
+    @request_manager.require_dor()
+    def statistics(self) -> (Response, int):
+        return create_ok_response(self._node.db.get_statistics())
 
     @request_manager.handle_request(obj_response_schema)
     @request_manager.require_dor()
@@ -304,6 +329,9 @@ class DORProxy(EndpointProxy):
             body['data_format'] = data_format
 
         return self.get('', body=body)
+
+    def statistics(self) -> dict:
+        return self.get('/statistics')
 
     def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
                         data_type: str, data_format: str, created_by: str, recipe: dict = None) -> dict:

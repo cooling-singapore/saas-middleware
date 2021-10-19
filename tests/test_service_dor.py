@@ -384,6 +384,12 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"result={result}")
         assert len(result) == 2
 
+        result = self.dor_proxy.statistics()
+        logger.info(f"statistics={result}")
+        assert('json' in result['data_formats'])
+        assert('map' in result['data_types'])
+        assert(result['tag_keys'] == ['a', 'hello', 'world', 'hellox', 'whazzup'])
+
         self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
         self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
         self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
