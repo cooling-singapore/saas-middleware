@@ -306,7 +306,7 @@ class DORProxy(EndpointProxy):
         return self.get('', body=body)
 
     def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
-                        data_type: str, data_format: str, created_by: str, recipe: dict = None) -> (str, dict):
+                        data_type: str, data_format: str, created_by: str, recipe: dict = None) -> dict:
         body = {
             'data_type': data_type,
             'data_format': data_format,
@@ -322,7 +322,7 @@ class DORProxy(EndpointProxy):
         return self.post('/add', body=body, attachment_path=content_path)
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            created_by: str, recipe: dict = None) -> (str, dict):
+                            created_by: str, recipe: dict = None) -> dict:
         body = {
             'data_type': 'Git-Processor-Pointer',
             'data_format': 'json',
