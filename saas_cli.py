@@ -11,7 +11,6 @@ from cli.cmd_network import NetworkShow
 from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
 from cli.cmd_service import Service
 from cli.helpers import CLIParser, Argument, CLICommandGroup
-from saas.exceptions import SaaSException
 
 if __name__ == "__main__":
     try:
