@@ -38,16 +38,16 @@ class GithubCredentials(Credentials):
 
 
 class SSHCredentials(Credentials):
-    def __init__(self, host: str, login: str, key_path: str) -> None:
+    def __init__(self, host: str, login: str, key: str) -> None:
         super().__init__({
             'host': host,
             'login': login,
-            'key_path': key_path
+            'key': key
         })
 
     @classmethod
     def from_record(cls, record: dict) -> SSHCredentials:
-        return SSHCredentials(record['host'], record['login'], record['key_path'])
+        return SSHCredentials(record['host'], record['login'], record['key'])
 
     @property
     def host(self) -> str:
@@ -58,8 +58,8 @@ class SSHCredentials(Credentials):
         return self._record['login']
 
     @property
-    def key_path(self) -> str:
-        return self._record['key_path']
+    def key(self) -> str:
+        return self._record['key']
 
 
 T = TypeVar('T')

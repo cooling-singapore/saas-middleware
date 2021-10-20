@@ -247,6 +247,7 @@ class RTIProcessorAdapter(Thread, ABC):
                         'user_iid': user.id
                     })
 
+        status.remove('step')
         return found
 
     def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, task_descriptor: dict, obj_records: dict,
@@ -256,6 +257,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
         # do we have any data objects to fetch to begin with?
         if len(obj_records) == 0:
+            status.remove('step')
             return []
 
         # get the user identity
@@ -327,12 +329,12 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 item['c_hash'] = c_hashes[item['obj_id']]
 
+        status.remove('step')
         return pending_content_keys
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
                                               status: StatusLogger) -> None:
         status.update('step', f"decrypt by-reference input data objects")
-
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -352,11 +354,11 @@ class RTIProcessorAdapter(Thread, ABC):
 
             if need_sleep:
                 time.sleep(1)
+        status.remove('step')
 
     def _store_value_input_data_objects(self, task_descriptor: dict, working_directory: str,
                                         status: StatusLogger) -> None:
         status.update('step', f"store by-value input data objects")
-
         for item in task_descriptor['input']:
             # if it is a 'value' input then store it to the working directory
             if item['type'] == 'value':
@@ -366,10 +368,10 @@ class RTIProcessorAdapter(Thread, ABC):
                     'data_type': 'JSONObject',
                     'data_format': 'json'
                 }, f"{input_content_path}.meta")
+        status.remove('step')
 
     def _verify_inputs(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         status.update('step', 'verify inputs: data object types and formats')
-
         for item in task_descriptor['input']:
             obj_name = item['name']
 
@@ -398,10 +400,10 @@ class RTIProcessorAdapter(Thread, ABC):
                         'content': content,
                         'schema': d1['schema']
                     })
+        status.remove('step')
 
     def _verify_outputs(self, task_descriptor: dict, status: StatusLogger) -> None:
         status.update('step', 'verify outputs: data object owner identities')
-
         for item in task_descriptor['output']:
             owner = self._node.db.get_identity(item['owner_iid'])
             if owner is None:
@@ -409,6 +411,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'output_name': item['name'],
                     'owner_iid': item['owner_iid']
                 })
+        status.remove('step')
 
     def _push_data_object(self, job_id: str, obj_name: str, task_descriptor: dict, working_directory: str,
                           status: StatusLogger) -> None:
@@ -496,9 +499,7 @@ class RTIProcessorAdapter(Thread, ABC):
         # update tags with information from the job
         proxy.update_tags(obj_id, self._node.keystore, {
             'name': f"{obj_name}",
-            'job_id': job_id,
-            'data-type': proc_out['data_type'],
-            'data-format': proc_out['data_format']
+            'job_id': job_id
         })
 
         # transfer ownership to the new owner

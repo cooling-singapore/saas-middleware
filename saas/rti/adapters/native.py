@@ -8,7 +8,7 @@ from jsonschema import validate
 
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
+from saas.keystore.assets.credentials import GithubCredentials
 from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
@@ -20,7 +20,7 @@ logger = Logging.get('rti.adapters.native')
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
-                 ssh_credentials: SSHCredentials = None,
+                 ssh_credentials: dict = None,
                  github_credentials: GithubCredentials = None) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 
@@ -57,14 +57,10 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             logger.debug(f"repository already exists at {self._repo_home} -> skip cloning")
         else:
             # do we have git credentials?
-            github_cred = self._node.keystore.get_asset('github-credentials')
-            if github_cred:
-                # do we have credentials for this repo?
-                cred = github_cred.get(url)
-                if cred:
-                    insert = f"{cred.login}:{cred.personal_access_token}@"
-                    index = url.find('github.com')
-                    url = url[:index] + insert + url[index:]
+            if self._github_credentials:
+                insert = f"{self._github_credentials.login}:{self._github_credentials.personal_access_token}@"
+                index = url.find('github.com')
+                url = url[:index] + insert + url[index:]
 
             # clone the repository
             logger.debug(f"repository does not exist at {self._repo_home} -> clone")
@@ -107,9 +103,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                 local_path = os.path.join(local_working_directory, obj_name)
                 status.update('task', f"copy data objects: {local_path} -> {working_directory}")
                 scp_local_to_remote(local_path, working_directory,
-                                    login=self._ssh_credentials.login,
-                                    host=self._ssh_credentials.host,
-                                    ssh_key_path=self._ssh_credentials.key_path)
+                                    login=self._ssh_credentials['login'],
+                                    host=self._ssh_credentials['host'],
+                                    ssh_key_path=self._ssh_credentials['key_path'])
 
         # run execute script
         status.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
@@ -150,8 +146,8 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
     def _test_ssh_connection(self) -> None:
         if self._ssh_credentials:
-            command = ['ssh', '-i', self._ssh_credentials.key_path,
-                       f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", 'exit']
+            command = ['ssh', '-i', self._ssh_credentials['key_path'],
+                       f"{self._ssh_credentials['login']}@{self._ssh_credentials['host']}", 'exit']
             result = run_command(command, suppress_exception=True)
             if result.returncode != 0:
                 raise SSHConnectionError({
@@ -163,8 +159,8 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                          stdout_path: str, stderr_path: str, cwd: str = None) -> None:
 
         command = f"cd {cwd} && {command}" if cwd else command
-        command = ['ssh', '-i', self._ssh_credentials.key_path,
-                   f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command
+        command = ['ssh', '-i', self._ssh_credentials['key_path'],
+                   f"{self._ssh_credentials['login']}@{self._ssh_credentials['host']}", command
                    ] if self._ssh_credentials else ['bash', '-c', command]
 
         triggers = {
@@ -178,8 +174,8 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                          console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
             command = f"cd {cwd} && {command}" if cwd else command
-            command = ['ssh', '-i', self._ssh_credentials.key_path,
-                       f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command
+            command = ['ssh', '-i', self._ssh_credentials['key_path'],
+                       f"{self._ssh_credentials['login']}@{self._ssh_credentials['host']}", command
                        ] if self._ssh_credentials else ['bash', '-c', command]
 
             result = run_command(command)
@@ -206,8 +202,8 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             })
 
     def _path_exists(self, path: str) -> bool:
-        command = ['ssh', '-i', self._ssh_credentials.key_path,
-                   f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", f"ls {path}"
+        command = ['ssh', '-i', self._ssh_credentials['key_path'],
+                   f"{self._ssh_credentials['login']}@{self._ssh_credentials['host']}", f"ls {path}"
                    ] if self._ssh_credentials else ['bash', '-c', f"ls {path}"]
 
         result = run_command(command, suppress_exception=True)
@@ -244,9 +240,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             remote_path = os.path.join(working_directory, obj_name)
             status.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
             scp_remote_to_local(remote_path, local_working_directory,
-                                login=self._ssh_credentials.login,
-                                host=self._ssh_credentials.host,
-                                ssh_key_path=self._ssh_credentials.key_path)
+                                login=self._ssh_credentials['login'],
+                                host=self._ssh_credentials['host'],
+                                ssh_key_path=self._ssh_credentials['key_path'])
 
         # upload the data object to the target DOR
         try:
