@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 
 import jsonschema
@@ -99,7 +100,7 @@ class DORAdd(CLICommand):
                 asset: ContentKeysAsset = keystore.get_asset('content-keys')
                 asset.update(obj_id, content_key)
 
-                subprocess.run(['rm', '-f', obj_path])
+                os.remove(obj_path)
 
             print(f"Data object added: id={obj_id} descriptor={descriptor}")
 
@@ -160,7 +161,7 @@ class DORAddProc(CLICommand):
                     repo_path = os.path.join(args['temp-dir'], repo_name)
                     if os.path.exists(repo_path):
                         print(f"Deleting already existing path '{repo_path}'...", end='')
-                        subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+                        shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
                         print(f"Done")
 
                     # get the URL
@@ -290,7 +291,7 @@ class DORAddProc(CLICommand):
                         args['name'] = descriptor['name']
 
                     # clean up
-                    subprocess.run(['rm', '-rf', repo_name], cwd=args['temp-dir'])
+                    shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
 
                 else:
                     prompt_if_missing(args, 'commit-id', prompt_for_string,

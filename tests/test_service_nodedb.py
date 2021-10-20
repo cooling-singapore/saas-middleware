@@ -7,7 +7,6 @@ from saas.dor.blueprint import DORProxy
 from saas.logging import Logging
 from saas.node import Node
 from saas.nodedb.blueprint import NodeDBProxy
-from saas.nodedb.exceptions import DataObjectNotFoundError
 from tests.base_testcase import TestCaseBase
 
 Logging.initialise(level=logging.DEBUG)
