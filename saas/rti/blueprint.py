@@ -1,16 +1,15 @@
-import logging
-
 from flask import Response
 
 from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saas.keystore.identity import Identity
+from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 from saas.rti.exceptions import SSHCredentialsNotFoundError
 from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
 
-logger = logging.getLogger('rti.blueprint')
+logger = Logging.get('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
 deployed_processors_schema = {

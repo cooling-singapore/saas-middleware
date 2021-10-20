@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import subprocess
 import threading
@@ -10,12 +9,13 @@ from jsonschema import validate
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
+from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
 from saas.rti.status import StatusLogger
 from saas.schemas import git_proc_pointer_schema
 
-logger = logging.getLogger('rti.adapters.native')
+logger = Logging.get('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):

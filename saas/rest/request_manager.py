@@ -10,7 +10,7 @@ from flask import request, Flask, g, Response
 
 from jsonschema import validate, ValidationError
 
-from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
+from saas.cryptography.helpers import hash_json_object, hash_string_object, hash_bytes_object
 from saas.exceptions import RTIServiceNotSupportedError, DORServiceNotSupportedError, SaaSException
 from saas.helpers import validate_json
 from saas.keystore.identity import Identity

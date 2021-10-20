@@ -18,7 +18,7 @@ class Identity:
         self._signature = signature
 
     @classmethod
-    def deserialise(self, content: dict) -> Identity:
+    def deserialise(cls, content: dict) -> Identity:
         s_public_key = ECKeyPair.from_public_key_string(content['s_public_key'])
         e_public_key = RSAKeyPair.from_public_key_string(content['e_public_key'])
         return Identity(content['iid'], content['name'], content['email'], s_public_key, e_public_key,

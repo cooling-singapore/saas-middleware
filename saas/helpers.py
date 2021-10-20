@@ -1,5 +1,4 @@
 import time
-import logging
 import json
 import subprocess
 import random
@@ -11,8 +10,9 @@ from typing import IO, AnyStr, TextIO
 import jsonschema
 
 import saas.exceptions as exceptions
+from saas.logging import Logging
 
-logger = logging.getLogger('helpers')
+logger = Logging.get('helpers')
 
 
 def get_timestamp_now():

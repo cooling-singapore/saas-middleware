@@ -1,15 +1,15 @@
 import json
-import logging
 import os
 import traceback
 
 import docker
 
+from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.status import StatusLogger
 
-logger = logging.getLogger('rti.adapters.docker')
+logger = Logging.get('rti.adapters.docker')
 
 
 def get_image_tag(proc_id: str) -> str:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
 import saas.helpers as helpers
 
 from enum import Enum
 from typing import Union
 
-logger = logging.getLogger('rti.status')
+from saas.logging import Logging
+
+logger = Logging.get('rti.status')
 
 
 class State(Enum):
