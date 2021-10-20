@@ -1,4 +1,3 @@
-import logging
 import os
 
 from flask import Response
@@ -7,12 +6,13 @@ from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFou
     IdentityNotFoundError
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
+from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
 from saas.schemas import git_proc_pointer_schema, recipe_schema
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 
-logger = logging.getLogger('dor.blueprint')
+logger = Logging.get('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
 
 search_body_specification = {

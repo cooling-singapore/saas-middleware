@@ -1,10 +1,10 @@
 import os
-import logging
 from threading import Lock
 from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.identity import Identity
+from saas.logging import Logging
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
 from saas.dor.service import DataObjectRepositoryService
@@ -17,7 +17,7 @@ import saas.rti.blueprint as rti_blueprint
 import saas.nodedb.blueprint as nodedb_blueprint
 from saas.helpers import get_timestamp_now
 
-logger = logging.getLogger('node')
+logger = Logging.get('node')
 
 
 class Node:

@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import time
 from abc import abstractmethod, ABC
@@ -14,6 +13,7 @@ from saas.dor.blueprint import DORProxy
 from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.exceptions import SaaSException
+from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
@@ -22,7 +22,7 @@ from saas.rti.status import State, StatusLogger
 from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
     validate_json
 
-logger = logging.getLogger('rti.adapters')
+logger = Logging.get('rti.adapters')
 
 
 class ProcessorState(Enum):

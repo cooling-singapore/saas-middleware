@@ -38,7 +38,7 @@ class GithubCredentials(Credentials):
 
 
 class SSHCredentials(Credentials):
-    def __init__(self, host: str, login: str, key_path: str):
+    def __init__(self, host: str, login: str, key_path: str) -> None:
         super().__init__({
             'host': host,
             'login': login,
@@ -50,15 +50,15 @@ class SSHCredentials(Credentials):
         return SSHCredentials(record['host'], record['login'], record['key_path'])
 
     @property
-    def host(self):
+    def host(self) -> str:
         return self._record['host']
 
     @property
-    def login(self):
+    def login(self) -> str:
         return self._record['login']
 
     @property
-    def key_path(self):
+    def key_path(self) -> str:
         return self._record['key_path']
 
 
@@ -100,7 +100,7 @@ class CredentialsAsset(Generic[T], Asset):
 
         return CredentialsAsset[T](key, credentials, ctype)
 
-    def serialise(self, protect_with: KeyPair):
+    def serialise(self, protect_with: KeyPair) -> dict:
         credentials = copy(self._credentials)
         for k, v in credentials.items():
             credentials[k] = v.record
