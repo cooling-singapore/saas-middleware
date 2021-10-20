@@ -1,16 +1,16 @@
 import os
 import shutil
 import time
-import logging
 
 from multiprocessing import Lock
 
 from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
+from saas.logging import Logging
 from saas.node import Node
 from saas.helpers import get_timestamp_now, read_json_from_file
 
-logger = logging.getLogger('tests.base_testcase')
+logger = Logging.get('tests.base_testcase')
 
 
 def load_test_credentials() -> dict:
@@ -28,7 +28,8 @@ class TestCaseBase:
         self._next_p2p_port = None
         self._next_rest_port = None
 
-    def initialise(self, wd_parent_path=None, host='127.0.0.1', next_p2p_port=4000, next_rest_port=5000):
+    def initialise(self, wd_parent_path: str = None, host: str = '127.0.0.1',
+                   next_p2p_port: int = 4000, next_rest_port: int = 5000) -> None:
         # determine the working directory for testing
         if wd_parent_path:
             self.wd_path = os.path.join(wd_parent_path, 'testing', str(get_timestamp_now()))
@@ -50,7 +51,7 @@ class TestCaseBase:
         self._next_p2p_port = next_p2p_port
         self._next_rest_port = next_rest_port
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for name in self.nodes:
             logger.info(f"stopping node '{name}'")
             node = self.nodes[name]
@@ -59,19 +60,19 @@ class TestCaseBase:
         # delete working directory
         shutil.rmtree(self.wd_path)
 
-    def generate_p2p_address(self):
+    def generate_p2p_address(self) -> (str, int):
         with self._mutex:
             address = (self.host, self._next_p2p_port)
             self._next_p2p_port += 1
             return address
 
-    def generate_rest_address(self):
+    def generate_rest_address(self) -> (str, int):
         with self._mutex:
             address = (self.host, self._next_rest_port)
             self._next_rest_port += 1
             return address
 
-    def create_keystores(self, n):
+    def create_keystores(self, n: int) -> list[Keystore]:
         keystores = []
         for i in range(n):
             keystores.append(
@@ -80,7 +81,8 @@ class TestCaseBase:
 
         return keystores
 
-    def create_nodes(self, n, offset=0, use_credentials=True, perform_join=True, enable_rest=False):
+    def create_nodes(self, n: int, offset: int = 0, use_credentials: bool = True, perform_join: bool = True,
+                     enable_rest: bool = False) -> list[Node]:
         nodes = []
         for i in range(n):
             nodes.append(self.get_node(f"node_{i+offset}", use_credentials=use_credentials, enable_rest=enable_rest))
@@ -91,25 +93,26 @@ class TestCaseBase:
 
         return nodes
 
-    def generate_random_file(self, filename, size):
+    def generate_random_file(self, filename: str, size: int) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'wb') as f:
             f.write(os.urandom(int(size)))
         return path
 
-    def generate_zero_file(self, filename, size):
+    def generate_zero_file(self, filename: str, size: int) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'wb') as f:
             f.write(b"\0" * int(size))
         return path
 
-    def create_file_with_content(self, filename, content):
+    def create_file_with_content(self, filename: str, content: str) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'w') as f:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=True, enable_rest=False, use_dor: bool = True, use_rti: bool = True):
+    def get_node(self, name: str, use_credentials: bool = True, enable_rest: bool = False,
+                 use_dor: bool = True, use_rti: bool = True) -> Node:
         if name in self.nodes:
             return self.nodes[name]
 

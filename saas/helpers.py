@@ -4,7 +4,6 @@ import subprocess
 import random
 import string
 
-from getpass import getpass
 from typing import IO, AnyStr, TextIO, Union
 
 import jsonschema
@@ -131,41 +130,3 @@ def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str
 
 def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path: str) -> None:
     run_command(['scp', '-i', ssh_key_path, f"{login}@{host}:{remote_path}", local_path])
-
-
-def prompt(question: str, valid_answers: list = None, valid_range: (int, int) = None, hidden: bool = False,
-           multi_selection: bool = False) -> Union[int, list[int]]:
-
-    f = getpass if hidden else input
-    while True:
-        if valid_range:
-            answer = f(f"{question} ({valid_range[0]}:{valid_range[1]}) ")
-            answer.strip()
-
-            if multi_selection:
-                result = []
-                for item in answer.split(","):
-                    if item.isdigit():
-                        item = int(item)
-                        if valid_range[0] <= item <= valid_range[1]:
-                            result.append(item)
-
-                if len(result) > 0:
-                    return result
-
-            else:
-                if answer.isdigit():
-                    answer = int(answer)
-                    if valid_range[0] <= answer <= valid_range[1]:
-                        return answer
-
-        elif valid_answers:
-            joined_answers = "|".join(valid_answers)
-            answer = f(f"{question} ({joined_answers}) ")
-
-            if answer in valid_answers:
-                return answer
-
-        else:
-            answer = f(f"{question} ")
-            return answer

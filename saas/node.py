@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import os
 from threading import Lock
 from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
 from saas.logging import Logging
 from saas.nodedb.protocol import NodeDBP2PProtocol
 from saas.p2p.service import P2PService
@@ -21,7 +24,7 @@ logger = Logging.get('node')
 
 
 class Node:
-    def __init__(self, keystore, datastore_path):
+    def __init__(self, keystore: Keystore, datastore_path: str) -> None:
         # create datastore (if it doesn't already exist)
         os.makedirs(datastore_path, exist_ok=True)
 
@@ -35,16 +38,17 @@ class Node:
         self.rti: Optional[RuntimeInfrastructureService] = None
 
     @property
-    def keystore(self):
+    def keystore(self) -> Keystore:
         return self._keystore
 
-    def identity(self):
+    def identity(self) -> Identity:
         return self._keystore.identity
 
-    def datastore(self):
+    def datastore(self) -> str:
         return self._datastore_path
 
-    def startup(self, server_address, enable_dor, enable_rti, rest_address=None, boot_node_address=None):
+    def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool,
+                rest_address: (str, int) = None, boot_node_address: (str, int) = None) -> None:
         logger.info("starting P2P service.")
         self.p2p = P2PService(self, server_address)
         self.p2p.start_service()
@@ -85,7 +89,7 @@ class Node:
         if boot_node_address:
             self.join_network(boot_node_address)
 
-    def shutdown(self, leave_network=True):
+    def shutdown(self, leave_network: bool = True) -> None:
         if leave_network:
             self.leave_network()
         else:
@@ -121,10 +125,11 @@ class Node:
             return identity
 
     @classmethod
-    def create(cls, keystore, storage_path, p2p_address, boot_node_address=None, rest_address=None,
-               enable_dor=False, enable_rti=False):
-        node = Node(keystore, storage_path)
+    def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
+               boot_node_address: (str, int) = None, rest_address: (str, int) = None,
+               enable_dor=False, enable_rti=False) -> Node:
 
+        node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address)
 
