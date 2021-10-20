@@ -7,11 +7,6 @@ class CLIException(SaaSException):
     """
 
 
-class CLIRuntimeErrorWrapper(CLIException):
-    def __init__(self, e: SaaSException) -> None:
-        super().__init__(f"Error while executing CLI command. Aborting. Hint: {e.reason} {e.id}", details=e.details)
-
-
 class CLIRuntimeError(CLIException):
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
+    def __init__(self, reason: str, details: dict = None) -> None:
+        super().__init__(reason, details=details)
