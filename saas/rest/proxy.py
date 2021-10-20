@@ -5,7 +5,7 @@ import requests
 
 from saas.keystore.keystore import Keystore
 from saas.rest.blueprint import extract_response
-from saas.rest.exceptions import UnexpectedContentType, UnsuccessfulRequestError, UnsuccessfulConnectionError
+from saas.rest.exceptions import UnexpectedContentType, UnsuccessfulConnectionError
 from saas.rest.request_manager import sign_authorisation_token
 
 
@@ -67,8 +67,8 @@ class EndpointProxy:
         except requests.exceptions.ConnectionError:
             raise UnsuccessfulConnectionError(url)
 
-    def post(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, attachment_path: str = None,
-             with_authorisation_by: Keystore = None) -> Union[dict, list]:
+    def post(self, endpoint: str, body: Union[dict, list, str] = None, parameters: dict = None,
+             attachment_path: str = None, with_authorisation_by: Keystore = None) -> Union[dict, list]:
 
         content = self._make_content(endpoint, 'POST',
                                      parameters=parameters,
