@@ -17,11 +17,6 @@ class MalformedRequestError(RESTException):
         super().__init__('Malformed request message', details=details)
 
 
-class EndpointNotSupportedError(RESTException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Endpoint not supported', details=details)
-
-
 class MalformedResponseError(RESTException):
     def __init__(self, details: dict) -> None:
         super().__init__('Malformed response message', details=details)

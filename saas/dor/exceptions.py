@@ -26,14 +26,6 @@ class IdentityNotFoundError(DORException):
         })
 
 
-class OwnerIdentityNotFoundError(DORException):
-    def __init__(self, obj_id: str, owner_iid: str) -> None:
-        super().__init__('Owner identity not found', details={
-            'obj_id': obj_id,
-            'owner_iid': owner_iid
-        })
-
-
 class ProcessorDescriptorNotFoundError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Processor descriptor not found', details=details)
@@ -62,11 +54,4 @@ class CheckoutCommitError(DORException):
 class FetchDataObjectFailedError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object could not be fetched', details=details)
-
-
-class NodeNotDataObjectCustodianError(DORException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Node is not the custodian of data object', details=details)
-
-
 

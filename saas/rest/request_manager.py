@@ -17,8 +17,8 @@ from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
 from saas.rest.blueprint import create_error_response
-from saas.rest.exceptions import MalformedRequestError, AuthorisationFailedError, EndpointNotSupportedError, \
-    MissingResponseSchemaError, MalformedResponseError
+from saas.rest.exceptions import MalformedRequestError, AuthorisationFailedError, MissingResponseSchemaError, \
+    MalformedResponseError
 
 logger = Logging.get('rest.request_manager')
 

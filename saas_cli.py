@@ -2,6 +2,7 @@
 
 import os
 import sys
+import traceback
 
 from cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
@@ -10,6 +11,7 @@ from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, Ident
 from cli.cmd_network import NetworkShow
 from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
 from cli.cmd_service import Service
+from cli.exceptions import CLIRuntimeError
 from cli.helpers import CLIParser, Argument, CLICommandGroup
 from saas.exceptions import SaaSException
 
@@ -86,6 +88,12 @@ if __name__ == "__main__":
         cli.execute(sys.argv[1:])
         sys.exit(0)
 
-    except SaaSException as e:
+    except CLIRuntimeError as e:
         print(e.reason)
         sys.exit(-1)
+
+    except Exception as e:
+        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+        print(f"Unrefined exception:\n{trace}")
+        sys.exit(-2)
+
