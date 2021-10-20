@@ -147,10 +147,10 @@ class DORBlueprint(SaaSBlueprint):
     @request_manager.verify_request_body(search_body_specification)
     def search(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
-        patterns = body['patterns'] if 'patterns' in body else None
-        owner_iid = body['owner_iid'] if 'owner_iid' in body else None
-        data_type = body['data_type'] if 'data_type' in body else None
-        data_format = body['data_format'] if 'data_format' in body else None
+        patterns = body.get('patterns')
+        owner_iid = body.get('owner_iid')
+        data_type = body.get('data_type')
+        data_format = body.get('data_format')
         return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid, data_type, data_format))
 
     @request_manager.handle_request(obj_response_schema)
