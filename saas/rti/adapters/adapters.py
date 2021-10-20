@@ -466,28 +466,34 @@ class RTIProcessorAdapter(Thread, ABC):
         # determine recipe
         recipe = {
             'processor': {
-                'source': self._gpp['source'],
-                'commit_id': self._gpp['commit_id'],
-                'proc_path': self._gpp['proc_path'],
-                'proc_config': self._gpp['proc_config'],
-                'proc_descriptor': self._gpp['proc_descriptor']
+                'proc_id': self._proc_id,
+                'gpp': self._gpp
             },
             'input': [],
-            'output': obj_name
+            'product': {
+                'name': obj_name,
+                'c_hash': '',
+                'data_type': proc_out['data_type'],
+                'data_format': proc_out['data_format']
+            }
         }
 
         # update recipe inputs
-        for item in task_descriptor['input']:
-            if item['type'] == 'value':
-                recipe['input'].append({
-                    'name': item['name'],
-                    'value': item['value']
-                })
+        for item0 in task_descriptor['input']:
+            spec = self._input_interface[item0['name']]
+            item1 = {
+                'name': item0['name'],
+                'data_type': spec['data_type'],
+                'data_format': spec['data_format'],
+                'type': item0['type']
+            }
+
+            if item0['type'] == 'value':
+                item1['value'] = item0['value']
             else:
-                recipe['input'].append({
-                    'name': item['name'],
-                    'c_hash': item['c_hash']
-                })
+                item1['c_hash'] = item0['c_hash']
+
+            recipe['input'].append(item1)
 
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)

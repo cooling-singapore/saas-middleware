@@ -9,7 +9,7 @@ from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 
 from saas.rest.request_manager import request_manager
-from saas.schemas import network_node_schema
+from saas.schemas import network_node_schema, provenance_schema
 
 logger = Logging.get('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
@@ -49,6 +49,7 @@ class NodeDBBlueprint(SaaSBlueprint):
         self.add_rule('identity', self.get_identities, methods=['GET'])
         self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
         self.add_rule('identity', self.update_identity, methods=['POST'])
+        self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
     @request_manager.handle_request(network_node_details_schema)
     def get_node(self) -> (Response, int):
@@ -90,6 +91,10 @@ class NodeDBBlueprint(SaaSBlueprint):
         self._node.db.update_identity(serialised_identity)
         return create_ok_response()
 
+    @request_manager.handle_request(provenance_schema)
+    def get_provenance(self, obj_id: str) -> (Response, int):
+        return create_ok_response(self._node.db.get_provenance(obj_id))
+
 
 class NodeDBProxy(EndpointProxy):
     def __init__(self, remote_address):
@@ -112,3 +117,6 @@ class NodeDBProxy(EndpointProxy):
 
     def update_identity(self, identity) -> None:
         self.post('/identity', body=identity.serialise())
+
+    def get_provenance(self, obj_id: str) -> dict:
+        return self.get(f"/provenance/{obj_id}")
