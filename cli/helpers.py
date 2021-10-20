@@ -27,7 +27,7 @@ logger = Logging.get('cli.helpers')
 def initialise_storage_folder(path: str, usage: str) -> None:
     # check if the path is pointing at a file
     if os.path.isfile(path):
-        raise Exception(f"Storage path '{path}' is a file. This path cannot be used as storage ({usage}) directory.")
+        raise CLIRuntimeError(f"Storage path '{path}' is a file. This path cannot be used as storage ({usage}) directory.")
 
     # check if it already exists as directory
     if not os.path.isdir(path):
@@ -70,8 +70,7 @@ def prompt_for_keystore_selection(path: str, message: str) -> Optional[dict]:
     # get all available keystores
     available = get_available_keystores(path)
     if len(available) == 0:
-        print(f"No keystores found at '{path}'")
-        return None
+        raise CLIRuntimeError(f"No keystores found at '{path}'")
 
     return prompt_for_selection(available, message)
 
@@ -91,21 +90,18 @@ def prompt_for_identity_selection(address: str, message: str, id_name: str) -> O
 
         # prompt for selection
         if len(available) == 0:
-            print(f"No identities found at '{address}'")
-            return None
+            raise CLIRuntimeError(f"No identities found at '{address}'")
 
         return prompt_for_selection(available, message)
 
     except requests.exceptions.ConnectionError:
-        print(f"Could not connect to node at '{address}'.")
-        return None
+        raise CLIRuntimeError(f"Could not connect to node at '{address}'.")
 
     except requests.exceptions.InvalidURL:
-        print(f"Invalid node address: '{address}'.")
-        return None
+        raise CLIRuntimeError(f"Invalid node address: '{address}'.")
 
 
-def load_keystore(args: dict, ensure_publication: bool) -> Keystore:
+def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
     # prompt for the keystore and id (if missing)
     prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                       path=args['keystore'],
@@ -123,27 +119,27 @@ def load_keystore(args: dict, ensure_publication: bool) -> Keystore:
 
     if ensure_publication:
         # prompt for the address (if missing)
-        prompt_if_missing(args, 'address', prompt_for_string,
+        prompt_if_missing(args, address_arg, prompt_for_string,
                           message="Enter the node's REST address",
                           default='127.0.0.1:5001')
 
         # try to ensure check if the identity is known and prompt to publish (if otherwise)
         try:
             # check if node knows about identity
-            db = NodeDBProxy(args['address'].split(":"))
+            db = NodeDBProxy(args[address_arg].split(":"))
             if db.get_identity(keystore.identity.id) is None:
                 if prompt_for_confirmation(
-                        message=f"Identity {keystore.identity.id} is not known to the node at {args['address']}. "
+                        message=f"Identity {keystore.identity.id} is not known to the node at {args[address_arg]}. "
                                 f"Publish identity?",
                         default=True
                 ):
                     db.update_identity(keystore.identity)
-                    print(f"Identity {keystore.identity.id} published to node at {args['address']}.")
+                    print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
                 else:
                     raise CLIRuntimeError(f"Cannot proceed without node ")
 
         except UnsuccessfulRequestError as e:
-            raise CLIRuntimeError(f"Could not ensure identity is known to node at {args['address']}. Aborting. "
+            raise CLIRuntimeError(f"Could not ensure identity is known to node at {args[address_arg]}. Aborting. "
                                   f"(Hint: {e.reason})")
 
     return keystore

@@ -2,7 +2,7 @@ import json
 from typing import Optional, Union
 
 import canonicaljson
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -134,6 +134,25 @@ class NodeDBService:
                 session.query(DataObjectTag).filter_by(obj_id=obj_id).delete()
 
             session.commit()
+
+    def get_statistics(self) -> dict:
+        with self._Session() as session:
+            result = {
+                'data_types': [],
+                'data_formats': [],
+                'tag_keys': []
+            }
+
+            for value in session.query(DataObjectRecord.data_type).distinct():
+                result['data_types'].append(value[0])
+
+            for value in session.query(DataObjectRecord.data_format).distinct():
+                result['data_formats'].append(value[0])
+
+            for value in session.query(DataObjectTag.key).distinct():
+                result['tag_keys'].append(value[0])
+
+            return result
 
     def find_data_objects(self, patterns: list[str], owner_iid: str = None,
                           data_type: str = None, data_format: str = None) -> list[dict]:

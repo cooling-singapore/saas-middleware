@@ -13,7 +13,6 @@ from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStat
 from cli.cmd_service import Service
 from cli.exceptions import CLIRuntimeError
 from cli.helpers import CLIParser, Argument, CLICommandGroup
-from saas.exceptions import SaaSException
 
 if __name__ == "__main__":
     try:
