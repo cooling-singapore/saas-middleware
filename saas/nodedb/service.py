@@ -87,6 +87,17 @@ class NodeDBService:
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
+        self._print_statistics()
+
+    def _print_statistics(self):
+        with self._Session() as session:
+            logger.debug(f"- DataObjectRecord: {session.query(DataObjectRecord).count()}")
+            logger.debug(f"- DataObjectRecipe: {session.query(DataObjectRecipe).count()}")
+            logger.debug(f"- DataObjectTag: {session.query(DataObjectTag).count()}")
+            logger.debug(f"- DataObjectAccess: {session.query(DataObjectAccess).count()}")
+            logger.debug(f"- IdentityRecord: {session.query(IdentityRecord).count()}")
+            logger.debug(f"- NetworkNode: {session.query(NetworkNode).count()}")
+
     def _require_data_object(self, obj_id: str) -> DataObjectRecord:
         with self._Session() as session:
             obj_record = session.query(DataObjectRecord).get(obj_id)
@@ -124,13 +135,20 @@ class NodeDBService:
 
             session.commit()
 
-    def find_data_objects(self, patterns: list[str], owner_iid: str = None) -> list[dict]:
+    def find_data_objects(self, patterns: list[str], owner_iid: str = None,
+                          data_type: str = None, data_format: str = None) -> list[dict]:
         with self._Session() as session:
-            # first, get records of all potential data objects
+            # build the query and get the results
+            q = session.query(DataObjectRecord).filter()
             if owner_iid is not None:
-                object_records = session.query(DataObjectRecord).filter_by(owner_iid=owner_iid).all()
-            else:
-                object_records = session.query(DataObjectRecord).all()
+                q = q.filter(DataObjectRecord.owner_iid == owner_iid)
+
+            if data_type is not None:
+                q = q.filter(DataObjectRecord.data_type == data_type)
+
+            if data_format is not None:
+                q = q.filter(DataObjectRecord.data_format == data_format)
+            object_records = q.all()
 
             # second, filter data objects by patterns (if any)
             result = []
@@ -151,6 +169,8 @@ class NodeDBService:
                 if patterns is None or any(pattern in flattened for pattern in patterns):
                     result.append({
                         'obj_id': obj_record.obj_id,
+                        'data_type': obj_record.data_type,
+                        'data_format': obj_record.data_format,
                         'tags': tags
                     })
 
@@ -518,7 +538,7 @@ class NodeDBService:
             for item in session.query(DataObjectRecipe).all():
                 recipe_items.append({
                     'c_hash': item.c_hash,
-                    'recipe': item.recipe
+                    'recipe': json.loads(item.recipe)
                 })
 
         return {

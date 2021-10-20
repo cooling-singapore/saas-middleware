@@ -1,11 +1,12 @@
 import os
 import json
+from stat import S_IREAD
 
 from threading import Lock
 from typing import Optional
 
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.assets.credentials import SSHCredentials
+from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.adapters.adapters import RTIProcessorAdapter
@@ -33,6 +34,7 @@ class RuntimeInfrastructureService:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
+        self._ssh_credentials_paths = {}
         self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
         self._content_keys = {}
 
@@ -40,15 +42,34 @@ class RuntimeInfrastructureService:
         os.makedirs(self._jobs_path, exist_ok=True)
         os.makedirs(os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path), exist_ok=True)
 
-    def deploy(self, proc_id: str, deployment: str, ssh_credentials: SSHCredentials = None) -> dict:
+    def _store_ssh_credentials_key(self, proc_id: str, ssh_credentials: SSHCredentials) -> str:
+        key_path = os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
+        self._ssh_credentials_paths[proc_id] = key_path
+
+        # write the key to disk and change file permissions
+        with open(key_path, 'w') as f:
+            f.write(ssh_credentials.key)
+        os.chmod(key_path, S_IREAD)
+
+        return key_path
+
+    def deploy(self, proc_id: str, deployment: str, ssh_credentials: SSHCredentials = None,
+               github_credentials: GithubCredentials = None, gpp_custodian: str = None) -> dict:
         with self._mutex:
             # is the processor already deployed?
             if proc_id in self._deployed_processors:
                 logger.warning(f"processor {proc_id} already deployed -> do no redeploy and return descriptor only")
                 return self._deployed_processors[proc_id].get_descriptor()
 
+            # get all nodes in the network
+            network = self._node.db.get_network_all()
+
+            # if we have a custodian, then drop all other nodes in the network
+            if gpp_custodian:
+                network = [item for item in network if item['iid'] == gpp_custodian]
+
             # search the network for the GPP data object
-            for network_node in self._node.db.get_network_all():
+            for network_node in network:
                 # skip this node if doesn't have a DOR
                 if network_node['dor_service'] is False:
                     continue
@@ -89,11 +110,20 @@ class RuntimeInfrastructureService:
                 # load the meta information
                 meta = read_json_from_file(meta_path)
 
+                # store the SSH credentials key (if any)
+                if ssh_credentials:
+                    ssh_credentials = {
+                        'host': ssh_credentials.host,
+                        'login': ssh_credentials.login,
+                        'key_path': self._store_ssh_credentials_key(proc_id, ssh_credentials)
+                    }
+
                 # create an RTI adapter instance
                 if deployment == 'native':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                         RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
-                                                  ssh_credentials=ssh_credentials)
+                                                  ssh_credentials=ssh_credentials,
+                                                  github_credentials=github_credentials)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
@@ -125,6 +155,11 @@ class RuntimeInfrastructureService:
             # stop the processor and wait for it to be done
             processor.stop()
             processor.join()
+
+            # delete SSH credentials key (if any)
+            if proc_id in self._ssh_credentials_paths:
+                os.remove(self._ssh_credentials_paths[proc_id])
+                self._ssh_credentials_paths.pop(proc_id)
 
             return processor.gpp['proc_descriptor']
 

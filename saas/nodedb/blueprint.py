@@ -107,7 +107,8 @@ class NodeDBProxy(EndpointProxy):
         }
 
     def get_identity(self, iid: str) -> Optional[Identity]:
-        return Identity.deserialise(self.get(f"/identity/{iid}"))
+        serialised_identity = self.get(f"/identity/{iid}")
+        return Identity.deserialise(serialised_identity) if serialised_identity else None
 
     def update_identity(self, identity) -> None:
         self.post('/identity', body=identity.serialise())

@@ -5,7 +5,7 @@ import requests
 
 from saas.keystore.keystore import Keystore
 from saas.rest.blueprint import extract_response
-from saas.rest.exceptions import UnexpectedContentType
+from saas.rest.exceptions import UnexpectedContentType, UnsuccessfulRequestError, UnsuccessfulConnectionError
 from saas.rest.request_manager import sign_authorisation_token
 
 
@@ -21,28 +21,31 @@ class EndpointProxy:
                                      with_authorisation_by=with_authorisation_by)
 
         url = self._url(endpoint, parameters)
+        try:
+            if download_path:
+                with requests.get(url, data=content, stream=True) as response:
+                    header = {k: v for k, v in response.headers.items()}
+                    if header['Content-Type'] == 'application/json':
+                        return extract_response(response)
 
-        if download_path:
-            with requests.get(url, data=content, stream=True) as response:
-                header = {k: v for k, v in response.headers.items()}
-                if header['Content-Type'] == 'application/json':
-                    return extract_response(response)
+                    elif response.headers['Content-Type'] == 'application/octet-stream':
+                        content = response.iter_content(chunk_size=8192)
+                        with open(download_path, 'wb') as f:
+                            for chunk in content:
+                                f.write(chunk)
+                        return header
 
-                elif response.headers['Content-Type'] == 'application/octet-stream':
-                    content = response.iter_content(chunk_size=8192)
-                    with open(download_path, 'wb') as f:
-                        for chunk in content:
-                            f.write(chunk)
-                    return header
+                    else:
+                        raise UnexpectedContentType({
+                            'header': header
+                        })
 
-                else:
-                    raise UnexpectedContentType({
-                        'header': header
-                    })
+            else:
+                response = requests.get(url, data=content)
+                return extract_response(response)
 
-        else:
-            response = requests.get(url, data=content)
-            return extract_response(response)
+        except requests.exceptions.ConnectionError:
+            raise UnsuccessfulConnectionError(url)
 
     def put(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, attachment_path: str = None,
             with_authorisation_by: Keystore = None) -> Union[dict, list]:
@@ -51,15 +54,18 @@ class EndpointProxy:
                                      with_authorisation_by=with_authorisation_by)
 
         url = self._url(endpoint, parameters)
+        try:
+            if attachment_path:
+                with open(attachment_path, 'rb') as f:
+                    response = requests.put(url, data=content, files={'attachment': f.read()})
+                    return extract_response(response)
 
-        if attachment_path:
-            with open(attachment_path, 'rb') as f:
-                response = requests.put(url, data=content, files={'attachment': f.read()})
+            else:
+                response = requests.put(url, data=content)
                 return extract_response(response)
 
-        else:
-            response = requests.put(url, data=content)
-            return extract_response(response)
+        except requests.exceptions.ConnectionError:
+            raise UnsuccessfulConnectionError(url)
 
     def post(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, attachment_path: str = None,
              with_authorisation_by: Keystore = None) -> Union[dict, list]:
@@ -70,15 +76,18 @@ class EndpointProxy:
                                      with_authorisation_by=with_authorisation_by)
 
         url = self._url(endpoint, parameters)
+        try:
+            if attachment_path:
+                with open(attachment_path, 'rb') as f:
+                    response = requests.post(url, data=content, files={'attachment': f.read()})
+                    return extract_response(response)
 
-        if attachment_path:
-            with open(attachment_path, 'rb') as f:
-                response = requests.post(url, data=content, files={'attachment': f.read()})
+            else:
+                response = requests.post(url, data=content)
                 return extract_response(response)
 
-        else:
-            response = requests.post(url, data=content)
-            return extract_response(response)
+        except requests.exceptions.ConnectionError:
+            raise UnsuccessfulConnectionError(url)
 
     def delete(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None,
                with_authorisation_by: Keystore = None) -> Union[dict, list]:
@@ -89,9 +98,12 @@ class EndpointProxy:
                                      with_authorisation_by=with_authorisation_by)
 
         url = self._url(endpoint, parameters)
+        try:
+            response = requests.delete(url, data=content)
+            return extract_response(response)
 
-        response = requests.delete(url, data=content)
-        return extract_response(response)
+        except requests.exceptions.ConnectionError:
+            raise UnsuccessfulConnectionError(url)
 
     def _auth_url(self, endpoint: str, parameters: dict = None) -> str:
         url = f"{self._endpoint_prefix}{endpoint}"
