@@ -532,25 +532,33 @@ class NodeDBService:
         pending: list[dict] = [*self.get_recipe(c_hash0).values()]
         while len(pending) > 0:
             recipe = pending.pop(0)
-            if recipe['product']['c_hash'] not in all_recipes:
-                all_recipes[recipe['product']['c_hash']] = recipe
-                # print(json.dumps(recipe, indent=2))
 
-                # handle the processor
-                gpp_hash = hash_json_object(recipe['processor']['gpp']).hex()
-                gpp_cache[recipe['product']['c_hash']] = gpp_hash
-                if gpp_hash not in cache:
-                    node = {
-                        'gpp_hash': gpp_hash,
-                        'gpp': recipe['processor']['gpp']
-                    }
-                    cache[gpp_hash] = node
-                    proc_nodes.append(node)
-                    # print(json.dumps(node, indent=2))
+            # TODO: what is the correct behaviour? if multiple recipes produce a data object with c_hash then
+            #  whichever recipe processed last in the loop would the one that remains set in the all_recipes
+            #  dict. that's not wrong. because all we need is ONE recipe that can created the data object.
+            #  however, it's not entirely right either. because the same content (i.e., same c_hash) can be
+            #  produced by different processors that would produce a data object with different data types and
+            #  formats. that would mean that the resulting data object (despite having the same c_hash) to be
+            #  incompatible as input for a processor as part of this provenance history. one solution could
+            #  be to filter recipes by ones that produce the correct data type/format.
+            all_recipes[recipe['product']['c_hash']] = recipe
+            # print(json.dumps(recipe, indent=2))
 
-                # handle inputs and add more recipes (if any)
-                for obj in recipe['input']:
-                    pending += [*self.get_recipe(obj['c_hash']).values()]
+            # handle the processor
+            gpp_hash = hash_json_object(recipe['processor']['gpp']).hex()
+            gpp_cache[recipe['product']['c_hash']] = gpp_hash
+            if gpp_hash not in cache:
+                node = {
+                    'gpp_hash': gpp_hash,
+                    'gpp': recipe['processor']['gpp']
+                }
+                cache[gpp_hash] = node
+                proc_nodes.append(node)
+                # print(json.dumps(node, indent=2))
+
+            # handle inputs and add more recipes (if any)
+            for obj in recipe['input']:
+                pending += [*self.get_recipe(obj['c_hash']).values()]
 
         # second: collect all data object nodes that are 'derived'
         for recipe in all_recipes.values():
