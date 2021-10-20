@@ -2,7 +2,7 @@ import json
 from typing import Optional, Union
 
 import canonicaljson
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, func
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -512,6 +512,88 @@ class NodeDBService:
         with self._Session() as session:
             return {record.r_hash: json.loads(record.recipe) for record in
                     session.query(DataObjectRecipe).filter_by(c_hash=c_hash).all()}
+
+    def get_provenance(self, obj_id: str) -> dict:
+        # the data object of interest to serve as starting point for the provenance lookup
+        self._require_data_object(obj_id)
+        obj = self.get_object_by_id(obj_id)
+        c_hash0 = obj['c_hash']
+
+        # create lists of nodes (obj and procs) and edges
+        content_nodes = []
+        proc_nodes = []
+        steps = []
+
+        cache = {}
+        gpp_cache = {}
+
+        # first: collect all recipes in the history of this data object
+        all_recipes = {}
+        pending: list[dict] = [*self.get_recipe(c_hash0).values()]
+        while len(pending) > 0:
+            recipe = pending.pop(0)
+            if recipe['product']['c_hash'] not in all_recipes:
+                all_recipes[recipe['product']['c_hash']] = recipe
+                # print(json.dumps(recipe, indent=2))
+
+                # handle the processor
+                gpp_hash = hash_json_object(recipe['processor']['gpp']).hex()
+                gpp_cache[recipe['product']['c_hash']] = gpp_hash
+                if gpp_hash not in cache:
+                    node = {
+                        'gpp_hash': gpp_hash,
+                        'gpp': recipe['processor']['gpp']
+                    }
+                    cache[gpp_hash] = node
+                    proc_nodes.append(node)
+                    # print(json.dumps(node, indent=2))
+
+                # handle inputs and add more recipes (if any)
+                for obj in recipe['input']:
+                    pending += [*self.get_recipe(obj['c_hash']).values()]
+
+        # second: collect all data object nodes that are 'derived'
+        for recipe in all_recipes.values():
+            node = {
+                'c_hash': recipe['product']['c_hash'],
+                'type': 'derived',
+                'data_type': recipe['product']['data_type'],
+                'data_format': recipe['product']['data_format']
+            }
+            cache[node['c_hash']] = node
+            content_nodes.append(node)
+            # print(json.dumps(node, indent=2))
+
+        # third: collect all the data object nodes that are 'original'
+        for recipe in all_recipes.values():
+            for obj in recipe['input']:
+                if obj['c_hash'] not in cache:
+                    node = {
+                        'c_hash': obj['c_hash'],
+                        'type': 'original',
+                        'data_type': obj['data_type'],
+                        'data_format': obj['data_format']
+                    }
+                    cache[node['c_hash']] = node
+                    content_nodes.append(node)
+                    # print(json.dumps(node, indent=2))
+
+        # fourth: determine all the individual steps
+        for recipe in all_recipes.values():
+            c_hash = recipe['product']['c_hash']
+            consume = [o['c_hash'] for o in all_recipes[c_hash]['input']]
+            step = {
+                'consume': consume,
+                'processor': gpp_cache[c_hash],
+                'produce': c_hash
+            }
+            steps.append(step)
+
+        return {
+            'content_nodes': content_nodes,
+            'proc_nodes': proc_nodes,
+            'steps': steps,
+        }
 
     # END: things that DO require synchronisation
 

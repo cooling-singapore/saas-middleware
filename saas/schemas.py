@@ -126,23 +126,33 @@ job_descriptor_schema = {
 recipe_schema = {
     'type': 'object',
     'properties': {
+        'product': {
+            'type': 'object',
+            'properties': {
+                'name': {'type': 'string'},
+                'c_hash': {'type': 'string'},
+                'data_type': {'type': 'string'},
+                'data_format': {'type': 'string'}
+            },
+            'required': ['name', 'c_hash', 'data_type', 'data_format']
+        },
         'processor': {
             'type': 'object',
             'properties': {
-                'source': {'type': 'string'},
-                'commit_id': {'type': 'string'},
-                'proc_path': {'type': 'string'},
-                'proc_config': {'type': 'string'},
-                'proc_descriptor': {'type': 'object'}
+                'proc_id': {'type': 'string'},
+                'gpp': git_proc_pointer_schema
             },
-            'required': ['source', 'commit_id', 'proc_path', 'proc_config', 'proc_descriptor']
+            'required': ['proc_id', 'gpp']
         },
         'input': {
             'type': 'array',
             'items': {
                 'type': 'object',
                 'properties': {
-                    'name': {'type': 'string'}
+                    'name': {'type': 'string'},
+                    'data_type': {'type': 'string'},
+                    'data_format': {'type': 'string'},
+                    'type': {'type': 'string', 'enum': ['reference', 'value']}
                 },
                 'if': {
                     'properties': {'type': {'const': 'reference'}}
@@ -157,10 +167,51 @@ recipe_schema = {
                         'value': {'type': 'object'}
                     }
                 },
-                'required': ['name']
+                'required': ['name', 'data_type', 'data_format', 'type']
+            }
+        }
+    },
+    'required': ['product', 'processor', 'input']
+}
+
+provenance_schema = {
+    'type': 'object',
+    'properties': {
+        'content_nodes': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'c_hash': {'type': 'string'},
+                    'type': {'type': 'string', 'enum': ['original', 'derived']},
+                    'data_type': {'type': 'string'},
+                    'data_format': {'type': 'string'}
+                },
+                'required': ['c_hash', 'type', 'data_type', 'data_format']
             }
         },
-        'output': {'type': 'string'}
-    },
-    'required': ['processor', 'input', 'output']
+        'proc_nodes': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'gpp_hash': {'type': 'string'},
+                    'gpp': git_proc_pointer_schema,
+                },
+                'required': ['gpp_hash', 'gpp']
+            }
+        },
+        'steps': {
+            'type': 'array',
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'consume': {'type': 'array', 'items': {'type': 'string'}},
+                    'processor': {'type': 'string'},
+                    'produce': {'type': 'string'}
+                },
+                'required': ['consume']
+            }
+        }
+    }
 }

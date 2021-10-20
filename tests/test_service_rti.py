@@ -16,7 +16,7 @@ from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
-from saas.helpers import read_json_from_file
+from saas.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
 
 logging.basicConfig(
@@ -89,10 +89,11 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
                     return
 
-    def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool):
-        meta = dor.add_data_object(self.create_file_with_content('a.dat', json.dumps({'v': 1})),
+    def add_dummy_data_object(self, dor: DORProxy, owner: Identity, access_restricted: bool, value: int = 1):
+        meta = dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.dat",
+                                                                 json.dumps({'v': value})),
                                    owner, access_restricted, False, 'JSONObject', 'json', owner.name)
-        return meta['obj_id']
+        return meta['obj_id'], meta['c_hash']
 
     def add_encrypted_dummy_data_object(self, dor: DORProxy, owner: Identity):
         test_file_path = self.create_file_with_content('a.dat', json.dumps({'v': 1}))
@@ -432,7 +433,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        a_obj_id, _ = self.add_dummy_data_object(dor, owner.identity, False)
         logger.info(f"a_obj_id={a_obj_id}")
 
         job_input = [
@@ -487,6 +488,87 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 0)
+
+    def test_provenance(self):
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # get the user
+        user = node.keystore
+        owner = user
+
+        # deploy test processor
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
+        descriptor = rti.deploy(proc_id)
+        logger.info(f"proc_id={proc_id}")
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        # add the genesis data object
+        obj_id, c_hash = self.add_dummy_data_object(dor, owner.identity, False, value=1)
+        obj_id_a = obj_id
+        obj_id_b = obj_id
+        c_hash_a = c_hash
+        c_hash_b = c_hash
+
+        # run 3 iterations
+        for i in range(3):
+            job_input = [
+                {
+                    'name': 'a',
+                    'type': 'reference',
+                    'obj_id': obj_id_a
+                },
+                {
+                    'name': 'b',
+                    'type': 'reference',
+                    'obj_id': obj_id_b
+                }
+            ]
+
+            job_output = [
+                {
+                    'name': 'c',
+                    'owner_iid': owner.identity.id,
+                    'restricted_access': False,
+                    'content_encrypted': False
+                }
+            ]
+
+            job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+            job_id = job_descriptor['id']
+            logger.info(f"job_id={job_id}")
+            assert(job_id is not None)
+
+            result = wait_for_job(rti, job_id)
+            assert(result is True)
+
+            output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+            assert (os.path.isfile(output_path))
+            result = read_json_from_file(output_path)
+
+            descriptor, status = rti.get_job_info(job_id)
+            output = {item['name']: item['obj_id'] for item in status['output']}
+            obj_id = output['c']
+
+            meta = dor.get_meta(obj_id)
+            c_hash = meta['c_hash']
+
+            print(f"{c_hash_a} + {c_hash_b} = {c_hash} ({result})")
+
+            obj_id_a = obj_id_b
+            obj_id_b = obj_id
+            c_hash_a = c_hash_b
+            c_hash_b = c_hash
+
+        provenance = db.get_provenance(obj_id)
+        print(json.dumps(provenance, indent=2))
+
+        result = rti.undeploy(proc_id)
+        assert result is not None
 
     def test_processor_execution_same_reference(self):
         # test for issue #110: https://github.com/cooling-singapore/saas-middleware/issues/110
@@ -626,7 +708,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        a_obj_id = self.add_dummy_data_object(dor, owner.identity, True)
+        a_obj_id, _ = self.add_dummy_data_object(dor, owner.identity, True)
         logger.info(f"a_obj_id={a_obj_id}")
 
         # valid signature but no access rights
