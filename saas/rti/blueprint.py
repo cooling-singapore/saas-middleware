@@ -200,5 +200,5 @@ class RTIProxy(EndpointProxy):
         r = self.get(f"/job/{job_id}")
         return r['job_descriptor'], r['status']
 
-    def put_permission(self, req_id: str, permission: dict) -> None:
+    def put_permission(self, req_id: str, permission: str) -> None:
         self.post(f"/permission/{req_id}", body=permission)

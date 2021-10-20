@@ -611,7 +611,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(jobs) == 0)
 
         # add data object
-        obj_id = self.add_dummy_data_object(dor, owner.identity, False)
+        obj_id, _ = self.add_dummy_data_object(dor, owner.identity, False)
         logger.info(f"obj_id={obj_id}")
 
         job_input = [
