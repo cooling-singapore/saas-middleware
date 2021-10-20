@@ -46,10 +46,6 @@ class RuntimeInfrastructureService:
         key_path = os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
         self._ssh_credentials_paths[proc_id] = key_path
 
-        # remove if the file already exists
-        if os.path.isfile(key_path):
-            os.remove(key_path)
-
         # write the key to disk and change file permissions
         with open(key_path, 'w') as f:
             f.write(ssh_credentials.key)
