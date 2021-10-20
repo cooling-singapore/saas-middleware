@@ -145,6 +145,10 @@ class DataObjectRepositoryService:
 
         # add the recipe (if any) and broadcast it
         if recipe is not None:
+            # insert the missing c_hash
+            recipe['product']['c_hash'] = c_hash
+
+            # add the recipe to the NodeDB
             self.node.db.add_recipe(c_hash, recipe)
             self.node.db.protocol.broadcast_update('add_recipe', {
                 'c_hash': c_hash,
