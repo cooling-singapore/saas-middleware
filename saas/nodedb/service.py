@@ -155,7 +155,8 @@ class NodeDBService:
             return result
 
     def find_data_objects(self, patterns: list[str], owner_iid: str = None,
-                          data_type: str = None, data_format: str = None) -> list[dict]:
+                          data_type: str = None, data_format: str = None,
+                          c_hashes: list[str] = None) -> list[dict]:
         with self._Session() as session:
             # build the query and get the results
             q = session.query(DataObjectRecord).filter()
@@ -167,6 +168,10 @@ class NodeDBService:
 
             if data_format is not None:
                 q = q.filter(DataObjectRecord.data_format == data_format)
+
+            if c_hashes is not None:
+                q = q.filter(DataObjectRecord.c_hash.in_(c_hashes))
+
             object_records = q.all()
 
             # second, filter data objects by patterns (if any)
