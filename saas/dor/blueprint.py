@@ -113,14 +113,7 @@ obj_response_schema = {
 
 search_response_schema = {
     'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'obj_id': {'type': 'string'},
-            'tags': tags_response_schema
-        },
-        'required': ['obj_id', 'tags']
-    }
+    'items': obj_response_schema
 }
 
 statistics_response_schema = {
