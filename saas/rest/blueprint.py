@@ -80,7 +80,7 @@ def create_error_response(reason: str, exception_id: str, details: str = None) -
     if details is not None:
         envelope['details'] = details
 
-    return jsonify(envelope), 200
+    return jsonify(envelope), 500
 
 
 def extract_response(response: Response) -> Optional[Union[dict, list]]:
@@ -91,8 +91,8 @@ def extract_response(response: Response) -> Optional[Union[dict, list]]:
     :return: extracted response content (if any)
     :raise UnsuccessfulRequestError
     """
-    # the status code should always be 200
-    if response.status_code != 200:
+    # the status code should always be 200 or 500
+    if response.status_code not in [200, 500]:
         raise UnexpectedHTTPError({
             'response': response
         })
