@@ -8,7 +8,7 @@ from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
-from saas.helpers import object_to_ordered_list
+from saas.helpers import object_to_ordered_list, generate_random_string
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 logging.basicConfig(
@@ -393,6 +393,42 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
         self.dor_proxy.delete_data_object(obj_id1, self.extras[1])
         self.dor_proxy.delete_data_object(obj_id2, self.extras[2])
+
+    def test_search_by_content_hashes(self):
+        owner = self.extras[1]
+
+        # create data objects
+        meta0 = self.dor_proxy.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
+                                               owner.identity, False, False, 'map', 'json', owner.identity.name)
+        meta1 = self.dor_proxy.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
+                                               owner.identity, False, False, 'map', 'json', owner.identity.name)
+        meta2 = self.dor_proxy.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
+                                               owner.identity, False, False, 'map', 'json', owner.identity.name)
+        obj_id0 = meta0['obj_id']
+        obj_id1 = meta1['obj_id']
+        obj_id2 = meta2['obj_id']
+        c_hash0 = meta0['c_hash']
+        c_hash1 = meta1['c_hash']
+        c_hash2 = meta2['c_hash']
+
+        # search for data objects
+        result = self.dor_proxy.search(c_hashes=[c_hash0, c_hash1])
+        logger.info(f"result={result}")
+        assert len(result) == 2
+        result = {i['obj_id']: i['tags'] for i in result}
+        assert obj_id0 in result
+        assert obj_id1 in result
+
+        # search for data objects
+        result = self.dor_proxy.search(c_hashes=[c_hash2])
+        logger.info(f"result={result}")
+        assert len(result) == 1
+        result = {i['obj_id']: i['tags'] for i in result}
+        assert obj_id2 in result
+
+        self.dor_proxy.delete_data_object(obj_id0, owner)
+        self.dor_proxy.delete_data_object(obj_id1, owner)
+        self.dor_proxy.delete_data_object(obj_id2, owner)
 
 
 if __name__ == '__main__':

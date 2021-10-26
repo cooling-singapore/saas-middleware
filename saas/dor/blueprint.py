@@ -113,14 +113,7 @@ obj_response_schema = {
 
 search_response_schema = {
     'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'obj_id': {'type': 'string'},
-            'tags': tags_response_schema
-        },
-        'required': ['obj_id', 'tags']
-    }
+    'items': obj_response_schema
 }
 
 statistics_response_schema = {
@@ -170,7 +163,10 @@ class DORBlueprint(SaaSBlueprint):
         owner_iid = body.get('owner_iid')
         data_type = body.get('data_type')
         data_format = body.get('data_format')
-        return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid, data_type, data_format))
+        c_hashes = body.get('c_hashes')
+        return create_ok_response(self._node.db.find_data_objects(patterns, owner_iid,
+                                                                  data_type, data_format,
+                                                                  c_hashes))
 
     @request_manager.handle_request(statistics_response_schema)
     @request_manager.require_dor()
@@ -312,7 +308,8 @@ class DORProxy(EndpointProxy):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
     def search(self, patterns: list[str] = None, owner_iid: str = None,
-               data_type: str = None, data_format: str = None) -> dict:
+               data_type: str = None, data_format: str = None,
+               c_hashes: list[str] = None) -> dict:
         body = {}
 
         if patterns is not None and len(patterns) > 0:
@@ -326,6 +323,9 @@ class DORProxy(EndpointProxy):
 
         if data_format is not None:
             body['data_format'] = data_format
+
+        if c_hashes is not None:
+            body['c_hashes'] = c_hashes
 
         return self.get('', body=body)
 
