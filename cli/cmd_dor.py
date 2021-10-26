@@ -261,11 +261,19 @@ class DORAddGPP(CLICommand):
                 prompt_if_missing(args, 'config', prompt_for_string,
                                   message="Enter the name of the configuration profile to be used:")
 
+        # get Github credentials (if any)
+        url = args['url']
+        asset: CredentialsAsset = keystore.get_asset('github-credentials')
+        github_credentials: GithubCredentials = asset.get(url) if asset else None
+        if github_credentials is not None:
+            print(f"Using Github credentials for {url}: {github_credentials.login}")
+
         # connect to the DOR and add the data object
         dor = DORProxy(args['address'].split(':'))
         meta = dor.add_gpp_data_object(
             args['url'], args['commit-id'], args['path'], args['config'],
-            keystore.identity, keystore.identity.name
+            keystore.identity, keystore.identity.name,
+            github_credentials=github_credentials
         )
         obj_id = meta['obj_id']
 
