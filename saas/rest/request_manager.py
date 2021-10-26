@@ -228,20 +228,20 @@ class RequestManager:
 
                     # if we have a response content, check if it is valid
                     if response[0].headers['Content-Type'] == 'application/json':
-                        envelope = response[0].json
-                        if envelope['status'] == 'ok' and 'response' in envelope:
+                        content = response[0].json
+                        if response[0].status_code == 200 and content != {}:
                             # do we have a schema?
                             if schema is None:
                                 raise MissingResponseSchemaError({
                                     'rule': f"{request.method}:{request.url_rule}",
-                                    'response': envelope['response']
+                                    'content': content
                                 })
 
                             # is the response content valid?
-                            if not validate_json(envelope['response'], schema):
+                            if not validate_json(content, schema):
                                 raise MalformedResponseError({
                                     'rule': f"{request.method}:{request.url_rule}",
-                                    'response': envelope['response'],
+                                    'content': content,
                                     'schema': schema
                                 })
 
