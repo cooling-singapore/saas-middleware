@@ -13,7 +13,7 @@ from PyInquirer import prompt
 
 from cli.exceptions import CLIRuntimeError
 from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
+from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import keystore_schema
@@ -451,16 +451,17 @@ class CLIParser(CLICommandGroup):
 
             initialise_storage_folder(args['keystore'], 'keystore')
 
-            # determine the log path
-            if args['cmd_main'] == 'service':
-                log_path = os.path.join(args['temp-dir'], f"log.service.{get_timestamp_now()}")
+            if args['log-level'] == 'DEBUG':
+                level = logging.DEBUG
+            elif args['log-level'] == 'INFO':
+                level = logging.INFO
             else:
-                log_path = os.path.join(args['temp-dir'], f"log.non-service")
+                level = logging.INFO
 
-            console_log_enabled = args['logging'] == 'console' or args['logging'] == 'both'
-            log_path = log_path if args['logging'] == 'file' or args['logging'] == 'both' else None
-            print(f"Logging uses: log_path={log_path} console_enabled={console_log_enabled}")
-            Logging.initialise(level=logging.DEBUG, log_path=log_path, console_log_enabled=console_log_enabled)
+            console_enabled = args['log-console'] is not None
+            log_path = args['log-path']
+            print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
+            Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 
         except argparse.ArgumentError:
