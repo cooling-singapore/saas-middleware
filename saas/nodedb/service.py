@@ -155,7 +155,8 @@ class NodeDBService:
             return result
 
     def find_data_objects(self, patterns: list[str], owner_iid: str = None,
-                          data_type: str = None, data_format: str = None) -> list[dict]:
+                          data_type: str = None, data_format: str = None,
+                          c_hashes: list[str] = None) -> list[dict]:
         with self._Session() as session:
             # build the query and get the results
             q = session.query(DataObjectRecord).filter()
@@ -167,6 +168,10 @@ class NodeDBService:
 
             if data_format is not None:
                 q = q.filter(DataObjectRecord.data_format == data_format)
+
+            if c_hashes is not None:
+                q = q.filter(DataObjectRecord.c_hash.in_(c_hashes))
+
             object_records = q.all()
 
             # second, filter data objects by patterns (if any)
@@ -186,11 +191,20 @@ class NodeDBService:
                 # check if any of the patterns is a substring the flattened string.
                 # if we don't have patterns then always add the object.
                 if patterns is None or any(pattern in flattened for pattern in patterns):
+                    access = session.query(DataObjectAccess).filter_by(obj_id=obj_record.obj_id).all()
+
                     result.append({
                         'obj_id': obj_record.obj_id,
+                        'c_hash': obj_record.c_hash,
                         'data_type': obj_record.data_type,
                         'data_format': obj_record.data_format,
-                        'tags': tags
+                        'created_by': obj_record.created_by,
+                        'created_t': obj_record.created_t,
+                        'owner_iid': obj_record.owner_iid,
+                        'access_restricted': obj_record.access_restricted,
+                        'content_encrypted': obj_record.content_encrypted,
+                        'tags': tags,
+                        'access': [record.key_iid for record in access]
                     })
 
             return result
