@@ -451,9 +451,16 @@ class CLIParser(CLICommandGroup):
 
             initialise_storage_folder(args['keystore'], 'keystore')
 
-            log_path = os.path.join(args['temp-dir'], f"log.{get_timestamp_now()}")
-            Logging.initialise(level=logging.DEBUG, log_path=log_path)
+            # determine the log path
+            if args['cmd_main'] == 'service':
+                log_path = os.path.join(args['temp-dir'], f"log.service.{get_timestamp_now()}")
+            else:
+                log_path = os.path.join(args['temp-dir'], f"log.non-service")
 
+            console_log_enabled = args['logging'] == 'console' or args['logging'] == 'both'
+            log_path = log_path if args['logging'] == 'file' or args['logging'] == 'both' else None
+            print(f"Logging uses: log_path={log_path} console_enabled={console_log_enabled}")
+            Logging.initialise(level=logging.DEBUG, log_path=log_path, console_log_enabled=console_log_enabled)
             super().execute(args)
 
         except argparse.ArgumentError:
