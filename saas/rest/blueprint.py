@@ -80,11 +80,10 @@ def extract_response(response: Response) -> Optional[Union[dict, list]]:
                 'content': content
             })
 
-        raise UnsuccessfulRequestError({
-            'reason': content['reason'],
-            'details': content['details'] if 'details' in content else None,
-            'exception_id': content['exception_id']
-        })
+        raise UnsuccessfulRequestError(content['reason'],
+                                       content['exception_id'],
+                                       content['details'] if 'details' in content else None
+                                       )
 
     else:
         raise UnexpectedHTTPError({
