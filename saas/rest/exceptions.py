@@ -23,8 +23,8 @@ class MalformedResponseError(RESTException):
 
 
 class UnsuccessfulRequestError(RESTException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Unsuccessful request', details=details)
+    def __init__(self, reason: str, exception_id: str, details: dict) -> None:
+        super().__init__(f"Unsuccessful request: {reason} ({exception_id})", details=details)
 
 
 class AuthorisationFailedError(RESTException):
