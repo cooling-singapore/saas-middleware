@@ -14,10 +14,10 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.assets.contentkeys import ContentKeysAsset
 from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
-from saas.keystore.schemas import keystore_schema
+from saas.keystore.schemas import Keystore as KeystoreSchema
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
-from saas.schemas import processor_descriptor_schema
+from saas.schemas import ProcessorDescriptor
 
 logger = Logging.get('cli.dor')
 
@@ -205,7 +205,7 @@ class DORAddGPP(CLICommand):
                     for item in found:
                         print(f"Analysing descriptor file '{item['file-path']}'...", end='')
                         try:
-                            descriptor = read_json_from_file(item['file-path'], schema=processor_descriptor_schema)
+                            descriptor = read_json_from_file(item['file-path'], schema=ProcessorDescriptor.schema())
                             descriptors.append({
                                 'descriptor': descriptor,
                                 'proc-path': item['proc-path'],
@@ -232,7 +232,7 @@ class DORAddGPP(CLICommand):
                     raise CLIRuntimeError("No processor descriptor found. Aborting.")
 
                 try:
-                    descriptor = read_json_from_file(descriptor_path, schema=processor_descriptor_schema)
+                    descriptor = read_json_from_file(descriptor_path, schema=ProcessorDescriptor.schema())
                     print("Done")
 
                 except jsonschema.exceptions.ValidationError:
@@ -475,7 +475,7 @@ class DORSearch(CLICommand):
             # read the keystore content (we only need the public part)
             keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
             keystore_content = read_json_from_file(keystore_path)
-            if not validate_json(keystore_content, keystore_schema):
+            if not validate_json(keystore_content, KeystoreSchema.schema()):
                 raise CLIRuntimeError(f"Invalid keystore. Aborting.")
 
             owner_iid = keystore_content['iid']
