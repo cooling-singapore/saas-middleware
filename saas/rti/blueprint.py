@@ -1,4 +1,7 @@
+from typing import List, Optional
+
 from flask import Response
+from pydantic import BaseModel
 
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
@@ -6,22 +9,28 @@ from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
+from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor
 
 logger = Logging.get('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
-deployed_processors_schema = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'proc_id': {'type': 'string'},
-            'proc_descriptor': processor_descriptor_schema
-        },
-        'required': ['proc_id', 'proc_descriptor']
-    }
-}
+
+class DeployedProcessorsResponse(BaseModel):
+    class DeployedProcessor(BaseModel):
+        proc_id: str
+        proc_descriptor: ProcessorDescriptor
+
+    __root__: List[DeployedProcessor]
+
+
+class JobsResponse(BaseModel):
+    __root__: List[JobDescriptor]
+
+
+class JobStatusResponse(BaseModel):
+    job_descriptor: JobDescriptor
+    status: dict
+
 
 put_permission_body_schema = {
     'type': 'string'
@@ -53,19 +62,6 @@ deployment_specification = {
     'required': ['deployment']
 }
 
-jobs_descriptor_schema = {
-    'type': 'array',
-    'items': job_descriptor_schema
-}
-
-job_details_schema = {
-    'type': 'object',
-    'properties': {
-        'job_descriptor': job_descriptor_schema,
-        'status': {'type': 'object'}
-    },
-    'required': ['job_descriptor', 'status']
-}
 
 
 class RTIBlueprint(SaaSBlueprint):
@@ -82,12 +78,12 @@ class RTIBlueprint(SaaSBlueprint):
         self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
 
-    @request_manager.handle_request(deployed_processors_schema)
+    @request_manager.handle_request(DeployedProcessorsResponse.schema())
     @request_manager.require_rti()
     def get_deployed(self) -> (Response, int):
         return create_ok_response(self._node.rti.get_deployed())
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor.schema())
     @request_manager.require_rti()
     @request_manager.verify_request_body(deployment_specification)
     def deploy(self, proc_id: str) -> (Response, int):
@@ -108,29 +104,29 @@ class RTIBlueprint(SaaSBlueprint):
                                                         github_credentials=github_credentials,
                                                         gpp_custodian=gpp_custodian))
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor.schema())
     @request_manager.require_rti()
     def undeploy(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.undeploy(proc_id))
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor.schema())
     @request_manager.require_rti()
     def get_descriptor(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_descriptor(proc_id))
 
-    @request_manager.handle_request(job_descriptor_schema)
+    @request_manager.handle_request(JobDescriptor.schema())
     @request_manager.require_rti()
-    @request_manager.verify_request_body(task_descriptor_schema)
+    @request_manager.verify_request_body(TaskDescriptor.schema())
     def submit_job(self, proc_id: str) -> (Response, int):
         task_descriptor = request_manager.get_request_variable('body')
         return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
-    @request_manager.handle_request(jobs_descriptor_schema)
+    @request_manager.handle_request(JobsResponse.schema())
     @request_manager.require_rti()
     def get_jobs(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_jobs(proc_id))
 
-    @request_manager.handle_request(job_details_schema)
+    @request_manager.handle_request(JobStatusResponse.schema())
     @request_manager.require_rti()
     def get_job_info(self, job_id: str) -> (Response, int):
         job_info = self._node.rti.get_job_info(job_id)
