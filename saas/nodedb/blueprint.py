@@ -78,7 +78,7 @@ class NodeDBBlueprint(SaaSBlueprint):
             identity.serialise() if identity else None
         )
 
-    @request_manager.handle_request(None)
+    @request_manager.handle_request()
     @request_manager.verify_request_body(IdentitySchema.schema())
     def update_identity(self) -> (Response, int):
         serialised_identity = request_manager.get_request_variable('body')

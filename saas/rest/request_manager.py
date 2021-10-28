@@ -4,6 +4,7 @@ import json
 import tempfile
 import time
 import traceback
+from typing import Optional
 
 import flask
 from flask import request, Flask, g, Response
@@ -218,7 +219,7 @@ class RequestManager:
 
         return decorated_func
 
-    def handle_request(self, schema: dict):
+    def handle_request(self, schema: Optional[dict] = None):
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):

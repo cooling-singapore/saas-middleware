@@ -135,7 +135,7 @@ class RTIBlueprint(SaaSBlueprint):
             'status': job_info['status']
         })
 
-    @request_manager.handle_request(None)
+    @request_manager.handle_request()
     @request_manager.require_rti()
     @request_manager.verify_request_body(put_permission_body_schema)
     def put_permission(self, req_id: str) -> (Response, int):
