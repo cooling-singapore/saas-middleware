@@ -185,7 +185,7 @@ class DORBlueprint(SaaSBlueprint):
             raise DataObjectNotFoundError(obj_id)
         return create_ok_response(record)
 
-    @request_manager.handle_request(None)
+    @request_manager.handle_request()
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
