@@ -7,6 +7,7 @@ import traceback
 from typing import Optional
 
 import flask
+import pydantic
 from flask import request, Flask, g, Response
 
 from jsonschema import validate, ValidationError
@@ -104,10 +105,11 @@ class RequestManager:
         values = g.get('_request_var', {})
         return values.get(name, None)
 
-    def verify_request_body(self, body_specification):
+    def verify_request_body(self, body_specification: pydantic.BaseModel):
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
+                schema = body_specification.schema()
                 # for debugging purposes, get the contents of 'values' and 'form'
                 values = {k: v for k, v in request.values.items()}
                 form = {k: v for k, v in request.form.items()}
@@ -123,12 +125,12 @@ class RequestManager:
                     body = {}
 
                 try:
-                    validate(instance=body, schema=body_specification)
+                    validate(instance=body, schema=schema)
 
                 except ValidationError:
                     raise MalformedRequestError({
                         'content': body,
-                        'schema': body_specification
+                        'schema': schema
                     })
 
                 self._set_request_variable('body', body)
@@ -219,7 +221,7 @@ class RequestManager:
 
         return decorated_func
 
-    def handle_request(self, schema: Optional[dict] = None):
+    def handle_request(self, response_schema: Optional[pydantic.BaseModel] = None):
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
@@ -232,13 +234,14 @@ class RequestManager:
                         envelope = response[0].json
                         if envelope['status'] == 'ok' and 'response' in envelope:
                             # do we have a schema?
-                            if schema is None:
+                            if response_schema is None:
                                 raise MissingResponseSchemaError({
                                     'rule': f"{request.method}:{request.url_rule}",
                                     'response': envelope['response']
                                 })
 
                             # is the response content valid?
+                            schema = response_schema.schema()
                             if not validate_json(envelope['response'], schema):
                                 raise MalformedResponseError({
                                     'rule': f"{request.method}:{request.url_rule}",

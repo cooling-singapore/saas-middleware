@@ -45,7 +45,7 @@ class NodeDBBlueprint(SaaSBlueprint):
         self.add_rule('identity', self.update_identity, methods=['POST'])
         self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
-    @request_manager.handle_request(NetworkNodeDetailResponse.schema())
+    @request_manager.handle_request(NetworkNodeDetailResponse)
     def get_node(self) -> (Response, int):
         p2p_address = self._node.p2p.address()
         rest_address = self._node.rest.address()
@@ -59,19 +59,19 @@ class NodeDBBlueprint(SaaSBlueprint):
             "p2p_service_address": f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
         })
 
-    @request_manager.handle_request(NetworkNodesResponse.schema())
+    @request_manager.handle_request(NetworkNodesResponse)
     def get_network(self) -> (Response, int):
         return create_ok_response(
             self._node.db.get_network_all(valid_json=True)
         )
 
-    @request_manager.handle_request(IdentitiesResponse.schema())
+    @request_manager.handle_request(IdentitiesResponse)
     def get_identities(self) -> (Response, int):
         return create_ok_response(
             [identity.serialise() for identity in self._node.db.get_all_identities().values()]
         )
 
-    @request_manager.handle_request(IdentitySchema.schema())
+    @request_manager.handle_request(IdentitySchema)
     def get_identity(self, iid: str) -> (Response, int):
         identity = self._node.db.get_identity(iid)
         return create_ok_response(
@@ -79,13 +79,13 @@ class NodeDBBlueprint(SaaSBlueprint):
         )
 
     @request_manager.handle_request()
-    @request_manager.verify_request_body(IdentitySchema.schema())
+    @request_manager.verify_request_body(IdentitySchema)
     def update_identity(self) -> (Response, int):
         serialised_identity = request_manager.get_request_variable('body')
         self._node.db.update_identity(serialised_identity)
         return create_ok_response()
 
-    @request_manager.handle_request(ObjectProvenance.schema())
+    @request_manager.handle_request(ObjectProvenance)
     def get_provenance(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.db.get_provenance(obj_id))
 

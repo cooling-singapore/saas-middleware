@@ -9,28 +9,15 @@ from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
-from saas.schemas import GitProcessorPointer, ObjectRecipe
+from saas.schemas import GitProcessorPointer, ObjectRecipe, ObjectTag
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 
 logger = Logging.get('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
 
-search_body_specification = {
-    'type': 'object',
-    'properties': {
-        'owner_iid': {'type': 'string'},
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'patterns': {
-            'type': 'array',
-            'items': {'type': 'string'}
-        }
-    }
-}
 
-
-class AddDataRequest(BaseModel):
+class AddDataObjectRequest(BaseModel):
     data_type: str
     data_format: str
     created_by: str
@@ -40,7 +27,7 @@ class AddDataRequest(BaseModel):
     content_encrypted: bool
 
 
-class AddGPPRequest(BaseModel):
+class AddGPPObjectRequest(BaseModel):
     data_type: str
     data_format: str
     created_by: str
@@ -49,31 +36,22 @@ class AddGPPRequest(BaseModel):
     gpp: GitProcessorPointer
 
 
-tags_body_specification = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'key': {'type': 'string'},
-            'value': {'type': 'string'}
-        },
-        'required': ['key', 'value']
-    }
-}
+class SearchObjectRequest(BaseModel):
+    owner_iid: Optional[str]
+    data_type: Optional[str]
+    data_format: Optional[str]
+    patterns: Optional[List[str]]
 
-delete_tags_body_specification = {
-    'type': 'array',
-    'items': {
-        'type': 'string'
-    }
-}
+
+class DeleteObjectTagsRequest(BaseModel):
+    __root__: List[str]
+
+
+class UpdateObjectTagsRequest(BaseModel):
+    __root__: List[ObjectTag]
 
 
 class ObjectPropertiesResponse(BaseModel):
-    class ObjectTags(BaseModel):
-        key: str
-        value: str
-
     obj_id: str
     c_hash: str
     data_type: str
@@ -85,7 +63,7 @@ class ObjectPropertiesResponse(BaseModel):
     owner_iid: str
     access_restricted: bool
     content_encrypted: bool
-    tags: List[ObjectTags]
+    tags: List[ObjectTag]
     access: List[str]
 
 
@@ -93,24 +71,10 @@ class SearchResponse(BaseModel):
     __root__: List[ObjectPropertiesResponse]
 
 
-statistics_response_schema = {
-    'type': 'object',
-    'properties': {
-        'data_types': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-        'data_formats': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-        'tag_keys': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-    },
-    'required': ['data_types', 'data_formats', 'tag_keys']
-}
+class StatisticsResponse(BaseModel):
+    data_types: List[str]
+    data_formats: List[str]
+    tag_keys: List[str]
 
 
 class DORBlueprint(SaaSBlueprint):
@@ -131,9 +95,9 @@ class DORBlueprint(SaaSBlueprint):
         self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'])
         self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'])
 
-    @request_manager.handle_request(SearchResponse.schema())
+    @request_manager.handle_request(SearchResponse)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(search_body_specification)
+    @request_manager.verify_request_body(SearchObjectRequest)
     def search(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
         patterns = body.get('patterns')
@@ -145,14 +109,14 @@ class DORBlueprint(SaaSBlueprint):
                                                                   data_type, data_format,
                                                                   c_hashes))
 
-    @request_manager.handle_request(statistics_response_schema)
+    @request_manager.handle_request(StatisticsResponse)
     @request_manager.require_dor()
     def statistics(self) -> (Response, int):
         return create_ok_response(self._node.db.get_statistics())
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(AddDataRequest.schema())
+    @request_manager.verify_request_body(AddDataObjectRequest)
     @request_manager.verify_request_files(['attachment'])
     def add(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
@@ -163,21 +127,21 @@ class DORBlueprint(SaaSBlueprint):
                                                      body['owner_iid'],
                                                      body['access_restricted'], body['content_encrypted']))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(AddGPPRequest.schema())
+    @request_manager.verify_request_body(AddGPPObjectRequest)
     def add_gpp(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
         return create_ok_response(self._node.dor.add_gpp(body['created_by'], body['gpp'], body['owner_iid'],
                                                          body['recipe'] if 'recipe' in body else None))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def delete(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.dor.delete(obj_id))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
     def get_meta(self, obj_id: str) -> (Response, int):
         record = self._node.db.get_object_by_id(obj_id)
@@ -202,7 +166,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_attachment(content_path)
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -218,7 +182,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.grant_access(obj_id, identity)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -235,7 +199,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.revoke_access(obj_id, identity)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def transfer_ownership(self, obj_id: str, iid: str) -> (Response, int):
@@ -253,9 +217,9 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_ownership(obj_id, new_owner)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(tags_body_specification)
+    @request_manager.verify_request_body(UpdateObjectTagsRequest)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def update_tags(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -266,9 +230,9 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_tags(obj_id, body)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(ObjectPropertiesResponse.schema())
+    @request_manager.handle_request(ObjectPropertiesResponse)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(delete_tags_body_specification)
+    @request_manager.verify_request_body(DeleteObjectTagsRequest)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def remove_tags(self, obj_id: str) -> (Response, int):
         # do we have this data object?
