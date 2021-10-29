@@ -129,9 +129,13 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                               stderr_path=os.path.join(local_working_directory, "execute.sh.stderr"))
 
         # wait for all outputs to be processed
-        status.update('task', f"wait for all outputs to be processed")
-        while len(context['threads']) > 0:
-            time.sleep(0.1)
+        while True:
+            remaining = len(context['threads'])
+            if remaining == 0:
+                break
+
+            status.update('task', f"wait for all outputs to be processed: remaining={remaining}")
+            time.sleep(1)
 
         # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
         if self._ssh_credentials is not None:
@@ -243,6 +247,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
                                 login=self._ssh_credentials['login'],
                                 host=self._ssh_credentials['host'],
                                 ssh_key_path=self._ssh_credentials['key_path'])
+            status.remove('task')
 
         # upload the data object to the target DOR
         try:
