@@ -16,7 +16,7 @@ logger = Logging.get('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
 
-class DeployProcessorRequest(BaseModel):
+class ProcessorDeploymentParameters(BaseModel):
     @unique
     class ProcessorDeploymentType(str, Enum):
         native = 'native'
@@ -37,11 +37,7 @@ class DeployProcessorRequest(BaseModel):
     gpp_custodian: Optional[str]
 
 
-class PutPermissionRequest(BaseModel):
-    __root__: str
-
-
-class DeployedProcessorsResponse(BaseModel):
+class DeployedProcessors(BaseModel):
     class DeployedProcessor(BaseModel):
         proc_id: str
         proc_descriptor: ProcessorDescriptor
@@ -49,13 +45,17 @@ class DeployedProcessorsResponse(BaseModel):
     __root__: List[DeployedProcessor]
 
 
-class JobsResponse(BaseModel):
+class JobDescriptors(BaseModel):
     __root__: List[JobDescriptor]
 
 
-class JobStatusResponse(BaseModel):
+class JobStatus(BaseModel):
     job_descriptor: JobDescriptor
     status: dict
+
+
+class ContentKey(BaseModel):
+    __root__: str
 
 
 class RTIBlueprint(SaaSBlueprint):
@@ -72,14 +72,14 @@ class RTIBlueprint(SaaSBlueprint):
         self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
 
-    @request_manager.handle_request(DeployedProcessorsResponse)
+    @request_manager.handle_request(DeployedProcessors)
     @request_manager.require_rti()
     def get_deployed(self) -> (Response, int):
         return create_ok_response(self._node.rti.get_deployed())
 
     @request_manager.handle_request(ProcessorDescriptor)
     @request_manager.require_rti()
-    @request_manager.verify_request_body(DeployProcessorRequest)
+    @request_manager.verify_request_body(ProcessorDeploymentParameters)
     def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
@@ -115,12 +115,12 @@ class RTIBlueprint(SaaSBlueprint):
         task_descriptor = request_manager.get_request_variable('body')
         return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
-    @request_manager.handle_request(JobsResponse)
+    @request_manager.handle_request(JobDescriptors)
     @request_manager.require_rti()
     def get_jobs(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_jobs(proc_id))
 
-    @request_manager.handle_request(JobStatusResponse)
+    @request_manager.handle_request(JobStatus)
     @request_manager.require_rti()
     def get_job_info(self, job_id: str) -> (Response, int):
         job_info = self._node.rti.get_job_info(job_id)
@@ -131,7 +131,7 @@ class RTIBlueprint(SaaSBlueprint):
 
     @request_manager.handle_request()
     @request_manager.require_rti()
-    @request_manager.verify_request_body(PutPermissionRequest)
+    @request_manager.verify_request_body(ContentKey)
     def put_permission(self, req_id: str) -> (Response, int):
         permission = request_manager.get_request_variable('body')
         self._node.rti.put_permission(req_id, permission)
