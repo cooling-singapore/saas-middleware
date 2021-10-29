@@ -87,10 +87,11 @@ def run_command(command: list[str], cwd: str = None, suppress_exception: bool = 
     return result
 
 
-def parse_stream(pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -> None:
+def parse_stream(name: str, pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -> None:
     while True:
         # read the line, strip the '\n' and break if nothing left
         line = pipe.readline().rstrip()
+        logger.debug(f"parse_stream[{name}]\t{line}")
         if not line:
             break
 
@@ -111,13 +112,12 @@ def monitor_command(command: list[str], triggers: dict, cwd: str = None,
 
     with open(stdout_path, 'x') as f_stdout:
         with open(stderr_path, 'x') as f_stderr:
-            proc = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            proc = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=f_stderr, universal_newlines=True)
             while proc.poll() is None:
-                parse_stream(proc.stdout, file=f_stdout, triggers=triggers)
-                parse_stream(proc.stderr, file=f_stderr)
+                parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
 
+            logger.debug(f"process is done: stdout={stdout_path} stderr={stderr_path}")
             proc.stdout.close()
-            proc.stderr.close()
 
 
 def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None) -> None:
