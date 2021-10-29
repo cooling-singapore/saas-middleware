@@ -137,14 +137,11 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             status.update('task', f"wait for all outputs to be processed: remaining={remaining}")
             time.sleep(1)
 
-        # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
+        # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if self._ssh_credentials is not None:
             # delete remote working directory
             status.update('task', f"delete remote working directory: {working_directory}")
             self._execute_command(f"rm -rf {working_directory}")
-
-            msg = f"delete remote working directory at {working_directory}"
-            status.update('status', msg)
 
         status.remove('task')
 
