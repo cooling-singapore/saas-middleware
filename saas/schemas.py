@@ -1,15 +1,14 @@
-from enum import unique, Enum
 from typing import Union, Literal, List, Optional
 
 from pydantic import BaseModel
 
 
-@unique
-class InputObjectTypes(str, Enum):
-    reference = "reference"
-    value = "value"
+class ObjectTag(BaseModel):
+    key: str
+    value: str
 
 
+# TODO: Update schema once pydantic supports discriminator
 class TaskDescriptor(BaseModel):
 
     class TaskInputReference(BaseModel):
