@@ -121,4 +121,3 @@ class ObjectProvenance(BaseModel):
     content_nodes: Optional[List[ProvenanceContentNode]]
     proc_nodes: Optional[List[ProvenanceProcNode]]
     steps: Optional[List[ProvenanceSteps]]
-
