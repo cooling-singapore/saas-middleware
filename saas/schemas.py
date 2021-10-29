@@ -1,6 +1,6 @@
 from typing import Union, Literal, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ObjectTag(BaseModel):
@@ -47,6 +47,7 @@ class ProcessorDescriptor(BaseModel):
         name: str
         data_type: str
         data_format: str
+        data_schema: Optional[dict] = Field(alias="schema")
 
     name: str
     input: List[ProcessorDataObject]
