@@ -16,7 +16,7 @@ from saas.keystore.assets.credentials import CredentialsAsset
 from saas.keystore.assets.keypair import KeyPairAsset, MasterKeyPairAsset
 from saas.keystore.exceptions import KeystoreException
 from saas.keystore.identity import Identity
-from saas.keystore.schemas import keystore_schema
+from saas.keystore.schemas import Keystore as KeystoreSchema
 from saas.logging import Logging
 
 logger = Logging.get('keystore.Keystore')
@@ -80,7 +80,7 @@ class Keystore:
 
         # load content and validate
         content = read_json_from_file(keystore_path)
-        if not validate_json(content, keystore_schema):
+        if not validate_json(content, KeystoreSchema.schema()):
             raise KeystoreException("Keystore content not compliant with json schema.")
 
         # create dict of assets
@@ -220,7 +220,7 @@ class Keystore:
         content['signature'] = self._s_key.sign(hash_json_object(content))
 
         # write contents to disk
-        write_json_to_file(content, self._path, schema=keystore_schema)
+        write_json_to_file(content, self._path, schema=KeystoreSchema.schema())
 
         # update identity
         self._update_identity()
