@@ -16,7 +16,7 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import keystore_schema
+from saas.keystore.schemas import Keystore as KeystoreSchema
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
@@ -54,7 +54,7 @@ def get_available_keystores(path: str) -> list[dict[str, str]]:
         # read content and validate
         keystore_path = os.path.join(path, f)
         content = read_json_from_file(keystore_path)
-        if validate_json(content, keystore_schema):
+        if validate_json(content, KeystoreSchema.schema()):
             available.append({
                 'keystore-id': temp[0],
                 'keystore-path': keystore_path,
