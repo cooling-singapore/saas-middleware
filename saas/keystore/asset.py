@@ -33,6 +33,10 @@ class Asset(ABC):
     def __init__(self, key: str) -> None:
         self._key = key
 
+    @property
+    def key(self):
+        return self._key
+
     @abstractmethod
     def serialise(self, protect_with: Any) -> dict:
         """Serialise instance into dict, with values protected using a key/password"""

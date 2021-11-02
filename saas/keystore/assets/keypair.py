@@ -89,13 +89,13 @@ class MasterKeyPairAsset(Asset):
         else:
             raise KeystoreException(f"Unrecognised keypair type '{content['info']}'")
 
-    def serialise(self, password: str) -> dict:
+    def serialise(self, protect_with: str) -> dict:
         return {
             'type': type(self).__name__,
             'key': self._key,
             'content':  {
                 'info': self._keypair.info(),
-                'pppk': self._keypair.private_as_string(password=password)
+                'pppk': self._keypair.private_as_string(password=protect_with)
             }
         }
 
