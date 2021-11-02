@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 import string
 from threading import Lock
-from typing import Any
+from typing import Any, Dict
+from pydantic import BaseModel, validator
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object
@@ -22,28 +23,74 @@ from saas.logging import Logging
 logger = Logging.get('keystore.Keystore')
 
 
-class Keystore:
-    def __init__(self, path: str, password: str, iid: str, assets: dict, profile: dict = None, nonce: int = 0) -> None:
-        self._mutex = Lock()
-        self._path = path
+# class Keystore:
+#     def __init__(self, path: str, password: str, iid: str, assets: dict, profile: dict = None, nonce: int = 0) -> None:
+#         self._mutex = Lock()
+#         self._path = path
+#         self._password = password
+#
+#         self._iid = iid
+#         self._profile = profile if profile else {
+#             'name': '',
+#             'email': '',
+#             'notes': ''
+#         }
+#         self.nonce = nonce
+#         self._assets = assets
+#
+#         # create shortcuts
+#         self._master = self._assets['master-key'].get()
+#         self._s_key = self._assets['signing-key'].get()
+#         self._e_key = self._assets['encryption-key'].get()
+#
+#         # update identity
+#         self._update_identity()
+
+REQUIRED_ASSETS = ["master-key", "signing-key", "encryption-key"]
+
+
+class Keystore(BaseModel):
+    class KeystoreProfile(BaseModel):
+        name: str = ""
+        email: str = ""
+        notes: str = ""
+
+    iid: str
+    profile: KeystoreProfile = KeystoreProfile()
+    assets: Dict[str, Asset]
+    nonce: int = 0
+
+    _path: str
+    _password: str
+    _identity: Identity
+    _mutex: Lock
+
+    # required key assets references
+    _master: KeyPair
+    _s_key: KeyPair
+    _e_key: KeyPair
+
+    @validator('assets')
+    def contains_required_key_assets(cls, v):
+        for key in REQUIRED_ASSETS:
+            if key not in v:
+                raise KeystoreException(f"Required asset '{key}' not found in keystore content.")
+            return v
+
+    class Config:
+        underscore_attrs_are_private = True
+        # arbitrary_types_allowed = True
+
+    def __init__(self, path: str, password: str, **data) -> None:
+        super().__init__(**data)
+
+        self._path = os.path.join(path, f"{self.iid}.json")
         self._password = password
+        self._mutex = Lock()
 
-        self._iid = iid
-        self._profile = profile if profile else {
-            'name': '',
-            'email': '',
-            'notes': ''
-        }
-        self._nonce = nonce
-        self._assets = assets
-
-        # create shortcuts
-        self._master = self._assets['master-key'].get()
-        self._s_key = self._assets['signing-key'].get()
-        self._e_key = self._assets['encryption-key'].get()
-
-        # update identity
-        self._update_identity()
+        self._master = self.assets['master-key'].get()
+        self._s_key = self.assets['signing-key'].get()
+        self._e_key = self.assets['encryption-key'].get()
 
     @classmethod
     def create(cls, path: str, name: str, email: str, password: str) -> Keystore:
@@ -60,7 +107,7 @@ class Keystore:
 
         # create keystore
         keystore_path = os.path.join(path, f"{keystore_id}.json")
-        keystore = Keystore(keystore_path, password, keystore_id, assets)
+        keystore = Keystore(keystore_path, password, iid=keystore_id, assets=assets)
 
         # update profile (which will also sync it to disk for the first time)
         keystore.update_profile(name=name, email=email)
@@ -123,7 +170,7 @@ class Keystore:
                                     f"content_hash={content_hash}, signature={content['signature']}.")
 
         # create keystore
-        keystore = Keystore(keystore_path, password, keystore_id, assets,
+        keystore = Keystore(keystore_path, password, iid=keystore_id, assets=assets,
                             profile=content['profile'], nonce=content['nonce'])
         logger.info(f"keystore loaded: iid={keystore.identity.id} "
                     f"s_key={keystore._s_key.public_as_string()} "
@@ -139,10 +186,10 @@ class Keystore:
     def update_profile(self, name: str = None, email: str = None) -> Identity:
         with self._mutex:
             if name is not None:
-                self._profile['name'] = name
+                self.profile.name = name
 
             if email is not None:
-                self._profile['email'] = email
+                self.profile.name = email
 
             if name or email:
                 self._sync_to_disk()
@@ -175,34 +222,34 @@ class Keystore:
 
     def has_asset(self, key: str) -> bool:
         with self._mutex:
-            return key in self._assets
+            return key in self.assets
 
     def get_asset(self, key: str) -> Any:
         with self._mutex:
-            return self._assets.get(key)
+            return self.assets.get(key)
 
     def update_asset(self, asset: Asset) -> None:
         with self._mutex:
-            self._assets[asset.key] = asset
+            self.assets[asset.key] = asset
             self._sync_to_disk()
 
     def _update_identity(self) -> None:
         # update and authenticate identity
-        self._identity = Identity(self._iid,
-                                  self._profile['name'],
-                                  self._profile['email'],
+        self._identity = Identity(self.iid,
+                                  self.profile.name,
+                                  self.profile.email,
                                   ECKeyPair.from_public_key(self._s_key.public_key),
                                   RSAKeyPair.from_public_key(self._e_key.public_key),
-                                  self._nonce)
+                                  self.nonce)
         self._identity.authenticate(self._s_key)
 
     def _sync_to_disk(self) -> None:
         # increase the nonce
-        self._nonce += 1
+        self.nonce += 1
 
         # serialise all assets
         serialised_assets = []
-        for key, asset in self._assets.items():
+        for key, asset in self.assets.items():
             if key == 'master-key':
                 serialised_assets.append(asset.serialise(password=self._password))
             else:
@@ -210,10 +257,10 @@ class Keystore:
 
         # bootstrap the content
         content = {
-            'iid': self._iid,
-            'profile': self._profile,
+            'iid': self.iid,
+            'profile': self.profile.dict(),
             'assets': serialised_assets,
-            'nonce': self._nonce
+            'nonce': self.nonce
         }
 
         # generate signature
