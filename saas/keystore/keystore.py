@@ -24,12 +24,13 @@ logger = Logging.get('keystore.Keystore')
 REQUIRED_ASSETS = ["master-key", "signing-key", "encryption-key"]
 
 
-class Keystore(BaseModel):
-    class KeystoreProfile(BaseModel):
-        name: str = ""
-        email: str = ""
-        notes: str = ""
+class KeystoreProfile(BaseModel):
+    name: str = ""
+    email: str = ""
+    notes: str = ""
 
+
+class Keystore(BaseModel):
     iid: str
     profile: KeystoreProfile = KeystoreProfile()
     assets: Dict[str, Union[Asset, KeyPairAsset]]
@@ -59,13 +60,15 @@ class Keystore(BaseModel):
     def __init__(self, path: str, password: str, **data) -> None:
         super().__init__(**data)
 
-        self._path = os.path.join(path, f"{self.iid}.json")
+        self._path = path
         self._password = password
         self._mutex = Lock()
 
         self._master = self.assets['master-key'].get()
         self._s_key = self.assets['signing-key'].get()
         self._e_key = self.assets['encryption-key'].get()
+
+        self._update_identity()
 
     @classmethod
     def create(cls, path: str, name: str, email: str, password: str) -> Keystore:
@@ -164,7 +167,7 @@ class Keystore(BaseModel):
                 self.profile.name = name
 
             if email is not None:
-                self.profile.name = email
+                self.profile.email = email
 
             if name or email:
                 self._sync_to_disk()
@@ -237,7 +240,7 @@ class Keystore(BaseModel):
         content['signature'] = self._s_key.sign(hash_json_object(content))
 
         # write contents to disk
-        write_json_to_file(content, self._path, schema=self.schema())
+        write_json_to_file(content, self._path)
 
         # update identity
         self._update_identity()
