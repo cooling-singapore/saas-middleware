@@ -3,70 +3,39 @@ from __future__ import annotations
 import os
 import string
 from threading import Lock
-from typing import Any, Dict, Union
-from pydantic import BaseModel, validator
+from typing import Any
+
+import pydantic
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
+from saas.helpers import generate_random_string, write_json_to_file
 from saas.keystore.asset import Asset
 from saas.keystore.assets.contentkeys import ContentKeysAsset
 from saas.keystore.assets.credentials import CredentialsAsset
 from saas.keystore.assets.keypair import KeyPairAsset, MasterKeyPairAsset
 from saas.keystore.exceptions import KeystoreException
 from saas.keystore.identity import Identity
-from saas.keystore.schemas import Keystore as KeystoreSchema
+from saas.keystore.schemas import SerializedKeystore, KeystoreObject
 from saas.logging import Logging
 
 logger = Logging.get('keystore.Keystore')
-REQUIRED_ASSETS = ["master-key", "signing-key", "encryption-key"]
 
 
-class KeystoreProfile(BaseModel):
-    name: str = ""
-    email: str = ""
-    notes: str = ""
-
-
-class Keystore(BaseModel):
-    iid: str
-    profile: KeystoreProfile = KeystoreProfile()
-    assets: Dict[str, Union[Asset, KeyPairAsset]]
-    nonce: int = 0
-
-    _path: str
-    _password: str
-    _identity: Identity
-    _mutex: Lock
-
-    # required key assets references
-    _master: KeyPair
-    _s_key: KeyPair
-    _e_key: KeyPair
-
-    @validator('assets')
-    def contains_required_key_assets(cls, v):
-        for key in REQUIRED_ASSETS:
-            if key not in v:
-                raise KeystoreException(f"Required asset '{key}' not found in keystore content.")
-            return v
-
-    class Config:
-        underscore_attrs_are_private = True
-        arbitrary_types_allowed = True
-
-    def __init__(self, path: str, password: str, **data) -> None:
-        super().__init__(**data)
-
+class Keystore:
+    def __init__(self, path: str, password: str, keystore_object: KeystoreObject) -> None:
         self._path = path
         self._password = password
         self._mutex = Lock()
 
-        self._master = self.assets['master-key'].get()
-        self._s_key = self.assets['signing-key'].get()
-        self._e_key = self.assets['encryption-key'].get()
+        self._keystore = keystore_object
+
+        # Keep references to essential keys
+        self._master = self._keystore.assets['master-key'].get()
+        self._s_key = self._keystore.assets['signing-key'].get()
+        self._e_key = self._keystore.assets['encryption-key'].get()
 
         self._update_identity()
 
@@ -85,7 +54,9 @@ class Keystore(BaseModel):
 
         # create keystore
         keystore_path = os.path.join(path, f"{keystore_id}.json")
-        keystore = Keystore(keystore_path, password, iid=keystore_id, assets=assets)
+        keystore = cls(keystore_path, password,
+                       KeystoreObject(iid=keystore_id, assets=assets, nonce=0,
+                                      profile=KeystoreObject.KeystoreProfile(name="", email="", notes="")))
 
         # update profile (which will also sync it to disk for the first time)
         keystore.update_profile(name=name, email=email)
@@ -104,52 +75,46 @@ class Keystore(BaseModel):
             raise FileNotFoundError(f"Keystore content not found at {keystore_path}")
 
         # load content and validate
-        content = read_json_from_file(keystore_path)
-        if not validate_json(content, KeystoreSchema.schema()):
+        try:
+            content = SerializedKeystore.parse_file(keystore_path)
+        except pydantic.ValidationError:
             raise KeystoreException("Keystore content not compliant with json schema.")
 
         # create dict of assets
-        assets = {}
-        for serialised_asset in content['assets']:
-            assets[serialised_asset['key']] = serialised_asset
-
-        # check if mandatory signing and encryption key assets are present
-        required = ['master-key', 'signing-key', 'encryption-key', 'content-keys']
-        for key in required:
-            if key not in assets:
-                raise KeystoreException(f"Required asset '{key}' not found in keystore content.")
+        assets = {serialised_asset.key: serialised_asset for serialised_asset in content.assets}
 
         # deserialise the master key and make shortcut
         assets['master-key'] = MasterKeyPairAsset.from_content(
-            'master-key', assets['master-key']['content'], password
+            'master-key', assets['master-key'].content, password
         )
         master = assets['master-key'].get()
 
         # deserialise all other assets
         for key, serialised_asset in assets.items():
             if key != 'master-key':
-                if serialised_asset['type'] == KeyPairAsset.__name__:
-                    assets[key] = KeyPairAsset.from_content(key, serialised_asset['content'], master)
+                if serialised_asset.type == KeyPairAsset.__name__:
+                    assets[key] = KeyPairAsset.from_content(key, serialised_asset.content, master)
 
-                elif serialised_asset['type'] == ContentKeysAsset.__name__:
-                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset['content'], master)
+                elif serialised_asset.type == ContentKeysAsset.__name__:
+                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset.content, master)
 
-                elif serialised_asset['type'] == ContentKeysAsset.__name__:
-                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset['content'], master)
+                elif serialised_asset.type == ContentKeysAsset.__name__:
+                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset.content, master)
 
-                elif serialised_asset['type'] == CredentialsAsset.__name__:
-                    assets[key] = CredentialsAsset.deserialise(key, serialised_asset['content'], master)
+                elif serialised_asset.type == CredentialsAsset.__name__:
+                    assets[key] = CredentialsAsset.deserialise(key, serialised_asset.content, master)
 
         # check if signature is valid
         s_key = assets['signing-key'].get()
-        content_hash = hash_json_object(content, exclusions=['signature'])
-        if not s_key.verify(content_hash, content['signature']):
+        content_hash = hash_json_object(content.dict(), exclusions=['signature'])
+        content_signature = content.signature
+        if not s_key.verify(content_hash, content_signature):
             raise KeystoreException(f"Invalid keystore content signature: "
-                                    f"content_hash={content_hash}, signature={content['signature']}.")
+                                    f"content_hash={content_hash}, signature={content_signature}.")
 
         # create keystore
-        keystore = Keystore(keystore_path, password, iid=keystore_id, assets=assets,
-                            profile=content['profile'], nonce=content['nonce'])
+        keystore = cls(keystore_path, password,
+                       KeystoreObject(iid=keystore_id, assets=assets, profile=content.profile, nonce=content.nonce))
         logger.info(f"keystore loaded: iid={keystore.identity.id} "
                     f"s_key={keystore._s_key.public_as_string()} "
                     f"e_key={keystore._e_key.public_as_string()}")
@@ -164,10 +129,10 @@ class Keystore(BaseModel):
     def update_profile(self, name: str = None, email: str = None) -> Identity:
         with self._mutex:
             if name is not None:
-                self.profile.name = name
+                self._keystore.profile.name = name
 
             if email is not None:
-                self.profile.email = email
+                self._keystore.profile.email = email
 
             if name or email:
                 self._sync_to_disk()
@@ -200,47 +165,45 @@ class Keystore(BaseModel):
 
     def has_asset(self, key: str) -> bool:
         with self._mutex:
-            return key in self.assets
+            return key in self._keystore.assets
 
     def get_asset(self, key: str) -> Any:
         with self._mutex:
-            return self.assets.get(key)
+            return self._keystore.assets.get(key)
 
     def update_asset(self, asset: Asset) -> None:
         with self._mutex:
-            self.assets[asset.key] = asset
+            self._keystore.assets[asset.key] = asset
             self._sync_to_disk()
 
     def _update_identity(self) -> None:
         # update and authenticate identity
-        self._identity = Identity(self.iid,
-                                  self.profile.name,
-                                  self.profile.email,
+        self._identity = Identity(self._keystore.iid,
+                                  self._keystore.profile.name,
+                                  self._keystore.profile.email,
                                   ECKeyPair.from_public_key(self._s_key.public_key),
                                   RSAKeyPair.from_public_key(self._e_key.public_key),
-                                  self.nonce)
+                                  self._keystore.nonce)
         self._identity.authenticate(self._s_key)
 
     def _sync_to_disk(self) -> None:
         # increase the nonce
-        self.nonce += 1
+        self._keystore.nonce += 1
 
         # serialise all assets
         serialised_assets = []
-        for key, asset in self.assets.items():
-            if key == 'master-key':
-                serialised_assets.append(asset.serialise(protect_with=self._password))
-            else:
-                serialised_assets.append(asset.serialise(protect_with=self._master))
+        for key, asset in self._keystore.assets.items():
+            protection = self._password if key == 'master-key' else self._master
+            serialised_assets.append(asset.serialise(protect_with=protection))
 
         # bootstrap the content
-        content = {**self.dict(exclude={"assets"}), "assets": serialised_assets}
-
+        content = self._keystore.dict(exclude={"assets"})
+        content["assets"] = serialised_assets
         # generate signature
         content['signature'] = self._s_key.sign(hash_json_object(content))
 
         # write contents to disk
-        write_json_to_file(content, self._path)
+        write_json_to_file(content, self._path, schema=SerializedKeystore.schema())
 
         # update identity
         self._update_identity()

@@ -16,7 +16,7 @@ from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import Keystore as KeystoreSchema
+from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
