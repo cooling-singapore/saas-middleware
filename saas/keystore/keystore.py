@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import string
 from threading import Lock
-from typing import Any, Dict
+from typing import Any, Dict, Union
 from pydantic import BaseModel, validator
 
 from saas.cryptography.eckeypair import ECKeyPair
@@ -21,31 +21,6 @@ from saas.keystore.schemas import Keystore as KeystoreSchema
 from saas.logging import Logging
 
 logger = Logging.get('keystore.Keystore')
-
-
-# class Keystore:
-#     def __init__(self, path: str, password: str, iid: str, assets: dict, profile: dict = None, nonce: int = 0) -> None:
-#         self._mutex = Lock()
-#         self._path = path
-#         self._password = password
-#
-#         self._iid = iid
-#         self._profile = profile if profile else {
-#             'name': '',
-#             'email': '',
-#             'notes': ''
-#         }
-#         self.nonce = nonce
-#         self._assets = assets
-#
-#         # create shortcuts
-#         self._master = self._assets['master-key'].get()
-#         self._s_key = self._assets['signing-key'].get()
-#         self._e_key = self._assets['encryption-key'].get()
-#
-#         # update identity
-#         self._update_identity()
-
 REQUIRED_ASSETS = ["master-key", "signing-key", "encryption-key"]
 
 
@@ -57,7 +32,7 @@ class Keystore(BaseModel):
 
     iid: str
     profile: KeystoreProfile = KeystoreProfile()
-    assets: Dict[str, Asset]
+    assets: Dict[str, Union[Asset, KeyPairAsset]]
     nonce: int = 0
 
     _path: str
@@ -79,7 +54,7 @@ class Keystore(BaseModel):
 
     class Config:
         underscore_attrs_are_private = True
-        # arbitrary_types_allowed = True
+        arbitrary_types_allowed = True
 
     def __init__(self, path: str, password: str, **data) -> None:
         super().__init__(**data)
@@ -251,23 +226,18 @@ class Keystore(BaseModel):
         serialised_assets = []
         for key, asset in self.assets.items():
             if key == 'master-key':
-                serialised_assets.append(asset.serialise(password=self._password))
+                serialised_assets.append(asset.serialise(protect_with=self._password))
             else:
                 serialised_assets.append(asset.serialise(protect_with=self._master))
 
         # bootstrap the content
-        content = {
-            'iid': self.iid,
-            'profile': self.profile.dict(),
-            'assets': serialised_assets,
-            'nonce': self.nonce
-        }
+        content = {**self.dict(exclude={"assets"}), "assets": serialised_assets}
 
         # generate signature
         content['signature'] = self._s_key.sign(hash_json_object(content))
 
         # write contents to disk
-        write_json_to_file(content, self._path, schema=KeystoreSchema.schema())
+        write_json_to_file(content, self._path, schema=self.schema())
 
         # update identity
         self._update_identity()
