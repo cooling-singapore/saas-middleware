@@ -24,7 +24,7 @@ class KeyPairAsset(Asset):
         self._keypair = keypair
 
     @classmethod
-    def from_content(cls, key: str, content: dict, master_key: KeyPair) -> KeyPairAsset:
+    def deserialise(cls, key: str, content: dict, master_key: KeyPair) -> KeyPairAsset:
         # verify content
         validate_json(content, KeyPairAsset.content_schema)
 
@@ -73,7 +73,7 @@ class MasterKeyPairAsset(Asset):
         self._keypair = keypair
 
     @classmethod
-    def from_content(cls, key: str, content: dict, password: str) -> MasterKeyPairAsset:
+    def deserialise(cls, key: str, content: dict, password: str) -> MasterKeyPairAsset:
         # verify content
         validate_json(content, MasterKeyPairAsset.content_schema)
 
