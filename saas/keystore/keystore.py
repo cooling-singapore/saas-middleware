@@ -175,12 +175,12 @@ class Keystore:
 
     def _update_identity(self) -> None:
         # update and authenticate identity
-        self._identity = Identity(self._keystore.iid,
-                                  self._keystore.profile.name,
-                                  self._keystore.profile.email,
-                                  ECKeyPair.from_public_key(self._s_key.public_key),
-                                  RSAKeyPair.from_public_key(self._e_key.public_key),
-                                  self._keystore.nonce)
+        self._identity = Identity(id=self._keystore.iid,
+                                  name=self._keystore.profile.name,
+                                  email=self._keystore.profile.email,
+                                  s_public_key=ECKeyPair.from_public_key(self._s_key.public_key),
+                                  e_public_key=RSAKeyPair.from_public_key(self._e_key.public_key),
+                                  nonce=self._keystore.nonce)
         self._identity.authenticate(self._s_key)
 
     def _sync_to_disk(self) -> None:
