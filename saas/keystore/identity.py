@@ -7,6 +7,7 @@ from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.keystore.schemas import Identity as IdentitySchema
 
+
 @dataclass
 class Identity:
     id: str
@@ -24,11 +25,12 @@ class Identity:
     @classmethod
     def deserialise(cls, content: dict) -> Identity:
         # Validate Identity
-        IdentitySchema.parse_obj(content)
+        _identity = IdentitySchema.parse_obj(content)
 
         s_public_key = ECKeyPair.from_public_key_string(content['s_public_key'])
         e_public_key = RSAKeyPair.from_public_key_string(content['e_public_key'])
-        return cls(**content, s_public_key=s_public_key, e_public_key=e_public_key)
+        return cls(id=_identity.iid, name=_identity.name, email=_identity.email, nonce=_identity.nonce,
+                   signature=_identity.signature, s_public_key=s_public_key, e_public_key=e_public_key)
 
     def s_public_key_as_string(self) -> str:
         return self.s_public_key.public_as_string()
