@@ -84,7 +84,7 @@ class Keystore:
         assets = {serialised_asset.key: serialised_asset for serialised_asset in content.assets}
 
         # deserialise the master key and make shortcut
-        assets['master-key'] = MasterKeyPairAsset.from_content(
+        assets['master-key'] = MasterKeyPairAsset.deserialise(
             'master-key', assets['master-key'].content, password
         )
         master = assets['master-key'].get()
@@ -93,13 +93,10 @@ class Keystore:
         for key, serialised_asset in assets.items():
             if key != 'master-key':
                 if serialised_asset.type == KeyPairAsset.__name__:
-                    assets[key] = KeyPairAsset.from_content(key, serialised_asset.content, master)
+                    assets[key] = KeyPairAsset.deserialise(key, serialised_asset.content, master)
 
                 elif serialised_asset.type == ContentKeysAsset.__name__:
-                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset.content, master)
-
-                elif serialised_asset.type == ContentKeysAsset.__name__:
-                    assets[key] = ContentKeysAsset.from_content(key, serialised_asset.content, master)
+                    assets[key] = ContentKeysAsset.deserialise(key, serialised_asset.content, master)
 
                 elif serialised_asset.type == CredentialsAsset.__name__:
                     assets[key] = CredentialsAsset.deserialise(key, serialised_asset.content, master)

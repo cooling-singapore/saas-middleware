@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from abc import ABC, abstractmethod
 from copy import copy
@@ -40,3 +42,8 @@ class Asset(ABC):
     @abstractmethod
     def serialise(self, protect_with: Any) -> dict:
         """Serialise instance into dict, with values protected using a key/password"""
+
+    @classmethod
+    @abstractmethod
+    def deserialise(cls, key: str, content: dict, protection: Any) -> Asset:
+        """"""
