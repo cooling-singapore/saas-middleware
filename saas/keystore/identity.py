@@ -67,7 +67,4 @@ class Identity:
             'signature': self.signature
         }
 
-        # Validate Identity
-        IdentitySchema.parse_obj(content)
-
         return content
