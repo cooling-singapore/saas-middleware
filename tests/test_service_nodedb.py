@@ -40,7 +40,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         network = self.node.db.get_network_all()
         assert(len(network) == 1)
-        assert(network[0]['iid'] == self.node.identity().id)
+        assert(network[0].iid == self.node.identity().id)
 
     def test_add_update_remove_tags(self):
         # add dummy data object
@@ -322,7 +322,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # at this point node1 should only know about itself
         network = node1.db.get_network_all()
-        network = [item['iid'] for item in network]
+        network = [item.iid for item in network]
         assert(len(network) == 1)
         assert(node1.identity().id in network)
 

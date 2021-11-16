@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import time
@@ -6,6 +8,7 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional
 
+import saas.node
 from saas.cryptography.helpers import encrypt_file, decrypt_file
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
@@ -13,14 +16,14 @@ from saas.dor.blueprint import DORProxy
 from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.exceptions import SaaSException
+from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
+    validate_json
 from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError
 from saas.rti.status import State, StatusLogger
-from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
-    validate_json
 
 logger = Logging.get('rti.adapters')
 
@@ -35,7 +38,7 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node) -> None:
+    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node: saas.node.Node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()
@@ -207,10 +210,10 @@ class RTIProcessorAdapter(Thread, ABC):
         found = {}
         for peer in self._node.db.get_network_all():
             # only check with peers that have a DOR
-            if peer['dor_service']:
+            if peer.dor_service:
                 try:
                     # does the remote DOR have the data object?
-                    records = protocol.lookup(peer['p2p_address'], [*pending.keys()], user)
+                    records = protocol.lookup(peer.get_p2p_address(), [*pending.keys()], user)
                     for obj_id, record in records.items():
                         found[obj_id] = record
                         found[obj_id]['custodian'] = peer

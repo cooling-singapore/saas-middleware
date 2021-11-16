@@ -1,11 +1,14 @@
-import os
-import json
-from stat import S_IREAD
+from __future__ import annotations
 
+import json
+import os
+from stat import S_IREAD
 from threading import Lock
 from typing import Optional
 
+import saas.node
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
@@ -15,8 +18,6 @@ from saas.rti.adapters.native import RTINativeProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, \
     ProcessorNotDeployedError, UnexpectedGPPMetaInformation, GPPDataObjectNotFound
 from saas.rti.status import StatusLogger, State
-
-from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
 
 logger = Logging.get('rti.service')
 
@@ -30,7 +31,7 @@ class RuntimeInfrastructureService:
     def proc_meta_path(self, obj_id: str) -> str:
         return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
 
-    def __init__(self, node) -> None:
+    def __init__(self, node: saas.node.Node) -> None:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
@@ -66,12 +67,12 @@ class RuntimeInfrastructureService:
 
             # if we have a custodian, then drop all other nodes in the network
             if gpp_custodian:
-                network = [item for item in network if item['iid'] == gpp_custodian]
+                network = [item for item in network if item.iid == gpp_custodian]
 
             # search the network for the GPP data object
             for network_node in network:
                 # skip this node if doesn't have a DOR
-                if network_node['dor_service'] is False:
+                if network_node.dor_service is False:
                     continue
 
                 # try to fetch the data object using the P2P protocol
@@ -79,7 +80,7 @@ class RuntimeInfrastructureService:
 
                 # lookup the data object
                 try:
-                    records = protocol.lookup(network_node['p2p_address'], [proc_id])
+                    records = protocol.lookup(network_node.get_p2p_address(), [proc_id])
                     if proc_id not in records:
                         continue
 
@@ -101,7 +102,7 @@ class RuntimeInfrastructureService:
                 try:
                     meta_path = self.proc_meta_path(proc_id)
                     content_path = self.proc_content_path(record['c_hash'])
-                    protocol.fetch(network_node['p2p_address'], proc_id, meta_path, content_path)
+                    protocol.fetch(network_node.get_p2p_address(), proc_id, meta_path, content_path)
 
                 # ignore peers that are not available
                 except PeerUnavailableError:

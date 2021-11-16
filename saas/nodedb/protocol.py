@@ -52,8 +52,9 @@ class NodeDBP2PProtocol(P2PProtocol):
             # get all nodes in the network and add any nodes that we may not have been aware of
             network = self.node.db.get_network_all()
             for record in network:
-                if record['p2p_address'] not in processed and record['p2p_address'] not in remaining:
-                    remaining.append(record['p2p_address'])
+                _address = record.get_p2p_address()
+                if _address not in processed and _address not in remaining:
+                    remaining.append(_address)
 
     def update_peer(self, peer_address: (str, int), reciprocate: bool, forward: bool) -> Optional[dict]:
         # send the message via request to the peer
@@ -108,8 +109,8 @@ class NodeDBP2PProtocol(P2PProtocol):
 
             # forward the message to all peers we know of (while skipping the ones in the ignore list)
             for record in self.node.db.get_network_all():
-                if record['iid'] not in message['forward_ignore']:
-                    self.request(record['p2p_address'], message)
+                if record.iid not in message['forward_ignore']:
+                    self.request(record.p2p_address, message)
 
         # reciprocate with an update message
         return self._prepare_update_message(self.node.db.create_sync_snapshot(exclude_self=True),
@@ -124,9 +125,9 @@ class NodeDBP2PProtocol(P2PProtocol):
 
         result = self.broadcast(message)
         for unavailable in result['unavailable']:
-            logger.debug(f"unavailable peer at {unavailable['p2p_address']} known to us as {unavailable['iid']} -> "
+            logger.debug(f"unavailable peer at {unavailable.get_p2p_address()} known to us as {unavailable.iid} -> "
                          f"remove network record")
-            self.node.db.remove_network(unavailable['iid'])
+            self.node.db.remove_network(unavailable.iid)
 
     def _handle_leave(self, message: dict, peer: Identity) -> None:
         # does the identity check out?

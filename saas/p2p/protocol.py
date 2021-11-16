@@ -1,11 +1,20 @@
-from typing import Optional
+from __future__ import annotations
 
+from typing import Optional, TypedDict
+
+import saas.node
 from saas.keystore.identity import Identity
 from saas.logging import Logging
+from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger
 
 logger = Logging.get('p2p.protocol')
+
+
+class BroadCastMessage(TypedDict):
+    responses: dict
+    unavailable: list[NetworkNode]
 
 
 class P2PProtocol:
@@ -13,7 +22,7 @@ class P2PProtocol:
     P2PProtocol is the base class for all P2P protocol classes. It provides convenience methods that are
     needed regardless of the specific protocol implementation.
     """
-    def __init__(self, node, protocol_name: str, function_mapping: dict):
+    def __init__(self, node: saas.node.Node, protocol_name: str, function_mapping: dict):
         self._node = node
         self._protocol_name = protocol_name
         self._function_mapping = function_mapping
@@ -24,7 +33,7 @@ class P2PProtocol:
         return f"{self._seq_id_counter:04d}"
 
     @property
-    def node(self):
+    def node(self) -> saas.node.Node:
         return self._node
 
     @property
@@ -79,7 +88,7 @@ class P2PProtocol:
         messenger.close()
         return response['content'], response['attachment']
 
-    def broadcast(self, message: dict, exclude: list[str] = None) -> dict[str, dict]:
+    def broadcast(self, message: dict, exclude: list[str] = None) -> BroadCastMessage:
         """
         Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
         broadcast. Note that the db registry typically also includes a record for the db its hosted on. In order
@@ -99,13 +108,13 @@ class P2PProtocol:
         unavailable = []
         for record in self._node.db.get_network_all():
             # is this peer iid in the exclusion list?
-            if record['iid'] in exclude:
+            if record.iid in exclude:
                 continue
 
             # connect to the peer (if it is online), send a request and keep the response. if a peer is not available,
             # we just skip it (this is a broadcast and we can't expect every peer in the list to be online/reachable).
             try:
-                peer, messenger = SecureMessenger.connect(record['p2p_address'],
+                peer, messenger = SecureMessenger.connect(record.get_p2p_address(),
                                                           self._node.identity(),
                                                           self._node.datastore())
                 responses[peer.id] = messenger.send_request(message, message['attachment'])
