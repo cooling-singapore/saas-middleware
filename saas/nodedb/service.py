@@ -1,11 +1,11 @@
 import json
+from dataclasses import dataclass, asdict
 from typing import Optional, Union
 
 import canonicaljson
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, inspect, Table
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, registry
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object, hash_string_object
@@ -17,7 +17,8 @@ from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
 
 logger = Logging.get('nodedb.service')
 
-Base = declarative_base()
+mapper_registry = registry()
+Base = mapper_registry.generate_base()
 
 
 class DataObjectRecord(Base):
@@ -69,14 +70,35 @@ class IdentityRecord(Base):
     signature = Column(String, nullable=True)
 
 
-class NetworkNode(Base):
-    __tablename__ = 'network_node'
-    iid = Column(String(64), primary_key=True)
-    last_seen = Column(BigInteger, nullable=False)
-    p2p_address = Column(String(21), nullable=False)
-    rest_address = Column(String(21), nullable=True)
-    dor_service = Column(Boolean, nullable=False)
-    rti_service = Column(Boolean, nullable=False)
+@mapper_registry.mapped
+@dataclass
+class NetworkNode:
+    __table__ = Table(
+        'network_node',
+        mapper_registry.metadata,
+        Column("iid", String(64), primary_key=True),
+        Column("last_seen", BigInteger, nullable=False),
+        Column("p2p_address", String(21), nullable=False),
+        Column("rest_address", String(21), nullable=True),
+        Column("dor_service", Boolean, nullable=False),
+        Column("rti_service", Boolean, nullable=False)
+    )
+
+    iid: str
+    last_seen: int
+    p2p_address: str
+    rest_address: Optional[str]
+    dor_service: bool
+    rti_service: bool
+
+    def get_p2p_address(self):
+        return self.p2p_address.split(":")
+
+    def get_rest_address(self) -> (str, str):
+        return self.rest_address.split(':') if self.rest_address else None
+
+    def asdict(self) -> dict:
+        return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
 
 
 class NodeDBService:
@@ -410,8 +432,9 @@ class NodeDBService:
             # address but different)?
             conflicting_records = session.query(NetworkNode).filter(
                 (NetworkNode.iid != node_iid) & (
-                    (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
-                    ((NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
+                        (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
+                        ((
+                                 NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
                 )
             ).all()
 
@@ -480,28 +503,9 @@ class NodeDBService:
                 'rti_service': record.rti_service
             } if record else None
 
-    def get_network_all(self, valid_json: bool = False) -> list[dict]:
+    def get_network_all(self) -> list[NetworkNode]:
         with self._Session() as session:
-            records = session.query(NetworkNode).all()
-            result = [{
-                'iid': record.iid,
-                'last_seen': record.last_seen,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service
-            } for record in records]
-
-            # make it a valid JSON object?
-            if valid_json:
-                for record in result:
-                    record['p2p_address'] = f"{record['p2p_address'][0]}:{record['p2p_address'][1]}"
-                    if record['rest_address'] is None:
-                        record.pop('rest_address')
-                    else:
-                        record['rest_address'] = f"{record['rest_address'][0]}:{record['rest_address'][1]}"
-
-            return result
+            return session.query(NetworkNode).all()
 
     def add_recipe(self, c_hash: str, recipe: dict) -> None:
         with self._Session() as session:
