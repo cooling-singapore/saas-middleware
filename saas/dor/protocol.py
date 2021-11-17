@@ -4,7 +4,7 @@ from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.p2p.exceptions import AttachmentNotFoundError
-from saas.p2p.protocol import P2PProtocol
+from saas.p2p.protocol import P2PProtocol, P2PMessage
 from saas.helpers import write_json_to_file
 
 logger = Logging.get('dor.protocol')
@@ -26,7 +26,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         }))
         return result
 
-    def _handle_lookup(self, message: dict, peer: Identity) -> dict:
+    def _handle_lookup(self, message: dict) -> P2PMessage:
         # get the records for all the objects
         records = {}
         for obj_id in message['obj_ids']:
@@ -88,7 +88,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # move the data object content to the destination path
         os.rename(attachment_path, destination_content_path)
 
-    def _handle_fetch(self, message: dict, peer: Identity) -> dict:
+    def _handle_fetch(self, message: dict, peer: Identity) -> P2PMessage:
         # check if we have that data object
         obj_id = message['obj_id']
         obj_record = self.node.db.get_object_by_id(obj_id)

@@ -4,7 +4,7 @@ from saas.helpers import get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
-from saas.p2p.protocol import P2PProtocol
+from saas.p2p.protocol import P2PProtocol, P2PMessage
 
 logger = Logging.get('nodedb.protocol')
 
@@ -19,7 +19,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         })
 
     def _prepare_update_message(self, snapshot: dict, reciprocate: bool, forward: bool,
-                                ignore: list[str] = None) -> dict:
+                                ignore: list[str] = None) -> P2PMessage:
         return self.prepare_message('update', {
             'self': {
                 'identity': self.node.identity().serialise(),
@@ -76,7 +76,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         message = self._prepare_update_message(snapshot, reciprocate=False, forward=False)
         self.broadcast(message)
 
-    def _handle_update(self, message: dict, peer: Identity) -> dict:
+    def _handle_update(self, message: dict, peer: Identity) -> P2PMessage:
         # does the identity check out?
         if message['self']['identity']['iid'] != peer.id:
             raise UnexpectedIdentityError({

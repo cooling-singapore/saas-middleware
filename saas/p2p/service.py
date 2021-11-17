@@ -9,7 +9,7 @@ from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.p2p.exceptions import P2PException, MalformedMessageError, UnsupportedProtocolError, \
     UnexpectedMessageTypeError
-from saas.p2p.protocol import SecureMessenger, P2PProtocol
+from saas.p2p.protocol import SecureMessenger, P2PProtocol, P2PMessage
 
 logger = Logging.get('p2p.service')
 
@@ -124,34 +124,34 @@ class P2PService:
                 })
 
             # check if th request content is well-formed
-            content = request['content']
-            content_required = ['protocol', 'type', 'content', 'attachment']
-            if not all(p in content for p in content_required):
+            try:
+                content = P2PMessage(**request['content'])
+            except TypeError:
                 raise MalformedMessageError({
-                    'request_content': content,
-                    'required': content_required
+                    'request_content': request['content'],
+                    'required': P2PMessage.__annotations__
                 })
 
             # is the protocol supported?
-            if not content['protocol'] in self._registered_protocols:
+            if not content.protocol in self._registered_protocols:
                 raise UnsupportedProtocolError({
-                    'request_content': content,
+                    'request_content': request['content'],
                     'supported': [*self._registered_protocols.keys()]
                 })
 
             # is the message type supported by the protocol?
-            protocol: P2PProtocol = self._registered_protocols[content['protocol']]
-            if not protocol.supports(content['type']):
+            protocol: P2PProtocol = self._registered_protocols[content.protocol]
+            if not protocol.supports(content.type):
                 raise UnexpectedMessageTypeError({
                     'request': request,
-                    'type': content['type'],
+                    'type': content.type,
                     'protocol_name': protocol.name
                 })
 
             # let the protocol handle the message and send response back to peer (if any)
             response = protocol.handle_message(content, peer)
             if response:
-                messenger.send_response(request['request_id'], response['content'], response['attachment'])
+                messenger.send_response(request['request_id'], response.content, response.attachment)
             else:
                 # if no response is provided, we reply with a simple 'acknowledge'
                 messenger.send_response(request['request_id'], protocol.prepare_message('acknowledge'))

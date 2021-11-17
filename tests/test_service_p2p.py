@@ -83,7 +83,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         try:
             # prepare a message and then replace the protocol manually with something invalid
             message = protocol.prepare_message('msg_type', {'key': 'value'})
-            message['protocol'] = 'alsjdfhskjdf'
+            message.protocol = 'alsjdfhskjdf'
             _ = messenger.send_request(message)
             assert False
 
