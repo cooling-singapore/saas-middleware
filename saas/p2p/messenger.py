@@ -7,6 +7,7 @@ import base64
 import socket
 import snappy
 from json import JSONDecodeError
+from dataclasses import is_dataclass
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.helpers import generate_random_string
@@ -24,6 +25,13 @@ from saas.p2p.exceptions import ReceiveDataError, SendDataError, MalformedPreamb
     UnexpectedMessageTypeError, MismatchingRequestIdError, PeerUnavailableError, P2PException
 
 logger = Logging.get('p2p.messenger')
+
+
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if is_dataclass(obj):
+            return obj.__dict__
+        return json.JSONEncoder.default(self, obj)
 
 
 class SecureMessenger:
@@ -242,7 +250,7 @@ class SecureMessenger:
     def _send_object(self, content: dict) -> int:
         try:
             # convert the content object into the message and encrypt it
-            message = json.dumps(content)
+            message = json.dumps(content, cls=CustomEncoder)
             message = message.encode('utf-8')
             message = self._cipher.encrypt(message)
 
