@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional, Union
 
 import canonicaljson
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, inspect, Table
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, Table
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, registry
 
@@ -159,20 +159,12 @@ class NodeDBService:
 
     def get_statistics(self) -> dict:
         with self._Session() as session:
+            test = session.query(DataObjectRecord.data_type).distinct()
             result = {
-                'data_types': [],
-                'data_formats': [],
-                'tag_keys': []
+                'data_types': [value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
+                'data_formats': [value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
+                'tag_keys': sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
             }
-
-            for value in session.query(DataObjectRecord.data_type).distinct():
-                result['data_types'].append(value[0])
-
-            for value in session.query(DataObjectRecord.data_format).distinct():
-                result['data_formats'].append(value[0])
-
-            for value in session.query(DataObjectTag.key).distinct():
-                result['tag_keys'].append(value[0])
 
             return result
 
