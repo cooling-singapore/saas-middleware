@@ -34,7 +34,7 @@ def validate_json(content: dict, schema: dict) -> bool:
         return False
 
 
-def read_json_from_file(path: str, schema: dict = None) -> dict:
+def read_json_from_file(path: str, schema: dict = None) -> Union[list, dict]:
     with open(path, 'r') as f:
         content = json.load(f)
 
@@ -45,7 +45,8 @@ def read_json_from_file(path: str, schema: dict = None) -> dict:
         return content
 
 
-def write_json_to_file(content: dict, path: str, schema: dict = None, indent: int = 4, sort_keys: bool = False):
+def write_json_to_file(content: Union[list, dict], path: str, schema: dict = None, indent: int = 4,
+                       sort_keys: bool = False):
     with open(path, 'w') as f:
         json.dump(content, f, indent=indent, sort_keys=sort_keys)
 
