@@ -6,6 +6,7 @@ import time
 
 from jsonschema import validate
 
+from saas.cryptography.helpers import hash_string_object
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
 from saas.keystore.assets.credentials import GithubCredentials
@@ -28,7 +29,12 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         self._ssh_credentials = ssh_credentials
         self._github_credentials = github_credentials
 
+        # create the proc-temp directory if doesn't already exist
+        self._proc_temp_path = os.path.join(node.datastore(), 'proc-temp')
+        os.makedirs(self._proc_temp_path, exist_ok=True)
+
         # substitute home path with $HOME - check if $HOME is actually present
+        # TODO: this local/remote $HOME path thing is poorly implemented and ought to be fixed [#189]
         self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
         if os.environ['HOME'] in self._repo_home:
             self._repo_home = self._repo_home.replace(os.environ['HOME'], "$HOME")
@@ -211,7 +217,21 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         return result.returncode == 0
 
     def _echo_to_file(self, path: str, content: str) -> None:
-        self._execute_command(f"echo \"{content}\" > {path}")
+        # write content to temp file
+        temp_path = os.path.join(self._proc_temp_path, hash_string_object(path).hex())
+        with open(temp_path, 'w') as f:
+            f.write(content)
+
+        # move/copy file to final destination
+        if self._ssh_credentials:
+            path = path.replace("$HOME", '~')
+            scp_local_to_remote(temp_path, path, self._ssh_credentials['login'], self._ssh_credentials['host'],
+                                self._ssh_credentials['key_path'])
+            os.remove(temp_path)
+
+        else:
+            path = path.replace("$HOME", os.environ['HOME'])
+            os.rename(temp_path, path)
 
     def _handle_trigger_output(self, line: str, context: dict) -> None:
         obj_name = line.split(':')[2]
