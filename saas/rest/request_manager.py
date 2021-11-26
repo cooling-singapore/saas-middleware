@@ -194,6 +194,66 @@ class RequestManager:
             return wrapper
         return decorated_func
 
+    def verify_authorisation_by_user(self, obj_id: str):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                # determine url and body
+                url = f'{request.method}:{request.path}'
+                _obj_id = kwargs[obj_id]
+                body = json.loads(request.values['body']) if 'body' in request.values else None
+
+                # is the object access restricted?
+                obj_meta = self.node.db.get_object_by_id(_obj_id)
+                if obj_meta['access_restricted']:
+                    # get the authorisation information
+                    form = request.form.to_dict()
+                    authorisation = json.loads(form['authorisation'])
+
+                    # iterate over all identities and figure out if the authorisation public key is among
+                    # the identities that have access
+                    for user_iid in obj_meta['access']:
+                        user = self.node.db.get_identity(user_iid)
+                        user_public_key = user.s_public_key_as_string() if user else ''
+                        auth_public_key = authorisation['public_key']
+                        if user_public_key == auth_public_key:
+                            # verify the the request using the owner public key
+                            if verify_authorisation_token(user, authorisation['signature'], url, body):
+                                return func(*args, **kwargs)
+                            else:
+                                raise AuthorisationFailedError({
+                                    'obj_id': _obj_id,
+                                    'user': user.serialise(),
+                                    'authorisation': authorisation,
+                                    'url': url,
+                                    'body': body
+                                })
+
+                    # if we have reached here then either no user has been granted access or the authorisation
+                    # public key doesn't match. let's try the owner as last instance.
+                    owner: Identity = self.node.db.get_owner(_obj_id)
+                    if not owner:
+                        raise AuthorisationFailedError({
+                            'obj_id': _obj_id,
+                            'owner': None
+                        })
+
+                    # verify the the request using the owner public key
+                    if verify_authorisation_token(owner, authorisation['signature'], url, body):
+                        return func(*args, **kwargs)
+                    else:
+                        raise AuthorisationFailedError({
+                            'obj_id': _obj_id,
+                            'owner': owner.serialise(),
+                            'authorisation': authorisation,
+                            'url': url,
+                            'body': body
+                        })
+
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
     def require_dor(self):
         def decorated_func(func):
             @functools.wraps(func)
