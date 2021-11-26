@@ -225,7 +225,7 @@ class DORBlueprint(SaaSBlueprint):
 
     @request_manager.handle_request(None)
     @request_manager.require_dor()
-    @request_manager.verify_authorisation_by_owner('obj_id')
+    @request_manager.verify_authorisation_by_user('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
