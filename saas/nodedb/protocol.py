@@ -4,6 +4,7 @@ from saas.helpers import get_timestamp_now
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
+from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.protocol import P2PProtocol
 
 logger = Logging.get('nodedb.protocol')
@@ -47,7 +48,12 @@ class NodeDBP2PProtocol(P2PProtocol):
 
             # for join, we expect the peer to reciprocate and not to forward our message (because we will
             # contact them directly)
-            self.update_peer(peer_address, reciprocate=True, forward=False)
+            try:
+                self.update_peer(peer_address, reciprocate=True, forward=False)
+
+            except PeerUnavailableError:
+                logger.debug(f"Peer at {peer_address} unavailable -> Removing from NodeDB.")
+                self.node.db.remove_network(node_address=peer_address)
 
             # get all nodes in the network and add any nodes that we may not have been aware of
             network = self.node.db.get_network_all()
@@ -126,7 +132,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         for unavailable in result['unavailable']:
             logger.debug(f"unavailable peer at {unavailable['p2p_address']} known to us as {unavailable['iid']} -> "
                          f"remove network record")
-            self.node.db.remove_network(unavailable['iid'])
+            self.node.db.remove_network(node_iid=unavailable['iid'])
 
     def _handle_leave(self, message: dict, peer: Identity) -> None:
         # does the identity check out?
@@ -138,4 +144,4 @@ class NodeDBP2PProtocol(P2PProtocol):
 
         # update the db information about the peer
         self.node.db.update_identity(message['self']['identity'])
-        self.node.db.remove_network(peer.id)
+        self.node.db.remove_network(node_iid=peer.id)
