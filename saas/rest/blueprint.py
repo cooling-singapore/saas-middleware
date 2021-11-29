@@ -10,47 +10,24 @@ from saas.rest.exceptions import UnexpectedHTTPError, MalformedResponseError, Un
 
 logger = Logging.get('rest.blueprint')
 
-response_envelope_schema = {
+error_response_schema = {
     'type': 'object',
     'properties': {
-        'status': {'type': 'string', 'enum': ['ok', 'error']}
+        'reason': {'type': 'string'},
+        'exception_id': {'type': 'string'},
+        'details': {'type': 'string'}
     },
-    'if': {
-        'properties': {'type': {'const': 'ok'}}
-    },
-    'then': {
-        'properties': {
-            'response': {
-                "anyOf": [{'type': 'object'}, {'type': 'array'}]
-            }
-        }
-    },
-    'else': {
-        'properties': {
-            'reason': {'type': 'string'},
-            'exception_id': {'type': 'string'},
-            'details': {'type': 'string'}
-        },
-        'required': ['reason', 'exception_id']
-    },
-    'required': ['status']
+    'required': ['reason', 'exception_id']
 }
 
 
-def create_ok_response(response: Union[dict, list] = None) -> (Response, int):
+def create_ok_response(content: Union[dict, list] = None) -> (Response, int):
     """
     Creates an 'Ok' response envelope containing an optional response.
-    :param response: (optional) response
-    :return: response envelope
+    :param content: (optional) response content
+    :return: response
     """
-    envelope = {
-        'status': 'ok'
-    }
-
-    if response is not None:
-        envelope['response'] = response
-
-    return jsonify(envelope), 200
+    return jsonify(content if content else {}), 200
 
 
 def create_ok_attachment(content_path: str) -> (Response, int):
@@ -71,16 +48,16 @@ def create_error_response(reason: str, exception_id: str, details: str = None) -
     :param details: (optional) details about the error
     :return: response envelope
     """
-    envelope = {
+    content = {
         'status': 'error',
         'reason': reason,
         'exception_id': exception_id,
     }
 
     if details is not None:
-        envelope['details'] = details
+        content['details'] = details
 
-    return jsonify(envelope), 200
+    return jsonify(content), 500
 
 
 def extract_response(response: Response) -> Optional[Union[dict, list]]:
@@ -91,28 +68,26 @@ def extract_response(response: Response) -> Optional[Union[dict, list]]:
     :return: extracted response content (if any)
     :raise UnsuccessfulRequestError
     """
-    # the status code should always be 200
-    if response.status_code != 200:
-        raise UnexpectedHTTPError({
-            'response': response
-        })
 
-    # extract the JSON content and validate
-    envelope = response.json()
-    if not validate_json(envelope, schema=response_envelope_schema):
-        raise MalformedResponseError({
-            'envelope': envelope
-        })
+    if response.status_code == 200:
+        return response.json()
 
-    # is the response ok or do we have an error?
-    if envelope['status'] == 'ok':
-        return envelope['response'] if 'response' in envelope else None
+    elif response.status_code == 500:
+        # validate the JSON content
+        content = response.json()
+        if not validate_json(content, schema=error_response_schema):
+            raise MalformedResponseError({
+                'content': content
+            })
+
+        raise UnsuccessfulRequestError(content['reason'],
+                                       content['exception_id'],
+                                       content['details'] if 'details' in content else None
+                                       )
 
     else:
-        raise UnsuccessfulRequestError({
-            'reason': envelope['reason'],
-            'details': envelope['details'] if 'details' in envelope else None,
-            'exception_id': envelope['exception_id']
+        raise UnexpectedHTTPError({
+            'response': response
         })
 
 
