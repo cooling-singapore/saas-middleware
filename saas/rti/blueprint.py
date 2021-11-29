@@ -1,4 +1,8 @@
+from enum import unique, Enum
+from typing import List, Optional
+
 from flask import Response
+from pydantic import BaseModel
 
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
@@ -6,66 +10,52 @@ from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
-from saas.schemas import task_descriptor_schema, job_descriptor_schema, processor_descriptor_schema
+from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor
 
 logger = Logging.get('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
-deployed_processors_schema = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'proc_id': {'type': 'string'},
-            'proc_descriptor': processor_descriptor_schema
-        },
-        'required': ['proc_id', 'proc_descriptor']
-    }
-}
 
-put_permission_body_schema = {
-    'type': 'string'
-}
+class ProcessorDeploymentParameters(BaseModel):
+    @unique
+    class ProcessorDeploymentType(str, Enum):
+        native = 'native'
+        docker = 'docker'
 
-deployment_specification = {
-    'type': 'object',
-    'properties': {
-        'deployment': {'type': 'string', 'enum': ['native', 'docker']},
-        'ssh_credentials': {
-            'type': 'object',
-            'properties': {
-                'host': {'type': 'string'},
-                'login': {'type': 'string'},
-                'key': {'type': 'string'}
-            },
-            'required': ['host', 'login', 'key']
-        },
-        'github_credentials': {
-            'type': 'object',
-            'properties': {
-                'login': {'type': 'string'},
-                'personal_access_token': {'type': 'string'}
-            },
-            'required': ['login', 'personal_access_token']
-        },
-        'gpp_custodian': {'type': 'string'}
-    },
-    'required': ['deployment']
-}
+    class SSHCredentials(BaseModel):
+        host: str
+        login: str
+        key: str
 
-jobs_descriptor_schema = {
-    'type': 'array',
-    'items': job_descriptor_schema
-}
+    class GitHubCredentials(BaseModel):
+        login: str
+        personal_access_token: str
 
-job_details_schema = {
-    'type': 'object',
-    'properties': {
-        'job_descriptor': job_descriptor_schema,
-        'status': {'type': 'object'}
-    },
-    'required': ['job_descriptor', 'status']
-}
+    deployment: ProcessorDeploymentType
+    ssh_credentials: Optional[SSHCredentials]
+    github_credentials: Optional[GitHubCredentials]
+    gpp_custodian: Optional[str]
+
+
+class DeployedProcessors(BaseModel):
+    class DeployedProcessor(BaseModel):
+        proc_id: str
+        proc_descriptor: ProcessorDescriptor
+
+    __root__: List[DeployedProcessor]
+
+
+class JobDescriptors(BaseModel):
+    __root__: List[JobDescriptor]
+
+
+class JobStatus(BaseModel):
+    job_descriptor: JobDescriptor
+    status: dict
+
+
+class ContentKey(BaseModel):
+    __root__: str
 
 
 class RTIBlueprint(SaaSBlueprint):
@@ -82,14 +72,14 @@ class RTIBlueprint(SaaSBlueprint):
         self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
 
-    @request_manager.handle_request(deployed_processors_schema)
+    @request_manager.handle_request(DeployedProcessors)
     @request_manager.require_rti()
     def get_deployed(self) -> (Response, int):
         return create_ok_response(self._node.rti.get_deployed())
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor)
     @request_manager.require_rti()
-    @request_manager.verify_request_body(deployment_specification)
+    @request_manager.verify_request_body(ProcessorDeploymentParameters)
     def deploy(self, proc_id: str) -> (Response, int):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
@@ -108,29 +98,29 @@ class RTIBlueprint(SaaSBlueprint):
                                                         github_credentials=github_credentials,
                                                         gpp_custodian=gpp_custodian))
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor)
     @request_manager.require_rti()
     def undeploy(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.undeploy(proc_id))
 
-    @request_manager.handle_request(processor_descriptor_schema)
+    @request_manager.handle_request(ProcessorDescriptor)
     @request_manager.require_rti()
     def get_descriptor(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_descriptor(proc_id))
 
-    @request_manager.handle_request(job_descriptor_schema)
+    @request_manager.handle_request(JobDescriptor)
     @request_manager.require_rti()
-    @request_manager.verify_request_body(task_descriptor_schema)
+    @request_manager.verify_request_body(TaskDescriptor)
     def submit_job(self, proc_id: str) -> (Response, int):
         task_descriptor = request_manager.get_request_variable('body')
         return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
-    @request_manager.handle_request(jobs_descriptor_schema)
+    @request_manager.handle_request(JobDescriptors)
     @request_manager.require_rti()
     def get_jobs(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_jobs(proc_id))
 
-    @request_manager.handle_request(job_details_schema)
+    @request_manager.handle_request(JobStatus)
     @request_manager.require_rti()
     def get_job_info(self, job_id: str) -> (Response, int):
         job_info = self._node.rti.get_job_info(job_id)
@@ -139,9 +129,9 @@ class RTIBlueprint(SaaSBlueprint):
             'status': job_info['status']
         })
 
-    @request_manager.handle_request(None)
+    @request_manager.handle_request()
     @request_manager.require_rti()
-    @request_manager.verify_request_body(put_permission_body_schema)
+    @request_manager.verify_request_body(ContentKey)
     def put_permission(self, req_id: str) -> (Response, int):
         permission = request_manager.get_request_variable('body')
         self._node.rti.put_permission(req_id, permission)

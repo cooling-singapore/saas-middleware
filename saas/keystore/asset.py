@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import json
+from abc import ABC, abstractmethod
 from copy import copy
+from typing import Any
 
 from saas.cryptography.keypair import KeyPair
 
@@ -27,10 +31,19 @@ def deserialise(content: dict, protected_properties: list, master_key: KeyPair) 
     return content
 
 
-class Asset:
+class Asset(ABC):
     def __init__(self, key: str) -> None:
         self._key = key
 
     @property
-    def key(self) -> str:
+    def key(self):
         return self._key
+
+    @abstractmethod
+    def serialise(self, protect_with: Any) -> dict:
+        """Serialise instance into dict, with values protected using a key/password"""
+
+    @classmethod
+    @abstractmethod
+    def deserialise(cls, key: str, content: dict, protection: Any) -> Asset:
+        """"""

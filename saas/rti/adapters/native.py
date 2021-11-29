@@ -14,7 +14,7 @@ from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
 from saas.rti.status import StatusLogger
-from saas.schemas import git_proc_pointer_schema
+from saas.schemas import GitProcessorPointer
 
 logger = Logging.get('rti.adapters.native')
 
@@ -46,7 +46,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         # read the git processor pointer (gpp)
         with open(obj_content_path, 'rb') as f:
             self._gpp = json.load(f)
-            validate(instance=self._gpp, schema=git_proc_pointer_schema)
+            validate(instance=self._gpp, schema=GitProcessorPointer.schema())
 
         # set the processor path
         self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])

@@ -12,7 +12,7 @@ from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.blueprint import RTIProxy
-from saas.schemas import task_descriptor_schema
+from saas.schemas import TaskDescriptor
 
 logger = Logging.get('cli.rti')
 
@@ -324,7 +324,7 @@ class RTIJobSubmit(CLICommand):
 
             # read the file and validate
             job_descriptor = read_json_from_file(args['job'])
-            if not validate_json(job_descriptor, task_descriptor_schema):
+            if not validate_json(job_descriptor, TaskDescriptor.schema()):
                 raise CLIRuntimeError(f"Invalid job descriptor. Aborting.")
 
             # is the processor deployed?

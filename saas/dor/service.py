@@ -12,7 +12,7 @@ from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.keystore.assets.credentials import GithubCredentials, CredentialsAsset
 from saas.keystore.identity import Identity
 from saas.logging import Logging
-from saas.schemas import processor_descriptor_schema, git_proc_pointer_schema
+from saas.schemas import ProcessorDescriptor, GitProcessorPointer
 
 logger = Logging.get('dor.service')
 
@@ -41,7 +41,7 @@ class DataObjectRepositoryService:
             raise IdentityNotFoundError(owner_iid)
 
         # verify the GPP object
-        if not validate_json(gpp, git_proc_pointer_schema):
+        if not validate_json(gpp, GitProcessorPointer.schema()):
             raise InvalidGPPDataObjectError({
                 'gpp': gpp
             })
@@ -83,7 +83,7 @@ class DataObjectRepositoryService:
 
         # read the processor descriptor
         gpp['proc_descriptor'] = read_json_from_file(proc_descriptor_path)
-        if not validate_json(gpp['proc_descriptor'], processor_descriptor_schema):
+        if not validate_json(gpp['proc_descriptor'], ProcessorDescriptor.schema()):
             raise InvalidProcessorDescriptorError({
                 'gpp': gpp
             })

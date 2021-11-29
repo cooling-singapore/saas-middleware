@@ -1,6 +1,8 @@
 import os
+from typing import Optional, List, Union
 
 from flask import Response
+from pydantic import BaseModel
 
 from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFoundError, IdentityNotFoundError
 from saas.keystore.assets.credentials import GithubCredentials
@@ -8,141 +10,79 @@ from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
-from saas.schemas import git_proc_pointer_schema, recipe_schema
+from saas.schemas import GitProcessorPointer, ObjectRecipe, ObjectTag
 from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 
 logger = Logging.get('dor.blueprint')
 endpoint_prefix = "/api/v1/repository"
 
-search_body_specification = {
-    'type': 'object',
-    'properties': {
-        'owner_iid': {'type': 'string'},
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'patterns': {
-            'type': 'array',
-            'items': {'type': 'string'}
-        }
-    }
-}
 
-add_body_specification = {
-    'type': 'object',
-    'properties': {
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'created_by': {'type': 'string'},
-        'recipe': recipe_schema,
-        'owner_iid': {'type': 'string'},
-        'access_restricted': {'type': 'boolean'},
-        'content_encrypted': {'type': 'boolean'}
-    },
-    'required': ['data_type', 'data_format', 'created_by', 'owner_iid', 'access_restricted', 'content_encrypted']
-}
+class SaaSObject(BaseModel):
+    data_type: str
+    data_format: str
+    created_by: str
+    recipe: Optional[ObjectRecipe]
+    owner_iid: str
 
-add_gpp_body_specification = {
-    'type': 'object',
-    'properties': {
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'created_by': {'type': 'string'},
-        'recipe': recipe_schema,
-        'owner_iid': {'type': 'string'},
-        'gpp': git_proc_pointer_schema,
-        'github_credentials': {
-            'type': 'object',
-            'properties': {
-                'login': {'type': 'string'},
-                'personal_access_token': {'type': 'string'}
-            },
-            'required': ['login', 'personal_access_token']
-        }
-    },
-    'required': ['data_type', 'data_format', 'created_by', 'owner_iid', 'gpp']
-}
 
-tags_body_specification = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'key': {'type': 'string'},
-            'value': {'type': 'string'}
-        },
-        'required': ['key', 'value']
-    }
-}
+class DataObject(SaaSObject):
+    access_restricted: bool
+    content_encrypted: bool
 
-delete_tags_body_specification = {
-    'type': 'array',
-    'items': {
-        'type': 'string'
-    }
-}
 
-tags_response_schema = {
-    'type': 'array',
-    'items': {
-        'type': 'object',
-        'properties': {
-            'key': {'type': 'string'},
-            'value': {'type': 'string'}
-        },
-        'required': ['key', 'value']
-    }
-}
+class GPPObject(SaaSObject):
+    gpp: GitProcessorPointer
 
-access_response_schema = {
-    'type': 'array',
-    'items': {'type': 'string'}
-}
 
-obj_response_schema = {
-    'type': 'object',
-    'properties': {
-        'obj_id': {'type': 'string'},
-        'c_hash': {'type': 'string'},
-        'data_type': {'type': 'string'},
-        'data_format': {'type': 'string'},
-        'created_by': {'type': 'string'},
-        'created_t': {'type': 'number'},
-        'gpp': git_proc_pointer_schema,
-        'recipe': recipe_schema,
-        'owner_iid': {'type': 'string'},
-        'access_restricted': {'type': 'boolean'},
-        'content_encrypted': {'type': 'boolean'},
-        'tags': tags_response_schema,
-        'access': access_response_schema
-    },
-    'required': ['obj_id', 'c_hash', 'data_type', 'data_format', 'created_by', 'created_t',
-                 'owner_iid', 'access_restricted', 'content_encrypted', 'tags', 'access']
-}
+class GPPObjectWithCredentials(GPPObject):
+    class GitHubCredentials(BaseModel):
+        login: str
+        personal_access_token: str
+    
+    github_credentials: Optional[GithubCredentials]
 
-search_response_schema = {
-    'type': 'array',
-    'items': obj_response_schema
-}
 
-statistics_response_schema = {
-    'type': 'object',
-    'properties': {
-        'data_types': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-        'data_formats': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-        'tag_keys': {
-            'type': 'array',
-            'items': {'type':'string'}
-        },
-    },
-    'required': ['data_types', 'data_formats', 'tag_keys']
-}
+class ObjectTagKeys(BaseModel):
+    __root__: List[str]
+
+
+class ObjectTags(BaseModel):
+    __root__: List[ObjectTag]
+
+
+class DORObject(BaseModel):
+    class AdditionalProperties(BaseModel):
+        obj_id: str
+        c_hash: str
+        created_t: int
+        tags: List[ObjectTag]
+        access: List[str]
+
+    class DORDataObject(DataObject, AdditionalProperties):
+        pass
+
+    class DORGPPObject(GPPObject, AdditionalProperties):
+        pass
+
+    __root__: Union[DORDataObject, DORGPPObject]
+
+
+class DORObjects(BaseModel):
+    __root__: List[DORObject]
+
+
+class ObjectSearchParameters(BaseModel):
+    owner_iid: Optional[str]
+    data_type: Optional[str]
+    data_format: Optional[str]
+    patterns: Optional[List[str]]
+
+
+class DORStatistics(BaseModel):
+    data_types: List[str]
+    data_formats: List[str]
+    tag_keys: List[str]
 
 
 class DORBlueprint(SaaSBlueprint):
@@ -163,9 +103,9 @@ class DORBlueprint(SaaSBlueprint):
         self.add_rule('<obj_id>/tags', self.update_tags, ['PUT'])
         self.add_rule('<obj_id>/tags', self.remove_tags, ['DELETE'])
 
-    @request_manager.handle_request(search_response_schema)
+    @request_manager.handle_request(DORObjects)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(search_body_specification)
+    @request_manager.verify_request_body(ObjectSearchParameters)
     def search(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
         patterns = body.get('patterns')
@@ -177,14 +117,14 @@ class DORBlueprint(SaaSBlueprint):
                                                                   data_type, data_format,
                                                                   c_hashes))
 
-    @request_manager.handle_request(statistics_response_schema)
+    @request_manager.handle_request(DORStatistics)
     @request_manager.require_dor()
     def statistics(self) -> (Response, int):
         return create_ok_response(self._node.db.get_statistics())
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(add_body_specification)
+    @request_manager.verify_request_body(DataObject)
     @request_manager.verify_request_files(['attachment'])
     def add(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
@@ -195,9 +135,9 @@ class DORBlueprint(SaaSBlueprint):
                                                      body['owner_iid'],
                                                      body['access_restricted'], body['content_encrypted']))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(add_gpp_body_specification)
+    @request_manager.verify_request_body(GPPObjectWithCredentials)
     def add_gpp(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
 
@@ -209,13 +149,13 @@ class DORBlueprint(SaaSBlueprint):
                                                          body['recipe'] if 'recipe' in body else None,
                                                          github_credentials))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def delete(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.dor.delete(obj_id))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
     def get_meta(self, obj_id: str) -> (Response, int):
         record = self._node.db.get_object_by_id(obj_id)
@@ -223,7 +163,7 @@ class DORBlueprint(SaaSBlueprint):
             raise DataObjectNotFoundError(obj_id)
         return create_ok_response(record)
 
-    @request_manager.handle_request(None)
+    @request_manager.handle_request()
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_user('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
@@ -240,7 +180,7 @@ class DORBlueprint(SaaSBlueprint):
 
         return create_ok_attachment(content_path)
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def grant_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -256,7 +196,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.grant_access(obj_id, identity)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def revoke_access(self, obj_id: str, iid: str) -> (Response, int):
@@ -273,7 +213,7 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.revoke_access(obj_id, identity)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
     @request_manager.verify_authorisation_by_owner('obj_id')
     def transfer_ownership(self, obj_id: str, iid: str) -> (Response, int):
@@ -291,9 +231,9 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_ownership(obj_id, new_owner)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(tags_body_specification)
+    @request_manager.verify_request_body(ObjectTags)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def update_tags(self, obj_id: str) -> (Response, int):
         # do we have this data object?
@@ -304,9 +244,9 @@ class DORBlueprint(SaaSBlueprint):
         self._node.db.update_tags(obj_id, body)
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
-    @request_manager.handle_request(obj_response_schema)
+    @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(delete_tags_body_specification)
+    @request_manager.verify_request_body(ObjectTagKeys)
     @request_manager.verify_authorisation_by_owner('obj_id')
     def remove_tags(self, obj_id: str) -> (Response, int):
         # do we have this data object?
