@@ -2,6 +2,8 @@ import time
 import unittest
 import logging
 
+from pydantic import BaseModel
+
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
@@ -15,21 +17,19 @@ endpoint_prefix = "/api/v1/test"
 
 
 class TestBlueprint(SaaSBlueprint):
-    info_response_schema = {
-        'type': 'object',
-        'properties': {
-            'message': {'type': 'string'}
-        },
-        'required': ['message']
-    }
+    class TestRequest(BaseModel):
+        __root__: dict
+
+    class TestResponse(BaseModel):
+        message: str
 
     def __init__(self):
         super().__init__('test', __name__, endpoint_prefix)
 
         self.add_rule('info/<value>', self.get_info, ['GET'])
 
-    @request_manager.verify_request_body({'type': 'object'})
-    @request_manager.handle_request(info_response_schema)
+    @request_manager.verify_request_body(TestRequest)
+    @request_manager.handle_request(TestResponse)
     def get_info(self, value: str):
         body = request_manager.get_request_variable('body')
 
