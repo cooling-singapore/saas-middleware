@@ -36,11 +36,11 @@ class GPPObject(SaaSObject):
 
 
 class GPPObjectWithCredentials(GPPObject):
-    class GitHubCredentials(BaseModel):
+    class GPPGitHubCredentials(BaseModel):
         login: str
         personal_access_token: str
     
-    github_credentials: Optional[GithubCredentials]
+    github_credentials: Optional[GPPGitHubCredentials]
 
 
 class ObjectTagKeys(BaseModel):
