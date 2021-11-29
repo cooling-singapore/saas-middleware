@@ -21,53 +21,111 @@ mapper_registry = registry()
 Base = mapper_registry.generate_base()
 
 
-class DataObjectRecord(Base):
-    __tablename__ = 'obj_record'
-    obj_id = Column(String(64), primary_key=True)
+@mapper_registry.mapped
+@dataclass
+class DataObjectRecord:
+    __table__ = Table(
+        'obj_record',
+        mapper_registry.metadata,
+
+        Column("obj_id", String(64), primary_key=True),
+
+        Column("c_hash", String(64), nullable=False),
+        Column("data_type", String(64), nullable=False),
+        Column("data_format", String(64), nullable=False),
+        Column("created_by", String(64), nullable=False),
+        Column("created_t", Integer, nullable=False),
+        Column("gpp", Text, nullable=True),
+
+        Column("owner_iid", String(64), nullable=False),
+        Column("access_restricted", Boolean, nullable=False),
+        Column("content_encrypted", Boolean, nullable=False)
+    )
+
+    obj_id: str
 
     # IMMUTABLE part of meta information:
-    c_hash = Column(String(64), nullable=False)
-    data_type = Column(String(64), nullable=False)
-    data_format = Column(String(64), nullable=False)
-    created_by = Column(String(64), nullable=False)
-    created_t = Column(Integer, nullable=False)
-    gpp = Column(Text, nullable=True)
+    c_hash: str
+    data_type: str
+    data_format: str
+    created_by: str
+    created_t: str
+    gpp: Optional[str]
 
     # MUTABLE part of meta information:
-    owner_iid = Column(String(64), nullable=False)
-    access_restricted = Column(Boolean, nullable=False)
-    content_encrypted = Column(Boolean, nullable=False)
+    owner_iid: str
+    access_restricted: bool
+    content_encrypted: bool
 
 
-class DataObjectRecipe(Base):
-    __tablename__ = 'obj_recipe'
-    c_hash = Column(String(64), primary_key=True)
-    r_hash = Column(String(64), primary_key=True)
-    recipe = Column(Text, nullable=False)
+@mapper_registry.mapped
+@dataclass
+class DataObjectRecipe:
+    __table__ = Table(
+        'obj_recipe',
+        mapper_registry.metadata,
+        Column("c_hash", String(64), primary_key=True),
+        Column("r_hash", String(64), primary_key=True),
+        Column("recipe", Text, nullable=False)
+    )
+
+    c_hash: str
+    r_hash: str
+    recipe: str
 
 
-class DataObjectTag(Base):
-    __tablename__ = 'obj_tag'
-    obj_id = Column(String(64), primary_key=True)
-    key = Column(String(64), primary_key=True)
-    value = Column(String(256))
+@mapper_registry.mapped
+@dataclass
+class DataObjectTag:
+    __table__ = Table(
+        'obj_tag',
+        mapper_registry.metadata,
+        Column("obj_id", String(64), primary_key=True),
+        Column("key", String(64), primary_key=True),
+        Column("value", String(256))
+    )
+
+    obj_id: str
+    key: str
+    value: str
 
 
-class DataObjectAccess(Base):
-    __tablename__ = 'obj_access'
-    obj_id = Column(String(64), primary_key=True)
-    key_iid = Column(String(64), primary_key=True)
+@mapper_registry.mapped
+@dataclass
+class DataObjectAccess:
+    __table__ = Table(
+        'obj_access',
+        mapper_registry.metadata,
+        Column("obj_id", String(64), primary_key=True),
+        Column("key_iid", String(64), primary_key=True)
+    )
+
+    obj_id: str
+    key_iid: str
 
 
-class IdentityRecord(Base):
-    __tablename__ = 'identity'
-    iid = Column(String(64), primary_key=True)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
-    nonce = Column(Integer, nullable=False)
-    s_public_key = Column(String, nullable=True)
-    e_public_key = Column(String, nullable=True)
-    signature = Column(String, nullable=True)
+@mapper_registry.mapped
+@dataclass
+class IdentityRecord:
+    __table__ = Table(
+        'identity',
+        mapper_registry.metadata,
+        Column("iid", String(64), primary_key=True),
+        Column("name", String, nullable=False),
+        Column("email", String, nullable=False),
+        Column("nonce", Integer, nullable=False),
+        Column("s_public_key", String, nullable=True),
+        Column("e_public_key", String, nullable=True),
+        Column("signature", String, nullable=True)
+    )
+
+    iid: str
+    name: str
+    email: str
+    nonce: int
+    s_public_key: Optional[str]
+    e_public_key: Optional[str]
+    signature: Optional[str]
 
 
 @mapper_registry.mapped
