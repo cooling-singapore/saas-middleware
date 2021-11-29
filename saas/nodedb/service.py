@@ -57,6 +57,13 @@ class DataObjectRecord:
     access_restricted: bool
     content_encrypted: bool
 
+    def as_dict(self) -> dict:
+        record_dict = asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
+        if self.gpp is not None:
+            record_dict['gpp'] = json.loads(self.gpp)
+
+        return record_dict
+
 
 @mapper_registry.mapped
 @dataclass
@@ -155,7 +162,7 @@ class NetworkNode:
     def get_rest_address(self) -> (str, str):
         return self.rest_address.split(':') if self.rest_address else None
 
-    def asdict(self) -> dict:
+    def as_dict(self) -> dict:
         return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
 
 
@@ -244,7 +251,7 @@ class NodeDBService:
             if c_hashes is not None:
                 q = q.filter(DataObjectRecord.c_hash.in_(c_hashes))
 
-            object_records = q.all()
+            object_records: list[DataObjectRecord] = q.all()
 
             # second, filter data objects by patterns (if any)
             result = []
@@ -265,19 +272,11 @@ class NodeDBService:
                 if patterns is None or any(pattern in flattened for pattern in patterns):
                     access = session.query(DataObjectAccess).filter_by(obj_id=obj_record.obj_id).all()
 
-                    result.append({
-                        'obj_id': obj_record.obj_id,
-                        'c_hash': obj_record.c_hash,
-                        'data_type': obj_record.data_type,
-                        'data_format': obj_record.data_format,
-                        'created_by': obj_record.created_by,
-                        'created_t': obj_record.created_t,
-                        'owner_iid': obj_record.owner_iid,
-                        'access_restricted': obj_record.access_restricted,
-                        'content_encrypted': obj_record.content_encrypted,
-                        'tags': tags,
-                        'access': [record.key_iid for record in access]
-                    })
+                    obj_record_dict = obj_record.as_dict()
+                    obj_record_dict["tags"] = tags
+                    obj_record_dict["access"] = [record.key_iid for record in access]
+
+                    result.append(obj_record_dict)
 
             return result
 
@@ -351,33 +350,19 @@ class NodeDBService:
     def get_object_by_id(self, obj_id: str) -> Optional[dict]:
         with self._Session() as session:
             # do we have an object with this id?
-            record = session.query(DataObjectRecord).get(obj_id)
+            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
             if record is None:
                 return None
 
+            result = record.as_dict()
+
             # get all tags
             tags = session.query(DataObjectTag).filter_by(obj_id=obj_id).all()
+            result["tags"] = [{'key': tag.key, 'value': tag.value} for tag in tags]
 
             # get list of all identities that have access
             access = session.query(DataObjectAccess).filter_by(obj_id=obj_id).all()
-
-            # prepare the data object information
-            result = {
-                'obj_id': record.obj_id,
-                'c_hash': record.c_hash,
-                'data_type': record.data_type,
-                'data_format': record.data_format,
-                'created_by': record.created_by,
-                'created_t': record.created_t,
-                'owner_iid': record.owner_iid,
-                'access_restricted': record.access_restricted,
-                'content_encrypted': record.content_encrypted,
-                'tags': [{'key': tag.key, 'value': tag.value} for tag in tags],
-                'access': [record.key_iid for record in access]
-            }
-
-            if record.gpp is not None:
-                result['gpp'] = json.loads(record.gpp)
+            result["access"] = [record.key_iid for record in access]
 
             return result
 
@@ -541,17 +526,10 @@ class NodeDBService:
             record = session.query(NetworkNode).filter_by(p2p_address=f"{p2p_address[0]}:{p2p_address[1]}").first()
             return record.iid if record else None
 
-    def get_network(self, node_iid: str) -> Optional[dict]:
+    def get_network(self, node_iid: str) -> Optional[NetworkNode]:
         with self._Session() as session:
-            record = session.query(NetworkNode).get(node_iid)
-            return {
-                'iid': record.iid,
-                'last_seen': record.iid,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service
-            } if record else None
+            record: NetworkNode = session.query(NetworkNode).get(node_iid)
+            return record
 
     def get_network_all(self) -> list[NetworkNode]:
         with self._Session() as session:

@@ -464,7 +464,7 @@ class RTIProcessorAdapter(Thread, ABC):
             node_record = self._node.db.get_network(task_out['target_node_iid'])
 
             # extract the rest address from that node record
-            target_address = node_record['rest_address']
+            target_address = node_record.get_rest_address()
 
         # determine recipe
         recipe = {
