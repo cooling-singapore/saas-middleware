@@ -14,6 +14,10 @@ class EndpointProxy:
         self._endpoint_prefix = endpoint_prefix
         self._remote_address = remote_address
 
+    @property
+    def remote_address(self):
+        return self._remote_address
+
     def get(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, download_path: str = None,
             with_authorisation_by: Keystore = None) -> Optional[Union[dict, list]]:
 
