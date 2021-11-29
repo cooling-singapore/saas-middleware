@@ -64,7 +64,7 @@ class NodeDBBlueprint(SaaSBlueprint):
     @request_manager.handle_request(NetworkNodes)
     def get_network(self) -> (Response, int):
         return create_ok_response(
-            [n.asdict() for n in self._node.db.get_network_all()]
+            [n.as_dict() for n in self._node.db.get_network_all()]
         )
 
     @request_manager.handle_request(Identities)
