@@ -49,7 +49,7 @@ class DataObjectRecord:
     data_type: str
     data_format: str
     created_by: str
-    created_t: str
+    created_t: int
     gpp: Optional[str]
 
     # MUTABLE part of meta information:
