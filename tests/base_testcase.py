@@ -72,12 +72,39 @@ class TestCaseBase:
             self._next_rest_port += 1
             return address
 
-    def create_keystores(self, n: int) -> list[Keystore]:
+    def create_keystores(self, n: int, use_credentials: bool = False) -> list[Keystore]:
         keystores = []
         for i in range(n):
-            keystores.append(
-                Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
-            )
+            keystore = Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
+            keystores.append(keystore)
+
+            if use_credentials:
+                credentials = read_json_from_file('credentials.json')
+
+                # do we have SSH credentials?
+                if 'ssh-credentials' in credentials:
+                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
+                    for item in credentials['ssh-credentials']:
+                        # read the ssh key from file
+                        with open(item['key_path'], 'r') as f:
+                            ssh_key = f.read()
+
+                        ssh_cred.update(item['name'], SSHCredentials(
+                            item['host'],
+                            item['login'],
+                            ssh_key
+                        ))
+                    keystore.update_asset(ssh_cred)
+
+                # do we have Github credentials?
+                if 'github-credentials' in credentials:
+                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
+                    for item in credentials['github-credentials']:
+                        github_cred.update(item['repository'], GithubCredentials(
+                            item['login'],
+                            item['personal_access_token']
+                        ))
+                    keystore.update_asset(github_cred)
 
         return keystores
 

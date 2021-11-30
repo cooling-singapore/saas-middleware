@@ -162,26 +162,40 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         self.dor_proxy.delete_data_object(obj_id, owner1_k)
 
     def test_get_content(self):
-        owner = self.extras[1].identity
+        owner = self.extras[1]
+        user = self.extras[2]
         meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
-                                              owner, False, False, 'map', 'json', owner.name)
+                                              owner.identity, True, False, 'map', 'json', owner.identity.name)
         obj_id = meta['obj_id']
-
-        # only the OWNER can get the content via the REST API
-
         destination = os.path.join(self.wd_path, 'test_copy.dat')
+
+        # the OWNER can get content
         try:
-            self.dor_proxy.get_content(obj_id, self.extras[0], destination)
+            self.dor_proxy.get_content(obj_id, owner, destination)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # the USER has NO ACCESS yet and cannot get content
+        try:
+            self.dor_proxy.get_content(obj_id, user, destination)
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
-        result = self.dor_proxy.get_content(obj_id, self.extras[1], destination)
-        assert result is not None
-        assert os.path.isfile(destination)
+        self.dor_proxy.grant_access(obj_id, owner, user.identity)
 
-        self.dor_proxy.delete_data_object(obj_id, self.extras[1])
+        # the USER has ACCESS and can get content
+        try:
+            self.dor_proxy.get_content(obj_id, user, destination)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        self.dor_proxy.delete_data_object(obj_id, owner)
 
     def test_content_encryption(self):
         # create content for the data object and encrypt it

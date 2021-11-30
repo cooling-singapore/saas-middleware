@@ -5,6 +5,7 @@ from flask import Response
 from pydantic import BaseModel
 
 from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFoundError, IdentityNotFoundError
+from saas.keystore.assets.credentials import GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.logging import Logging
@@ -32,6 +33,14 @@ class DataObject(SaaSObject):
 
 class GPPObject(SaaSObject):
     gpp: GitProcessorPointer
+
+
+class GPPObjectWithCredentials(GPPObject):
+    class GPPGitHubCredentials(BaseModel):
+        login: str
+        personal_access_token: str
+    
+    github_credentials: Optional[GPPGitHubCredentials]
 
 
 class ObjectTagKeys(BaseModel):
@@ -128,11 +137,17 @@ class DORBlueprint(SaaSBlueprint):
 
     @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
-    @request_manager.verify_request_body(GPPObject)
+    @request_manager.verify_request_body(GPPObjectWithCredentials)
     def add_gpp(self) -> (Response, int):
         body = request_manager.get_request_variable('body')
+
+        github_credentials = GithubCredentials(login=body['github_credentials']['login'],
+                                               personal_access_token=body['github_credentials']['personal_access_token']) \
+            if 'github_credentials' in body else None
+
         return create_ok_response(self._node.dor.add_gpp(body['created_by'], body['gpp'], body['owner_iid'],
-                                                         body['recipe'] if 'recipe' in body else None))
+                                                         body['recipe'] if 'recipe' in body else None,
+                                                         github_credentials))
 
     @request_manager.handle_request(DORObject)
     @request_manager.require_dor()
@@ -150,7 +165,7 @@ class DORBlueprint(SaaSBlueprint):
 
     @request_manager.handle_request()
     @request_manager.require_dor()
-    @request_manager.verify_authorisation_by_owner('obj_id')
+    @request_manager.verify_authorisation_by_user('obj_id')
     def get_content(self, obj_id: str) -> (Response, int):
         # do we have this data object?
         record = self._node.db.get_object_by_id(obj_id)
@@ -289,7 +304,7 @@ class DORProxy(EndpointProxy):
         return self.post('/add', body=body, attachment_path=content_path)
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            created_by: str, recipe: dict = None) -> dict:
+                            created_by: str, recipe: dict = None, github_credentials: GithubCredentials = None) -> dict:
         body = {
             'data_type': 'Git-Processor-Pointer',
             'data_format': 'json',
@@ -305,6 +320,12 @@ class DORProxy(EndpointProxy):
 
         if recipe is not None:
             body['recipe'] = recipe
+
+        if github_credentials:
+            body['github_credentials'] = {
+                'login': github_credentials.login,
+                'personal_access_token': github_credentials.personal_access_token
+            }
 
         return self.post('/add-gpp', body=body)
 

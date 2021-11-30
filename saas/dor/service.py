@@ -33,7 +33,8 @@ class DataObjectRepositoryService:
     def obj_content_path(self, c_hash: str) -> str:
         return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, c_hash)
 
-    def add_gpp(self, created_by: str, gpp: dict, owner_iid: str, recipe: Optional[dict]) -> dict:
+    def add_gpp(self, created_by: str, gpp: dict, owner_iid: str, recipe: Optional[dict],
+                github_credentials: Optional[GithubCredentials]) -> dict:
         # get the owner identity
         owner = self.node.db.get_identity(owner_iid)
         if owner is None:
@@ -47,13 +48,10 @@ class DataObjectRepositoryService:
 
         # determine URL including credentials (if any)
         url = gpp['source']
-        credentials: CredentialsAsset = self.node.keystore.get_asset('github-credentials')
-        if credentials is not None:
-            credentials: GithubCredentials = credentials.get(url)
-            if credentials:
-                insert = f"{credentials.login}:{credentials.personal_access_token}@"
-                index = url.find('github.com')
-                url = url[:index] + insert + url[index:]
+        if github_credentials:
+            insert = f"{github_credentials.login}:{github_credentials.personal_access_token}@"
+            index = url.find('github.com')
+            url = url[:index] + insert + url[index:]
 
         # try to clone the repository
         temp_id = generate_random_string(8)

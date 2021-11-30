@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from _stat import S_IWRITE
 from stat import S_IREAD
 from threading import Lock
 from typing import Optional
@@ -50,7 +51,7 @@ class RuntimeInfrastructureService:
         # write the key to disk and change file permissions
         with open(key_path, 'w') as f:
             f.write(ssh_credentials.key)
-        os.chmod(key_path, S_IREAD)
+        os.chmod(key_path, S_IREAD | S_IWRITE)
 
         return key_path
 

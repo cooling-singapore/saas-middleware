@@ -13,7 +13,7 @@ from PyInquirer import prompt
 
 from cli.exceptions import CLIRuntimeError
 from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
+from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
@@ -451,9 +451,17 @@ class CLIParser(CLICommandGroup):
 
             initialise_storage_folder(args['keystore'], 'keystore')
 
-            log_path = os.path.join(args['temp-dir'], f"log.{get_timestamp_now()}")
-            Logging.initialise(level=logging.DEBUG, log_path=log_path)
+            if args['log-level'] == 'DEBUG':
+                level = logging.DEBUG
+            elif args['log-level'] == 'INFO':
+                level = logging.INFO
+            else:
+                level = logging.INFO
 
+            console_enabled = args['log-console'] is not None
+            log_path = args['log-path']
+            print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
+            Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 
         except argparse.ArgumentError:
