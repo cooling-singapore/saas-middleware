@@ -514,11 +514,16 @@ class NodeDBService:
                              f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
                 return
 
-    def remove_network(self, node_iid: str) -> None:
+    def remove_network(self, node_iid: str = None, node_address: (str, int) = None) -> None:
         with self._Session() as session:
-            record = session.query(NetworkNode).get(node_iid)
-            if record is not None:
-                session.query(NetworkNode).filter_by(iid=node_iid).delete()
+            if node_iid:
+                record = session.query(NetworkNode).get(node_iid)
+                if record is not None:
+                    session.query(NetworkNode).filter_by(iid=node_iid).delete()
+                    session.commit()
+
+            elif node_address:
+                session.query(NetworkNode).filter_by(p2p_address=f"{node_address[0]}:{node_address[1]}").delete()
                 session.commit()
 
     def resolve_network(self, p2p_address: (str, int)) -> Optional[str]:
