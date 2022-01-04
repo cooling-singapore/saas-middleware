@@ -125,9 +125,21 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
     run_command(['ln', '-sf', target_path, link_path], cwd=working_directory)
 
 
-def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str, ssh_key_path: str) -> None:
-    run_command(['scp', '-i', ssh_key_path, local_path, f"{login}@{host}:{remote_path}"])
+def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str, ssh_key_path_or_password: str,
+                        is_password: bool) -> None:
+    c = ['sshpass', '-p', ssh_key_path_or_password, 'scp', '-oHostKeyAlgorithms=+ssh-rsa',
+         local_path, f"{login}@{host}:{remote_path}"] \
+        if is_password else \
+        ['scp', '-i', ssh_key_path_or_password, '-oHostKeyAlgorithms=+ssh-rsa',
+         local_path, f"{login}@{host}:{remote_path}"]
+    run_command(c)
 
 
-def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path: str) -> None:
-    run_command(['scp', '-i', ssh_key_path, f"{login}@{host}:{remote_path}", local_path])
+def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path_or_password: str,
+                        is_password: bool) -> None:
+    c = ['sshpass', '-p', ssh_key_path_or_password, 'scp', '-oHostKeyAlgorithms=+ssh-rsa',
+         f"{login}@{host}:{remote_path}", local_path] \
+        if is_password else \
+        ['scp', '-i', ssh_key_path_or_password, '-oHostKeyAlgorithms=+ssh-rsa',
+         f"{login}@{host}:{remote_path}", local_path]
+    run_command(c)
