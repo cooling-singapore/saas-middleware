@@ -117,7 +117,7 @@ class KeystoreTestCase(unittest.TestCase, TestCaseBase):
         github.update(url, GithubCredentials(login, personal_access_token))
 
         ssh = CredentialsAsset[SSHCredentials].create('ssh-cred', SSHCredentials)
-        ssh.update('my-remote-machine', SSHCredentials(host, login, key))
+        ssh.update('my-remote-machine', SSHCredentials(host, login, key, True))
 
         keystore.update_asset(github)
         keystore.update_asset(ssh)
