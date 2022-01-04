@@ -96,7 +96,9 @@ class RTIBlueprint(SaaSBlueprint):
         gpp_custodian = body['gpp_custodian'] if 'gpp_custodian' in body else None
         ssh_credentials = SSHCredentials(host=body['ssh_credentials']['host'],
                                          login=body['ssh_credentials']['login'],
-                                         key=body['ssh_credentials']['key']) if 'ssh_credentials' in body else None
+                                         key=body['ssh_credentials']['key'],
+                                         key_is_password=body['ssh_credentials']['key_is_password']) \
+            if 'ssh_credentials' in body else None
 
         github_credentials = GithubCredentials(login=body['github_credentials']['login'],
                                                personal_access_token=body['github_credentials']['personal_access_token']) \
@@ -168,7 +170,8 @@ class RTIProxy(EndpointProxy):
             body['ssh_credentials'] = {
                 'host': ssh_credentials.host,
                 'login': ssh_credentials.login,
-                'key': ssh_credentials.key
+                'key': ssh_credentials.key,
+                'key_is_password': ssh_credentials.key_is_password
             }
 
         if github_credentials:

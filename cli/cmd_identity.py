@@ -206,7 +206,8 @@ class CredentialsAdd(CLICommand):
                 'template': {
                     'host': None,
                     'login': None,
-                    'key': None
+                    'key': None,
+                    'key_is_password': None
                 },
                 'hide-when-prompt': []
             },
