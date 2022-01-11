@@ -26,8 +26,7 @@ class Logging:
             root_logger.setLevel(level)
 
             # remove all handlers -> we will create our own
-            for handler in root_logger.handlers:
-                root_logger.removeHandler(handler)
+            cls.remove_all_handlers()
 
             # do we have a default log path?
             if log_path:
@@ -56,3 +55,12 @@ class Logging:
             logger.addHandler(file_handler)
 
         return logger
+
+    @staticmethod
+    def remove_all_handlers():
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            # Flush and close any open streams
+            handler.flush()
+            handler.close()
+            root_logger.removeHandler(handler)
