@@ -19,6 +19,7 @@ from saas.exceptions import SaaSException
 from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
     validate_json
 from saas.logging import Logging
+from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
@@ -277,7 +278,8 @@ class RTIProcessorAdapter(Thread, ABC):
             content_path = os.path.join(working_directory, f"{obj_id}.content")
 
             # fetch the data object
-            protocol.fetch(record['custodian']['p2p_address'], obj_id, meta_path, content_path,
+            custodian: NetworkNode = record['custodian']
+            protocol.fetch(custodian.get_p2p_address(), obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
