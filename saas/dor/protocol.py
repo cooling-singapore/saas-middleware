@@ -26,7 +26,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         }))
         return result
 
-    def _handle_lookup(self, message: dict) -> P2PMessage:
+    def _handle_lookup(self, message: dict, _) -> P2PMessage:
         # get the records for all the objects
         records = {}
         for obj_id in message['obj_ids']:
