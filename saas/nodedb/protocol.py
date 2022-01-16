@@ -23,9 +23,9 @@ class NodeDBP2PProtocol(P2PProtocol):
                                 ignore: list[str] = None) -> P2PMessage:
         return self.prepare_message('update', {
             'self': {
-                'identity': self.node.identity().serialise(),
+                'identity': self.node.identity.serialise(),
                 'network': {
-                    'node_iid': self.node.identity().id,
+                    'node_iid': self.node.identity.id,
                     'dor_service': self.node.dor is not None,
                     'rti_service': self.node.rti is not None,
                     'p2p_address': self.node.p2p.address(),
@@ -35,7 +35,7 @@ class NodeDBP2PProtocol(P2PProtocol):
             'snapshot': snapshot,
             'reciprocate': reciprocate,
             'forward': forward,
-            'forward_ignore': [self.node.identity().id, *ignore] if ignore else [self.node.identity().id]
+            'forward_ignore': [self.node.identity.id, *ignore] if ignore else [self.node.identity.id]
         })
 
     def perform_join(self, boot_node_address: (str, int)) -> None:
@@ -110,7 +110,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         # are we supposed to forward the message?
         if message['forward']:
             # add ourselves to the forward_ignore list and disable reciprocity (we don't do that when forwarding)
-            message['forward_ignore'].append(self.node.identity().id)
+            message['forward_ignore'].append(self.node.identity.id)
             message['reciprocate'] = False
 
             # forward the message to all peers we know of (while skipping the ones in the ignore list)
@@ -125,7 +125,7 @@ class NodeDBP2PProtocol(P2PProtocol):
     def broadcast_leave(self) -> None:
         message = self.prepare_message('leave', {
             'self': {
-                'identity': self.node.identity().serialise(),
+                'identity': self.node.identity.serialise(),
             }
         })
 

@@ -36,15 +36,15 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def test_node_self_awareness(self):
         identities = self.node.db.get_all_identities()
         assert(len(identities) == 1 + len(self.extras))
-        assert(identities[self.node.identity().id].name == 'node')
+        assert(identities[self.node.identity.id].name == 'node')
 
         network = self.node.db.get_network_all()
         assert(len(network) == 1)
-        assert(network[0].iid == self.node.identity().id)
+        assert(network[0].iid == self.node.identity.id)
 
     def test_add_update_remove_tags(self):
         # add dummy data object
-        owner = self.node.identity()
+        owner = self.node.identity
         meta0 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
                                          False, False, 'type', 'format', owner.name)
         meta1 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
@@ -95,7 +95,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(len(meta0['tags']) == 0)
 
     def test_grant_revoke_permissions(self):
-        owner = self.node.identity()
+        owner = self.node.identity
         meta = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
                                         False, False, 'type', 'format', owner.name)
         obj_id = meta['obj_id']
@@ -133,7 +133,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
             assert(len(ids) == 3)
 
         # get the starting nonce
-        node0_id = nodes[0].identity().id
+        node0_id = nodes[0].identity.id
         nonce0_by0_before = nodes[0].db.get_identity(node0_id).nonce
         nonce0_by1_before = nodes[1].db.get_identity(node0_id).nonce
         nonce0_by2_before = nodes[2].db.get_identity(node0_id).nonce
@@ -234,7 +234,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         nodes = self.create_nodes(3, perform_join=True, enable_rest=True)
         time.sleep(2)
 
-        iid0 = nodes[0].identity().id
+        iid0 = nodes[0].identity.id
 
         proxy0 = NodeDBProxy(nodes[0].rest.address())
         proxy1 = NodeDBProxy(nodes[1].rest.address())
@@ -302,8 +302,8 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         network = self.db.get_network()
         network = [item['iid'] for item in network]
         assert(len(network) == 2)
-        assert(self.node.identity().id in network)
-        assert(node0.identity().id in network)
+        assert(self.node.identity.id in network)
+        assert(node0.identity.id in network)
 
         # shutdown the first node silently (i.e., not leaving the network) - this emulates what happens
         # when a node suddenly crashes for example.
@@ -313,8 +313,8 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         network = self.db.get_network()
         network = [item['iid'] for item in network]
         assert(len(network) == 2)
-        assert(self.node.identity().id in network)
-        assert(node0.identity().id in network)
+        assert(self.node.identity.id in network)
+        assert(node0.identity.id in network)
 
         # manually create a second node, using the same address but a different keystore
         node1 = Node(self.extras[1], os.path.join(self.wd_path, 'node1'))
@@ -324,7 +324,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         network = node1.db.get_network_all()
         network = [item.iid for item in network]
         assert(len(network) == 1)
-        assert(node1.identity().id in network)
+        assert(node1.identity.id in network)
 
         # perform the join
         node1.join_network(self.node.p2p.address())
@@ -333,8 +333,8 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         network = self.db.get_network()
         network = [item['iid'] for item in network]
         assert(len(network) == 2)
-        assert(self.node.identity().id in network)
-        assert(node1.identity().id in network)
+        assert(self.node.identity.id in network)
+        assert(node1.identity.id in network)
 
         node0.shutdown()
         node1.shutdown()

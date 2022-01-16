@@ -302,7 +302,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'obj_id': obj_id,
                     'ephemeral_public_key': ephemeral_key.public_as_string(),
                     'user_iid': user.id,
-                    'node_id': self._node.identity().id
+                    'node_id': self._node.identity.id
                 })
                 request = owner.encrypt(request.encode('utf-8')).decode('utf-8')
 
@@ -503,8 +503,8 @@ class RTIProcessorAdapter(Thread, ABC):
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        meta = proxy.add_data_object(output_content_path, self._node.identity(), restricted_access, content_encrypted,
-                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id, recipe)
+        meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
+                                     proc_out['data_type'], proc_out['data_format'], self._node.identity.id, recipe)
         obj_id = meta['obj_id']
 
         # update tags with information from the job

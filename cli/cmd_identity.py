@@ -31,8 +31,8 @@ class IdentityCreate(CLICommand):
 
         print(f"New keystore created!")
         print(f"- Identity: {identity.name}/{identity.email}/{identity.id}")
-        print(f"- Signing Key: {keystore.signing_key().info()}")
-        print(f"- Encryption Key: {keystore.encryption_key().info()}")
+        print(f"- Signing Key: {keystore.signing_key.info()}")
+        print(f"- Encryption Key: {keystore.encryption_key.info()}")
 
 
 class IdentityRemove(CLICommand):

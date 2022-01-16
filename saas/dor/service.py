@@ -27,11 +27,11 @@ class DataObjectRepositoryService:
         self.protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise directories
-        os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path), exist_ok=True)
-        os.makedirs(os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_temp_path), exist_ok=True)
+        os.makedirs(os.path.join(self.node.datastore, DataObjectRepositoryService.infix_master_path), exist_ok=True)
+        os.makedirs(os.path.join(self.node.datastore, DataObjectRepositoryService.infix_temp_path), exist_ok=True)
 
     def obj_content_path(self, c_hash: str) -> str:
-        return os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_master_path, c_hash)
+        return os.path.join(self.node.datastore, DataObjectRepositoryService.infix_master_path, c_hash)
 
     def add_gpp(self, created_by: str, gpp: dict, owner_iid: str, recipe: Optional[dict],
                 github_credentials: Optional[GithubCredentials]) -> dict:
@@ -55,7 +55,7 @@ class DataObjectRepositoryService:
 
         # try to clone the repository
         temp_id = generate_random_string(8)
-        repo_path = os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_temp_path, f"{temp_id}.repo")
+        repo_path = os.path.join(self.node.datastore, DataObjectRepositoryService.infix_temp_path, f"{temp_id}.repo")
         result = subprocess.run(['git', 'clone', url, repo_path], capture_output=True)
         if result.returncode != 0:
             raise CloneRepositoryError({
@@ -92,7 +92,7 @@ class DataObjectRepositoryService:
         shutil.rmtree(repo_path)
 
         # store the GPP object to a temporary location and generate the c_cash
-        gpp_path = os.path.join(self.node.datastore(), DataObjectRepositoryService.infix_temp_path, f"{temp_id}.gpp")
+        gpp_path = os.path.join(self.node.datastore, DataObjectRepositoryService.infix_temp_path, f"{temp_id}.gpp")
         write_json_to_file(gpp, gpp_path)
         c_hash = hash_file_content(gpp_path).hex()
 

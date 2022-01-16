@@ -78,7 +78,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         self.service.start_service()
 
         # protocol not supported
-        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity(), self.wd_path)
+        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
         assert (messenger is not None)
 
         try:
@@ -98,7 +98,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
             messenger.close()
 
         # message type not supported
-        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity(), self.wd_path)
+        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
         assert (messenger is not None)
 
         try:
@@ -120,7 +120,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_unreachable(self):
         try:
-            SecureMessenger.connect(self.p2p_address, self.node.identity(), self.wd_path)
+            SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
             assert False
 
         except PeerUnavailableError:

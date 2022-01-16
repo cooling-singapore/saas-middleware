@@ -30,12 +30,12 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         self._github_credentials = github_credentials
 
         # create the proc-temp directory if doesn't already exist
-        self._proc_temp_path = os.path.join(node.datastore(), 'proc-temp')
+        self._proc_temp_path = os.path.join(node.datastore, 'proc-temp')
         os.makedirs(self._proc_temp_path, exist_ok=True)
 
         # substitute home path with $HOME - check if $HOME is actually present
         # TODO: this local/remote $HOME path thing is poorly implemented and ought to be fixed [#189]
-        self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
+        self._repo_home = os.path.join(node.datastore, 'proc-repositories', proc_id)
         if os.environ['HOME'] in self._repo_home:
             self._repo_home = self._repo_home.replace(os.environ['HOME'], "$HOME")
         else:

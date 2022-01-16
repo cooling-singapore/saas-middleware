@@ -123,6 +123,16 @@ class Keystore:
         with self._mutex:
             return self._identity
 
+    @property
+    def encryption_key(self) -> KeyPair:
+        with self._mutex:
+            return self._e_key
+
+    @property
+    def signing_key(self) -> KeyPair:
+        with self._mutex:
+            return self._s_key
+
     def update_profile(self, name: str = None, email: str = None) -> Identity:
         with self._mutex:
             if name is not None:
@@ -151,14 +161,6 @@ class Keystore:
     def verify(self, message: bytes, signature: str) -> bool:
         with self._mutex:
             return self._s_key.verify(message, signature)
-
-    def encryption_key(self) -> KeyPair:
-        with self._mutex:
-            return self._e_key
-
-    def signing_key(self) -> KeyPair:
-        with self._mutex:
-            return self._s_key
 
     def has_asset(self, key: str) -> bool:
         with self._mutex:

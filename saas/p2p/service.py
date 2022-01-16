@@ -56,7 +56,7 @@ class P2PService:
                 self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 self._p2p_service_socket.bind(self._address)
                 self._p2p_service_socket.listen(concurrency)
-                logger.info(f"[{self._node.identity().name}] p2p server initialised at address '{self._address}'")
+                logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
 
                 # start the server thread
                 thread = threading.Thread(target=self._handle_incoming_connections)
@@ -71,13 +71,13 @@ class P2PService:
         """
         with self._mutex:
             if self._p2p_service_socket:
-                logger.info(f"[{self._node.identity().name}] initiate shutdown of p2p service")
+                logger.info(f"[{self._node.identity.name}] initiate shutdown of p2p service")
                 self._is_server_running = False
                 while not self._is_server_stopped:
                     time.sleep(0.5)
 
     def _handle_incoming_connections(self):
-        logger.info(f"[{self._node.identity().name}] start listening to incoming p2p connections...")
+        logger.info(f"[{self._node.identity.name}] start listening to incoming p2p connections...")
 
         # main loop for listening for incoming connections
         self._is_server_running = True
@@ -90,7 +90,7 @@ class P2PService:
                 peer_socket, _ = self._p2p_service_socket.accept()
 
                 # create messenger and perform handshake
-                peer, messenger = SecureMessenger.accept(peer_socket, self._node.identity(), self._node.datastore())
+                peer, messenger = SecureMessenger.accept(peer_socket, self._node.identity, self._node.datastore)
 
                 # start handling the client requests
                 threading.Thread(target=self._handle_client, args=(peer, messenger)).start()
@@ -99,19 +99,19 @@ class P2PService:
                 pass
 
             except P2PException as e:
-                logger.warning(f"[{self._node.identity().name}] error while accepting incoming connection: {e}")
+                logger.warning(f"[{self._node.identity.name}] error while accepting incoming connection: {e}")
 
             except Exception as e:
-                logger.warning(f"[{self._node.identity().name}] unhandled exception type in server loop: {e}")
+                logger.warning(f"[{self._node.identity.name}] unhandled exception type in server loop: {e}")
 
-        logger.info(f"[{self._node.identity().name}] stop listening to incoming p2p connections")
+        logger.info(f"[{self._node.identity.name}] stop listening to incoming p2p connections")
 
         self._p2p_service_socket.close()
         self._p2p_service_socket = None
         self._is_server_stopped = True
 
     def _handle_client(self, peer: Identity, messenger: SecureMessenger):
-        logger.debug(f"[{self._node.identity().name}] begin serving client '{peer.id}'")
+        logger.debug(f"[{self._node.identity.name}] begin serving client '{peer.id}'")
 
         try:
             request = messenger.receive_request()
@@ -159,11 +159,11 @@ class P2PService:
 
         except P2PException as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity().name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity().name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
 
         messenger.close()
-        logger.debug(f"[{self._node.identity().name}] done serving client '{peer.id}'")
+        logger.debug(f"[{self._node.identity.name}] done serving client '{peer.id}'")
