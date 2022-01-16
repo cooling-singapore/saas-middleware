@@ -27,25 +27,25 @@ class RuntimeInfrastructureService:
     infix_path = 'rti'
 
     def proc_content_path(self, c_hash: str) -> str:
-        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
+        return os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
 
     def proc_meta_path(self, obj_id: str) -> str:
-        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
+        return os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
 
     def __init__(self, node: saas.node.Node) -> None:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._ssh_credentials_paths = {}
-        self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
+        self._jobs_path = os.path.join(self._node.datastore, 'jobs')
         self._content_keys = {}
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
-        os.makedirs(os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path), exist_ok=True)
+        os.makedirs(os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path), exist_ok=True)
 
     def _store_ssh_credentials_key(self, proc_id: str, ssh_credentials: SSHCredentials) -> str:
-        key_path = os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
+        key_path = os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
         self._ssh_credentials_paths[proc_id] = key_path
 
         # write the key to disk and change file permissions

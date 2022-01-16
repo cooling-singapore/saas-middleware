@@ -53,8 +53,8 @@ class NodeDBBlueprint(SaaSBlueprint):
         rest_address = self._node.rest.address()
 
         return create_ok_response({
-            "iid": self._node.identity().id,
-            "identity": self._node.identity().serialise(),
+            "iid": self._node.identity.id,
+            "identity": self._node.identity.serialise(),
             "dor_service": self._node.dor is not None,
             "rti_service": self._node.rti is not None,
             "rest_service_address": f"{p2p_address[0]}:{p2p_address[1]}",

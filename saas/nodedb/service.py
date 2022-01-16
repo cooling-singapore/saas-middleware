@@ -663,7 +663,7 @@ class NodeDBService:
         with self._Session() as session:
             # add identity records
             for item in session.query(IdentityRecord).all():
-                if exclude_self and item.iid == self._node.identity().id:
+                if exclude_self and item.iid == self._node.identity.id:
                     continue
 
                 identity_items.append({
@@ -680,7 +680,7 @@ class NodeDBService:
 
             # add network records
             for item in session.query(NetworkNode).all():
-                if exclude_self and item.iid == self._node.identity().id:
+                if exclude_self and item.iid == self._node.identity.id:
                     continue
 
                 p2p_address = item.p2p_address.split(':')

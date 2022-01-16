@@ -82,12 +82,12 @@ class P2PProtocol:
         """
         seq_id = self._next_seq_id()
 
-        peer, messenger = SecureMessenger.connect(address, self._node.identity(), self._node.datastore())
-        logger.debug(f"[req:{seq_id}] ({self._node.identity().short_id}) -> ({peer.short_id}) "
+        peer, messenger = SecureMessenger.connect(address, self._node.identity, self._node.datastore)
+        logger.debug(f"[req:{seq_id}] ({self._node.identity.short_id}) -> ({peer.short_id}) "
                      f"{message.protocol} {message.type} {message.attachment is not None}")
 
         response = messenger.send_request(message, message.attachment)
-        logger.debug(f"[res:{seq_id}] ({self._node.identity().short_id}) <- ({peer.short_id})")
+        logger.debug(f"[res:{seq_id}] ({self._node.identity.short_id}) <- ({peer.short_id})")
 
         messenger.close()
         return response['content'], response['attachment']
@@ -105,7 +105,7 @@ class P2PProtocol:
 
         # we always exclude ourselves
         exclude = exclude if exclude else []
-        exclude.append(self._node.identity().id)
+        exclude.append(self._node.identity.id)
 
         # send requests to all peers we know of and collect the responses
         responses = {}
@@ -119,8 +119,8 @@ class P2PProtocol:
             # we just skip it (this is a broadcast and we can't expect every peer in the list to be online/reachable).
             try:
                 peer, messenger = SecureMessenger.connect(record.get_p2p_address(),
-                                                          self._node.identity(),
-                                                          self._node.datastore())
+                                                          self._node.identity,
+                                                          self._node.datastore)
                 responses[peer.id] = messenger.send_request(message, message.attachment)
                 messenger.close()
 

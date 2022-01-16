@@ -40,7 +40,7 @@ def sign_authorisation_token(authority: Keystore,
     token += hash_bytes_object(bytes(slot)).hex()
 
     # logger.info("sign_authorisation_token\tH(self.public_as_string())={}".format(hash_string_object(self.public_as_string()).hex()))
-    token += hash_string_object(authority.signing_key().public_as_string()).hex()
+    token += hash_string_object(authority.signing_key.public_as_string()).hex()
 
     token = hash_string_object(token)
     # logger.info("sign_authorisation_token\ttoken={}".format(token.hex()))
