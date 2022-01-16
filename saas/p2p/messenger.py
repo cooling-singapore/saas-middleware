@@ -80,11 +80,66 @@ class SecureRequest(SecureMessage):
         return cls(type="response", request_id=request_id, content=content,
                    has_attachment=has_attachment)
 
+    @classmethod
+    def verify_request_dict(cls, request_dict: dict) -> SecureRequest:
+        try:
+            request = cls(**request_dict)
+        except TypeError as e:
+            raise MalformedMessageError({
+                'request': request_dict,
+            }) from e
+
+        expected_type = 'request'
+        if request.type != expected_type:
+            raise UnexpectedMessageTypeError({
+                'expected': expected_type,
+                'request': request
+            })
+
+        return request
+
+    @classmethod
+    def verify_response_dict(cls, response_dict: dict, related_request: SecureRequest) -> SecureRequest:
+        try:
+            response = cls(**response_dict)
+        except TypeError as e:
+            raise MalformedMessageError({
+                'response': response_dict,
+                'related_request': related_request
+            }) from e
+
+        expected_type = 'response'
+        if response.type != expected_type:
+            raise UnexpectedMessageTypeError({
+                'expected': expected_type,
+                'response': response,
+                'related_request': related_request
+            })
+
+        if response.request_id != related_request.request_id:
+            raise MismatchingRequestIdError({
+                'request': related_request,
+                'response': response
+            })
+
+        return response
+
 
 @dataclass
 class SecureStreamPreamble(SecureMessage):
     content_size: float
     n_chunks: int
+
+    @classmethod
+    def verify_preamble_dict(cls, preamble_dict: dict) -> SecureStreamPreamble:
+        try:
+            preamble = cls(**preamble_dict)
+        except TypeError as e:
+            raise MalformedPreambleError({
+                'preamble': preamble_dict
+            }) from e
+
+        return preamble
 
 
 class SecureMessenger:
@@ -162,30 +217,9 @@ class SecureMessenger:
         if attachment_path:
             self._send_stream(attachment_path)
 
-        # receive the response and check if it is a valid response message
-        response = SecureRequest(**self._receive_object())
-
-        # required = ['type', 'request_id', 'content', 'has_attachment']
-        # if not all(p in response for p in required):
-        #     raise MalformedMessageError({
-        #         'required': required,
-        #         'response': response,
-        #         'related_request': request
-        #     })
-
-        expected_type = 'response'
-        if response.type != expected_type:
-            raise UnexpectedMessageTypeError({
-                'expected': expected_type,
-                'response': response,
-                'related_request': request
-            })
-
-        if response.request_id != request.request_id:
-            raise MismatchingRequestIdError({
-                'request': request,
-                'response': response
-            })
+        # receive the response
+        response_dict = self._receive_object()
+        response = SecureRequest.verify_response_dict(response_dict, request)
 
         # receive the attachment (if any)
         destination_path = None
@@ -203,20 +237,9 @@ class SecureMessenger:
         Receives a request, i.e., a dict with the following keys: 'type', 'request_id', 'content', 'has_attachment'.
         :return: the request
         """
-        request = SecureRequest(**self._receive_object())
-        # required = ['type', 'request_id', 'content', 'has_attachment']
-        # if not all(p in request for p in required):
-        #     raise MalformedMessageError({
-        #         'request': request,
-        #         'required': required
-        #     })
 
-        expected_type = 'request'
-        if request.type != expected_type:
-            raise UnexpectedMessageTypeError({
-                'expected': expected_type,
-                'request': request
-            })
+        request_dict = self._receive_object()
+        request = SecureRequest.verify_request_dict(request_dict)
 
         # receive the attachment (if any)
         destination_path = None
@@ -343,24 +366,19 @@ class SecureMessenger:
 
     def _receive_stream(self, destination: str) -> int:
         # receive the preamble
-        preamble = self._receive_object()
-        required = ['content_size', 'n_chunks']
-        if not all(p in preamble for p in required):
-            raise MalformedPreambleError({
-                'required': required,
-                'preamble': preamble
-            })
+        preamble_dict = self._receive_object()
+        preamble = SecureStreamPreamble.verify_preamble_dict(preamble_dict)
 
         # read all the chunks and write the to the file
         total_written = 0
         with open(destination, 'wb') as f:
-            for i in range(preamble['n_chunks']):
+            for i in range(preamble.n_chunks):
                 chunk = self._receive_chunk()
                 f.write(chunk)
                 total_written += len(chunk)
 
         # verify if the bytes written is the correct file size
-        if total_written != preamble['content_size']:
+        if total_written != preamble.content_size:
             raise MismatchingBytesWrittenError({
                 'preamble': preamble,
                 'total_written': total_written
