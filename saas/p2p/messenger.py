@@ -5,10 +5,7 @@ import os
 import json
 import base64
 import socket
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from saas.p2p.protocol import P2PMessage
+from typing import Optional, Any
 
 import snappy
 from json import JSONDecodeError
@@ -70,16 +67,16 @@ class SecureHandshake(SecureMessage):
 class SecureRequest(SecureMessage):
     type: str
     request_id: str
-    content: P2PMessage
+    content: Any
     has_attachment: bool
 
     @classmethod
-    def create_request(cls, content: P2PMessage, has_attachment: bool) -> SecureRequest:
+    def create_request(cls, content, has_attachment: bool) -> SecureRequest:
         return cls(type="request", request_id=generate_random_string(16), content=content,
                    has_attachment=has_attachment)
 
     @classmethod
-    def create_response(cls, request_id: str, content: P2PMessage, has_attachment: bool) -> SecureRequest:
+    def create_response(cls, request_id: str, content, has_attachment: bool) -> SecureRequest:
         return cls(type="response", request_id=request_id, content=content,
                    has_attachment=has_attachment)
 
@@ -147,7 +144,7 @@ class SecureMessenger:
         if self._peer_socket:
             self._peer_socket.close()
 
-    def send_request(self, content: P2PMessage, attachment_path: str = None) -> dict:
+    def send_request(self, content: Any, attachment_path: str = None) -> dict:
         """
         Sends a request and waits for a response.
         :param content: the request content
@@ -233,7 +230,7 @@ class SecureMessenger:
             'attachment': destination_path
         }
 
-    def send_response(self, request_id: str, content: P2PMessage, attachment_path: str = None) -> None:
+    def send_response(self, request_id: str, content: Any, attachment_path: str = None) -> None:
         """
         Sends a response to a previously received request.
         :param request_id: the id of the request this response is referring to
