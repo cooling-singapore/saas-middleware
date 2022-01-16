@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import os
 import socket
@@ -9,7 +10,7 @@ from saas.cryptography.helpers import hash_file_content
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.p2p.exceptions import ReceiveDataError, PeerUnavailableError, MismatchingRequestIdError
-from saas.p2p.messenger import SecureMessenger
+from saas.p2p.messenger import SecureMessenger, SecureMessage
 from saas.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol
@@ -181,10 +182,12 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
         server_identity = keystores[0].identity
         client_identity = keystores[1].identity
 
-        ref_obj = {
-            'key': 'value',
-            'key2': 2
-        }
+        @dataclasses.dataclass
+        class TestMessage(SecureMessage):
+            key: str
+            key2: int
+
+        ref_obj = TestMessage(key='value', key2=2)
 
         class TestServer(Thread):
             def run(self):
@@ -198,9 +201,10 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
 
                 # create messenger and perform handshake
                 server_peer_identity, server_messenger = SecureMessenger.accept(peer_socket, server_identity, wd_path)
+                # FIXME: Assertions do not work for threads in test
                 assert(server_peer_identity.id == client_identity.id)
 
-                server_obj = server_messenger._receive_object()
+                server_obj = TestMessage(**server_messenger._receive_object())
                 print(server_obj)
                 assert(server_obj == ref_obj)
                 server_messenger.close()

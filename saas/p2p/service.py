@@ -4,6 +4,7 @@ import socket
 import traceback
 
 from threading import Lock
+from typing import Optional
 
 from saas.keystore.identity import Identity
 from saas.logging import Logging
@@ -19,10 +20,10 @@ class P2PService:
         self._mutex = Lock()
         self._node = node
         self._address = address
-        self._p2p_service_socket = None
+        self._p2p_service_socket: Optional[socket.socket] = None
         self._is_server_running = False
         self._is_server_stopped = True
-        self._registered_protocols = {}
+        self._registered_protocols: dict[str, P2PProtocol] = {}
 
     def add(self, protocol: P2PProtocol) -> None:
         """
@@ -86,7 +87,7 @@ class P2PService:
         while self._is_server_running:
             try:
                 # accept incoming connection
-                peer_socket, peer_address = self._p2p_service_socket.accept()
+                peer_socket, _ = self._p2p_service_socket.accept()
 
                 # create messenger and perform handshake
                 peer, messenger = SecureMessenger.accept(peer_socket, self._node.identity(), self._node.datastore())
