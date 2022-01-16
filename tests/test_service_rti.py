@@ -36,7 +36,7 @@ def wait_for_job(rti, job_id):
             logger.info(f"descriptor={descriptor}")
             logger.info(f"status={status}")
 
-            state = State.from_string(status['state'])
+            state = State(status['state'])
             if state == State.SUCCESSFUL:
                 return True
             elif state == State.FAILED:
