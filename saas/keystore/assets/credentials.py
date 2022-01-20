@@ -3,9 +3,10 @@ from __future__ import annotations
 from copy import copy
 from typing import TypeVar, Generic
 
-from saas.cryptography.keypair import KeyPair
-from saas.helpers import validate_json
 from saas.keystore.asset import Asset, deserialise, serialise
+
+import saas.cryptography.keypair as keypair
+import saas.helpers as helpers
 
 
 class Credentials:
@@ -92,9 +93,9 @@ class CredentialsAsset(Generic[T], Asset):
         return CredentialsAsset[T](key, {}, ctype)
 
     @classmethod
-    def deserialise(cls, key: str, content: dict[str, T], master_key: KeyPair) -> T:
+    def deserialise(cls, key: str, content: dict[str, T], master_key: keypair.KeyPair) -> T:
         # verify content
-        validate_json(content, CredentialsAsset.content_schema)
+        helpers.validate_json(content, CredentialsAsset.content_schema)
 
         # deserialise content
         credentials = deserialise(content, ['credentials'], master_key)['credentials']
@@ -106,7 +107,7 @@ class CredentialsAsset(Generic[T], Asset):
 
         return CredentialsAsset[T](key, credentials, ctype)
 
-    def serialise(self, protect_with: KeyPair) -> dict:
+    def serialise(self, protect_with: keypair.KeyPair) -> dict:
         credentials = copy(self._credentials)
         for k, v in credentials.items():
             credentials[k] = v.record
