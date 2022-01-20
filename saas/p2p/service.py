@@ -4,12 +4,13 @@ import socket
 import traceback
 
 from threading import Lock
+from typing import Optional
 
 from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.p2p.exceptions import P2PException, MalformedMessageError, UnsupportedProtocolError, \
     UnexpectedMessageTypeError
-from saas.p2p.protocol import SecureMessenger, P2PProtocol
+from saas.p2p.protocol import SecureMessenger, P2PProtocol, P2PMessage
 
 logger = Logging.get('p2p.service')
 
@@ -19,10 +20,10 @@ class P2PService:
         self._mutex = Lock()
         self._node = node
         self._address = address
-        self._p2p_service_socket = None
+        self._p2p_service_socket: Optional[socket.socket] = None
         self._is_server_running = False
         self._is_server_stopped = True
-        self._registered_protocols = {}
+        self._registered_protocols: dict[str, P2PProtocol] = {}
 
     def add(self, protocol: P2PProtocol) -> None:
         """
@@ -55,7 +56,7 @@ class P2PService:
                 self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 self._p2p_service_socket.bind(self._address)
                 self._p2p_service_socket.listen(concurrency)
-                logger.info(f"[{self._node.identity().name}] p2p server initialised at address '{self._address}'")
+                logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
 
                 # start the server thread
                 thread = threading.Thread(target=self._handle_incoming_connections)
@@ -70,13 +71,13 @@ class P2PService:
         """
         with self._mutex:
             if self._p2p_service_socket:
-                logger.info(f"[{self._node.identity().name}] initiate shutdown of p2p service")
+                logger.info(f"[{self._node.identity.name}] initiate shutdown of p2p service")
                 self._is_server_running = False
                 while not self._is_server_stopped:
                     time.sleep(0.5)
 
     def _handle_incoming_connections(self):
-        logger.info(f"[{self._node.identity().name}] start listening to incoming p2p connections...")
+        logger.info(f"[{self._node.identity.name}] start listening to incoming p2p connections...")
 
         # main loop for listening for incoming connections
         self._is_server_running = True
@@ -86,10 +87,10 @@ class P2PService:
         while self._is_server_running:
             try:
                 # accept incoming connection
-                peer_socket, peer_address = self._p2p_service_socket.accept()
+                peer_socket, _ = self._p2p_service_socket.accept()
 
                 # create messenger and perform handshake
-                peer, messenger = SecureMessenger.accept(peer_socket, self._node.identity(), self._node.datastore())
+                peer, messenger = SecureMessenger.accept(peer_socket, self._node.identity, self._node.datastore)
 
                 # start handling the client requests
                 threading.Thread(target=self._handle_client, args=(peer, messenger)).start()
@@ -98,19 +99,19 @@ class P2PService:
                 pass
 
             except P2PException as e:
-                logger.warning(f"[{self._node.identity().name}] error while accepting incoming connection: {e}")
+                logger.warning(f"[{self._node.identity.name}] error while accepting incoming connection: {e}")
 
             except Exception as e:
-                logger.warning(f"[{self._node.identity().name}] unhandled exception type in server loop: {e}")
+                logger.warning(f"[{self._node.identity.name}] unhandled exception type in server loop: {e}")
 
-        logger.info(f"[{self._node.identity().name}] stop listening to incoming p2p connections")
+        logger.info(f"[{self._node.identity.name}] stop listening to incoming p2p connections")
 
         self._p2p_service_socket.close()
         self._p2p_service_socket = None
         self._is_server_stopped = True
 
     def _handle_client(self, peer: Identity, messenger: SecureMessenger):
-        logger.debug(f"[{self._node.identity().name}] begin serving client '{peer.id}'")
+        logger.debug(f"[{self._node.identity.name}] begin serving client '{peer.id}'")
 
         try:
             request = messenger.receive_request()
@@ -124,45 +125,45 @@ class P2PService:
                 })
 
             # check if th request content is well-formed
-            content = request['content']
-            content_required = ['protocol', 'type', 'content', 'attachment']
-            if not all(p in content for p in content_required):
+            try:
+                content = P2PMessage(**request['content'])
+            except TypeError:
                 raise MalformedMessageError({
-                    'request_content': content,
-                    'required': content_required
+                    'request_content': request['content'],
+                    'required': P2PMessage.__annotations__
                 })
 
             # is the protocol supported?
-            if not content['protocol'] in self._registered_protocols:
+            if not content.protocol in self._registered_protocols:
                 raise UnsupportedProtocolError({
-                    'request_content': content,
+                    'request_content': request['content'],
                     'supported': [*self._registered_protocols.keys()]
                 })
 
             # is the message type supported by the protocol?
-            protocol: P2PProtocol = self._registered_protocols[content['protocol']]
-            if not protocol.supports(content['type']):
+            protocol: P2PProtocol = self._registered_protocols[content.protocol]
+            if not protocol.supports(content.type):
                 raise UnexpectedMessageTypeError({
                     'request': request,
-                    'type': content['type'],
+                    'type': content.type,
                     'protocol_name': protocol.name
                 })
 
             # let the protocol handle the message and send response back to peer (if any)
             response = protocol.handle_message(content, peer)
             if response:
-                messenger.send_response(request['request_id'], response['content'], response['attachment'])
+                messenger.send_response(request['request_id'], response.content, response.attachment)
             else:
                 # if no response is provided, we reply with a simple 'acknowledge'
                 messenger.send_response(request['request_id'], protocol.prepare_message('acknowledge'))
 
         except P2PException as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity().name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity().name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
 
         messenger.close()
-        logger.debug(f"[{self._node.identity().name}] done serving client '{peer.id}'")
+        logger.debug(f"[{self._node.identity.name}] done serving client '{peer.id}'")

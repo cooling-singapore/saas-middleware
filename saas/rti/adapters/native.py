@@ -14,7 +14,7 @@ from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
 from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
 from saas.rti.status import StatusLogger
-from saas.schemas import git_proc_pointer_schema
+from saas.schemas import GitProcessorPointer
 
 logger = Logging.get('rti.adapters.native')
 
@@ -30,12 +30,12 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         self._github_credentials = github_credentials
 
         # create the proc-temp directory if doesn't already exist
-        self._proc_temp_path = os.path.join(node.datastore(), 'proc-temp')
+        self._proc_temp_path = os.path.join(node.datastore, 'proc-temp')
         os.makedirs(self._proc_temp_path, exist_ok=True)
 
         # substitute home path with $HOME - check if $HOME is actually present
         # TODO: this local/remote $HOME path thing is poorly implemented and ought to be fixed [#189]
-        self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
+        self._repo_home = os.path.join(node.datastore, 'proc-repositories', proc_id)
         if os.environ['HOME'] in self._repo_home:
             self._repo_home = self._repo_home.replace(os.environ['HOME'], "$HOME")
         else:
@@ -46,7 +46,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         # read the git processor pointer (gpp)
         with open(obj_content_path, 'rb') as f:
             self._gpp = json.load(f)
-            validate(instance=self._gpp, schema=git_proc_pointer_schema)
+            validate(instance=self._gpp, schema=GitProcessorPointer.schema())
 
         # set the processor path
         self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])

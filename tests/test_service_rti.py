@@ -36,7 +36,7 @@ def wait_for_job(rti, job_id):
             logger.info(f"descriptor={descriptor}")
             logger.info(f"status={status}")
 
-            state = State.from_string(status['state'])
+            state = State(status['state'])
             if state == State.SUCCESSFUL:
                 return True
             elif state == State.FAILED:
@@ -274,7 +274,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
         proc_descriptor = rti.undeploy(proc_id)
@@ -347,7 +347,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
                 'owner_iid': owner.identity.id,
                 'restricted_access': False,
                 'content_encrypted': False,
-                'target_node_iid': target_node.identity().id
+                'target_node_iid': target_node.identity.id
             }
         ]
 
@@ -478,7 +478,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
         result = rti.undeploy(proc_id)
@@ -546,7 +546,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             result = wait_for_job(rti, job_id)
             assert(result is True)
 
-            output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+            output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
             assert (os.path.isfile(output_path))
             result = read_json_from_file(output_path)
 
@@ -654,9 +654,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        input_path_a = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'a')
-        input_path_b = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'b')
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        input_path_a = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'a')
+        input_path_b = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'b')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert(os.path.isfile(input_path_a))
         assert(os.path.isfile(input_path_b))
         assert(os.path.isfile(output_path))
@@ -735,7 +735,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
         proc_descriptor = rti.undeploy(proc_id)
@@ -778,7 +778,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # valid signature
         job_id = self.submit_job(db, rti, proc_id, a_obj_id, owner.identity, user, True)
 
-        status_path = os.path.join(node.datastore(), 'jobs', job_id, 'job_status.json')
+        status_path = os.path.join(node.datastore, 'jobs', job_id, 'job_status.json')
         assert(os.path.isfile(status_path))
 
         # run monitoring thread
@@ -792,7 +792,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert(os.path.isfile(output_path))
 
         proc_descriptor = rti.undeploy(proc_id)
@@ -892,7 +892,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (jobs is not None)
         assert (len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
         result = rti.undeploy(proc_id)
@@ -947,7 +947,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
         ssh_credentials: SSHCredentials = asset.get('nscc')
 
-        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity().id)
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -1006,7 +1006,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
         ssh_credentials: SSHCredentials = asset.get('nscc')
 
-        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity().id)
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
 
@@ -1065,7 +1065,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
-        output_path = os.path.join(self.wd_path, node.datastore(), 'jobs', str(job_id), 'c')
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
         proc_descriptor = rti.undeploy(proc_id)

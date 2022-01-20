@@ -16,14 +16,6 @@ class State(Enum):
     FAILED = 'failed'
     SUCCESSFUL = 'successful'
 
-    @staticmethod
-    def from_string(label: str) -> State:
-        for s in [State.INITIALISED, State.RUNNING, State.FAILED, State.SUCCESSFUL]:
-            if label == s.value:
-                return s
-
-        raise NotImplementedError
-
 
 class StatusLogger:
     """

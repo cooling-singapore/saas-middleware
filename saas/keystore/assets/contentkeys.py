@@ -20,7 +20,7 @@ class ContentKeysAsset(Asset):
         self._content_keys = content_keys if content_keys else {}
 
     @classmethod
-    def from_content(cls, key: str, content: dict, master_key: KeyPair) -> ContentKeysAsset:
+    def deserialise(cls, key: str, content: dict, master_key: KeyPair) -> ContentKeysAsset:
         # verify content
         validate_json(content, ContentKeysAsset.content_schema)
 
