@@ -8,7 +8,6 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.blueprint import DORProxy
-from saas.keystore.assets.credentials import SSHCredentials, CredentialsAsset
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
@@ -18,6 +17,8 @@ from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
 from saas.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
+
+import saas.keystore.assets.credentials as cred
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -944,8 +945,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: SSHCredentials = asset.get('nscc')
+        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
@@ -1003,8 +1004,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: SSHCredentials = asset.get('nscc')
+        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")

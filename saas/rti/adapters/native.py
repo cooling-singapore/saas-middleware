@@ -9,10 +9,10 @@ from jsonschema import validate
 from saas.cryptography.helpers import hash_string_object
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
-from saas.keystore.assets.credentials import GithubCredentials
+from saas.keystore.assets import credentials
 from saas.logging import Logging
 from saas.rti.adapters.adapters import RTIProcessorAdapter
-from saas.rti.exceptions import AdapterRuntimeError, SSHConnectionError
+from saas.rti.exceptions import AdapterRuntimeError
 from saas.rti.status import StatusLogger
 from saas.schemas import GitProcessorPointer
 
@@ -21,8 +21,8 @@ logger = Logging.get('rti.adapters.native')
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
-                 ssh_credentials: dict = None,
-                 github_credentials: GithubCredentials = None) -> None:
+                 ssh_credentials: credentials.SSHCredentials = None,
+                 github_credentials: credentials.GithubCredentials = None) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 
         # set credentials
@@ -108,19 +108,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             for obj_name in self._input_interface:
                 local_path = os.path.join(local_working_directory, obj_name)
                 status.update('task', f"copy data objects: {local_path} -> {working_directory}")
-
-                if 'password' in self._ssh_credentials:
-                    key = self._ssh_credentials['password']
-                    is_password = True
-                else:
-                    key = self._ssh_credentials['key_path']
-                    is_password = False
-
-                scp_local_to_remote(local_path, working_directory,
-                                    login=self._ssh_credentials['login'],
-                                    host=self._ssh_credentials['host'],
-                                    ssh_key_path_or_password=key,
-                                    is_password=is_password)
+                scp_local_to_remote(local_path, working_directory, self._ssh_credentials)
 
         # run execute script
         status.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
@@ -160,47 +148,27 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
 
         status.remove('task')
 
-    def _wrap_command(self, command: str) -> list[str]:
-        if self._ssh_credentials:
-            a = ['sshpass', '-p', self._ssh_credentials['password']] if 'password' in self._ssh_credentials else []
-            b = ['-i', self._ssh_credentials['key_path']] if 'key_path' in self._ssh_credentials else []
-            c = ['-oHostKeyAlgorithms=+ssh-rsa']
-
-            return [*a, 'ssh', *b, *c, f"{self._ssh_credentials['login']}@{self._ssh_credentials['host']}", command]
-
-        else:
-            return ['bash', '-c', command]
-
     def _test_ssh_connection(self) -> None:
-        if self._ssh_credentials:
-            command = self._wrap_command('exit')
-            result = run_command(command, suppress_exception=True)
-            if result.returncode != 0:
-                raise SSHConnectionError({
-                    'command': command,
-                    'result': result
-                })
+        run_command('exit', ssh_credentials=self._ssh_credentials)
 
     def _monitor_command(self, command: str, context: dict,
                          stdout_path: str, stderr_path: str, cwd: str = None) -> None:
 
         command = f"cd {cwd} && {command}" if cwd else command
-        command = self._wrap_command(command)
 
         triggers = {
             'trigger:output': {'func': self._handle_trigger_output, 'context': context},
             'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
         }
 
-        monitor_command(command, triggers, stdout_path=stdout_path, stderr_path=stderr_path)
+        monitor_command(command, triggers, ssh_credentials=self._ssh_credentials,
+                        stdout_path=stdout_path, stderr_path=stderr_path)
 
     def _execute_command(self, command: str, cwd: str = None,
                          console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
             command = f"cd {cwd} && {command}" if cwd else command
-            command = self._wrap_command(command)
-
-            result = run_command(command)
+            result = run_command(command, ssh_credentials=self._ssh_credentials)
 
             if console_log_prefix:
                 self._echo_to_file(f"{console_log_prefix}.stdout", result.stdout.decode('utf-8'))
@@ -224,8 +192,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             })
 
     def _path_exists(self, path: str) -> bool:
-        command = self._wrap_command(f"ls {path}")
-        result = run_command(command, suppress_exception=True)
+        result = run_command(f"ls {path}", ssh_credentials=self._ssh_credentials, suppress_exception=True)
         return result.returncode == 0
 
     def _echo_to_file(self, path: str, content: str) -> None:
@@ -238,15 +205,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         if self._ssh_credentials:
             path = path.replace("$HOME", '~')
 
-            if 'password' in self._ssh_credentials:
-                key = self._ssh_credentials['password']
-                is_password = True
-            else:
-                key = self._ssh_credentials['key_path']
-                is_password = False
-
-            scp_local_to_remote(temp_path, path, self._ssh_credentials['login'], self._ssh_credentials['host'],
-                                key, is_password)
+            scp_local_to_remote(temp_path, path, self._ssh_credentials)
             os.remove(temp_path)
 
         else:
@@ -281,18 +240,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             remote_path = os.path.join(working_directory, obj_name)
             status.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
 
-            if 'password' in self._ssh_credentials:
-                key = self._ssh_credentials['password']
-                is_password = True
-            else:
-                key = self._ssh_credentials['key_path']
-                is_password = False
-
-            scp_remote_to_local(remote_path, local_working_directory,
-                                login=self._ssh_credentials['login'],
-                                host=self._ssh_credentials['host'],
-                                ssh_key_path_or_password=key,
-                                is_password=is_password)
+            scp_remote_to_local(remote_path, local_working_directory, self._ssh_credentials)
             status.remove('task')
 
         # upload the data object to the target DOR
