@@ -120,11 +120,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
     def test_transfer_ownership(self):
         owner0_k = self.extras[0]
-        owner0 = owner0_k.update_profile(name="User0", email=self.node.identity().email)
+        owner0 = owner0_k.update_profile(name="User0", email=self.node.identity.email)
         self.db_proxy.update_identity(owner0)
 
         owner1_k = self.extras[1]
-        owner1 = owner1_k.update_profile(name="User1", email=self.node.identity().email)
+        owner1 = owner1_k.update_profile(name="User1", email=self.node.identity.email)
         self.db_proxy.update_identity(owner1)
 
         meta = self.dor_proxy.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
@@ -402,7 +402,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"statistics={result}")
         assert('json' in result['data_formats'])
         assert('map' in result['data_types'])
-        assert(result['tag_keys'] == ['a', 'hello', 'world', 'hellox', 'whazzup'])
+        assert(result['tag_keys'] == sorted(['a', 'hello', 'world', 'hellox', 'whazzup']))
 
         self.dor_proxy.delete_data_object(obj_id0, self.extras[1])
         self.dor_proxy.delete_data_object(obj_id1, self.extras[1])

@@ -1,11 +1,11 @@
 import json
+from dataclasses import dataclass, asdict
 from typing import Optional, Union
 
 import canonicaljson
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, Table
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, registry
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object, hash_string_object
@@ -17,66 +17,153 @@ from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
 
 logger = Logging.get('nodedb.service')
 
-Base = declarative_base()
+mapper_registry = registry()
+Base = mapper_registry.generate_base()
 
 
-class DataObjectRecord(Base):
-    __tablename__ = 'obj_record'
-    obj_id = Column(String(64), primary_key=True)
+@mapper_registry.mapped
+@dataclass
+class DataObjectRecord:
+    __table__ = Table(
+        'obj_record',
+        mapper_registry.metadata,
+
+        Column("obj_id", String(64), primary_key=True),
+
+        Column("c_hash", String(64), nullable=False),
+        Column("data_type", String(64), nullable=False),
+        Column("data_format", String(64), nullable=False),
+        Column("created_by", String(64), nullable=False),
+        Column("created_t", Integer, nullable=False),
+        Column("gpp", Text, nullable=True),
+
+        Column("owner_iid", String(64), nullable=False),
+        Column("access_restricted", Boolean, nullable=False),
+        Column("content_encrypted", Boolean, nullable=False)
+    )
+
+    obj_id: str
 
     # IMMUTABLE part of meta information:
-    c_hash = Column(String(64), nullable=False)
-    data_type = Column(String(64), nullable=False)
-    data_format = Column(String(64), nullable=False)
-    created_by = Column(String(64), nullable=False)
-    created_t = Column(Integer, nullable=False)
-    gpp = Column(Text, nullable=True)
+    c_hash: str
+    data_type: str
+    data_format: str
+    created_by: str
+    created_t: int
+    gpp: Optional[str]
 
     # MUTABLE part of meta information:
-    owner_iid = Column(String(64), nullable=False)
-    access_restricted = Column(Boolean, nullable=False)
-    content_encrypted = Column(Boolean, nullable=False)
+    owner_iid: str
+    access_restricted: bool
+    content_encrypted: bool
+
+    def as_dict(self) -> dict:
+        record_dict = asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
+        if self.gpp is not None:
+            record_dict['gpp'] = json.loads(self.gpp)
+
+        return record_dict
 
 
-class DataObjectRecipe(Base):
-    __tablename__ = 'obj_recipe'
-    c_hash = Column(String(64), primary_key=True)
-    r_hash = Column(String(64), primary_key=True)
-    recipe = Column(Text, nullable=False)
+@mapper_registry.mapped
+@dataclass
+class DataObjectRecipe:
+    __table__ = Table(
+        'obj_recipe',
+        mapper_registry.metadata,
+        Column("c_hash", String(64), primary_key=True),
+        Column("r_hash", String(64), primary_key=True),
+        Column("recipe", Text, nullable=False)
+    )
+
+    c_hash: str
+    r_hash: str
+    recipe: str
 
 
-class DataObjectTag(Base):
-    __tablename__ = 'obj_tag'
-    obj_id = Column(String(64), primary_key=True)
-    key = Column(String(64), primary_key=True)
-    value = Column(String(256))
+@mapper_registry.mapped
+@dataclass
+class DataObjectTag:
+    __table__ = Table(
+        'obj_tag',
+        mapper_registry.metadata,
+        Column("obj_id", String(64), primary_key=True),
+        Column("key", String(64), primary_key=True),
+        Column("value", String(256))
+    )
+
+    obj_id: str
+    key: str
+    value: str
 
 
-class DataObjectAccess(Base):
-    __tablename__ = 'obj_access'
-    obj_id = Column(String(64), primary_key=True)
-    key_iid = Column(String(64), primary_key=True)
+@mapper_registry.mapped
+@dataclass
+class DataObjectAccess:
+    __table__ = Table(
+        'obj_access',
+        mapper_registry.metadata,
+        Column("obj_id", String(64), primary_key=True),
+        Column("key_iid", String(64), primary_key=True)
+    )
+
+    obj_id: str
+    key_iid: str
 
 
-class IdentityRecord(Base):
-    __tablename__ = 'identity'
-    iid = Column(String(64), primary_key=True)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
-    nonce = Column(Integer, nullable=False)
-    s_public_key = Column(String, nullable=True)
-    e_public_key = Column(String, nullable=True)
-    signature = Column(String, nullable=True)
+@mapper_registry.mapped
+@dataclass
+class IdentityRecord:
+    __table__ = Table(
+        'identity',
+        mapper_registry.metadata,
+        Column("iid", String(64), primary_key=True),
+        Column("name", String, nullable=False),
+        Column("email", String, nullable=False),
+        Column("nonce", Integer, nullable=False),
+        Column("s_public_key", String, nullable=True),
+        Column("e_public_key", String, nullable=True),
+        Column("signature", String, nullable=True)
+    )
+
+    iid: str
+    name: str
+    email: str
+    nonce: int
+    s_public_key: Optional[str]
+    e_public_key: Optional[str]
+    signature: Optional[str]
 
 
-class NetworkNode(Base):
-    __tablename__ = 'network_node'
-    iid = Column(String(64), primary_key=True)
-    last_seen = Column(BigInteger, nullable=False)
-    p2p_address = Column(String(21), nullable=False)
-    rest_address = Column(String(21), nullable=True)
-    dor_service = Column(Boolean, nullable=False)
-    rti_service = Column(Boolean, nullable=False)
+@mapper_registry.mapped
+@dataclass
+class NetworkNode:
+    __table__ = Table(
+        'network_node',
+        mapper_registry.metadata,
+        Column("iid", String(64), primary_key=True),
+        Column("last_seen", BigInteger, nullable=False),
+        Column("p2p_address", String(21), nullable=False),
+        Column("rest_address", String(21), nullable=True),
+        Column("dor_service", Boolean, nullable=False),
+        Column("rti_service", Boolean, nullable=False)
+    )
+
+    iid: str
+    last_seen: int
+    p2p_address: str
+    rest_address: Optional[str]
+    dor_service: bool
+    rti_service: bool
+
+    def get_p2p_address(self):
+        return self.p2p_address.split(":")
+
+    def get_rest_address(self) -> (str, str):
+        return self.rest_address.split(':') if self.rest_address else None
+
+    def as_dict(self) -> dict:
+        return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
 
 
 class NodeDBService:
@@ -137,20 +224,12 @@ class NodeDBService:
 
     def get_statistics(self) -> dict:
         with self._Session() as session:
+            test = session.query(DataObjectRecord.data_type).distinct()
             result = {
-                'data_types': [],
-                'data_formats': [],
-                'tag_keys': []
+                'data_types': [value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
+                'data_formats': [value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
+                'tag_keys': sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
             }
-
-            for value in session.query(DataObjectRecord.data_type).distinct():
-                result['data_types'].append(value[0])
-
-            for value in session.query(DataObjectRecord.data_format).distinct():
-                result['data_formats'].append(value[0])
-
-            for value in session.query(DataObjectTag.key).distinct():
-                result['tag_keys'].append(value[0])
 
             return result
 
@@ -172,7 +251,7 @@ class NodeDBService:
             if c_hashes is not None:
                 q = q.filter(DataObjectRecord.c_hash.in_(c_hashes))
 
-            object_records = q.all()
+            object_records: list[DataObjectRecord] = q.all()
 
             # second, filter data objects by patterns (if any)
             result = []
@@ -193,19 +272,11 @@ class NodeDBService:
                 if patterns is None or any(pattern in flattened for pattern in patterns):
                     access = session.query(DataObjectAccess).filter_by(obj_id=obj_record.obj_id).all()
 
-                    result.append({
-                        'obj_id': obj_record.obj_id,
-                        'c_hash': obj_record.c_hash,
-                        'data_type': obj_record.data_type,
-                        'data_format': obj_record.data_format,
-                        'created_by': obj_record.created_by,
-                        'created_t': obj_record.created_t,
-                        'owner_iid': obj_record.owner_iid,
-                        'access_restricted': obj_record.access_restricted,
-                        'content_encrypted': obj_record.content_encrypted,
-                        'tags': tags,
-                        'access': [record.key_iid for record in access]
-                    })
+                    obj_record_dict = obj_record.as_dict()
+                    obj_record_dict["tags"] = tags
+                    obj_record_dict["access"] = [record.key_iid for record in access]
+
+                    result.append(obj_record_dict)
 
             return result
 
@@ -279,33 +350,19 @@ class NodeDBService:
     def get_object_by_id(self, obj_id: str) -> Optional[dict]:
         with self._Session() as session:
             # do we have an object with this id?
-            record = session.query(DataObjectRecord).get(obj_id)
+            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
             if record is None:
                 return None
 
+            result = record.as_dict()
+
             # get all tags
             tags = session.query(DataObjectTag).filter_by(obj_id=obj_id).all()
+            result["tags"] = [{'key': tag.key, 'value': tag.value} for tag in tags]
 
             # get list of all identities that have access
             access = session.query(DataObjectAccess).filter_by(obj_id=obj_id).all()
-
-            # prepare the data object information
-            result = {
-                'obj_id': record.obj_id,
-                'c_hash': record.c_hash,
-                'data_type': record.data_type,
-                'data_format': record.data_format,
-                'created_by': record.created_by,
-                'created_t': record.created_t,
-                'owner_iid': record.owner_iid,
-                'access_restricted': record.access_restricted,
-                'content_encrypted': record.content_encrypted,
-                'tags': [{'key': tag.key, 'value': tag.value} for tag in tags],
-                'access': [record.key_iid for record in access]
-            }
-
-            if record.gpp is not None:
-                result['gpp'] = json.loads(record.gpp)
+            result["access"] = [record.key_iid for record in access]
 
             return result
 
@@ -410,8 +467,9 @@ class NodeDBService:
             # address but different)?
             conflicting_records = session.query(NetworkNode).filter(
                 (NetworkNode.iid != node_iid) & (
-                    (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
-                    ((NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
+                        (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
+                        ((
+                                 NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
                 )
             ).all()
 
@@ -473,40 +531,14 @@ class NodeDBService:
             record = session.query(NetworkNode).filter_by(p2p_address=f"{p2p_address[0]}:{p2p_address[1]}").first()
             return record.iid if record else None
 
-    def get_network(self, node_iid: str) -> Optional[dict]:
+    def get_network(self, node_iid: str) -> Optional[NetworkNode]:
         with self._Session() as session:
-            record = session.query(NetworkNode).get(node_iid)
-            return {
-                'iid': record.iid,
-                'last_seen': record.iid,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service
-            } if record else None
+            record: NetworkNode = session.query(NetworkNode).get(node_iid)
+            return record
 
-    def get_network_all(self, valid_json: bool = False) -> list[dict]:
+    def get_network_all(self) -> list[NetworkNode]:
         with self._Session() as session:
-            records = session.query(NetworkNode).all()
-            result = [{
-                'iid': record.iid,
-                'last_seen': record.last_seen,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service
-            } for record in records]
-
-            # make it a valid JSON object?
-            if valid_json:
-                for record in result:
-                    record['p2p_address'] = f"{record['p2p_address'][0]}:{record['p2p_address'][1]}"
-                    if record['rest_address'] is None:
-                        record.pop('rest_address')
-                    else:
-                        record['rest_address'] = f"{record['rest_address'][0]}:{record['rest_address'][1]}"
-
-            return result
+            return session.query(NetworkNode).all()
 
     def add_recipe(self, c_hash: str, recipe: dict) -> None:
         with self._Session() as session:
@@ -631,7 +663,7 @@ class NodeDBService:
         with self._Session() as session:
             # add identity records
             for item in session.query(IdentityRecord).all():
-                if exclude_self and item.iid == self._node.identity().id:
+                if exclude_self and item.iid == self._node.identity.id:
                     continue
 
                 identity_items.append({
@@ -648,7 +680,7 @@ class NodeDBService:
 
             # add network records
             for item in session.query(NetworkNode).all():
-                if exclude_self and item.iid == self._node.identity().id:
+                if exclude_self and item.iid == self._node.identity.id:
                     continue
 
                 p2p_address = item.p2p_address.split(':')
