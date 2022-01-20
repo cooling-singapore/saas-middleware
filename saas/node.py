@@ -41,9 +41,11 @@ class Node:
     def keystore(self) -> Keystore:
         return self._keystore
 
+    @property
     def identity(self) -> Identity:
         return self._keystore.identity
 
+    @property
     def datastore(self) -> str:
         return self._datastore_path
 
@@ -80,8 +82,8 @@ class Node:
             self.rest.start_service()
 
         # update our node db
-        self.db.update_identity(self.identity())
-        self.db.update_network(self.identity().id, get_timestamp_now(),
+        self.db.update_identity(self.identity)
+        self.db.update_network(self.identity.id, get_timestamp_now(),
                                self.dor is not None, self.rti is not None,
                                self.p2p.address(), self.rest.address() if self.rest else None)
 

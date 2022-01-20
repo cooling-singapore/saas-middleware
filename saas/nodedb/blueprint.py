@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 from typing import Optional, List
 
-from requests import Response
 from pydantic import BaseModel
+from requests import Response
 
+import saas.node
 from saas.keystore.identity import Identity
 from saas.keystore.schemas import Identity as IdentitySchema
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
-
 from saas.rest.request_manager import request_manager
 from saas.schemas import NetworkNode, ObjectProvenance
 
@@ -34,7 +36,7 @@ class Identities(BaseModel):
 
 
 class NodeDBBlueprint(SaaSBlueprint):
-    def __init__(self, node):
+    def __init__(self, node: saas.node.Node):
         super().__init__('nodedb', __name__, endpoint_prefix)
         self._node = node
 
@@ -51,8 +53,8 @@ class NodeDBBlueprint(SaaSBlueprint):
         rest_address = self._node.rest.address()
 
         return create_ok_response({
-            "iid": self._node.identity().id,
-            "identity": self._node.identity().serialise(),
+            "iid": self._node.identity.id,
+            "identity": self._node.identity.serialise(),
             "dor_service": self._node.dor is not None,
             "rti_service": self._node.rti is not None,
             "rest_service_address": f"{p2p_address[0]}:{p2p_address[1]}",
@@ -62,7 +64,7 @@ class NodeDBBlueprint(SaaSBlueprint):
     @request_manager.handle_request(NetworkNodes)
     def get_network(self) -> (Response, int):
         return create_ok_response(
-            self._node.db.get_network_all(valid_json=True)
+            [n.as_dict() for n in self._node.db.get_network_all()]
         )
 
     @request_manager.handle_request(Identities)

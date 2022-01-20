@@ -1,13 +1,15 @@
-import os
+from __future__ import annotations
+
 import json
+import os
 from _stat import S_IWRITE
-
 from stat import S_IREAD
-
 from threading import Lock
 from typing import Optional
 
+import saas.node
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
 from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
@@ -18,8 +20,6 @@ from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundErr
     ProcessorNotDeployedError, UnexpectedGPPMetaInformation, GPPDataObjectNotFound
 from saas.rti.status import StatusLogger, State
 
-from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
-
 logger = Logging.get('rti.service')
 
 
@@ -27,25 +27,25 @@ class RuntimeInfrastructureService:
     infix_path = 'rti'
 
     def proc_content_path(self, c_hash: str) -> str:
-        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
+        return os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{c_hash}.content")
 
     def proc_meta_path(self, obj_id: str) -> str:
-        return os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
+        return os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
 
-    def __init__(self, node) -> None:
+    def __init__(self, node: saas.node.Node) -> None:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._ssh_credentials_paths = {}
-        self._jobs_path = os.path.join(self._node.datastore(), 'jobs')
+        self._jobs_path = os.path.join(self._node.datastore, 'jobs')
         self._content_keys = {}
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
-        os.makedirs(os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path), exist_ok=True)
+        os.makedirs(os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path), exist_ok=True)
 
     def _store_ssh_credentials_key(self, proc_id: str, ssh_credentials: SSHCredentials) -> str:
-        key_path = os.path.join(self._node.datastore(), RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
+        key_path = os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{proc_id}.ssh_key")
         self._ssh_credentials_paths[proc_id] = key_path
 
         # write the key to disk and change file permissions
@@ -68,12 +68,12 @@ class RuntimeInfrastructureService:
 
             # if we have a custodian, then drop all other nodes in the network
             if gpp_custodian:
-                network = [item for item in network if item['iid'] == gpp_custodian]
+                network = [item for item in network if item.iid == gpp_custodian]
 
             # search the network for the GPP data object
             for network_node in network:
                 # skip this node if doesn't have a DOR
-                if network_node['dor_service'] is False:
+                if network_node.dor_service is False:
                     continue
 
                 # try to fetch the data object using the P2P protocol
@@ -81,7 +81,7 @@ class RuntimeInfrastructureService:
 
                 # lookup the data object
                 try:
-                    records = protocol.lookup(network_node['p2p_address'], [proc_id])
+                    records = protocol.lookup(network_node.get_p2p_address(), [proc_id])
                     if proc_id not in records:
                         continue
 
@@ -103,7 +103,7 @@ class RuntimeInfrastructureService:
                 try:
                     meta_path = self.proc_meta_path(proc_id)
                     content_path = self.proc_content_path(record['c_hash'])
-                    protocol.fetch(network_node['p2p_address'], proc_id, meta_path, content_path)
+                    protocol.fetch(network_node.get_p2p_address(), proc_id, meta_path, content_path)
 
                 # ignore peers that are not available
                 except PeerUnavailableError:

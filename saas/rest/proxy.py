@@ -128,7 +128,7 @@ class EndpointProxy:
         if with_authorisation_by:
             url = f"{action}:{self._auth_url(endpoint, parameters)}"
             authorisation = {
-                    'public_key': with_authorisation_by.signing_key().public_as_string(),
+                    'public_key': with_authorisation_by.signing_key.public_as_string(),
                     'signature': sign_authorisation_token(with_authorisation_by, url, body)
             }
 
