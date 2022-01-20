@@ -1,46 +1,42 @@
-from typing import Optional
+from __future__ import annotations
 
+from typing import Optional, List
+
+from pydantic import BaseModel
 from requests import Response
 
+import saas.node
 from saas.keystore.identity import Identity
-from saas.keystore.schemas import identity_schema
+from saas.keystore.schemas import Identity as IdentitySchema
 from saas.logging import Logging
 from saas.rest.blueprint import SaaSBlueprint, create_ok_response
 from saas.rest.proxy import EndpointProxy
-
 from saas.rest.request_manager import request_manager
-from saas.schemas import network_node_schema, provenance_schema
+from saas.schemas import NetworkNode, ObjectProvenance
 
 logger = Logging.get('nodedb.blueprint')
 endpoint_prefix = "/api/v1/nodedb"
 
 
-network_node_details_schema = {
-    'type': 'object',
-    'properties': {
-        'iid': {'type': 'string'},
-        'identity': identity_schema,
-        'dor_service': {'type': 'boolean'},
-        'rti_service': {'type': 'boolean'},
-        'rest_service_address': {'type': 'string'},
-        'p2p_service_address': {'type': 'string'}
-    },
-    'required': ['iid', 'identity', 'dor_service', 'rti_service', 'rest_service_address', 'p2p_service_address']
-}
+class NetworkNodeDetail(BaseModel):
+    iid = str
+    identity: IdentitySchema
+    dor_service: bool
+    rti_service: bool
+    rest_service_address: str
+    p2p_service_address: str
 
-network_nodes_schema = {
-    'type': 'array',
-    'items': network_node_schema
-}
 
-identities_schema = {
-    'type': 'array',
-    'items': identity_schema
-}
+class NetworkNodes(BaseModel):
+    __root__: List[NetworkNode]
+
+
+class Identities(BaseModel):
+    __root__: List[IdentitySchema]
 
 
 class NodeDBBlueprint(SaaSBlueprint):
-    def __init__(self, node):
+    def __init__(self, node: saas.node.Node):
         super().__init__('nodedb', __name__, endpoint_prefix)
         self._node = node
 
@@ -51,47 +47,47 @@ class NodeDBBlueprint(SaaSBlueprint):
         self.add_rule('identity', self.update_identity, methods=['POST'])
         self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
-    @request_manager.handle_request(network_node_details_schema)
+    @request_manager.handle_request(NetworkNodeDetail)
     def get_node(self) -> (Response, int):
         p2p_address = self._node.p2p.address()
         rest_address = self._node.rest.address()
 
         return create_ok_response({
-            "iid": self._node.identity().id,
-            "identity": self._node.identity().serialise(),
+            "iid": self._node.identity.id,
+            "identity": self._node.identity.serialise(),
             "dor_service": self._node.dor is not None,
             "rti_service": self._node.rti is not None,
             "rest_service_address": f"{p2p_address[0]}:{p2p_address[1]}",
             "p2p_service_address": f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
         })
 
-    @request_manager.handle_request(network_nodes_schema)
+    @request_manager.handle_request(NetworkNodes)
     def get_network(self) -> (Response, int):
         return create_ok_response(
-            self._node.db.get_network_all(valid_json=True)
+            [n.as_dict() for n in self._node.db.get_network_all()]
         )
 
-    @request_manager.handle_request(identities_schema)
+    @request_manager.handle_request(Identities)
     def get_identities(self) -> (Response, int):
         return create_ok_response(
             [identity.serialise() for identity in self._node.db.get_all_identities().values()]
         )
 
-    @request_manager.handle_request(identity_schema)
+    @request_manager.handle_request(IdentitySchema)
     def get_identity(self, iid: str) -> (Response, int):
         identity = self._node.db.get_identity(iid)
         return create_ok_response(
             identity.serialise() if identity else None
         )
 
-    @request_manager.handle_request(None)
-    @request_manager.verify_request_body(identity_schema)
+    @request_manager.handle_request()
+    @request_manager.verify_request_body(IdentitySchema)
     def update_identity(self) -> (Response, int):
         serialised_identity = request_manager.get_request_variable('body')
         self._node.db.update_identity(serialised_identity)
         return create_ok_response()
 
-    @request_manager.handle_request(provenance_schema)
+    @request_manager.handle_request(ObjectProvenance)
     def get_provenance(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.db.get_provenance(obj_id))
 

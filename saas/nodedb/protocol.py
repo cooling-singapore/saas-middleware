@@ -5,7 +5,7 @@ from saas.keystore.identity import Identity
 from saas.logging import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
 from saas.p2p.exceptions import PeerUnavailableError
-from saas.p2p.protocol import P2PProtocol
+from saas.p2p.protocol import P2PProtocol, P2PMessage
 
 logger = Logging.get('nodedb.protocol')
 
@@ -20,12 +20,12 @@ class NodeDBP2PProtocol(P2PProtocol):
         })
 
     def _prepare_update_message(self, snapshot: dict, reciprocate: bool, forward: bool,
-                                ignore: list[str] = None) -> dict:
+                                ignore: list[str] = None) -> P2PMessage:
         return self.prepare_message('update', {
             'self': {
-                'identity': self.node.identity().serialise(),
+                'identity': self.node.identity.serialise(),
                 'network': {
-                    'node_iid': self.node.identity().id,
+                    'node_iid': self.node.identity.id,
                     'dor_service': self.node.dor is not None,
                     'rti_service': self.node.rti is not None,
                     'p2p_address': self.node.p2p.address(),
@@ -35,7 +35,7 @@ class NodeDBP2PProtocol(P2PProtocol):
             'snapshot': snapshot,
             'reciprocate': reciprocate,
             'forward': forward,
-            'forward_ignore': [self.node.identity().id, *ignore] if ignore else [self.node.identity().id]
+            'forward_ignore': [self.node.identity.id, *ignore] if ignore else [self.node.identity.id]
         })
 
     def perform_join(self, boot_node_address: (str, int)) -> None:
@@ -58,8 +58,9 @@ class NodeDBP2PProtocol(P2PProtocol):
             # get all nodes in the network and add any nodes that we may not have been aware of
             network = self.node.db.get_network_all()
             for record in network:
-                if record['p2p_address'] not in processed and record['p2p_address'] not in remaining:
-                    remaining.append(record['p2p_address'])
+                _address = record.get_p2p_address()
+                if _address not in processed and _address not in remaining:
+                    remaining.append(_address)
 
     def update_peer(self, peer_address: (str, int), reciprocate: bool, forward: bool) -> Optional[dict]:
         # send the message via request to the peer
@@ -81,7 +82,7 @@ class NodeDBP2PProtocol(P2PProtocol):
         message = self._prepare_update_message(snapshot, reciprocate=False, forward=False)
         self.broadcast(message)
 
-    def _handle_update(self, message: dict, peer: Identity) -> dict:
+    def _handle_update(self, message: dict, peer: Identity) -> P2PMessage:
         # does the identity check out?
         if message['self']['identity']['iid'] != peer.id:
             raise UnexpectedIdentityError({
@@ -109,13 +110,13 @@ class NodeDBP2PProtocol(P2PProtocol):
         # are we supposed to forward the message?
         if message['forward']:
             # add ourselves to the forward_ignore list and disable reciprocity (we don't do that when forwarding)
-            message['forward_ignore'].append(self.node.identity().id)
+            message['forward_ignore'].append(self.node.identity.id)
             message['reciprocate'] = False
 
             # forward the message to all peers we know of (while skipping the ones in the ignore list)
             for record in self.node.db.get_network_all():
-                if record['iid'] not in message['forward_ignore']:
-                    self.request(record['p2p_address'], message)
+                if record.iid not in message['forward_ignore']:
+                    self.request(record.p2p_address, message)
 
         # reciprocate with an update message
         return self._prepare_update_message(self.node.db.create_sync_snapshot(exclude_self=True),
@@ -124,15 +125,15 @@ class NodeDBP2PProtocol(P2PProtocol):
     def broadcast_leave(self) -> None:
         message = self.prepare_message('leave', {
             'self': {
-                'identity': self.node.identity().serialise(),
+                'identity': self.node.identity.serialise(),
             }
         })
 
         result = self.broadcast(message)
         for unavailable in result['unavailable']:
-            logger.debug(f"unavailable peer at {unavailable['p2p_address']} known to us as {unavailable['iid']} -> "
+            logger.debug(f"unavailable peer at {unavailable.get_p2p_address()} known to us as {unavailable.iid} -> "
                          f"remove network record")
-            self.node.db.remove_network(node_iid=unavailable['iid'])
+            self.node.db.remove_network(node_iid=unavailable.iid)
 
     def _handle_leave(self, message: dict, peer: Identity) -> None:
         # does the identity check out?

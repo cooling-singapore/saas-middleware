@@ -7,7 +7,7 @@ from cli.helpers import CLICommand, Argument, prompt_for_string, get_available_k
 from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
 from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import keystore_schema
+from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
 from saas.logging import Logging
 from saas.nodedb.blueprint import NodeDBProxy
 
@@ -31,8 +31,8 @@ class IdentityCreate(CLICommand):
 
         print(f"New keystore created!")
         print(f"- Identity: {identity.name}/{identity.email}/{identity.id}")
-        print(f"- Signing Key: {keystore.signing_key().info()}")
-        print(f"- Encryption Key: {keystore.encryption_key().info()}")
+        print(f"- Signing Key: {keystore.signing_key.info()}")
+        print(f"- Encryption Key: {keystore.encryption_key.info()}")
 
 
 class IdentityRemove(CLICommand):
@@ -70,7 +70,7 @@ class IdentityShow(CLICommand):
         # read the keystore file
         keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
         content = read_json_from_file(keystore_path)
-        if not validate_json(content, keystore_schema):
+        if not validate_json(content, KeystoreSchema.schema()):
             raise CLIRuntimeError(f"Keystore {args['keystore-id']} content not compliant with json schema.")
 
         # show the public information

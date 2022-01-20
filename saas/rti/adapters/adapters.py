@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import time
@@ -6,6 +8,7 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional
 
+import saas.node
 from saas.cryptography.helpers import encrypt_file, decrypt_file
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
@@ -13,14 +16,15 @@ from saas.dor.blueprint import DORProxy
 from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.exceptions import SaaSException
+from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
+    validate_json
 from saas.logging import Logging
+from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError
 from saas.rti.status import State, StatusLogger
-from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, create_symbolic_link, \
-    validate_json
 
 logger = Logging.get('rti.adapters')
 
@@ -35,7 +39,7 @@ class ProcessorState(Enum):
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node) -> None:
+    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node: saas.node.Node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()
@@ -207,10 +211,10 @@ class RTIProcessorAdapter(Thread, ABC):
         found = {}
         for peer in self._node.db.get_network_all():
             # only check with peers that have a DOR
-            if peer['dor_service']:
+            if peer.dor_service:
                 try:
                     # does the remote DOR have the data object?
-                    records = protocol.lookup(peer['p2p_address'], [*pending.keys()], user)
+                    records = protocol.lookup(peer.get_p2p_address(), [*pending.keys()], user)
                     for obj_id, record in records.items():
                         found[obj_id] = record
                         found[obj_id]['custodian'] = peer
@@ -274,7 +278,8 @@ class RTIProcessorAdapter(Thread, ABC):
             content_path = os.path.join(working_directory, f"{obj_id}.content")
 
             # fetch the data object
-            protocol.fetch(record['custodian']['p2p_address'], obj_id, meta_path, content_path,
+            custodian: NetworkNode = record['custodian']
+            protocol.fetch(custodian.get_p2p_address(), obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
@@ -297,7 +302,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'obj_id': obj_id,
                     'ephemeral_public_key': ephemeral_key.public_as_string(),
                     'user_iid': user.id,
-                    'node_id': self._node.identity().id
+                    'node_id': self._node.identity.id
                 })
                 request = owner.encrypt(request.encode('utf-8')).decode('utf-8')
 
@@ -461,7 +466,7 @@ class RTIProcessorAdapter(Thread, ABC):
             node_record = self._node.db.get_network(task_out['target_node_iid'])
 
             # extract the rest address from that node record
-            target_address = node_record['rest_address']
+            target_address = node_record.get_rest_address()
 
         # determine recipe
         recipe = {
@@ -498,8 +503,8 @@ class RTIProcessorAdapter(Thread, ABC):
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        meta = proxy.add_data_object(output_content_path, self._node.identity(), restricted_access, content_encrypted,
-                                     proc_out['data_type'], proc_out['data_format'], self._node.identity().id, recipe)
+        meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
+                                     proc_out['data_type'], proc_out['data_format'], self._node.identity.id, recipe)
         obj_id = meta['obj_id']
 
         # update tags with information from the job

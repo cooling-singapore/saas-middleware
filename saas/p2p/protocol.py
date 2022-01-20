@@ -1,11 +1,29 @@
-from typing import Optional
+from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Optional, TypedDict
+
+import saas.node
 from saas.keystore.identity import Identity
 from saas.logging import Logging
+from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger
 
 logger = Logging.get('p2p.protocol')
+
+
+class BroadCastResponses(TypedDict):
+    responses: dict
+    unavailable: list[NetworkNode]
+
+
+@dataclass
+class P2PMessage:
+    protocol: str
+    type: str
+    content: dict = field(default_factory=dict)
+    attachment: str = None
 
 
 class P2PProtocol:
@@ -13,7 +31,7 @@ class P2PProtocol:
     P2PProtocol is the base class for all P2P protocol classes. It provides convenience methods that are
     needed regardless of the specific protocol implementation.
     """
-    def __init__(self, node, protocol_name: str, function_mapping: dict):
+    def __init__(self, node: saas.node.Node, protocol_name: str, function_mapping: dict):
         self._node = node
         self._protocol_name = protocol_name
         self._function_mapping = function_mapping
@@ -24,7 +42,7 @@ class P2PProtocol:
         return f"{self._seq_id_counter:04d}"
 
     @property
-    def node(self):
+    def node(self) -> saas.node.Node:
         return self._node
 
     @property
@@ -34,7 +52,7 @@ class P2PProtocol:
     def supports(self, message_type: str) -> bool:
         return message_type in self._function_mapping
 
-    def handle_message(self, message: dict, peer: Identity) -> Optional[dict]:
+    def handle_message(self, message: P2PMessage, peer: Identity) -> Optional[P2PMessage]:
         """
         Handles a message that has been received by forwarding it to the appropriate handler function for this
         type of message.
@@ -42,9 +60,9 @@ class P2PProtocol:
         :param peer: the identity of the peer that sent the message
         :return: the response to be sent back to the peer (if any - None if not)
         """
-        return self._function_mapping[message['type']](message['content'], peer)
+        return self._function_mapping[message.type](message.content, peer)
 
-    def prepare_message(self, message_type: str, content: dict = None, attachment: str = None) -> dict:
+    def prepare_message(self, message_type: str, content: dict = None, attachment: str = None) -> P2PMessage:
         """
         Convenience method for preparing a message. It creates the body of the message and fills in the 'protocol',
         'type' and 'payload' fields.
@@ -53,14 +71,9 @@ class P2PProtocol:
         :param attachment: the (optional) path to an attachment for the message
         :return: a valid P2P protocol message
         """
-        return {
-            'protocol': self._protocol_name,
-            'type': message_type,
-            'content': content if content else {},
-            'attachment': attachment
-        }
+        return P2PMessage(protocol=self._protocol_name, type=message_type, content=content, attachment=attachment)
 
-    def request(self, address: (str, int), message: dict) -> (dict, str):
+    def request(self, address: (str, int), message: P2PMessage) -> (dict, str):
         """
         Connects to a peer address, sends a request message and waits for a response message.
         :param address: the address (host:port) of the peer
@@ -69,17 +82,17 @@ class P2PProtocol:
         """
         seq_id = self._next_seq_id()
 
-        peer, messenger = SecureMessenger.connect(address, self._node.identity(), self._node.datastore())
-        logger.debug(f"[req:{seq_id}] ({self._node.identity().short_id}) -> ({peer.short_id}) "
-                     f"{message['protocol']} {message['type']} {message['attachment'] is not None}")
+        peer, messenger = SecureMessenger.connect(address, self._node.identity, self._node.datastore)
+        logger.debug(f"[req:{seq_id}] ({self._node.identity.short_id}) -> ({peer.short_id}) "
+                     f"{message.protocol} {message.type} {message.attachment is not None}")
 
-        response = messenger.send_request(message, message['attachment'])
-        logger.debug(f"[res:{seq_id}] ({self._node.identity().short_id}) <- ({peer.short_id})")
+        response = messenger.send_request(message, message.attachment)
+        logger.debug(f"[res:{seq_id}] ({self._node.identity.short_id}) <- ({peer.short_id})")
 
         messenger.close()
         return response['content'], response['attachment']
 
-    def broadcast(self, message: dict, exclude: list[str] = None) -> dict[str, dict]:
+    def broadcast(self, message: P2PMessage, exclude: list[str] = None) -> BroadCastResponses:
         """
         Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
         broadcast. Note that the db registry typically also includes a record for the db its hosted on. In order
@@ -92,23 +105,23 @@ class P2PProtocol:
 
         # we always exclude ourselves
         exclude = exclude if exclude else []
-        exclude.append(self._node.identity().id)
+        exclude.append(self._node.identity.id)
 
         # send requests to all peers we know of and collect the responses
         responses = {}
         unavailable = []
         for record in self._node.db.get_network_all():
             # is this peer iid in the exclusion list?
-            if record['iid'] in exclude:
+            if record.iid in exclude:
                 continue
 
             # connect to the peer (if it is online), send a request and keep the response. if a peer is not available,
             # we just skip it (this is a broadcast and we can't expect every peer in the list to be online/reachable).
             try:
-                peer, messenger = SecureMessenger.connect(record['p2p_address'],
-                                                          self._node.identity(),
-                                                          self._node.datastore())
-                responses[peer.id] = messenger.send_request(message, message['attachment'])
+                peer, messenger = SecureMessenger.connect(record.get_p2p_address(),
+                                                          self._node.identity,
+                                                          self._node.datastore)
+                responses[peer.id] = messenger.send_request(message, message.attachment)
                 messenger.close()
 
             except PeerUnavailableError:

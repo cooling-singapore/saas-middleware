@@ -1,48 +1,65 @@
-keystore_asset_schema = {
-    'type': 'object',
-    'properties': {
-        'type': {'type': 'string'},
-        'key': {'type': 'string'},
-        'content': {'type': 'object'},
-    },
-    'required': ['type', 'key', 'content']
-}
+from typing import List, Dict, Union
 
-keystore_profile_schema = {
-    'type': 'object',
-    'properties': {
-        'name': {'type': 'string'},
-        'email': {'type': 'string'},
-        'notes': {'type': 'string'}
-    },
-    'required': ['name', 'email', 'notes']
-}
+from pydantic import BaseModel, validator
 
-keystore_schema = {
-    'type': 'object',
-    'properties': {
-        'iid': {'type': 'string'},
-        'profile': keystore_profile_schema,
-        'assets': {
-            'type': 'array',
-            'items': keystore_asset_schema
-        },
-        'nonce': {'type': 'number'},
-        'signature': {'type': 'string'}
-    },
-    'required': ['iid', 'profile', 'assets', 'nonce', 'signature']
-}
+from saas.keystore.asset import Asset
+from saas.keystore.assets.keypair import KeyPairAsset
+from saas.keystore.exceptions import KeystoreException
 
-identity_schema = {
-    'type': 'object',
-    'properties': {
-        'iid': {'type': 'string'},
-        'name': {'type': 'string'},
-        'email': {'type': 'string'},
-        's_public_key': {'type': 'string'},
-        'e_public_key': {'type': 'string'},
-        'nonce': {'type': 'number'},
-        'signature': {'type': 'string'}
-    },
-    'required': ['iid', 'name', 'email', 's_public_key', 'e_public_key', 'nonce', 'signature']
-}
+REQUIRED_ASSETS = ["master-key", "signing-key", "encryption-key"]
+
+
+class BaseKeystore(BaseModel):
+    class KeystoreProfile(BaseModel):
+        name: str
+        email: str
+        notes: str
+
+    iid: str
+    profile: KeystoreProfile
+    assets: list
+    nonce: int
+
+
+class KeystoreObject(BaseKeystore):
+    assets: Dict[str, Union[Asset, KeyPairAsset]]
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    @validator('assets')
+    def contains_required_key_assets(cls, v):
+        """Keystore must contain keys of certain types"""
+        for key in REQUIRED_ASSETS:
+            if key not in v:
+                raise KeystoreException(f"Required asset '{key}' not found in keystore content.")
+            return v
+
+
+class SerializedKeystore(BaseKeystore):
+    class KeystoreAsset(BaseModel):
+        type: str
+        key: str
+        content: dict
+
+    assets: List[KeystoreAsset]
+    signature: str
+
+    @validator('assets')
+    def contains_required_key_assets(cls, v):
+        """Keystore must contain keys of certain types"""
+        asset_keys = set([asset.key for asset in v])
+        for key in REQUIRED_ASSETS:
+            if key not in asset_keys:
+                raise KeystoreException(f"Required asset '{key}' not found in keystore content.")
+            return v
+
+
+class Identity(BaseModel):
+    iid: str
+    name: str
+    email: str
+    s_public_key: str
+    e_public_key: str
+    nonce: int
+    signature: str
