@@ -14,6 +14,8 @@ class LoggingTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
     def tearDown(self):
+        # Remove all handlers (especially FileHandlers) to prevent errors in logging (e.g. directory does not exist)
+        Logging.remove_all_handlers()
         self.cleanup()
 
     def test_defaults(self):
