@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from abc import abstractmethod, ABC
@@ -193,7 +194,9 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] received stop signal.")
         self._state = ProcessorState.STOPPING
 
-    def pre_execute(self, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+    def pre_execute(self, job_id: str, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+        logger.info(f"[adapter:{self._proc_id}][{job_id}] perform pre-execute routine...")
+
         # store by-value input data objects (if any)
         self._store_value_input_data_objects(task_descriptor, working_directory, status)
 
@@ -214,8 +217,8 @@ class RTIProcessorAdapter(Thread, ABC):
         # verify the output owner identities
         self._verify_outputs(task_descriptor, status)
 
-    def post_execute(self, job_id: str, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
-        pass
+    def post_execute(self, job_id: str) -> None:
+        logger.info(f"[adapter:{self._proc_id}][{job_id}] perform post-execute routine...")
 
     def add(self, job_descriptor: dict, status: StatusLogger) -> None:
         with self._mutex:
@@ -258,13 +261,13 @@ class RTIProcessorAdapter(Thread, ABC):
 
             try:
                 # perform pre-execute routine
-                self.pre_execute(task_descriptor, wd_path, status)
+                self.pre_execute(job_id, task_descriptor, wd_path, status)
 
                 # instruct processor adapter to execute the job
                 self.execute(job_id, task_descriptor, wd_path, status)
 
                 # perform post-execute routine
-                self.post_execute(job_id, task_descriptor, wd_path, status)
+                self.post_execute(job_id)
 
             except SaaSException as e:
                 status.update('error', f"error while running job:\n"
@@ -275,6 +278,26 @@ class RTIProcessorAdapter(Thread, ABC):
 
             else:
                 status.update_state(State.SUCCESSFUL)
+
+            # if the job history is not to be retained, delete its contents (with exception of the status and
+            # the job descriptor)
+            if not job_descriptor['retain']:
+                exclusions = ['job_descriptor.json', 'job_status.json', '.sh.stderr', '.sh.stdout']
+                logger.info(f"[adapter:{self._proc_id}][{job_id}] delete working directory contents at {wd_path} "
+                            f"(exclusions: {exclusions})...")
+
+                # collect all files in the directory
+                files = os.listdir(wd_path)
+                for file in files:
+                    # if the item is not in the exclusion list, delete it
+                    if not file.endswith(tuple(exclusions)):
+                        path = os.path.join(wd_path, file)
+                        if os.path.isfile(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                        else:
+                            logger.warning(f"Encountered neither file nor directory: {path}")
 
         logger.info(f"[adapter:{self._proc_id}] shutting down...")
         self._state = ProcessorState.STOPPING

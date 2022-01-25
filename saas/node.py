@@ -50,7 +50,8 @@ class Node:
         return self._datastore_path
 
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool,
-                rest_address: (str, int) = None, boot_node_address: (str, int) = None) -> None:
+                rest_address: (str, int) = None, boot_node_address: (str, int) = None,
+                retain_job_history: bool = False) -> None:
         logger.info("starting P2P service.")
         self.p2p = P2PService(self, server_address)
         self.p2p.start_service()
@@ -67,7 +68,7 @@ class Node:
 
         if enable_rti:
             logger.info("starting RTI service.")
-            self.rti = RuntimeInfrastructureService(self)
+            self.rti = RuntimeInfrastructureService(self, retain_job_history)
 
         if rest_address is not None:
             blueprint_dor = dor_blueprint.DORBlueprint(self)
@@ -129,10 +130,11 @@ class Node:
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False) -> Node:
+               enable_dor=False, enable_rti=False, retain_job_history=False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
-                     rest_address=rest_address, boot_node_address=boot_node_address)
+                     rest_address=rest_address, boot_node_address=boot_node_address,
+                     retain_job_history=retain_job_history)
 
         return node
