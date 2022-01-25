@@ -8,10 +8,10 @@ from jsonschema import validate
 
 from saas.cryptography.helpers import hash_string_object
 from saas.exceptions import RunCommandError, SaaSException
-from saas.helpers import run_command, scp_local_to_remote, scp_remote_to_local, monitor_command
 from saas.keystore.assets import credentials
 from saas.logging import Logging
-from saas.rti.adapters.adapters import RTIProcessorAdapter
+from saas.rti.adapters.adapters import RTIProcessorAdapter, scp_local_to_remote, run_command, monitor_command, \
+    scp_remote_to_local
 from saas.rti.exceptions import AdapterRuntimeError
 from saas.rti.status import StatusLogger
 from saas.schemas import GitProcessorPointer
