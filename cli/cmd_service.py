@@ -85,8 +85,6 @@ class Service(CLICommand):
         p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
         boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
 
-        # retain job history
-
         # create a node instance
         node = Node.create(keystore, args['datastore'],
                            p2p_address=p2p_service_address,
