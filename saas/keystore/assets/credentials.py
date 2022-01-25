@@ -3,9 +3,10 @@ from __future__ import annotations
 from copy import copy
 from typing import TypeVar, Generic
 
-from saas.cryptography.keypair import KeyPair
-from saas.helpers import validate_json
 from saas.keystore.asset import Asset, deserialise, serialise
+
+import saas.cryptography.keypair as keypair
+import saas.helpers as helpers
 
 
 class Credentials:
@@ -38,16 +39,18 @@ class GithubCredentials(Credentials):
 
 
 class SSHCredentials(Credentials):
-    def __init__(self, host: str, login: str, key: str) -> None:
+    def __init__(self, host: str, login: str, key: str, key_is_password: bool) -> None:
         super().__init__({
             'host': host,
             'login': login,
-            'key': key
+            'key': key,
+            'key_is_password': key_is_password
         })
 
     @classmethod
     def from_record(cls, record: dict) -> SSHCredentials:
-        return SSHCredentials(record['host'], record['login'], record['key'])
+        return SSHCredentials(record['host'], record['login'], record['key'],
+                              str(record['key_is_password']).lower() == 'true')
 
     @property
     def host(self) -> str:
@@ -60,6 +63,10 @@ class SSHCredentials(Credentials):
     @property
     def key(self) -> str:
         return self._record['key']
+
+    @property
+    def key_is_password(self) -> bool:
+        return self._record['key_is_password']
 
 
 T = TypeVar('T')
@@ -86,9 +93,9 @@ class CredentialsAsset(Generic[T], Asset):
         return CredentialsAsset[T](key, {}, ctype)
 
     @classmethod
-    def deserialise(cls, key: str, content: dict[str, T], master_key: KeyPair) -> T:
+    def deserialise(cls, key: str, content: dict[str, T], master_key: keypair.KeyPair) -> T:
         # verify content
-        validate_json(content, CredentialsAsset.content_schema)
+        helpers.validate_json(content, CredentialsAsset.content_schema)
 
         # deserialise content
         credentials = deserialise(content, ['credentials'], master_key)['credentials']
@@ -100,7 +107,7 @@ class CredentialsAsset(Generic[T], Asset):
 
         return CredentialsAsset[T](key, credentials, ctype)
 
-    def serialise(self, protect_with: KeyPair) -> dict:
+    def serialise(self, protect_with: keypair.KeyPair) -> dict:
         credentials = copy(self._credentials)
         for k, v in credentials.items():
             credentials[k] = v.record

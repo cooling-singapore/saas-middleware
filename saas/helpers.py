@@ -1,14 +1,12 @@
 import time
 import json
-import subprocess
 import random
 import string
 
-from typing import IO, AnyStr, TextIO, Union
+from typing import Union
 
 import jsonschema
 
-import saas.exceptions as exceptions
 from saas.logging import Logging
 
 logger = Logging.get('helpers')
@@ -76,58 +74,3 @@ def object_to_ordered_list(obj: Union[dict, list]) -> Union[dict, list]:
     else:
         return obj
 
-
-def run_command(command: list[str], cwd: str = None, suppress_exception: bool = False) -> subprocess.CompletedProcess:
-    result = subprocess.run(command, cwd=cwd, capture_output=True)
-    if not suppress_exception and result.returncode != 0:
-        raise exceptions.RunCommandError({
-            'command': command,
-            'cwd': cwd,
-            'result': result
-        })
-    return result
-
-
-def parse_stream(name: str, pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -> None:
-    while True:
-        # read the line, strip the '\n' and break if nothing left
-        line = pipe.readline().rstrip()
-        logger.debug(f"parse_stream[{name}]\t{line}")
-        if not line:
-            break
-
-        # if we have a file
-        if file is not None:
-            file.write(line+'\n')
-            file.flush()
-
-        # parse the lines for this round
-        if triggers is not None:
-            for pattern, info in triggers.items():
-                if pattern in line:
-                    info['func'](line, info['context'])
-
-
-def monitor_command(command: list[str], triggers: dict, cwd: str = None,
-                    stdout_path: str = None, stderr_path: str = None) -> (list[str], list[str]):
-
-    with open(stdout_path, 'x') as f_stdout:
-        with open(stderr_path, 'x') as f_stderr:
-            proc = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=f_stderr, universal_newlines=True)
-            while proc.poll() is None:
-                parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
-
-            logger.debug(f"process is done: stdout={stdout_path} stderr={stderr_path}")
-            proc.stdout.close()
-
-
-def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None) -> None:
-    run_command(['ln', '-sf', target_path, link_path], cwd=working_directory)
-
-
-def scp_local_to_remote(local_path: str, remote_path: str, login: str, host: str, ssh_key_path: str) -> None:
-    run_command(['scp', '-i', ssh_key_path, local_path, f"{login}@{host}:{remote_path}"])
-
-
-def scp_remote_to_local(remote_path: str, local_path: str, login: str, host: str, ssh_key_path: str) -> None:
-    run_command(['scp', '-i', ssh_key_path, f"{login}@{host}:{remote_path}", local_path])

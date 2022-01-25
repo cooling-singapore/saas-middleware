@@ -114,11 +114,9 @@ class RuntimeInfrastructureService:
 
                 # store the SSH credentials key (if any)
                 if ssh_credentials:
-                    ssh_credentials = {
-                        'host': ssh_credentials.host,
-                        'login': ssh_credentials.login,
-                        'key_path': self._store_ssh_credentials_key(proc_id, ssh_credentials)
-                    }
+                    if not ssh_credentials.key_is_password:
+                        key_path = self._store_ssh_credentials_key(proc_id, ssh_credentials)
+                        ssh_credentials = SSHCredentials(ssh_credentials.host, ssh_credentials.login, key_path, False)
 
                 # create an RTI adapter instance
                 if deployment == 'native':

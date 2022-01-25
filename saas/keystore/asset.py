@@ -5,10 +5,10 @@ from abc import ABC, abstractmethod
 from copy import copy
 from typing import Any
 
-from saas.cryptography.keypair import KeyPair
+import saas.cryptography.keypair as keypair
 
 
-def serialise(content: dict, protect_with: KeyPair = None, protected_properties: list = None) -> dict:
+def serialise(content: dict, protect_with: keypair.KeyPair = None, protected_properties: list = None) -> dict:
     # encrypt protected content (if applicable)
     content = copy(content)
     if protect_with and protected_properties:
@@ -20,7 +20,7 @@ def serialise(content: dict, protect_with: KeyPair = None, protected_properties:
     return content
 
 
-def deserialise(content: dict, protected_properties: list, master_key: KeyPair) -> dict:
+def deserialise(content: dict, protected_properties: list, master_key: keypair.KeyPair) -> dict:
     # decrypt protected content (if applicable)
     content = copy(content)
     for p in protected_properties:
