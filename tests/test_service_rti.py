@@ -12,6 +12,7 @@ from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.blueprint import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
+from saas.rti.adapters.adapters import run_command
 from saas.rti.adapters.docker import prune_image
 from saas.rti.blueprint import RTIProxy
 from saas.rti.status import State
@@ -906,6 +907,126 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         prune_image(proc_id)
 
+    def test_retain_job_history_false(self):
+        # create node
+        node = self.get_node('node', enable_rest=True, retain_job_history=False)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(1)
+        owner = keystores[0]
+        db.update_identity(owner.identity)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = rti.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, owner.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert not os.path.isfile(output_path)  # retain is False, so the path shouldn't exist!
+
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
+
+    def test_retain_job_history_true(self):
+        # create node
+        node = self.get_node('node', enable_rest=True, retain_job_history=True)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(1)
+        owner = keystores[0]
+        db.update_identity(owner.identity)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'default')
+        logger.info(f"proc_id={proc_id}")
+
+        descriptor = rti.deploy(proc_id)
+        logger.info(f"descriptor={descriptor}")
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, owner.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)  # retain is True, so the path should exist!
+
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
+
 
 class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
     def __init__(self, method_name='runTest'):
@@ -1076,6 +1197,154 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 0)
+
+    def test_retain_job_history_false(self):
+        # create node
+        node = self.get_node('node', enable_rest=True, retain_job_history=False)
+        if not node:
+            logger.info("Cannot test NSCC remote execution without SSH credentials.")
+            return
+
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(1)
+        owner = keystores[0]
+        db.update_identity(owner.identity)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
+        logger.info(f"proc_id={proc_id}")
+
+        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, owner.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert not os.path.isfile(output_path)  # retain is False, so the path shouldn't exist!
+
+        # test if the remote path exists (it shouldn't)
+        remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
+        remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
+        result = run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        assert(result.returncode != 0)
+
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
+
+    def test_retain_job_history_true(self):
+        # create node
+        node = self.get_node('node', enable_rest=True, retain_job_history=True)
+        if not node:
+            logger.info("Cannot test NSCC remote execution without SSH credentials.")
+            return
+
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(1)
+        owner = keystores[0]
+        db.update_identity(owner.identity)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
+        logger.info(f"proc_id={proc_id}")
+
+        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        jobs = rti.get_jobs(proc_id)
+        logger.info(f"jobs={jobs}")
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, owner.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)  # retain is True, so the path should exist!
+
+        # test if the remote path exists (it should)
+        remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
+        remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
+        result = run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        assert(result.returncode == 0)
+
+        proc_descriptor = rti.undeploy(proc_id)
+        assert proc_descriptor is not None
 
 
 if __name__ == '__main__':
