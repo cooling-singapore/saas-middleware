@@ -140,7 +140,7 @@ class TestCaseBase:
         return path
 
     def get_node(self, name: str, use_credentials: bool = True, enable_rest: bool = False,
-                 use_dor: bool = True, use_rti: bool = True) -> Node:
+                 use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True) -> Node:
         if name in self.nodes:
             return self.nodes[name]
 
@@ -191,7 +191,8 @@ class TestCaseBase:
             # create node and startup services
             node = Node(keystore, storage_path)
             node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
-                         rest_address=rest_address if enable_rest else None)
+                         rest_address=rest_address if enable_rest else None,
+                         retain_job_history=retain_job_history)
 
             self.nodes[name] = node
             return node
