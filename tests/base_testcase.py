@@ -92,7 +92,8 @@ class TestCaseBase:
                         ssh_cred.update(item['name'], SSHCredentials(
                             item['host'],
                             item['login'],
-                            ssh_key
+                            ssh_key,
+                            False
                         ))
                     keystore.update_asset(ssh_cred)
 
