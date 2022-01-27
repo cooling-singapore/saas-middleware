@@ -332,7 +332,7 @@ def prompt_if_missing(args: dict, arg_key: str, function, **fargs) -> Union[str,
     return args[arg_key]
 
 
-def default_if_missing(args: dict, arg_key: str, default: str) -> str:
+def default_if_missing(args: dict, arg_key: str, default: Union[str, bool]) -> str:
     if args[arg_key] is None:
         args[arg_key] = default
 

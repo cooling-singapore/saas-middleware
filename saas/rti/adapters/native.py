@@ -22,12 +22,14 @@ logger = Logging.get('rti.adapters.native')
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
                  ssh_credentials: credentials.SSHCredentials = None,
-                 github_credentials: credentials.GithubCredentials = None) -> None:
+                 github_credentials: credentials.GithubCredentials = None,
+                 retain_remote_wdirs: bool = False) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 
         # set credentials
         self._ssh_credentials = ssh_credentials
         self._github_credentials = github_credentials
+        self._retain_remote_wdirs = retain_remote_wdirs
 
         # create the proc-temp directory if doesn't already exist
         self._proc_temp_path = os.path.join(node.datastore, 'proc-temp')
@@ -141,7 +143,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
-        if self._ssh_credentials is not None:
+        if not self._retain_remote_wdirs and self._ssh_credentials is not None:
             # delete remote working directory
             status.update('task', f"delete remote working directory: {working_directory}")
             self._execute_command(f"rm -rf {working_directory}")
