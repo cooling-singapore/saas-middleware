@@ -15,6 +15,7 @@ class Service(CLICommand):
     default_p2p_address = '127.0.0.1:4001'
     default_boot_node_address = '127.0.0.1:4001'
     default_service = 'full'
+    default_retain_job_history = True
 
     def __init__(self):
         super().__init__('service', 'start a node as service provider', arguments=[
@@ -32,7 +33,11 @@ class Service(CLICommand):
             Argument('--type', dest='type', action='store', choices=['full', 'storage', 'execution'],
                      help=f"indicate the type of service provided by the node: 'storage' and 'execution' "
                           f"will only load the DOR or RTI modules, respectively; a 'full' node will provide "
-                          f"both (default: '{self.default_service}').")
+                          f"both (default: '{self.default_service}')."),
+            Argument('--retain-job-history', dest="retain-job-history", action='store_const', const=True,
+                     help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default "
+                          f"behaviour is to delete information of completed jobs). This flag should only be used for "
+                          f"debug/testing purposes.")
         ])
 
     def execute(self, args: dict) -> None:
@@ -42,6 +47,7 @@ class Service(CLICommand):
             default_if_missing(args, 'p2p-address', self.default_p2p_address)
             default_if_missing(args, 'boot-node', self.default_boot_node_address)
             default_if_missing(args, 'type', self.default_service)
+            default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
 
         else:
             prompt_if_missing(args, 'datastore', prompt_for_string,
@@ -62,6 +68,10 @@ class Service(CLICommand):
                 {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
             ], message="Select the type of service:")
 
+            if args['type'] == 'full' or args['type'] == 'execution':
+                prompt_if_missing(args, 'retain-job-history', prompt_for_confirmation,
+                                  message='Retain RTI job history?', default=False)
+
         keystore = load_keystore(args, ensure_publication=False)
 
         # initialise storage directory (if necessary)
@@ -81,9 +91,15 @@ class Service(CLICommand):
                            rest_address=rest_service_address,
                            boot_node_address=boot_node_address,
                            enable_dor=args['type'] == 'full' or args['type'] == 'storage',
-                           enable_rti=args['type'] == 'full' or args['type'] == 'execution')
+                           enable_rti=args['type'] == 'full' or args['type'] == 'execution',
+                           retain_job_history=args['retain-job-history'])
 
-        print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
+        # print info message
+        if args['type'] == 'full' or args['type'] == 'execution':
+            print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']} "
+                  f"(keep RTI job history: {'Yes' if args['retain-job-history'] else 'No'})")
+        else:
+            print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
         # wait for confirmation to terminate the server
         terminate = False

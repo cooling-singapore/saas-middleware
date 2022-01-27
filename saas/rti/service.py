@@ -32,13 +32,14 @@ class RuntimeInfrastructureService:
     def proc_meta_path(self, obj_id: str) -> str:
         return os.path.join(self._node.datastore, RuntimeInfrastructureService.infix_path, f"{obj_id}.meta")
 
-    def __init__(self, node: saas.node.Node) -> None:
+    def __init__(self, node: saas.node.Node, retain_job_history: bool = False) -> None:
         self._mutex = Lock()
         self._node = node
         self._deployed_processors = {}
         self._ssh_credentials_paths = {}
         self._jobs_path = os.path.join(self._node.datastore, 'jobs')
         self._content_keys = {}
+        self._retain_job_history = retain_job_history
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
@@ -123,7 +124,8 @@ class RuntimeInfrastructureService:
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
                         RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
                                                   ssh_credentials=ssh_credentials,
-                                                  github_credentials=github_credentials)
+                                                  github_credentials=github_credentials,
+                                                  retain_remote_wdirs=self._retain_job_history)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id]: RTIProcessorAdapter = \
@@ -196,7 +198,8 @@ class RuntimeInfrastructureService:
             job_descriptor = {
                 'id': generate_random_string(8),
                 'proc_id': proc_id,
-                'task': task_descriptor
+                'task': task_descriptor,
+                'retain': self._retain_job_history
             }
 
             # create working directory or log a warning if it already exists
