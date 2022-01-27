@@ -1,3 +1,4 @@
+import json
 from enum import unique, Enum
 from typing import List, Optional
 
@@ -12,6 +13,8 @@ from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor
 
+import saas.nodedb.blueprint as nodedb_bp
+
 logger = Logging.get('rti.blueprint')
 endpoint_prefix = "/api/v1/processor"
 
@@ -22,18 +25,9 @@ class ProcessorDeploymentParameters(BaseModel):
         native = 'native'
         docker = 'docker'
 
-    class SSHCredentials(BaseModel):
-        host: str
-        login: str
-        key: str
-
-    class GitHubCredentials(BaseModel):
-        login: str
-        personal_access_token: str
-
     deployment: ProcessorDeploymentType
-    ssh_credentials: Optional[SSHCredentials]
-    github_credentials: Optional[GitHubCredentials]
+    ssh_credentials: Optional[str]
+    github_credentials: Optional[str]
     gpp_custodian: Optional[str]
 
 
@@ -84,15 +78,29 @@ class RTIBlueprint(SaaSBlueprint):
         # TODO: this should require authorisation - only whose authorisation? probably by the identity of the node.
         body = request_manager.get_request_variable('body')
         gpp_custodian = body['gpp_custodian'] if 'gpp_custodian' in body else None
-        ssh_credentials = SSHCredentials(host=body['ssh_credentials']['host'],
-                                         login=body['ssh_credentials']['login'],
-                                         key=body['ssh_credentials']['key'],
-                                         key_is_password=body['ssh_credentials']['key_is_password']) \
-            if 'ssh_credentials' in body else None
 
-        github_credentials = GithubCredentials(login=body['github_credentials']['login'],
-                                               personal_access_token=body['github_credentials']['personal_access_token']) \
-            if 'github_credentials' in body else None
+        if 'ssh_credentials' in body:
+            ssh_credentials = bytes.fromhex(body['ssh_credentials'])
+            ssh_credentials = self._node.keystore.decrypt(ssh_credentials)
+            ssh_credentials = ssh_credentials.decode('utf-8')
+            ssh_credentials = json.loads(ssh_credentials)
+            ssh_credentials = SSHCredentials(host=ssh_credentials['host'],
+                                             login=ssh_credentials['login'],
+                                             key=ssh_credentials['key'],
+                                             key_is_password=ssh_credentials['key_is_password'])
+        else:
+            ssh_credentials = None
+
+        if 'github_credentials' in body:
+            github_credentials = bytes.fromhex(body['ssh_credentials'])
+            github_credentials = self._node.keystore.decrypt(github_credentials)
+            github_credentials = github_credentials.decode('utf-8')
+            github_credentials = json.loads(github_credentials)
+            github_credentials = GithubCredentials(login=github_credentials['login'],
+                                                   personal_access_token=github_credentials['personal_access_token'])
+
+        else:
+            github_credentials = None
 
         return create_ok_response(self._node.rti.deploy(proc_id,
                                                         deployment=body['deployment'],
@@ -149,6 +157,7 @@ class RTIProxy(EndpointProxy):
 
     def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
                ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> dict:
+
         body = {
             'deployment': deployment,
         }
@@ -156,19 +165,28 @@ class RTIProxy(EndpointProxy):
         if gpp_custodian:
             body['gpp_custodian'] = gpp_custodian
 
-        if ssh_credentials:
-            body['ssh_credentials'] = {
-                'host': ssh_credentials.host,
-                'login': ssh_credentials.login,
-                'key': ssh_credentials.key,
-                'key_is_password': ssh_credentials.key_is_password
-            }
+        # do we have credentials to encrypt?
+        if ssh_credentials or github_credentials:
+            # get info about the node (TODO: there is probably a better way to get the id of the peer)
+            db = nodedb_bp.NodeDBProxy(self.remote_address)
+            peer_info = db.get_node()
+            peer = Identity.deserialise(peer_info['identity'])
 
-        if github_credentials:
-            body['github_credentials'] = {
-                'login': github_credentials.login,
-                'personal_access_token': github_credentials.personal_access_token
-            }
+            if ssh_credentials:
+                ssh_credentials_serialised = json.dumps({
+                    'host': ssh_credentials.host,
+                    'login': ssh_credentials.login,
+                    'key': ssh_credentials.key,
+                    'key_is_password': ssh_credentials.key_is_password
+                })
+                body['ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
+
+            if github_credentials:
+                github_credentials_serialised = json.dumps({
+                    'login': github_credentials.login,
+                    'personal_access_token': github_credentials.personal_access_token
+                })
+                body['github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
 
         return self.post(f"/{proc_id}", body=body)
 
