@@ -12,7 +12,8 @@ from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
 
-if __name__ == "__main__":
+
+def main():
     try:
         default_keystore = os.path.join(os.environ['HOME'], '.keystore')
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
@@ -98,3 +99,6 @@ if __name__ == "__main__":
         print(f"Unrefined exception:\n{trace}")
         sys.exit(-2)
 
+
+if __name__ == "__main__":
+    main()
