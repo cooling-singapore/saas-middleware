@@ -5,8 +5,8 @@ import subprocess
 import jsonschema
 from tabulate import tabulate
 
-from cli.exceptions import CLIRuntimeError
-from cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
+from saas.cli.exceptions import CLIRuntimeError
+from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
     prompt_for_confirmation, prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service
 from saas.cryptography.helpers import encrypt_file
