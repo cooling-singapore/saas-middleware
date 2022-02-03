@@ -5,43 +5,44 @@ info:
 
   ### Versioning\n
   This API specification uses Semantic Versioning 2.0 (https://semver.org/spec/v2.0.0.html).
-
-  ### Notes\n
-  Public keys are used throughout the SaaS Middleware. Unless mentioned otherwise, the term 'public key' here refers
-  to PEM-encoded string representation of the public key portion of an Elliptic Curve key pair. This public key
-  string representation can be either truncated or not. Truncation omits the header `-----BEGIN PUBLIC KEY-----` and
-  the footer `-----END PUBLIC KEY-----`. For example, the following is a truncated PEM-encoded public key:
-  `MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEDyDe4dSQlxy110VkTRhkqDAxCR3JxJvL4tVzQParZEUsR6DTB`.
   "
-  version: 0.1.0
+  version: 0.2.0
   title: Simulation-as-a-Service (SaaS) Middleware API
 
 paths:
   /repository:
     get:
-      description: "Searches the DOR for data objects with tags that match the key criterion and the value criterion.
-      Data objects can be tagged with an arbitrary number of `key=value` pairs. The key and value criteria are applied
-      to the `key` and `value` element of the tag, respectively. SQL-style wildcard characters '%' (zero or more
-      characters) and '_' (single character) may be used as well. For example, assume three tags: `project-id=P1`,
-      `project-id=P2` and `project-name=hello world`. A search with key criterion `project-%` would return all three
-      tags whereas a search with `project-__` would only return the two tags with `project-id` as key.
+      description: "Searches the DOR for data objects with tags that match the search criteria. Data objects can be
+      annotated with tags that come in the form of key/value pairs. The `patterns` provided by the user are applied to
+      both, the `key` and `value` element of the tag, respectively. If at least one tag matches, the data object is
+      included in the result. Search can be limited to data objects that are owned by a particular identity. In
+      this case, the `owner_iid` needs to be specified."
       tags:
         - DOR (Data Object Repository)
-      parameters:
-        - in: query
-          description: "The key criterion. May use SQL-style wildcard characters: '%' representing zero or more characters;
-          and '_' representing a single character."
-          name: key_criterion
-          schema:
-            type: string
-            example: "project-%"
-        - in: query
-          description: "The value criterion. May use SQL-style wildcard characters: '%' representing zero or more characters;
-          and '_' representing a single character."
-          name: value_criterion
-          schema:
-            type: string
-            example: "P_"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              description: "Search criteria containing (1) the search patterns (i.e., strings that needs to be present
+              in either the `key` or the `value` component of a data object tag in order for the data object to be included
+              in the result) and (2) the ID of the data object owner (in case the search should be limited to data objects
+              owned by a specific identity)."
+              properties:
+                patterns:
+                  type: array
+                  items:
+                    type: string
+                  description: "A string that needs to be contained by a tag in order for the data object to be included
+                  in the search result. For example, a pattern 'case_study_3' would return any data object that has a tag
+                  which contains the pattern."
+                  example: "case_study_3"
+                owner_iid:
+                  type: string
+                  format: iid
+                  description: "The id of the owner identity to whose objects the search should be limited."
+                  example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
       responses:
         "200":
           description: OK
@@ -58,11 +59,9 @@ paths:
                       example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
                     uniqueItems: true
     post:
-      description: "Adds a new data object to the DOR and returns the id for this data object. Data objects can be
-      regular data objects (i.e., data) or processors data objects (e.g., source code). Depending on the case, a
-      corresponding descriptor (either `Data Object Descriptor` or a `Processor Descriptor`) has to be provided. In
-      addition, the public key of the data object owner has to be provided. The content of the data object itself is
-      uploaded as an attachment (binary). There is no restriction as to the nature or size of the content."
+      description: "Adds a new data object to the DOR and returns the id for this data object. Uploading data requires
+      to provide some information about the data object. The content of the data object itself is uploaded as an
+      attachment (binary). There is no restriction as to the nature or size of the content."
       tags:
         - DOR (Data Object Repository)
       requestBody:
@@ -96,8 +95,8 @@ paths:
   /repository/{obj_id}:
     delete:
       description: "Deletes an existing data object with a given `obj_id` from the DOR. This action can only be carried
-      out by the owner of the data object. If deletion was successful, the descriptor (either data object descriptor
-      or processor descriptor) of the deleted data object is returned."
+      out by the owner of the data object. If deletion was successful, the descriptor of the deleted data object is
+      returned."
       tags:
         - DOR (Data Object Repository)
       parameters:
@@ -117,9 +116,28 @@ paths:
                 type: object
                 properties:
                   descriptor:
-                    oneOf:
-                      - $ref: "#/components/schemas/data_object_descriptor"
-                      - $ref: "#/components/schemas/processor_descriptor"
+                      $ref: "#/components/schemas/data_object_descriptor"
+
+  /repository/{obj_id}/descriptor:
+    get:
+      description: "Requests to download the descriptor a data object with a given `obj_id`."
+      tags:
+        - DOR (Data Object Repository)
+      parameters:
+        - in: path
+          description: "The ID of the data object whose descriptor is requested"
+          name: obj_id
+          schema:
+            type: string
+            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/data_object_descriptor"
 
   /repository/{obj_id}/content:
     get:
@@ -151,33 +169,7 @@ paths:
                 type: string
                 example: "Data object {obj_id} not found"
 
-  /repository/{obj_id}/descriptor:
-    get:
-      description: "Requests to download the descriptor a data object with a given `obj_id`."
-      tags:
-        - DOR (Data Object Repository)
-      parameters:
-        - in: path
-          description: "The ID of the data object whose descriptor is requested"
-          name: obj_id
-          schema:
-            type: string
-            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
-          required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  descriptor:
-                    oneOf:
-                      - $ref: "#/components/schemas/data_object_descriptor"
-                      - $ref: "#/components/schemas/processor_descriptor"
-
-  /repository/{obj_id}/access:
+  /repository/{obj_id}/access/{iid}:
     get:
       description: "Requests a list of identities that have access to a data object with a given `obj_id`."
       tags:
@@ -196,128 +188,132 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  access:
-                    description: IDs of identities that have been granted access to the data object.
-                    type: array
-                    items:
-                      type: string
-                      example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
-                    uniqueItems: True
-    post:
-      description: "Grants access for a data object with a given `obj_id` to an identity with a given `public_key`.
-      This action can only be carried out by the owner of the data object."
-      tags:
-        - DOR (Data Object Repository)
-      parameters:
-        - in: path
-          description: "The ID of the data object."
-          name: obj_id
-          schema:
-            type: string
-            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
-          required: true
-      requestBody:
-        required: True
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                public_key:
-                  description: "The public key of the identity that should be granted access to the data object."
+                type: array
+                description: IDs of identities that have been granted access to the data object.
+                items:
                   type: string
-                  example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-                permission:
-                  description: "Reserved for future use."
-                  type: string
-                  example: ""
-              required:
-                - public_key
-                - permission
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: string
-                example: Access granted.
-    delete:
-      description: "Revokes access for a data object with a given `obj_id` to an identity with a given `public_key`.
-      This action can only be carried out by the owner of the data object."
-      tags:
-        - DOR (Data Object Repository)
-      parameters:
-        - in: path
-          description: "The ID of the data object."
-          name: obj_id
-          schema:
-            type: string
-            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
-          required: true
-      requestBody:
-        required: True
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                public_key:
-                  description: "The public key of the identity whose access to the data object should be revoked."
-                  type: string
-                  example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-              required:
-                - public_key
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: string
-                example: Access revoked.
-
-  /repository/{obj_id}/owner:
-    get:
-      description: "Requests a the ID and the public key of the identity that owns a data object with a given `obj_id`."
-      tags:
-        - DOR (Data Object Repository)
-      parameters:
-        - in: path
-          description: "The ID of the data object."
-          name: obj_id
-          schema:
-            type: string
-            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
-          required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  owner_iid:
-                    description: "The ID of the identity that owns the data object."
-                    type: string
-                    example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
-                  owner_public_key:
-                    description: "The public key of the identity that owns the data object."
-                    type: string
-                    example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
+                  example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+                uniqueItems: True
         "404":
           description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: Data object {obj_id} not found.
+                example: "Data object {obj_id} not found"
+    post:
+      description: "Grants access for a data object with a given `obj_id` to an identity with a given `iid`.
+      This action can only be carried out by the owner of the data object."
+      tags:
+        - DOR (Data Object Repository)
+      parameters:
+        - in: path
+          description: "The ID of the data object."
+          name: obj_id
+          schema:
+            type: string
+            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
+          required: true
+        - in: path
+          description: "The ID of the identity that should be granted access."
+          name: iid
+          schema:
+            type: string
+            example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "The ID of the identity that has been granted access."
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem: either the data object or the identity
+                could not be found."
+                example: "Data object {obj_id} not found"
+    delete:
+      description: "Revokes access for a data object with a given `obj_id` from an identity with a given `iid`.
+      This action can only be carried out by the owner of the data object."
+      tags:
+        - DOR (Data Object Repository)
+      parameters:
+        - in: path
+          description: "The ID of the data object."
+          name: obj_id
+          schema:
+            type: string
+            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
+          required: true
+        - in: path
+          description: "The ID of the identity whose access should be revoked."
+          name: iid
+          schema:
+            type: string
+            example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "The ID of the identity whose access has been revoked."
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem: either the data object or the identity
+                could not be found."
+                example: "Data object {obj_id} not found"
+
+  /repository/{obj_id}/owner:
+    get:
+      description: "Requests a the ID of the identity that owns the data object with the given `obj_id`."
+      tags:
+        - DOR (Data Object Repository)
+      parameters:
+        - in: path
+          description: "The ID of the data object."
+          name: obj_id
+          schema:
+            type: string
+            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "The ID of the identity that owns the data object."
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem."
+                example: "Data object {obj_id} not found"
     put:
-      description: "Updates the ownership of a data object with a given `obj_id` to a new owner with a given
-      `public_key`. This action can only be carried out by the current owner of the data object."
+      description: "Updates the ownership of a data object with a given `obj_id` to a new owner (`new_owner_iid`). If the
+      data object is encrypted, the `content_key` needs to be provided as well. The new owner is notified by the DOR about
+      the ownership transfer and requested to import the `content_key` to its keystore. If required, the new owner may
+      retrieve the contents of the data object, re-encrypt it with a new content key and then replace the existing data
+      object (note that this will result in a new object ID. Future versions will address the issue of retaining objects IDs.)."
       tags:
         - DOR (Data Object Repository)
       parameters:
@@ -335,11 +331,15 @@ paths:
             schema:
               type: object
               properties:
-                new_owner_public_key:
-                  description: "The public key of the new owner."
+                new_owner_iid:
+                  description: "The ID of the new owner's identity."
                   type: string
-                  example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-              required: [new_owner_public_key]
+                  example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+                content_key:
+                  description: "The content key used to encrypt the data object content. The content key itself is encrypted
+                  using the new owners encryption key."
+                  type: string
+              required: [new_owner_iid]
       responses:
         "200":
           description: OK
@@ -347,7 +347,18 @@ paths:
             application/json:
               schema:
                 type: string
-                example: Ownership of data object '{obj_id}' transferred to '{new_owner_public_key}'.
+                description: "The ID of the identity that owns the data object. If ownership transfer was successful, this
+                shoudl reflect the ID of the new owner's identity."
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem: either the data object or the new owner's
+                identity could not be found."
+                example: "Data object {obj_id} not found"
 
   /repository/{obj_id}/tags:
     get:
@@ -368,50 +379,24 @@ paths:
           content:
             application/json:
               schema:
-                description: A dictionary of key-value-style tags associated with the data object.
+                description: "A dictionary with key/value tags associated with the data object."
                 type: object
                 additionalProperties:
                   type: string
                 example:
                   project: 'Hello World'
                   dept: 'D001'
-    put:
-      description: "Adds a new tag for a data object with a given `obj_id`. A tag comes in the form of a `key=value`
-      pair. This action can only be carried out by the owner of the data object."
-      tags:
-        - DOR (Data Object Repository)
-      parameters:
-        - in: path
-          description: "The ID of the data object."
-          name: obj_id
-          schema:
-            type: string
-            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
-          required: true
-      requestBody:
-        required: True
-        content:
-          application/json:
-            schema:
-              description: A dictionary of key-value-style tags associated with the data object.
-              type: object
-              additionalProperties:
-                type: string
-              example:
-                  project: 'Hello World'
-                  dept: 'D001'
-              
-      responses:
-        "200":
-          description: OK
+        "404":
+          description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: Tags updated.
-    delete:
-      description: "Removes a number of tags from a data object with a given `obj_id`. This action can only be carried
-      out by the owner of the data object."
+                description: "A string indicating the nature of the problem."
+                example: "Data object {obj_id} not found"
+    put:
+      description: "Adds new tags or updates existing tags of a data object with a given `obj_id`.
+      This action can only be carried out by the owner of the data object."
       tags:
         - DOR (Data Object Repository)
       parameters:
@@ -427,19 +412,80 @@ paths:
         content:
           application/json:
             schema:
-              description: "Tags to be removed (i.e., the 'key' values of the tags)."
               type: array
               items:
-                type: string
-                example: "project"
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "The key of the tag."
+                    example: "dept"
+                  value:
+                    type: string
+                    description: "The value of the tag."
+                    example: "D001"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
+                type: object
+                description: "A dictionary with key/value tags associated with the data object after the
+                update has been performed."
+                example:
+                  project: 'Hello World'
+                  dept: 'D001'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
                 type: string
-                example: Tags updated.
+                description: "A string indicating the nature of the problem."
+                example: "Data object {obj_id} not found"
+    delete:
+      description: "Removes tags from a data object with a given `obj_id`.
+      This action can only be carried out by the owner of the data object."
+      tags:
+        - DOR (Data Object Repository)
+      parameters:
+        - in: path
+          description: "The ID of the data object."
+          name: obj_id
+          schema:
+            type: string
+            example: "3fb4ed78d35d5030780e425a0623fd50acab16c32a87de33dde633109fe41811"
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              description: "Keys of tags that should be removed."
+              items:
+                type: string
+                example: "dept"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: "A dictionary with key/value tags associated with the data object after the
+                update has been performed."
+                example:
+                  project: 'Hello World'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem."
+                example: "Data object {obj_id} not found"
 
   /processor:
     get:
@@ -452,29 +498,24 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  deployed:
-                    description: "IDs of deployed processors."
-                    type: array
-                    items:
-                      type: string
-                      example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
-                    uniqueItems: true
-    
+                description: "IDs of deployed processors."
+                type: array
+                items:
+                  type: string
+                  example: "86724ee99e98229b1825d10d29c32cb629fd8453e930f32ae417fb948c7fa307"
+                uniqueItems: true
+
   /processor/{proc_id}:
     post:
-      description: "Requests the node to deploy an instance of a specific processor with a given `proc_id`. Processors
-      are treated like data objects, i.e., they have to be uploaded using the corresponding DOR functionality. Once
-      available in a DOR, processors can be selectively deployed on nodes by the RTI."
+      description: "Requests the node to deploy a processor with a given `proc_id`."
       tags:
         - RTI (Runtime Infrastructure)
       parameters:
         - in: path
           name: proc_id
-          description: "The ID of the processor to be deployed. A processor can only be deployed if it has already
-          been uploaded to a DOR. The ID of the processor is equal to the data object ID obtained when uploading the
-          processor to the DOR."
+          description: "The ID of the processor to be deployed. A processor can only be deployed if a corresponding
+          `Git-Processor-Pointer` data object is available in a DOR accessible to this RTI. The ID of that data object
+          represents the `proc_id` to be used here."
           schema:
             type: string
             example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
@@ -485,19 +526,18 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  descriptor:
-                    $ref: "#/components/schemas/processor_descriptor"
+                $ref: "#/components/schemas/processor_descriptor"
+                # example: {'input': [{'data_format': 'json', 'data_type': 'JSONObject', 'name': 'a'}, {'data_format': 'json', 'data_type': 'JSONObject', 'name': 'b'}], 'name': 'test-proc', 'output': [{'data_format': 'json', 'data_type': 'JSONObject', 'name': 'c'}]}
         "404":
           description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: Processor {proc_id} not found.
+                description: "A string indicating the nature of the problem."
+                example: "Processor {proc_id} not found"
     delete:
-      description: "Requests the node to undeploy an instance of a specific processor with a given `proc_id`."
+      description: "Requests the node to undeploy a processor with a given `proc_id`."
       tags:
         - RTI (Runtime Infrastructure)
       parameters:
@@ -515,15 +555,16 @@ paths:
             application/json:
               schema:
                 type: string
-                example: Processor {proc_id} undeployed.
+                example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
         "404":
           description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: Processor {proc_id} not found.
-  
+                description: "A string indicating the nature of the problem."
+                example: "Processor {proc_id} not deployed"
+
   /processor/{proc_id}/descriptor:
     get:
       description: "Requests the descriptor for a processor with a given `proc_id`."
@@ -553,9 +594,49 @@ paths:
             application/json:
               schema:
                 type: string
-                example: Processor {proc_id} not found.
-  
+                description: "A string indicating the nature of the problem."
+                example: "Processor {proc_id} not deployed"
+
   /processor/{proc_id}/jobs:
+    post:
+      description: "Submits a new job to the RTI for a deployed processor instance, given by its `proc_id`. The job
+      is specified using a task descriptor. If successful, a unique job id is returned."
+      tags:
+        - RTI (Runtime Infrastructure)
+      parameters:
+        - in: path
+          description: "The ID of the deployed processor."
+          name: proc_id
+          schema:
+            type: string
+            example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/task_descriptor"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    description: "The ID of the newly created job."
+                    type: string
+                    example: "24"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem."
+                example: "Processor {proc_id} not deployed"
     get:
       description: "Requests a list of all jobs currently being executed by a deployed processor with a given
       `proc_id`."
@@ -575,78 +656,26 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  jobs:
-                    description: "A list of jobs processed by this processor."
-                    type: array
-                    example: [{'descriptor': {'input': [{'name': 'a', 'type': 'value', 'value': {'v': 1}}, {'name': 'b', 'type': 'value', 'value': {'v': 2}}], 'output': {'owner_public_key': 'MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEH/VfN2x0QhMcrnx4iA24dowZWGSoeMGaeUKEXXGIguPXKbqsC2us+U/DYur0KqbVwZREfkwBfzpMOnE+dNxkzFjZXGhOW4bgYa/aGWfAkP17VSleQckUTOxn/DxgopH0'}, 'processor_id': 'fb802ab36792263873ad168c3ff1eaf236d9df0847585cd50012ff0418787d9e'}, 'id': 0, 'proc_id': 'fb802ab36792263873ad168c3ff1eaf236d9df0847585cd50012ff0418787d9e'}]
-                    items:
-                      $ref: "#/components/schemas/job_descriptor"
+                type: array
+                item:
+                  $ref: "#/components/schemas/job_descriptor"
+                example: [{'descriptor': {'input': [{'name': 'a', 'type': 'value', 'value': {'v': 1}}, {'name': 'b', 'type': 'value', 'value': {'v': 2}}], 'output': [{'content_encrypted': False, 'name': 'c', 'owner_iid': '5f45f48956f63e754cbcb6073627191f26998fbb62e99bc95084a216c79c3ab5', 'restricted_access': False}], 'processor_id': '060842cfe96afa577b526fdb0c5c79471d1d10a4e79994787eac61988a7158a0', 'user_iid': '1fa1492d06a9d7adf2d0ba32855006a4e21c24e9dd6f66a47a2eab23d9b1e559'}, 'id': 0, 'proc_id': '060842cfe96afa577b526fdb0c5c79471d1d10a4e79994787eac61988a7158a0'}]
         "404":
           description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: Processor {proc_id} not deployed.
-    post:
-      description: "Submits a new job to the RTI for a specific processor instance, given by its `proc_id`. For this
-      purpose the type of the job needs to be specified, which can be either a `task` or `workflow`. In addition,
-      depending on the case, a corresponding descriptor (i.e., either a `Task Descriptor` or a `Workflow Descriptor`)
-      needs to be provided as well."
-      tags:
-        - RTI (Runtime Infrastructure)
-      parameters:
-        - in: path
-          description: "The ID of the processor."
-          name: proc_id
-          schema:
-            type: string
-            example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
-          required: true
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/job_upload"
-      responses:
-        "201":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  job_id:
-                    description: "The ID of the newly created job."
-                    type: string
-                    example: "24"
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                type: string
-                example: Processor {proc_id} not deployed.
-  
-  /processor/{proc_id}/jobs/{job_id}:
+                description: "A string indicating the nature of the problem."
+                example: "Processor {proc_id} not deployed"
+
+  /processor/job/{job_id}:
     get:
-      description: "Requests information about a job with a given `job_id` that is (or has been) processed by a
-      deployed instance of a processor with a given `proc_id`. If a job is found for the given `proc_id` and `job_id`
-      then the descriptor of the job (i.e., either `Task Descriptor` or `Workflow Descriptor`) is returned as well as
-      the status of the job."
+      description: "Requests information about a job with a given `job_id` that is (or has been) processed by the
+      RTI."
       tags:
         - RTI (Runtime Infrastructure)
       parameters:
-        - in: path
-          description: "The ID of the processor."
-          name: proc_id
-          schema:
-            type: string
-            example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
-          required: true
         - in: path
           description: "The ID of the job."
           name: job_id
@@ -665,26 +694,62 @@ paths:
                   job_descriptor:
                     description: "The descriptor of the job."
                     $ref: "#/components/schemas/job_descriptor"
-                    example: {'descriptor': {'input': [{'name': 'a', 'type': 'value', 'value': {'v': 1}}, {'name': 'b', 'type': 'value', 'value': {'v': 2}}], 'output': {'owner_public_key': 'MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEH/VfN2x0QhMcrnx4iA24dowZWGSoeMGaeUKEXXGIguPXKbqsC2us+U/DYur0KqbVwZREfkwBfzpMOnE+dNxkzFjZXGhOW4bgYa/aGWfAkP17VSleQckUTOxn/DxgopH0'}, 'processor_id': 'fb802ab36792263873ad168c3ff1eaf236d9df0847585cd50012ff0418787d9e'}, 'id': 0, 'proc_id': 'fb802ab36792263873ad168c3ff1eaf236d9df0847585cd50012ff0418787d9e'}
+                    example: {'descriptor': {'input': [{'name': 'a', 'type': 'value', 'value': {'v': 1}}, {'name': 'b', 'type': 'value', 'value': {'v': 2}}], 'output': [{'content_encrypted': False, 'name': 'c', 'owner_iid': '5f45f48956f63e754cbcb6073627191f26998fbb62e99bc95084a216c79c3ab5', 'restricted_access': False}], 'processor_id': '060842cfe96afa577b526fdb0c5c79471d1d10a4e79994787eac61988a7158a0', 'user_iid': '1fa1492d06a9d7adf2d0ba32855006a4e21c24e9dd6f66a47a2eab23d9b1e559'}, 'id': 0, 'proc_id': '060842cfe96afa577b526fdb0c5c79471d1d10a4e79994787eac61988a7158a0'}
                   status:
                     description: "Status information about the job. The exact contents of this information depends
-                    on the processor is not further specified here. However, status information always needs to
-                    include the state of the job. "
+                    on the processor and is not further specified here. However, status information always needs to
+                    include the `state` of the job."
+                    example: {'output': {'data_format': 'json', 'data_type': 'JSONObject', 'name': 'c'}, 'output_content_path': '/Users/foobar/testing/1628053891799/node/jobs/0/c', 'output_status': 'pending add', 'stage': 'push output data objects', 'state': 'initialised'}
                     type: object
                     properties:
                       state:
                         type: string
-                        enum: [initialised, running, failed, successful]
+                        enum: ["initialised", "running", "failed", "successful"]
                         example: {'state': 'initialised'}
                     additionalProperties: true
 
-        "404":  
+        "404":
           description: Not Found
           content:
             application/json:
               schema:
                 type: string
-                example: No job with id {job_id}.
+                description: "A string indicating the nature of the problem."
+                example: "Job {job_id} not found"
+
+  /processor/permission/{req_id}:
+    post:
+      description: "Supplies permission for a specific request, identified by a `req_id`. For example, an input data object
+      needed by the job is encrypted. In this case the RTI will send a request to the owner of the data object. The data
+      object owner may then provide the content key (e.g., by using the SaaS CLI tool)."
+      tags:
+        - RTI (Runtime Infrastructure)
+      parameters:
+        - in: path
+          description: "The ID of the request."
+          name: req_id
+          schema:
+            type: string
+            example: "Ti21ZZY9zOoSwys0"
+          required: true
+      requestBody:
+        required: True
+        content:
+          application/json:
+            schema:
+              type: string
+              description: "The content of the permission (e.g., encrypted content key for a data object)."
+              example: "FiMnPV7IZp84Wb7N17neFNuLFBCXs33uQmzctMXne3mxE6x+xpr+PQIs5i4gvs6SknhaSlN/lHlZDCSbzXgbt6cUfaBe6qPYW5OxzoEIfPeW2kgoPnf1fmJtJhLq09k/nGaucSu2abJcsISDig/bnUPxr0wvcEFKMH54SoW0xJ60XNu0rYp0F1fABJbUfiRmHCqJRd03Yt2GZJofFE9HwTKi0czUSVfSCrSFMkTNNg8Noo6fA8DxNwZ+Nn6BvVG7ikROEpq8L2ZXocHJLDqSqhfWaepsaBlmHmmOtCalhuOPmhCd7sd9li+v3mX014h0TmLBkoljt2hm87kTIY8Gcj9qJl6PQJrvpVz6Ux0oL9VxIu1ieYKb4RwXeXBPXiL76Y9YWI8CmxrrByCa+VOWsjkLp7RRmABilU9R60dnU2gC5WGxq3S4cbEDGZbuybpVyZrx3VJge7j4u3k4MHEcDbW/60DNE4JMl0ZH1hU4zsHXCv9sxUKUG2hjWnqq5GOqbc/9uPtbIDzzZ1GAy+ckRZ4LL58LZELFEjl/Z//eymencqSxJEr8C9NGTfJZETI2hW51cEk6KpGEPUWLhoa6huqEq1Qq73NaotiwVQnfu8pCZUPF8FuY1/yomU4lJ01HYKWu68KKE6vwHsaUIDbOO8jYZI43Nrptt0Y1XXGyuug="
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "The ID of the request."
+                example: "Ti21ZZY9zOoSwys0"
+
 
   /nodedb/node:
     get:
@@ -694,34 +759,29 @@ paths:
       responses:
         "200":
           description: OK
+          example: "{'identity': {'e_public_key': 'MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAzlFyGC34xQwl/YPHpC/8P1B+qHskfFIf2bBoQf7PUrWCAeHRkA7p8oPM/H65ZYpuszfkKEPrYwhIGQs5BspgbEcYcfL+KBPvI62j9sH34umIc6NXJFf5RnXtCSRgX4T7AakJ24b6d2BjLNxvhBddkpumMorQXv7t9RMx2fZIT3fk52G9dg9+q9prHrM3HVchBd4Uk+KGKDSbQrU51s9ziL5Mrsx68+vQH2p+cFbUdVWuyjn3aTC6r7j6d9bV1f1+awbkBZuX/D+NNY+V8SqtbKJRovPFvezf/Fw86vmoydED7sEUNjJsSNuS/auzVmCK+y9EdUifsxEiVUUS+qmoewYpCD7JdHTSOrld49Df0VZD+pKi6+YS2WsMPVKmgIFbUdERdp6wtHRUJSD7LPeO6wVGUq3brPtS7lvpz2wZhmAaIfTPpSbojeM/aLRO4Pe6CDEp73U96sQxJuex9anGypKpnFx9ew6+YzZd/b4F0MB+MlAQ99HIkPY6NkZpVh1qOCQHw3DpOBndYUO+eSbTlS/JczSsPF06WgsAxeHqrIYj1j7mpCsveez1fuHaxSeYFSRFGBzxdJGkwkJApZsyFcBJbV8vHUKsjoqSZ2x1WLY0faCFtC1YAqZDtb3BMUJy2BWree9Mnexj3lJKtVPNQnaCti+1zVp8Cw2osvXbDmsCAwEAAQ==', 'email': 'node_0@somewhere.com', 'name': 'node_0', 'nonce': 1, 'public_key': 'MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA2w9tadwMQcQ0YgW/cuNyp5j7oQJQgHCbw8AnINg2OGU7a1MYuzjLjk6IDiqvR4iGHrERhEoJ3EEpcbpJw44f6tNSy5EBVYXqUJSdkEsoRoiBQnZUfTE+wBWG4rqs+So9krJiQdaeb63QXiENlQGlhkQFI3sxh/uUMTiG+wuiQG3RzTZyWILF80KNCA+YvxGCXOmcyCrA4/eAJPAADwBAo/d3z9Luqw4CETZiFxpbreX1DwOEhe56mXhCFX4lS1T6DsP6eOKdlOclhyiomgMKUEoowGv1rUxxgwiJ7ALr+xTmf1mrweqhQhNlXf+xxp6zB5z4SI8jBNsyN+cxlcUYtffRdGwDxU7xfB+u+oCO9Ue1E3XsiIFv4fjLFXn+ALmirivl/5Kj33qA0wAar24TISA876Sb13FYDF48sqFuuN49iUMHf5gPX3smK+E5vUq+oillO4FxmJZDPebfL+nJ0S+mMi2U9mFL0dq9fXjtd1Cs9kosaoGu0o61qi0yPlh91T9k551N9256qdyidgK8rVRxLbbbd0FaodQyZRv2XlQmUZaSmMHzCQqgMonFzKHjVgamV8Z4Hq6XBpmYhTmRPKAHU7GBl1BubMSJPk4fUL9MHXhVxPkq+A5E6yxNOSvAWHnOCQiguzEEUP+9e2/DHCAzD2YB+V+6+W4AEgpbK30CAwEAAQ==', 's_public_key': 'MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEtF7ZsuxTl5La6zpVlVJ91CEZhIjCoAEmaOCTh1Gtf0j4WMkDemonlD+zaIvVk0zEyr/xv4gN84EAifsH3IHfdP0y4SSTaDOKMHlHCTsXzYwrira7U2QAUYdndfLB0Vj1'}, 'iid': '58fcb705b321a1263878536ce94c8f72843cdb1a4877a174b931c5e01ef863aa', 'p2p_service_address': ['127.0.0.1', 4001], 'rest_service_address': ['127.0.0.1', 5001]}"
           content:
             application/json:
               schema:
-                description: "Provides useful information about a node, including the ID and public key of its identity as well
+                description: "Provides information about a node, including the ID and public key of its identity as well
                 addresses for its REST and P2P services."
                 type: object
                 properties:
-                  name:
-                    description: "The name of the node's identity."
-                    type: string
-                    example: 'Node A'
                   iid:
                     description: "The ID of the node's identity."
                     type: string
-                    example: de5fba42d92d7fc1b712ce976b52cc1300f7e8d9e9b0116dade9e5a4f39923cf
-                  public_key:
-                    description: "The public key of the node's identity."
-                    type: string
-                    format: public_key
-                    example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEHaYrMkNnZwkjmmcmTzGPBcUi88V9JJSCPjoF5E8R12ekYVvC0rgRlNzcdTWIXFmfCl5uXx0AcCdRghuZ8rV8aVTz4aAL5m92ffKpvG17xaOfRETnXsabeGS4dL4wEpiu"
+                    example: "58fcb705b321a1263878536ce94c8f72843cdb1a4877a174b931c5e01ef863aa"
+                  identity:
+                    description: "Information about the identity of the node."
+                    $ref: "#/components/schemas/identity_information"
                   rest_service_address:
                     description: "The address of the REST service used by this node."
                     type: string
-                    example: 127.0.0.1:5000
+                    example: "['127.0.0.1', 5001]"
                   p2p_service_address:
                     description: "The address of the P2P service used by this node."
                     type: string
-                    example: 127.0.0.1:4000
+                    example: "['127.0.0.1', 4001]"
 
   /nodedb/network:
     get:
@@ -741,22 +801,27 @@ paths:
                     iid:
                       description: "The ID of the peer's identity."
                       type: string
-                      example: 223cb4d2e87e43c79667a0b721be5f3ccb2e33a2c33a312d116c1540f1a66c9b
+                      example: "223cb4d2e87e43c79667a0b721be5f3ccb2e33a2c33a312d116c1540f1a66c9b"
                     last_seen:
                       description: "The time in millisecond since epoch (POSIX timestamp in milliseconds) when the node
                       has seen this peer the last time."
                       type: number
-                      example: 1622688464216
-                    p2p_address:
-                      description: "The address used by the peer for its P2P service."
-                      example: 127.0.0.1:4000
-                      type: string
+                      example: 1628057817408
                     rest_address:
                       description: "The address used by the peer for its REST service."
                       type: string
-                      example: 127.0.0.1:5000
+                      example: "127.0.0.1:5000"
+                    p2p_address:
+                      description: "The address used by the peer for its P2P service."
+                      example: "127.0.0.1:4000"
+                      type: string
+                example: [
+                  {'iid': '58fcb705b321a1263878536ce94c8f72843cdb1a4877a174b931c5e01ef863aa', 'last_seen': 1628057817408, 'p2p_address': '127.0.0.1:4001', 'rest_address': '127.0.0.1:5001'},
+                  {'iid': 'c2d4b03cbae563ade627aa4b0001caac8ff9e13e912f7467a02c93570f0ca4e3', 'last_seen': 1628057818293, 'p2p_address': '127.0.0.1:4002', 'rest_address': '127.0.0.1:5002'},
+                  {'iid': '9628184c0a1810191d9e92bb883d101ca33fcc310e9fe2c28d3db6c63df146f4', 'last_seen': 1628057821665, 'p2p_address': '127.0.0.1:4003', 'rest_address': '127.0.0.1:5003'}
+                ]
 
-  /nodedb/identities:
+  /nodedb/identity:
     get:
       description: "Requests information about all identities known to the node."
       tags:
@@ -774,36 +839,106 @@ paths:
                     iid:
                       description: "The ID of the identity."
                       type: string
-                      example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
-                    public_key:
-                      description: "The public key of the identity."
-                      type: string
-                      example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-                    name:
-                      description: "The name of the identity."
-                      type: string
-                      example: "John Doe"
-                    email:
-                      description: "The email of the identity."
-                      type: string
-                      example: "john.doe@snoooogle.com"
-                    nonce:
-                      description: "A monotonically increasing number, indicating how recent the information about the
-                      identity is. If there are two competing records, the one with the higher nonce value should be
-                      considered the more recent and the record with the lower nonce value should be discarded."
-                      type: number
-                      example: 2
-                    signature:
-                      description: "A signature, created by using private key of the identity, that can be used to
-                      verify the information of this record using the public key of the identity."
-                      type: string
-                      example: "3066023100d3c3e197e952d1ee9f098571264d355ea4a7bed57270472ea672f2591b89f9e68cef1e252533c1bdb19d002b6a15f0c7023100d241b8c3e6f666e8de3278a36592cb650fa9d04f7e3fc6a4dcba5c58b473422113b31b9c7ac4818b4c84627b580b1e54"
+                      example: "58fcb705b321a1263878536ce94c8f72843cdb1a4877a174b931c5e01ef863aa"
+                    identity:
+                      $ref: "#/components/schemas/identity_information"
+    post:
+      description: "Submits information about an identity. The node verifies the identity information using the signature and eithers adds the identity
+      information to its database (if no information about this identity was known before) or updates its database records (if the identity information
+      is more recent than the one on record)."
+      tags:
+        - NodeDB
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                identity:
+                  $ref: "#/components/schemas/task_descriptor"
+                signature:
+                  type: string
+                  description: "A signature that can be used to verify if the identity information is valid. A valid signature can only be created
+                  with the private signing key of the identity."
+                  example: "3b8ef3870eeb552006034403827dbb5be9827731b64af28bfe43cddd91e43b8485fc810ecee909530c61cdce44e493ddaa6d603c5a71f4da49715a365e7c4239019744135c48e1da9acc613240eb0c70e62b7d2848597eb189f9958c8f9d636d397d81e9e27fec32ae9c0ab53c866b561df53bf8aa6af4623152c46e0f54f53ac80490c6238004db38443d83a83da3c163996a2c6d216ee3003a5056874e9370760f5164423d5ec69de5c40cc6faaf7492a74fcd998e195f8d880c07ca0a4146fe7d682787928c1dbdadde5b3e06f44703719d8bd85248c3d5d05bdb230b08bedbcd26c1bc2211536531d94c12b706d0ced695fc990e19302d303a002c5389f6301ca5ba76070b973a44d8e6368e9fc720a7d165f7fbb8be9b2f80735de8b51978a782a4a14c501da1ceeac04924bec370b0f9c56c5f449efce5f01f4281c829a0b083b7cceb311f628b2e77ed04ccc7d4eb6102c97f12bff1fddbe1c17a89644013f4793462ca273023534f24adf5a48eddbfeee424f4f5e04c5e93047046d89d4aeecf7bdea515d9ba309dc1165347729fe3657c874a0af71559f888a89e42f672b2e5cc34079761d40675e69d03d0d559f39ceec6b479ecaab169e8e8e1b0eda31ea32d5ac30b3ca2a0cb8123a04a66b9ed07de15c445c4ae3937e87cecf72e540b5e2215bb8f5751ef6aac8d274876119fb00696ca667d2060bc6762567c"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/identity_information"
+        "405":
+          description: Invalid Update
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem."
+                example: "Database not updated (either outdated record or invalid signature)"
+
+
+  /nodedb/identity/{iid}:
+    get:
+      description: "Requests information about a specific identity."
+      tags:
+        - NodeDB
+      parameters:
+        - in: path
+          description: "The ID of the identity."
+          name: iid
+          schema:
+            type: string
+            example: "799ec643f62e150516177ac02c6cf16375899f6fa3d752004ee3dcf85b738799"
+          required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/identity_information"
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: string
+                description: "A string indicating the nature of the problem."
+                example: "Identity {iid} not found"
 
 components:
   schemas:
+    data_upload:
+      title: Data Object Upload Information
+      description: "Used when adding a new data object to the DOR. Specifies the owner of the data object, if access to the data object
+      is restricted (to users that have explicitly been granted access) and if the content is encrypted. In addition, a descriptor for
+      the data object has to be provided."
+      type: object
+      properties:
+          owner_iid:
+            type: string
+            format: iid
+            description: "The id of the identity that owns the data object."
+            example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+          access_restricted:
+            type: boolean
+            description: "Indicates whether access to the data object is restricted (`true`) or not (`false`)."
+          content_encrypted:
+            type: boolean
+            description: "Indicates whether the content of the data object is encrypted (`true`) or not (`false`)."
+          descriptor:
+            $ref: "#/components/schemas/data_object_descriptor"
+      required:
+        - type
+        - access_restricted
+        - content_encrypted
+        - descriptor
+
     data_object_descriptor:
       title: Data Object Descriptor
-      description: "Provides meta information about a data object, including the data type and format, the time the
+      description: "Record of information about a data object, including the data type and format, the time the
       data object has been created as well as who created it. Note that there is (currently) no limitations or
       constraints as to what the values can be for the various fields (with exception of `created_t`). Instead, only
       recommendations are provided here."
@@ -869,79 +1004,91 @@ components:
 
     processor_descriptor:
       title: Processor Descriptor
-      description: "Provides meta information about a processor data object, similar to the descriptor of a regular
-      data object. Most importantly, processor data objects are not produced as output by processors. Instead,
-      processor data objects are uploaded manually. Recipes are thus not available. A processor data object descriptor
-      only include the time the processor data object has been created as well as who created it."
+      description: "Record of information about a processor."
       type: object
       properties:
-        created_t:
-          description: "A timestamp indicating when the data object has been created. The SaaS Middleware does not
-          (currently) impose any particular timestamp format or encoding so as long as it is a number. However, it is
-          recommended to use a commonly used encoding such as POSIX time. In addition, the SaaS Middleware does not
-          specify what exactly constitutes as the time of creation. In practice, this may often refer to the point in
-          time at which the data object has been created in the system. In other words, the time when the data object
-          has been added to the DOR."
-          type: number
-          example: 1622688464216
-        created_by:
-          description: "A reference to who created the data object. The SaaS Middleware does not specify who qualifies
-          as creator of a data object. Furthermore, it is not specified if this field is a clear name, such as 'John
-          Doe', or using the ID of an identity. However, it is recommended to use references that are meaningful in the
-          application context. For example, in practice this could mean to use the ID of the identity that has added
-          the data object to the DOR."
+        name:
+          description: "The name of the processor."
           type: string
-          example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+          example: "test-proc"
+        input:
+          description: "The input interface of the processor, i.e., an array of input items. Each item has
+          a name and specifies the data object type and format that is accepted by the processor for
+          consuming the input data object."
+          # $ref: "#/components/schemas/interface_item"
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                description: "The name of the input."
+                type: string
+                example: "x"
+              data_type:
+                description: "The data type of the input."
+                type: string
+                example: "JSONObject"
+              data_format:
+                description: "The data format of the input."
+                type: string
+                example: "json"
+            required:
+              - name
+              - data_type
+              - data_format
+          example: {'name': 'x', 'data_format': 'json', 'data_type': 'JSONObject'}
+        output:
+          description: "The output interface of the processor, i.e., an array of output items. Each item has
+          a name and specifies the data object type and format that the processor will use for producing
+          the output data object."
+          # $ref: "#/components/schemas/interface_item"
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                description: "The name of the output."
+                type: string
+                example: "y"
+              data_type:
+                description: "The data type of the output."
+                type: string
+                example: "JSONObject"
+              data_format:
+                description: "The data format of the output."
+                type: string
+                example: "json"
+            required:
+              - name
+              - data_type
+              - data_format
+          example: {'name': 'y', 'data_format': 'json', 'data_type': 'JSONObject'}
       required:
-        - created_t
-        - created_by
-
-    data_upload:
-      title: Data Object Upload Information
-      description: "Used when adding a new data object to the DOR. Indicates the type of the data object (`data_object`
-      or `processor` for a regular or processor data object, respectively) and its owner (as per the owners public
-      key). In addition, a descriptor for the data object has to be provided. Depending on the type of the data
-      object, the descriptor either follows the Data Object Descriptor or a Processor Descriptor specification."
-      type: object
-      properties:
-          type:
-            type: string
-            description: "The type of the data object."
-            enum: [data_object, processor]
-          owner_public_key:
-            type: string
-            format: public_key
-            description: "The public key of the identity that owns the data object."
-            example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-          descriptor:
-            oneOf:
-              - $ref: "#/components/schemas/data_object_descriptor"
-              - $ref: "#/components/schemas/processor_descriptor"
-            discriminator:
-              propertyName: type
-              mapping:
-                data_object: "#/components/schemas/data_object_descriptor"
-                processor: "#/components/schemas/processor_descriptor"
-      required:
-        - type
-        - owner_public_key
-        - descriptor
+        - name
+        - input
+        - output
 
     task_descriptor:
       title: Task Descriptor
-      description: "Specifies the necessary information in order for a task to be carried out. For once this includes
-      the ID of the processor this task is meant to be carried out by. For each input specified by the descriptor of
-      that processor, a corresponding input data object has to be provided. This can be either a reference to an
-      existing data object (using the data object ID) or by providing the value of the input directly. Furthermore,
-      the owner of any output data object produced as a result of this task needs to be specified."
+      description: "Record of information about a task.
+
+       This includes the ID of the processor that can execute
+      this task and the ID of the identity on whose behalf the task is supposed to be executed. In addition, inputs and outputs
+      need to be specified. Note that for each item in the processor's input/output interface specification, there needs to be
+      an corresponding item (with the same name) specified by the task descriptor."
       type: object
       properties:
         processor_id:
-          description: "The ID of the processor for this task."
+          description: "The ID of the processor that can process this."
           type: string
           example: "fb802ab36792263873ad168c3ff1eaf236d9df0847585cd50012ff0418787d9e"
+        user_iid:
+          description: "The ID of the identity on whose behalf the task is being executed."
+          type: string
+          example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
         input:
           type: array
+          description: "Input data objects to be consumed by this task. Needs to match the specification of the input interface of the processor."
           items:
             type: object
             allOf:
@@ -953,7 +1100,7 @@ components:
                   type:
                     description: "The type of the input."
                     type: string
-                    enum: [reference, value]
+                    enum: ["reference", "value"]
                 required:
                   - name
                   - type
@@ -967,94 +1114,108 @@ components:
                         example: "ef1bde41ebd7bc58a6e68db2d3c49d33f999d67fcd0568b6fc7723363664e478"
                     required:
                       - obj_id
-
                   - title: "Value"
                     type: object
                     properties:
                       value:
                         description: "A valid JSON object used as the input."
                         type: object
-                        example: {value: 5}
+                        example: {"value": 5}
                     required:
                       - value
         output:
-          properties:
-            owner_public_key:
-              description: "The public key of the owner of all output data objects."
-              type: string
-              format: public_key
-              example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENflI2XH60a3YK5dyW5Nv5b667gEmNGogSOi9y93mCSWqp0QlLR93NypjFA2Xt8CWcAsXn8qLrdjI6DIu5jGZ+qfGNVa7kxJfCYECUK3lpHNu4hM5BMTKa4iUeRYi5ILA"
-          required:
-            - owner_public_key
+          type: array
+          description: "Output data objects to be produced by this task. Needs to match the specification of the output interface of the processor."
+          items:
+            type: object
+            properties:
+              name:
+                description: "The name of the output"
+                type: string
+                example: "output-1"
+              owner_iid:
+                description: "The ID of the identity that will be assigned ownership for this data object."
+                type: iid
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+              restricted_access:
+                description: "Indicates whether access to this data object should be restricted."
+                type: boolean
+              content_encrypted:
+                description: "Indicates whether the content of this data object should be encrypted."
+                type: boolean
+              target_node_iid:
+                description: "The IID of the node whose DOR should be used to store this data object. If not specified,
+                the RTI will attempt to store the data object on the same node that executes the task. This
+                requires the node to also provide a DOR service which may not be the case."
+                type: string
+                example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
+            required:
+              - name
+              - owner_iid
+              - restricted_access
+              - content_encrypted
       required:
         - processor_id
+        - user_iid
         - input
         - output
 
-    workflow_descriptor:
-      title: Workflow Descriptor
-      description: "Describes a workflow that consists of an arbitrary number of tasks."
-      type: object
-      properties:
-        name:
-          description: "The name of the workflow."
-          type: string
-          example: "Example Workflow"
-        tasks:
-          description: "An array of tasks that make up this workflow."
-          type: array
-          items:
-            type: object
-            allOf:
-              - properties:
-                  name:
-                    description: "The name of this task in the context of the workflow."
-                    type: string
-                    example: "task-1"
-                required: [name]
-              - $ref: "#/components/schemas/task_descriptor"
-      required:
-        - name
-        - tasks
-
-    job_upload:
-      title: Job Upload
-      allOf:
-        - properties:
-            type:
-              description: "The type of the job."
-              type: string
-              enum:
-                - task
-                - workflow
-          discriminator:
-            propertyName: type
-            mapping:
-              task: "#/components/schemas/task_descriptor"
-              workflow: "#/components/schemas/workflow_descriptor"
-          required: [type]
-        - oneOf:
-          - $ref: "#/components/schemas/task_descriptor" 
-          - $ref: "#/components/schemas/workflow_descriptor"
-
     job_descriptor:
       title: Job Descriptor
-      description: "Provides information about a specific job. This includes the ID of the job which is a unique
-      number assigned by the RTI that executes this job. Furthermore, a job descriptor includes the ID of the processor
-      as well as a descriptor of the job (either a Task Descriptor or a Workflow Descriptor)."
+      description: "Record of information about a job."
       type: object
       properties:
         id:
-          description: "The ID of the job"
+          description: "The ID of the job, i.e., a unique number assigned by the RTI that executes the the job."
           type: string
           example: 324
         proc_id:
-          description: "The ID of the processor."
+          description: "The ID of the processor that executes the job."
           type: string
           example: "581e2571c6fa8ba01ba6456df4d1fe175abe952362ee925dc9396e67d7fbeeaf"
         descriptor:
-          oneOf:
-            - $ref: "#/components/schemas/task_descriptor" 
-            - $ref: "#/components/schemas/workflow_descriptor"
+          description: "The task descriptor with details of the job."
+          $ref: "#/components/schemas/task_descriptor"
+      required:
+        - id
+        - proc_id
+        - descriptor
 
+    identity_information:
+      title: Identity Information Record
+      description: "Record of public information about an identity."
+      type: object
+      properties:
+        name:
+          type: string
+          description: "The name of the identity."
+          example: "Foo Bar"
+        email:
+          type: string
+          description: "The contact email address of the identity."
+          example: "foo.bar@somewhere.com"
+        nonce:
+          type: number
+          description: "A non-negative integer value that is increased by 1 every time the identity information is updated. The nonce is used
+          by the system to tell if a record is more recent than another."
+          example: 1
+        e_public_key:
+          type: string
+          description: "The public encryption key. Can be used to encrypt data intended for the identity only."
+          example: "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAzlFyGC34xQwl/YPHpC/8P1B+qHskfFIf2bBoQf7PUrWCAeHRkA7p8oPM/H65ZYpuszfkKEPrYwhIGQs5BspgbEcYcfL+KBPvI62j9sH34umIc6NXJFf5RnXtCSRgX4T7AakJ24b6d2BjLNxvhBddkpumMorQXv7t9RMx2fZIT3fk52G9dg9+q9prHrM3HVchBd4Uk+KGKDSbQrU51s9ziL5Mrsx68+vQH2p+cFbUdVWuyjn3aTC6r7j6d9bV1f1+awbkBZuX/D+NNY+V8SqtbKJRovPFvezf/Fw86vmoydED7sEUNjJsSNuS/auzVmCK+y9EdUifsxEiVUUS+qmoewYpCD7JdHTSOrld49Df0VZD+pKi6+YS2WsMPVKmgIFbUdERdp6wtHRUJSD7LPeO6wVGUq3brPtS7lvpz2wZhmAaIfTPpSbojeM/aLRO4Pe6CDEp73U96sQxJuex9anGypKpnFx9ew6+YzZd/b4F0MB+MlAQ99HIkPY6NkZpVh1qOCQHw3DpOBndYUO+eSbTlS/JczSsPF06WgsAxeHqrIYj1j7mpCsveez1fuHaxSeYFSRFGBzxdJGkwkJApZsyFcBJbV8vHUKsjoqSZ2x1WLY0faCFtC1YAqZDtb3BMUJy2BWree9Mnexj3lJKtVPNQnaCti+1zVp8Cw2osvXbDmsCAwEAAQ=="
+        s_public_key:
+          type: string
+          description: "The public signing key. Can be used to verify signatures created by the identity."
+          example: "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEtF7ZsuxTl5La6zpVlVJ91CEZhIjCoAEmaOCTh1Gtf0j4WMkDemonlD+zaIvVk0zEyr/xv4gN84EAifsH3IHfdP0y4SSTaDOKMHlHCTsXzYwrira7U2QAUYdndfLB0Vj1"
+        public_key:
+          type: string
+          description: "The public part of the identity master key."
+          example: "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA2w9tadwMQcQ0YgW/cuNyp5j7oQJQgHCbw8AnINg2OGU7a1MYuzjLjk6IDiqvR4iGHrERhEoJ3EEpcbpJw44f6tNSy5EBVYXqUJSdkEsoRoiBQnZUfTE+wBWG4rqs+So9krJiQdaeb63QXiENlQGlhkQFI3sxh/uUMTiG+wuiQG3RzTZyWILF80KNCA+YvxGCXOmcyCrA4/eAJPAADwBAo/d3z9Luqw4CETZiFxpbreX1DwOEhe56mXhCFX4lS1T6DsP6eOKdlOclhyiomgMKUEoowGv1rUxxgwiJ7ALr+xTmf1mrweqhQhNlXf+xxp6zB5z4SI8jBNsyN+cxlcUYtffRdGwDxU7xfB+u+oCO9Ue1E3XsiIFv4fjLFXn+ALmirivl/5Kj33qA0wAar24TISA876Sb13FYDF48sqFuuN49iUMHf5gPX3smK+E5vUq+oillO4FxmJZDPebfL+nJ0S+mMi2U9mFL0dq9fXjtd1Cs9kosaoGu0o61qi0yPlh91T9k551N9256qdyidgK8rVRxLbbbd0FaodQyZRv2XlQmUZaSmMHzCQqgMonFzKHjVgamV8Z4Hq6XBpmYhTmRPKAHU7GBl1BubMSJPk4fUL9MHXhVxPkq+A5E6yxNOSvAWHnOCQiguzEEUP+9e2/DHCAzD2YB+V+6+W4AEgpbK30CAwEAAQ=="
+      required:
+        - name
+        - email
+        - nonce
+        - e_public_key
+        - s_public_key
+        - public_key
 
