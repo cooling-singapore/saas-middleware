@@ -11,7 +11,7 @@ from typing import Optional, Union
 import requests
 from PyInquirer import prompt
 
-from cli.exceptions import CLIRuntimeError
+from saas.cli.exceptions import CLIRuntimeError
 from saas.dor.blueprint import DORProxy
 from saas.helpers import read_json_from_file, validate_json
 from saas.keystore.identity import Identity

@@ -1,20 +1,19 @@
-#! /usr/bin/env python3
-
 import os
 import sys
 import traceback
 
-from cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
+from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
-from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
+from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
-from cli.cmd_network import NetworkShow
-from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
-from cli.cmd_service import Service
-from cli.exceptions import CLIRuntimeError
-from cli.helpers import CLIParser, Argument, CLICommandGroup
+from saas.cli.cmd_network import NetworkShow
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
+from saas.cli.cmd_service import Service
+from saas.cli.exceptions import CLIRuntimeError
+from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
 
-if __name__ == "__main__":
+
+def main():
     try:
         default_keystore = os.path.join(os.environ['HOME'], '.keystore')
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
@@ -100,3 +99,6 @@ if __name__ == "__main__":
         print(f"Unrefined exception:\n{trace}")
         sys.exit(-2)
 
+
+if __name__ == "__main__":
+    main()
