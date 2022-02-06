@@ -370,11 +370,11 @@ class RTIJobSubmit(CLICommand):
             user_iid = selected['identity']
 
         # submit the job
-        job_id = self._rti.submit_job(job_descriptor['processor_id'],
-                                      job_descriptor['input'],
-                                      job_descriptor['output'],
-                                      user)
-        print(f"Job submitted: job-id={job_id}")
+        new_job_descriptor = self._rti.submit_job(job_descriptor['processor_id'],
+                                                  job_descriptor['input'],
+                                                  job_descriptor['output'],
+                                                  user_iid)
+        print(f"Job submitted: job-id={new_job_descriptor['id']}")
 
 
 class RTIJobStatus(CLICommand):
