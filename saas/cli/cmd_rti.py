@@ -110,7 +110,7 @@ class RTIProcDeploy(CLICommand):
         # check if we have Github credentials for this URL
         url = repo_urls[args['proc-id']]
         asset: CredentialsAsset = keystore.get_asset('github-credentials')
-        github_credentials: Optional[GithubCredentials] = asset.get(url)
+        github_credentials: Optional[GithubCredentials] = asset.get(url) if asset is not None else None
         if github_credentials is not None:
             if not prompt_for_confirmation(f"Found Github credentials '{github_credentials.login}' for {url}. "
                                            f"Use for deployment?", default=True):
