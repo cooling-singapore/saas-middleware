@@ -5,7 +5,7 @@ import os
 from _stat import S_IWRITE
 from stat import S_IREAD
 from threading import Lock
-from typing import Optional
+from typing import Optional, Dict
 
 import saas.node
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -35,7 +35,7 @@ class RuntimeInfrastructureService:
     def __init__(self, node: saas.node.Node, retain_job_history: bool = False) -> None:
         self._mutex = Lock()
         self._node = node
-        self._deployed_processors = {}
+        self._deployed_processors: Dict[str, RTIProcessorAdapter] = {}
         self._ssh_credentials_paths = {}
         self._jobs_path = os.path.join(self._node.datastore, 'jobs')
         self._content_keys = {}
@@ -62,7 +62,7 @@ class RuntimeInfrastructureService:
             # is the processor already deployed?
             if proc_id in self._deployed_processors:
                 logger.warning(f"processor {proc_id} already deployed -> do no redeploy and return descriptor only")
-                return self._deployed_processors[proc_id].get_descriptor()
+                return self._deployed_processors[proc_id].gpp['proc_descriptor']
 
             # get all nodes in the network
             network = self._node.db.get_network_all()
@@ -121,14 +121,14 @@ class RuntimeInfrastructureService:
 
                 # create an RTI adapter instance
                 if deployment == 'native':
-                    self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                    self._deployed_processors[proc_id] = \
                         RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
                                                   ssh_credentials=ssh_credentials,
                                                   github_credentials=github_credentials,
                                                   retain_remote_wdirs=self._retain_job_history)
 
                 elif deployment == 'docker':
-                    self._deployed_processors[proc_id]: RTIProcessorAdapter = \
+                    self._deployed_processors[proc_id] = \
                         RTIDockerProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node)
 
                 # start the processor
