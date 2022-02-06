@@ -361,11 +361,13 @@ class RTIJobSubmit(CLICommand):
                 'user_iid': None
             }
 
-        # select the user on whose behalf the jbo
-        selected = prompt_for_selection(self._identity_choices,
-                                        "Select the user on whose behalf the job is executed:",
-                                        allow_multiple=False)
-        user = selected['identity']
+        user_iid = job_descriptor.get("user_iid")
+        if user_iid is None or user_iid not in [_identity['identity'].id for _identity in self._identity_choices]:
+            # select the user on whose behalf the jbo
+            selected = prompt_for_selection(self._identity_choices,
+                                            "Select the user on whose behalf the job is executed:",
+                                            allow_multiple=False)
+            user_iid = selected['identity']
 
         # submit the job
         job_id = self._rti.submit_job(job_descriptor['processor_id'],
