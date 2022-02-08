@@ -43,8 +43,8 @@ class NodeDBBlueprint(SaaSBlueprint):
         self.add_rule('node', self.get_node, methods=['GET'])
         self.add_rule('network', self.get_network, methods=['GET'])
         self.add_rule('identity', self.get_identities, methods=['GET'])
-        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
         self.add_rule('identity', self.update_identity, methods=['POST'])
+        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
         self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
     @request_manager.handle_request(NetworkNodeDetail)
