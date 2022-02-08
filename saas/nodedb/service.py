@@ -239,6 +239,8 @@ class NodeDBService:
         with self._Session() as session:
             # build the query and get the results
             q = session.query(DataObjectRecord).filter()
+
+            # first, apply the search constraints (if any)
             if owner_iid is not None:
                 q = q.filter(DataObjectRecord.owner_iid == owner_iid)
 
@@ -253,7 +255,7 @@ class NodeDBService:
 
             object_records: list[DataObjectRecord] = q.all()
 
-            # second, filter data objects by patterns (if any)
+            # second, apply the search patterns (if any)
             result = []
             for obj_record in object_records:
                 # prepare a tags array for the result dict
