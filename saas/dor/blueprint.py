@@ -77,6 +77,7 @@ class ObjectSearchParameters(BaseModel):
     data_type: Optional[str]
     data_format: Optional[str]
     patterns: Optional[List[str]]
+    c_hashes: Optional[List[str]]
 
 
 class DORStatistics(BaseModel):
