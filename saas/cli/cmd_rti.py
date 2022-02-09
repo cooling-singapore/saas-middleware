@@ -110,7 +110,7 @@ class RTIProcDeploy(CLICommand):
         # check if we have Github credentials for this URL
         url = repo_urls[args['proc-id']]
         asset: CredentialsAsset = keystore.get_asset('github-credentials')
-        github_credentials: Optional[GithubCredentials] = asset.get(url)
+        github_credentials: Optional[GithubCredentials] = asset.get(url) if asset is not None else None
         if github_credentials is not None:
             if not prompt_for_confirmation(f"Found Github credentials '{github_credentials.login}' for {url}. "
                                            f"Use for deployment?", default=True):
@@ -361,18 +361,20 @@ class RTIJobSubmit(CLICommand):
                 'user_iid': None
             }
 
-        # select the user on whose behalf the jbo
-        selected = prompt_for_selection(self._identity_choices,
-                                        "Select the user on whose behalf the job is executed:",
-                                        allow_multiple=False)
-        user = selected['identity']
+        user_iid = job_descriptor.get("user_iid")
+        if user_iid is None or user_iid not in [_identity['identity'].id for _identity in self._identity_choices]:
+            # select the user on whose behalf the jbo
+            selected = prompt_for_selection(self._identity_choices,
+                                            "Select the user on whose behalf the job is executed:",
+                                            allow_multiple=False)
+            user_iid = selected['identity']
 
         # submit the job
-        job_id = self._rti.submit_job(job_descriptor['processor_id'],
-                                      job_descriptor['input'],
-                                      job_descriptor['output'],
-                                      user)
-        print(f"Job submitted: job-id={job_id}")
+        new_job_descriptor = self._rti.submit_job(job_descriptor['processor_id'],
+                                                  job_descriptor['input'],
+                                                  job_descriptor['output'],
+                                                  user_iid)
+        print(f"Job submitted: job-id={new_job_descriptor['id']}")
 
 
 class RTIJobStatus(CLICommand):
