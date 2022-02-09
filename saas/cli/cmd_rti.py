@@ -2,16 +2,15 @@ import json
 import os
 from typing import Optional
 
+from saascore.api.sdk.exceptions import UnsuccessfulRequestError
+from saascore.api.sdk.proxies import DORProxy, RTIProxy, NodeDBProxy
+from saascore.log import Logging
+
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore
-from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
-from saas.logging import Logging
-from saas.nodedb.blueprint import NodeDBProxy
-from saas.rest.exceptions import UnsuccessfulRequestError
-from saas.rti.blueprint import RTIProxy
+from saascore.helpers import read_json_from_file, validate_json
+from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saas.schemas import TaskDescriptor
 
 logger = Logging.get('cli.rti')

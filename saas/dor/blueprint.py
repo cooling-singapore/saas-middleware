@@ -3,19 +3,18 @@ from typing import Optional, List, Union
 
 from flask import Response
 from pydantic import BaseModel
+from saascore.api.sdk.helpers import create_ok_response, create_ok_attachment
+from saascore.api.sdk.proxies import dor_endpoint_prefix
+from saascore.log import Logging
 
 from saas.dor.exceptions import DataObjectNotFoundError, DataObjectContentNotFoundError, IdentityNotFoundError
-from saas.keystore.assets.credentials import GithubCredentials
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.logging import Logging
-from saas.rest.blueprint import SaaSBlueprint, create_ok_response, create_ok_attachment
+from saascore.keystore.assets.credentials import GithubCredentials
+
+from saas.rest.blueprint import SaaSBlueprint
 from saas.schemas import GitProcessorPointer, ObjectRecipe, ObjectTag
-from saas.rest.proxy import EndpointProxy
 from saas.rest.request_manager import request_manager
 
 logger = Logging.get('dor.blueprint')
-endpoint_prefix = "/api/v1/repository"
 
 
 class SaaSObject(BaseModel):
@@ -77,6 +76,7 @@ class ObjectSearchParameters(BaseModel):
     data_type: Optional[str]
     data_format: Optional[str]
     patterns: Optional[List[str]]
+    # TODO: what about the c_hashes???
 
 
 class DORStatistics(BaseModel):
@@ -87,7 +87,7 @@ class DORStatistics(BaseModel):
 
 class DORBlueprint(SaaSBlueprint):
     def __init__(self, node):
-        super().__init__('repository', __name__, endpoint_prefix)
+        super().__init__('repository', __name__, dor_endpoint_prefix)
         self._node = node
 
         self.add_rule('', self.search, ['GET'])
@@ -258,105 +258,3 @@ class DORBlueprint(SaaSBlueprint):
         return create_ok_response(self._node.db.get_object_by_id(obj_id))
 
 
-class DORProxy(EndpointProxy):
-    def __init__(self, remote_address):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
-
-    def search(self, patterns: list[str] = None, owner_iid: str = None,
-               data_type: str = None, data_format: str = None,
-               c_hashes: list[str] = None) -> dict:
-        body = {}
-
-        if patterns is not None and len(patterns) > 0:
-            body['patterns'] = patterns
-
-        if owner_iid is not None:
-            body['owner_iid'] = owner_iid
-
-        if data_type is not None:
-            body['data_type'] = data_type
-
-        if data_format is not None:
-            body['data_format'] = data_format
-
-        if c_hashes is not None:
-            body['c_hashes'] = c_hashes
-
-        return self.get('', body=body)
-
-    def statistics(self) -> dict:
-        return self.get('/statistics')
-
-    def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
-                        data_type: str, data_format: str, created_by: str, recipe: dict = None) -> dict:
-        body = {
-            'data_type': data_type,
-            'data_format': data_format,
-            'created_by': created_by,
-            'owner_iid': owner.id,
-            'access_restricted': access_restricted,
-            'content_encrypted': content_encrypted
-        }
-
-        if recipe is not None:
-            body['recipe'] = recipe
-
-        return self.post('/add', body=body, attachment_path=content_path)
-
-    def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str, owner: Identity,
-                            created_by: str, recipe: dict = None, github_credentials: GithubCredentials = None) -> dict:
-        body = {
-            'data_type': 'Git-Processor-Pointer',
-            'data_format': 'json',
-            'created_by': created_by,
-            'owner_iid': owner.id,
-            'gpp': {
-                'source': source,
-                'commit_id': commit_id,
-                'proc_path': proc_path,
-                'proc_config': proc_config
-            }
-        }
-
-        if recipe is not None:
-            body['recipe'] = recipe
-
-        if github_credentials:
-            body['github_credentials'] = {
-                'login': github_credentials.login,
-                'personal_access_token': github_credentials.personal_access_token
-            }
-
-        return self.post('/add-gpp', body=body)
-
-    def delete_data_object(self, obj_id: str, with_authorisation_by: Keystore) -> (str, dict):
-        return self.delete(f"/{obj_id}", with_authorisation_by=with_authorisation_by)
-
-    def get_meta(self, obj_id: str) -> (str, dict):
-        return self.get(f"/{obj_id}/meta")
-
-    def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str) -> dict:
-        return self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
-
-    def grant_access(self, obj_id: str, authority: Keystore, identity: Identity) -> dict:
-        return self.post(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
-
-    def revoke_access(self, obj_id: str, authority: Keystore, identity: Identity) -> dict:
-        return self.delete(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
-
-    def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity) -> dict:
-        # TODO: reminder that the application layer is responsible to transfer the content_key to the new owner
-        return self.put(f"/{obj_id}/owner/{new_owner.id}", with_authorisation_by=authority)
-
-    def update_tags(self, obj_id: str, authority: Keystore, tags: dict) -> dict:
-        body = []
-        for key, value in tags.items():
-            body.append({
-                'key': key,
-                'value': value
-            })
-
-        return self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=authority)
-
-    def remove_tags(self, obj_id: str, authority: Keystore, keys: list) -> dict:
-        return self.delete(f"/{obj_id}/tags", body=keys, with_authorisation_by=authority)

@@ -1,15 +1,16 @@
 import os
+
+from saascore.api.sdk.proxies import NodeDBProxy
+from saascore.log import Logging
 from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, get_available_keystores, prompt_for_confirmation, \
     prompt_for_password, prompt_if_missing, prompt_for_keystore_selection, prompt_for_selection, load_keystore
-from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
-from saas.logging import Logging
-from saas.nodedb.blueprint import NodeDBProxy
+from saascore.helpers import read_json_from_file, validate_json
+from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
+from saascore.keystore.keystore import Keystore
+from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
 
 logger = Logging.get('cli.identity')
 

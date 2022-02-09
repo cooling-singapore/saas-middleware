@@ -6,12 +6,12 @@ import time
 
 from jsonschema import validate
 
-from saas.cryptography.helpers import hash_string_object
-from saas.exceptions import RunCommandError, SaaSException
-from saas.keystore.assets import credentials
-from saas.logging import Logging
-from saas.rti.adapters.adapters import RTIProcessorAdapter, scp_local_to_remote, run_command, monitor_command, \
-    scp_remote_to_local
+from saascore.cryptography.helpers import hash_string_object
+from saascore.exceptions import RunCommandError, SaaSException
+from saascore.keystore.assets import credentials
+from saascore.log import Logging
+
+import saas.rti.adapters.base as base
 from saas.rti.exceptions import AdapterRuntimeError
 from saas.rti.status import StatusLogger
 from saas.schemas import GitProcessorPointer
@@ -19,7 +19,7 @@ from saas.schemas import GitProcessorPointer
 logger = Logging.get('rti.adapters.native')
 
 
-class RTINativeProcessorAdapter(RTIProcessorAdapter):
+class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
                  ssh_credentials: credentials.SSHCredentials = None,
                  github_credentials: credentials.GithubCredentials = None,
@@ -110,7 +110,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             for obj_name in self._input_interface:
                 local_path = os.path.join(local_working_directory, obj_name)
                 status.update('task', f"copy data objects: {local_path} -> {working_directory}")
-                scp_local_to_remote(local_path, working_directory, self._ssh_credentials)
+                base.scp_local_to_remote(local_path, working_directory, self._ssh_credentials)
 
         # run execute script
         status.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
@@ -151,7 +151,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         status.remove('task')
 
     def _test_ssh_connection(self) -> None:
-        run_command('exit', ssh_credentials=self._ssh_credentials)
+        base.run_command('exit', ssh_credentials=self._ssh_credentials)
 
     def _monitor_command(self, command: str, context: dict,
                          stdout_path: str, stderr_path: str, cwd: str = None) -> None:
@@ -163,14 +163,14 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
         }
 
-        monitor_command(command, triggers, ssh_credentials=self._ssh_credentials,
-                        stdout_path=stdout_path, stderr_path=stderr_path)
+        base.monitor_command(command, triggers, ssh_credentials=self._ssh_credentials,
+                             stdout_path=stdout_path, stderr_path=stderr_path)
 
     def _execute_command(self, command: str, cwd: str = None,
                          console_log_prefix: str = None) -> subprocess.CompletedProcess:
         try:
             command = f"cd {cwd} && {command}" if cwd else command
-            result = run_command(command, ssh_credentials=self._ssh_credentials)
+            result = base.run_command(command, ssh_credentials=self._ssh_credentials)
 
             if console_log_prefix:
                 self._echo_to_file(f"{console_log_prefix}.stdout", result.stdout.decode('utf-8'))
@@ -194,7 +194,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             })
 
     def _path_exists(self, path: str) -> bool:
-        result = run_command(f"ls {path}", ssh_credentials=self._ssh_credentials, suppress_exception=True)
+        result = base.run_command(f"ls {path}", ssh_credentials=self._ssh_credentials, suppress_exception=True)
         return result.returncode == 0
 
     def _echo_to_file(self, path: str, content: str) -> None:
@@ -207,7 +207,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         if self._ssh_credentials:
             path = path.replace("$HOME", '~')
 
-            scp_local_to_remote(temp_path, path, self._ssh_credentials)
+            base.scp_local_to_remote(temp_path, path, self._ssh_credentials)
             os.remove(temp_path)
 
         else:
@@ -242,7 +242,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             remote_path = os.path.join(working_directory, obj_name)
             status.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
 
-            scp_remote_to_local(remote_path, local_working_directory, self._ssh_credentials)
+            base.scp_remote_to_local(remote_path, local_working_directory, self._ssh_credentials)
             status.remove('task')
 
         # upload the data object to the target DOR

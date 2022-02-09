@@ -10,22 +10,23 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional, IO, TextIO, AnyStr
 
-import saas.node
-from saas.cryptography.helpers import encrypt_file, decrypt_file
-from saas.cryptography.keypair import KeyPair
-from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.dor.blueprint import DORProxy
+from saascore.api.sdk.proxies import DORProxy
+from saascore.log import Logging
+from saascore.cryptography.helpers import encrypt_file, decrypt_file
+from saascore.cryptography.keypair import KeyPair
+from saascore.cryptography.rsakeypair import RSAKeyPair
+from saascore.exceptions import SaaSException, RunCommandError
+from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json
+from saascore.keystore.assets.credentials import SSHCredentials
+
 from saas.dor.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.exceptions import SaaSException, RunCommandError
-from saas.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json
-from saas.keystore.assets.credentials import SSHCredentials
-from saas.logging import Logging
 from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError
+
 from saas.rti.status import State, StatusLogger
 
 logger = Logging.get('rti.adapters')
@@ -152,7 +153,7 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node: saas.node.Node) -> None:
+    def __init__(self, proc_id: str, gpp: dict, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
 
         self._mutex = Lock()

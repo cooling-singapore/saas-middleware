@@ -3,10 +3,10 @@ import unittest
 import logging
 import time
 
-from saas.dor.blueprint import DORProxy
-from saas.logging import Logging
+from saascore.api.sdk.proxies import NodeDBProxy, DORProxy
+from saascore.log import Logging
+
 from saas.node import Node
-from saas.nodedb.blueprint import NodeDBProxy
 from tests.base_testcase import TestCaseBase
 
 Logging.initialise(level=logging.DEBUG)

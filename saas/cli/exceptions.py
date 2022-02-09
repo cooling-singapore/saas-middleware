@@ -1,4 +1,4 @@
-from saas.exceptions import SaaSException
+from saascore.exceptions import SaaSException
 
 
 class CLIException(SaaSException):

@@ -6,12 +6,13 @@ import time
 import unittest
 from threading import Thread
 
-from saas.cryptography.helpers import hash_file_content
-from saas.keystore.identity import Identity
-from saas.logging import Logging
+from saascore.cryptography.helpers import hash_file_content
+from saascore.keystore.identity import Identity
+from saascore.log import Logging
+
 from saas.p2p.exceptions import ReceiveDataError, PeerUnavailableError, MismatchingRequestIdError
 from saas.p2p.messenger import SecureMessenger, SecureMessage
-from saas.keystore.keystore import Keystore
+from saascore.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol
 from saas.p2p.service import P2PService
