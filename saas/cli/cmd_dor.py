@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -93,7 +94,7 @@ class DORAdd(CLICommand):
 
             os.remove(obj_path)
 
-        print(f"Data object added: {meta}")
+        print(f"Data object added: {json.dumps(meta, indent=4)}")
 
 
 class DORAddGPP(CLICommand):
@@ -224,7 +225,6 @@ class DORAddGPP(CLICommand):
                     args['path'] = selection['proc-path']
 
                 # does the descriptor file exist? load it
-                print(args)
                 descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
                 print(f"Load processor descriptor at '{args['path']}'...", end='')
                 if not os.path.isfile(descriptor_path):
@@ -285,7 +285,7 @@ class DORAddGPP(CLICommand):
             'config': args['config']
         })
 
-        print(f"GPP Data object added: {meta}")
+        print(f"GPP Data object added: {json.dumps(meta, indent=4)}")
 
 
 class DORRemove(CLICommand):
