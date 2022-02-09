@@ -2,22 +2,18 @@ import unittest
 import logging
 import os
 
-from saas.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
-from saas.dor.blueprint import DORProxy
+from saascore.api.sdk.exceptions import UnsuccessfulRequestError
+from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
+from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
+from saascore.log import Logging
+
 from saas.dor.exceptions import FetchDataObjectFailedError
-from saas.nodedb.blueprint import NodeDBProxy
-from saas.rest.exceptions import UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
-from saas.helpers import object_to_ordered_list, generate_random_string
+from saascore.helpers import object_to_ordered_list, generate_random_string
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
+Logging.initialise(level=logging.DEBUG)
+logger = Logging.get(__name__)
 
 
 class DORServiceTestCase(unittest.TestCase, TestCaseBase):

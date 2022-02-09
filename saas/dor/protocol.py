@@ -1,11 +1,12 @@
 import os
 
+from saascore.log import Logging
+from saascore.keystore.identity import Identity
+from saascore.helpers import write_json_to_file
+
 from saas.dor.exceptions import FetchDataObjectFailedError
-from saas.keystore.identity import Identity
-from saas.logging import Logging
 from saas.p2p.exceptions import AttachmentNotFoundError
 from saas.p2p.protocol import P2PProtocol, P2PMessage
-from saas.helpers import write_json_to_file
 
 logger = Logging.get('dor.protocol')
 

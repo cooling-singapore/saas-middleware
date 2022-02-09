@@ -2,9 +2,9 @@ import threading
 
 from flask import Flask, Blueprint
 from flask_cors import CORS
+from saascore.log import Logging
 from werkzeug.serving import make_server
 
-from saas.logging import Logging
 from saas.rest.request_manager import request_manager
 
 logger = Logging.get('rest.service')

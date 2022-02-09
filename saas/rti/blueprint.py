@@ -4,19 +4,17 @@ from typing import List, Optional
 
 from flask import Response
 from pydantic import BaseModel
+from saascore.api.sdk.helpers import create_ok_response
+from saascore.api.sdk.proxies import rti_endpoint_prefix
 
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
-from saas.keystore.identity import Identity
-from saas.logging import Logging
-from saas.rest.blueprint import SaaSBlueprint, create_ok_response
-from saas.rest.proxy import EndpointProxy
+from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
+from saascore.log import Logging
+
+from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.request_manager import request_manager
 from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor
 
-import saas.nodedb.blueprint as nodedb_bp
-
 logger = Logging.get('rti.blueprint')
-endpoint_prefix = "/api/v1/processor"
 
 
 class ProcessorDeploymentParameters(BaseModel):
@@ -54,7 +52,7 @@ class ContentKey(BaseModel):
 
 class RTIBlueprint(SaaSBlueprint):
     def __init__(self, node) -> None:
-        super().__init__('processor', __name__, endpoint_prefix)
+        super().__init__('processor', __name__, rti_endpoint_prefix)
         self._node = node
 
         self.add_rule('', self.get_deployed, ['GET'])
@@ -146,70 +144,3 @@ class RTIBlueprint(SaaSBlueprint):
         permission = request_manager.get_request_variable('body')
         self._node.rti.put_permission(req_id, permission)
         return create_ok_response()
-
-
-class RTIProxy(EndpointProxy):
-    def __init__(self, remote_address: (str, int)) -> None:
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
-
-    def get_deployed(self):
-        return self.get(f"")
-
-    def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
-               ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> dict:
-
-        body = {
-            'deployment': deployment,
-        }
-
-        if gpp_custodian:
-            body['gpp_custodian'] = gpp_custodian
-
-        # do we have credentials to encrypt?
-        if ssh_credentials or github_credentials:
-            # get info about the node (TODO: there is probably a better way to get the id of the peer)
-            db = nodedb_bp.NodeDBProxy(self.remote_address)
-            peer_info = db.get_node()
-            peer = Identity.deserialise(peer_info['identity'])
-
-            if ssh_credentials:
-                ssh_credentials_serialised = json.dumps({
-                    'host': ssh_credentials.host,
-                    'login': ssh_credentials.login,
-                    'key': ssh_credentials.key,
-                    'key_is_password': ssh_credentials.key_is_password
-                })
-                body['ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
-
-            if github_credentials:
-                github_credentials_serialised = json.dumps({
-                    'login': github_credentials.login,
-                    'personal_access_token': github_credentials.personal_access_token
-                })
-                body['github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
-
-        return self.post(f"/{proc_id}", body=body)
-
-    def undeploy(self, proc_id: str) -> dict:
-        return self.delete(f"/{proc_id}")
-
-    def get_descriptor(self, proc_id: str) -> dict:
-        return self.get(f"/{proc_id}/descriptor")
-
-    def submit_job(self, proc_id: str, job_input: list, job_output: list, user: Identity) -> dict:
-        return self.post(f"/{proc_id}/jobs", body={
-            'processor_id': proc_id,
-            'input': job_input,
-            'output': job_output,
-            'user_iid': user.id
-        })
-
-    def get_jobs(self, proc_id: str) -> dict:
-        return self.get(f"/{proc_id}/jobs")
-
-    def get_job_info(self, job_id: str) -> (dict, dict):
-        r = self.get(f"/job/{job_id}")
-        return r['job_descriptor'], r['status']
-
-    def put_permission(self, req_id: str, permission: str) -> None:
-        self.post(f"/permission/{req_id}", body=permission)

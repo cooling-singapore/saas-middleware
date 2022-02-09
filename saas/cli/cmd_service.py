@@ -1,8 +1,9 @@
 import os
 
+from saascore.log import Logging
+
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
     default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore
-from saas.logging import Logging
 from saas.node import Node
 
 logger = Logging.get('cli.service')
