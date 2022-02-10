@@ -39,6 +39,7 @@ class JobDescriptor(BaseModel):
     id: str
     proc_id: str
     task: TaskDescriptor
+    retain: bool
 
 
 class ProcessorDescriptor(BaseModel):
