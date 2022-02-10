@@ -38,7 +38,9 @@ class GPPObjectWithCredentials(GPPObject):
     class GPPGitHubCredentials(BaseModel):
         login: str
         personal_access_token: str
-    
+
+    data_type: Optional[str]
+    data_format: Optional[str]
     github_credentials: Optional[GPPGitHubCredentials]
 
 
