@@ -62,7 +62,7 @@ def parse_stream(name: str, pipe: IO[AnyStr], file: TextIO = None, triggers: dic
 
 
 def monitor_command(command: str, triggers: dict, ssh_credentials: SSHCredentials = None, cwd: str = None,
-                    stdout_path: str = None, stderr_path: str = None) -> (list[str], list[str]):
+                    stdout_path: str = None, stderr_path: str = None) -> None:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
@@ -82,8 +82,17 @@ def monitor_command(command: str, triggers: dict, ssh_credentials: SSHCredential
             while proc.poll() is None:
                 parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
 
-            logger.debug(f"process is done: stdout={stdout_path} stderr={stderr_path}")
+            logger.debug(f"process is done: returncode= {proc.returncode} stdout={stdout_path} stderr={stderr_path}")
             proc.stdout.close()
+
+            if proc.returncode != 0:
+                raise RunCommandError({
+                    'wrapped_command': wrapped_command,
+                    'cwd': cwd,
+                    'stdout_path': stdout_path,
+                    'stderr_path': stderr_path,
+                    'returncode': proc.returncode
+                })
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None,
