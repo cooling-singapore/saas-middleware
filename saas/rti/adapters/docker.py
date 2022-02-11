@@ -2,10 +2,11 @@ import json
 import os
 import traceback
 
+from saascore.log import Logging
+
 import docker
 
-from saas.logging import Logging
-from saas.rti.adapters.adapters import RTIProcessorAdapter
+import saas.rti.adapters.base as base
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.status import StatusLogger
 
@@ -25,7 +26,7 @@ def prune_image(proc_id: str) -> None:
     client.close()
 
 
-class RTIDockerProcessorAdapter(RTIProcessorAdapter):
+class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 

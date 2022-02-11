@@ -10,16 +10,15 @@ from typing import Optional, Union
 
 import requests
 from PyInquirer import prompt
+from saascore.api.sdk.exceptions import UnsuccessfulRequestError
+from saascore.api.sdk.proxies import NodeDBProxy, DORProxy
+from saascore.log import Logging
 
 from saas.cli.exceptions import CLIRuntimeError
-from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
-from saas.logging import Logging
-from saas.nodedb.blueprint import NodeDBProxy
-from saas.rest.exceptions import UnsuccessfulRequestError
+from saascore.helpers import read_json_from_file, validate_json
+from saascore.keystore.identity import Identity
+from saascore.keystore.keystore import Keystore
+from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
 
 logger = Logging.get('cli.helpers')
 

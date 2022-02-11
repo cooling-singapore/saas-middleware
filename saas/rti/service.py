@@ -7,15 +7,15 @@ from stat import S_IREAD
 from threading import Lock
 from typing import Optional, Dict
 
+from saascore.log import Logging
+from saascore.helpers import write_json_to_file, generate_random_string, read_json_from_file
+from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
+
 import saas.node
-from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.helpers import write_json_to_file, generate_random_string, read_json_from_file
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
-from saas.logging import Logging
+import saas.dor.protocol as dor_prot
 from saas.p2p.exceptions import PeerUnavailableError
-from saas.rti.adapters.adapters import RTIProcessorAdapter
-from saas.rti.adapters.docker import RTIDockerProcessorAdapter
-from saas.rti.adapters.native import RTINativeProcessorAdapter
+import saas.rti.adapters.docker as docker_rti
+import saas.rti.adapters.native as native_rti
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, \
     ProcessorNotDeployedError, UnexpectedGPPMetaInformation, GPPDataObjectNotFound
 from saas.rti.status import StatusLogger, State
@@ -78,7 +78,7 @@ class RuntimeInfrastructureService:
                     continue
 
                 # try to fetch the data object using the P2P protocol
-                protocol = DataObjectRepositoryP2PProtocol(self._node)
+                protocol = dor_prot.DataObjectRepositoryP2PProtocol(self._node)
 
                 # lookup the data object
                 try:
@@ -122,14 +122,16 @@ class RuntimeInfrastructureService:
                 # create an RTI adapter instance
                 if deployment == 'native':
                     self._deployed_processors[proc_id] = \
-                        RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node,
-                                                  ssh_credentials=ssh_credentials,
-                                                  github_credentials=github_credentials,
-                                                  retain_remote_wdirs=self._retain_job_history)
+                        native_rti.RTINativeProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path,
+                                                             self._node,
+                                                             ssh_credentials=ssh_credentials,
+                                                             github_credentials=github_credentials,
+                                                             retain_remote_wdirs=self._retain_job_history)
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id] = \
-                        RTIDockerProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path, self._node)
+                        docker_rti.RTIDockerProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path,
+                                                             self._node)
 
                 # start the processor
                 processor = self._deployed_processors[proc_id]

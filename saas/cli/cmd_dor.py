@@ -4,20 +4,19 @@ import shutil
 import subprocess
 
 import jsonschema
+from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
+from saascore.cryptography.helpers import encrypt_file
+from saascore.helpers import read_json_from_file, validate_json
+from saascore.keystore.assets.contentkeys import ContentKeysAsset
+from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
+from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
+from saascore.log import Logging
 from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
     prompt_for_confirmation, prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service
-from saas.cryptography.helpers import encrypt_file
-from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json
-from saas.keystore.assets.contentkeys import ContentKeysAsset
-from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
-from saas.keystore.schemas import SerializedKeystore as KeystoreSchema
-from saas.logging import Logging
-from saas.nodedb.blueprint import NodeDBProxy
 from saas.schemas import ProcessorDescriptor
 
 logger = Logging.get('cli.dor')

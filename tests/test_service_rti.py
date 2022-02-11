@@ -5,29 +5,23 @@ import time
 import unittest
 from threading import Thread
 
-from saas.cryptography.helpers import encrypt_file
-from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.dor.blueprint import DORProxy
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.nodedb.blueprint import NodeDBProxy
-from saas.rest.exceptions import UnsuccessfulRequestError
-from saas.rti.adapters.adapters import run_command
-from saas.rti.adapters.docker import prune_image
-from saas.rti.blueprint import RTIProxy
+from saascore.api.sdk.exceptions import UnsuccessfulRequestError
+from saascore.api.sdk.proxies import DORProxy, RTIProxy, NodeDBProxy
+from saascore.cryptography.helpers import encrypt_file
+from saascore.cryptography.rsakeypair import RSAKeyPair
+from saascore.keystore.identity import Identity
+from saascore.keystore.keystore import Keystore
+from saascore.log import Logging
+
+import saas.rti.adapters.docker as docker_rti
 from saas.rti.status import State
-from saas.helpers import read_json_from_file, generate_random_string
+from saascore.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
 
-import saas.keystore.assets.credentials as cred
+import saascore.keystore.assets.credentials as cred
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
+Logging.initialise(level=logging.DEBUG)
+logger = Logging.get(__name__)
 
 
 def wait_for_job(rti, job_id):
@@ -905,7 +899,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (deployed is not None)
         assert (len(deployed) == 0)
 
-        prune_image(proc_id)
+        docker_rti.prune_image(proc_id)
 
     def test_retain_job_history_false(self):
         # create node
@@ -1266,7 +1260,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         # test if the remote path exists (it shouldn't)
         remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
         remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
-        result = run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
         assert(result.returncode != 0)
 
         proc_descriptor = rti.undeploy(proc_id)
@@ -1340,7 +1334,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         # test if the remote path exists (it should)
         remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
         remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
-        result = run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
         assert(result.returncode == 0)
 
         proc_descriptor = rti.undeploy(proc_id)

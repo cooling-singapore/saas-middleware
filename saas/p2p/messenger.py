@@ -11,17 +11,17 @@ import snappy
 from json import JSONDecodeError
 from dataclasses import dataclass, is_dataclass
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.helpers import generate_random_string
-from saas.keystore.identity import Identity
+from saascore.cryptography.eckeypair import ECKeyPair
+from saascore.helpers import generate_random_string
+from saascore.keystore.identity import Identity
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
+from saascore.log import Logging
 
-from saas.logging import Logging
 from saas.p2p.exceptions import ReceiveDataError, SendDataError, MalformedPreambleError, MismatchingBytesWrittenError, \
     ResourceNotFoundError, DecodingJSONError, EncodingJSONError, HandshakeFailedError, MalformedMessageError, \
     UnexpectedMessageTypeError, MismatchingRequestIdError, PeerUnavailableError, P2PException
