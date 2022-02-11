@@ -51,7 +51,7 @@ class RequestManager:
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                schema = body_specification.schema()
+                schema = body_specification if isinstance(body_specification, dict) else body_specification.schema()
                 # for debugging purposes, get the contents of 'values' and 'form'
                 values = {k: v for k, v in request.values.items()}
                 form = {k: v for k, v in request.form.items()}
@@ -243,7 +243,7 @@ class RequestManager:
                                 })
 
                             # is the response content valid?
-                            schema = response_schema.schema()
+                            schema = response_schema if isinstance(response_schema, dict) else response_schema.schema()
                             if not validate_json(content, schema):
                                 raise MalformedResponseError({
                                     'rule': f"{request.method}:{request.url_rule}",
