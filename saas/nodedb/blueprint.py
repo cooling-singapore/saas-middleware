@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import List
 
 from pydantic import BaseModel
 from requests import Response
+from saascore.api.sdk.helpers import create_ok_response
+from saascore.api.sdk.proxies import db_endpoint_prefix
+from saascore.log import Logging
+from saascore.keystore.schemas import Identity as IdentitySchema
 
 import saas.node
-from saas.keystore.identity import Identity
-from saas.keystore.schemas import Identity as IdentitySchema
-from saas.logging import Logging
-from saas.rest.blueprint import SaaSBlueprint, create_ok_response
-from saas.rest.proxy import EndpointProxy
+from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.request_manager import request_manager
 from saas.schemas import NetworkNode, ObjectProvenance
 
 logger = Logging.get('nodedb.blueprint')
-endpoint_prefix = "/api/v1/nodedb"
 
 
 class NetworkNodeDetail(BaseModel):
@@ -37,14 +36,14 @@ class Identities(BaseModel):
 
 class NodeDBBlueprint(SaaSBlueprint):
     def __init__(self, node: saas.node.Node):
-        super().__init__('nodedb', __name__, endpoint_prefix)
+        super().__init__('nodedb', __name__, db_endpoint_prefix)
         self._node = node
 
         self.add_rule('node', self.get_node, methods=['GET'])
         self.add_rule('network', self.get_network, methods=['GET'])
         self.add_rule('identity', self.get_identities, methods=['GET'])
-        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
         self.add_rule('identity', self.update_identity, methods=['POST'])
+        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
         self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
     @request_manager.handle_request(NetworkNodeDetail)
@@ -90,29 +89,3 @@ class NodeDBBlueprint(SaaSBlueprint):
     @request_manager.handle_request(ObjectProvenance)
     def get_provenance(self, obj_id: str) -> (Response, int):
         return create_ok_response(self._node.db.get_provenance(obj_id))
-
-
-class NodeDBProxy(EndpointProxy):
-    def __init__(self, remote_address):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
-
-    def get_node(self) -> dict:
-        return self.get("/node")
-
-    def get_network(self) -> list[dict]:
-        return self.get("/network")
-
-    def get_identities(self) -> dict[str, Identity]:
-        return {
-            item['iid']: Identity.deserialise(item) for item in self.get("/identity")
-        }
-
-    def get_identity(self, iid: str) -> Optional[Identity]:
-        serialised_identity = self.get(f"/identity/{iid}")
-        return Identity.deserialise(serialised_identity) if serialised_identity else None
-
-    def update_identity(self, identity) -> None:
-        self.post('/identity', body=identity.serialise())
-
-    def get_provenance(self, obj_id: str) -> dict:
-        return self.get(f"/provenance/{obj_id}")

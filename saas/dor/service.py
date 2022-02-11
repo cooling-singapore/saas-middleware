@@ -4,14 +4,15 @@ import subprocess
 from stat import S_IREAD, S_IRGRP
 from typing import Optional
 
-from saas.cryptography.helpers import hash_file_content
+from saascore.cryptography.helpers import hash_file_content
+from saascore.log import Logging
+from saascore.helpers import write_json_to_file, read_json_from_file, validate_json, generate_random_string
+from saascore.keystore.assets.credentials import GithubCredentials
+from saascore.keystore.identity import Identity
+
 from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
     InvalidProcessorDescriptorError, InvalidGPPDataObjectError, IdentityNotFoundError
-from saas.helpers import write_json_to_file, read_json_from_file, validate_json, generate_random_string
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.keystore.assets.credentials import GithubCredentials, CredentialsAsset
-from saas.keystore.identity import Identity
-from saas.logging import Logging
 from saas.schemas import ProcessorDescriptor, GitProcessorPointer
 
 logger = Logging.get('dor.service')

@@ -1,18 +1,19 @@
 import json
+import canonicaljson
+
 from dataclasses import dataclass, asdict
 from typing import Optional, Union
-
-import canonicaljson
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, Table
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, registry
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.helpers import hash_json_object, hash_string_object
-from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.helpers import get_timestamp_now
-from saas.keystore.identity import Identity
-from saas.logging import Logging
+from saascore.log import Logging
+from saascore.cryptography.eckeypair import ECKeyPair
+from saascore.cryptography.helpers import hash_json_object, hash_string_object
+from saascore.cryptography.rsakeypair import RSAKeyPair
+from saascore.helpers import get_timestamp_now
+from saascore.keystore.identity import Identity
+
 from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
 
 logger = Logging.get('nodedb.service')
@@ -239,6 +240,8 @@ class NodeDBService:
         with self._Session() as session:
             # build the query and get the results
             q = session.query(DataObjectRecord).filter()
+
+            # first, apply the search constraints (if any)
             if owner_iid is not None:
                 q = q.filter(DataObjectRecord.owner_iid == owner_iid)
 
@@ -253,7 +256,7 @@ class NodeDBService:
 
             object_records: list[DataObjectRecord] = q.all()
 
-            # second, filter data objects by patterns (if any)
+            # second, apply the search patterns (if any)
             result = []
             for obj_record in object_records:
                 # prepare a tags array for the result dict

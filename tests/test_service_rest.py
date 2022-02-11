@@ -3,15 +3,16 @@ import unittest
 import logging
 
 from pydantic import BaseModel
+from saascore.api.sdk.helpers import create_ok_response, sign_authorisation_token
+from saascore.log import Logging
 
-from saas.logging import Logging
-from saas.rest.blueprint import SaaSBlueprint, create_ok_response
+from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.proxy import EndpointProxy
-from saas.rest.request_manager import request_manager, verify_authorisation_token, sign_authorisation_token
+from saas.rest.request_manager import request_manager, verify_authorisation_token
 from tests.base_testcase import TestCaseBase
 
-Logging.initialise(logging.DEBUG)
-Logging.get(__name__)
+Logging.initialise(level=logging.DEBUG)
+logger = Logging.get(__name__)
 
 endpoint_prefix = "/api/v1/test"
 

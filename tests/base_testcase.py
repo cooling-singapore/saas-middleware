@@ -4,11 +4,12 @@ import time
 
 from multiprocessing import Lock
 
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saas.keystore.keystore import Keystore
-from saas.logging import Logging
+from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
+from saascore.keystore.keystore import Keystore
+from saascore.log import Logging
+
 from saas.node import Node
-from saas.helpers import get_timestamp_now, read_json_from_file
+from saascore.helpers import get_timestamp_now, read_json_from_file
 
 logger = Logging.get('tests.base_testcase')
 

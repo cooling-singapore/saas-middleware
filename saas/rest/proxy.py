@@ -2,11 +2,10 @@ import json
 from typing import Union, Optional
 
 import requests
+from saascore.api.sdk.exceptions import UnexpectedContentType, UnsuccessfulConnectionError
+from saascore.api.sdk.helpers import extract_response, sign_authorisation_token
 
-from saas.keystore.keystore import Keystore
-from saas.rest.blueprint import extract_response
-from saas.rest.exceptions import UnexpectedContentType, UnsuccessfulConnectionError
-from saas.rest.request_manager import sign_authorisation_token
+from saascore.keystore.keystore import Keystore
 
 
 class EndpointProxy:

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, TypedDict
 
-import saas.node
-from saas.keystore.identity import Identity
-from saas.logging import Logging
+from saascore.log import Logging
+
+from saascore.keystore.identity import Identity
 from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger
@@ -31,7 +31,7 @@ class P2PProtocol:
     P2PProtocol is the base class for all P2P protocol classes. It provides convenience methods that are
     needed regardless of the specific protocol implementation.
     """
-    def __init__(self, node: saas.node.Node, protocol_name: str, function_mapping: dict):
+    def __init__(self, node, protocol_name: str, function_mapping: dict):
         self._node = node
         self._protocol_name = protocol_name
         self._function_mapping = function_mapping
@@ -42,7 +42,7 @@ class P2PProtocol:
         return f"{self._seq_id_counter:04d}"
 
     @property
-    def node(self) -> saas.node.Node:
+    def node(self):
         return self._node
 
     @property

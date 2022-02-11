@@ -6,8 +6,9 @@ import traceback
 from threading import Lock
 from typing import Optional
 
-from saas.keystore.identity import Identity
-from saas.logging import Logging
+from saascore.keystore.identity import Identity
+from saascore.log import Logging
+
 from saas.p2p.exceptions import P2PException, MalformedMessageError, UnsupportedProtocolError, \
     UnexpectedMessageTypeError
 from saas.p2p.protocol import SecureMessenger, P2PProtocol, P2PMessage
