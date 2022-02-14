@@ -15,7 +15,8 @@ logger = Logging.get('tests.base_testcase')
 
 
 def load_test_credentials() -> dict:
-    return read_json_from_file('credentials.json')
+    credentials_path = os.path.join(os.environ['HOME'], 'credentials.json')
+    return read_json_from_file(credentials_path)
 
 
 class TestCaseBase:
@@ -80,7 +81,7 @@ class TestCaseBase:
             keystores.append(keystore)
 
             if use_credentials:
-                credentials = read_json_from_file('credentials.json')
+                credentials = load_test_credentials()
 
                 # do we have SSH credentials?
                 if 'ssh-credentials' in credentials:
@@ -153,7 +154,7 @@ class TestCaseBase:
             os.makedirs(storage_path, exist_ok=True)
 
             if use_credentials:
-                credentials = read_json_from_file('credentials.json')
+                credentials = load_test_credentials()
                 keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
 
                 # do we have SSH credentials?
