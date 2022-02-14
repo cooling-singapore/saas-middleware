@@ -90,7 +90,7 @@ class RTIBlueprint(SaaSBlueprint):
             ssh_credentials = None
 
         if 'github_credentials' in body:
-            github_credentials = bytes.fromhex(body['ssh_credentials'])
+            github_credentials = bytes.fromhex(body['github_credentials'])
             github_credentials = self._node.keystore.decrypt(github_credentials)
             github_credentials = github_credentials.decode('utf-8')
             github_credentials = json.loads(github_credentials)
