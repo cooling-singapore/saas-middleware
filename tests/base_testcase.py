@@ -4,18 +4,13 @@ import time
 
 from multiprocessing import Lock
 
-from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saascore.keystore.keystore import Keystore
+from saascore.keystore.keystore import Keystore, update_keystore_from_credentials
 from saascore.log import Logging
 
 from saas.node import Node
-from saascore.helpers import get_timestamp_now, read_json_from_file
+from saascore.helpers import get_timestamp_now
 
 logger = Logging.get('tests.base_testcase')
-
-
-def load_test_credentials() -> dict:
-    return read_json_from_file('credentials.json')
 
 
 class TestCaseBase:
@@ -79,34 +74,9 @@ class TestCaseBase:
             keystore = Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
             keystores.append(keystore)
 
+            # update keystore credentials (if applicable)
             if use_credentials:
-                credentials = read_json_from_file('credentials.json')
-
-                # do we have SSH credentials?
-                if 'ssh-credentials' in credentials:
-                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
-                    for item in credentials['ssh-credentials']:
-                        # read the ssh key from file
-                        with open(item['key_path'], 'r') as f:
-                            ssh_key = f.read()
-
-                        ssh_cred.update(item['name'], SSHCredentials(
-                            item['host'],
-                            item['login'],
-                            ssh_key,
-                            False
-                        ))
-                    keystore.update_asset(ssh_cred)
-
-                # do we have Github credentials?
-                if 'github-credentials' in credentials:
-                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
-                    for item in credentials['github-credentials']:
-                        github_cred.update(item['repository'], GithubCredentials(
-                            item['login'],
-                            item['personal_access_token']
-                        ))
-                    keystore.update_asset(github_cred)
+                update_keystore_from_credentials(keystore)
 
         return keystores
 
@@ -153,38 +123,8 @@ class TestCaseBase:
             os.makedirs(storage_path, exist_ok=True)
 
             if use_credentials:
-                credentials = read_json_from_file('credentials.json')
-                keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
-
-                # do we have SSH credentials?
-                if 'ssh-credentials' in credentials:
-
-                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
-                    for item in credentials['ssh-credentials']:
-                        use_as_password = 'password' in item
-
-                        if not use_as_password:
-                            # read the ssh key from file
-                            with open(item['key_path'], 'r') as f:
-                                key = f.read()
-
-                        ssh_cred.update(item['name'], SSHCredentials(
-                            item['host'],
-                            item['login'],
-                            item['password'] if use_as_password else key,
-                            use_as_password
-                        ))
-                    keystore.update_asset(ssh_cred)
-
-                # do we have Github credentials?
-                if 'github-credentials' in credentials:
-                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
-                    for item in credentials['github-credentials']:
-                        github_cred.update(item['repository'], GithubCredentials(
-                            item['login'],
-                            item['personal_access_token']
-                        ))
-                    keystore.update_asset(github_cred)
+                keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
+                update_keystore_from_credentials(keystore)
 
             else:
                 keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
