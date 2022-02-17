@@ -128,10 +128,15 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         }
 
         # run the execute.sh script while monitoring its output
-        self._monitor_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}", context,
-                              cwd=self._processor_path,
-                              stdout_path=os.path.join(local_working_directory, "execute.sh.stdout"),
-                              stderr_path=os.path.join(local_working_directory, "execute.sh.stderr"))
+        base.monitor_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
+                             {
+                                 'trigger:output': {'func': self._handle_trigger_output, 'context': context},
+                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+                             },
+                             cwd=self._processor_path,
+                             ssh_credentials=self._ssh_credentials,
+                             stdout_path=os.path.join(local_working_directory, "execute.sh.stdout"),
+                             stderr_path=os.path.join(local_working_directory, "execute.sh.stderr"))
 
         # wait for all outputs to be processed
         while True:
@@ -152,19 +157,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
     def _test_ssh_connection(self) -> None:
         base.run_command('exit', ssh_credentials=self._ssh_credentials)
-
-    def _monitor_command(self, command: str, context: dict,
-                         stdout_path: str, stderr_path: str, cwd: str = None) -> None:
-
-        command = f"cd {cwd} && {command}" if cwd else command
-
-        triggers = {
-            'trigger:output': {'func': self._handle_trigger_output, 'context': context},
-            'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
-        }
-
-        base.monitor_command(command, triggers, ssh_credentials=self._ssh_credentials,
-                             stdout_path=stdout_path, stderr_path=stderr_path)
 
     def _execute_command(self, command: str, cwd: str = None,
                          console_log_prefix: str = None) -> subprocess.CompletedProcess:
