@@ -62,6 +62,7 @@ class DataObjectRecord:
 
     def as_dict(self) -> dict:
         record_dict = asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
+        record_dict['r_hash'] = self.r_hash  # Make sure r_hash exists even if it is None
         if self.gpp is not None:
             record_dict['gpp'] = json.loads(self.gpp)
 
@@ -323,7 +324,7 @@ class NodeDBService:
 
             # determine object id
             gpp_hash = hash_json_object(gpp).hex() if gpp else ''
-            obj_id = hash_string_object(f"{c_hash}{data_type}{data_format}{created_by}{created_t}{gpp_hash}").hex()
+            obj_id = hash_string_object(f"{c_hash}{r_hash}{data_type}{data_format}{created_by}{created_t}{gpp_hash}").hex()
 
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash, r_hash=r_hash,
@@ -361,6 +362,13 @@ class NodeDBService:
                 return None
 
             result = record.as_dict()
+
+            # get object recipe
+            r_hash = result["r_hash"]
+            if r_hash is not None:
+                c_hash = result["c_hash"]
+                recipe = session.query(DataObjectRecipe).get((c_hash, r_hash))
+                result["recipe"] = json.loads(recipe.recipe)
 
             # get all tags
             tags = session.query(DataObjectTag).filter_by(obj_id=obj_id).all()
