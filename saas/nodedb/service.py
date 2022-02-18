@@ -32,6 +32,7 @@ class DataObjectRecord:
         Column("obj_id", String(64), primary_key=True),
 
         Column("c_hash", String(64), nullable=False),
+        Column("r_hash", String(64), nullable=True),
         Column("data_type", String(64), nullable=False),
         Column("data_format", String(64), nullable=False),
         Column("created_by", String(64), nullable=False),
@@ -47,6 +48,7 @@ class DataObjectRecord:
 
     # IMMUTABLE part of meta information:
     c_hash: str
+    r_hash: Optional[str]
     data_type: str
     data_format: str
     created_by: str
@@ -313,7 +315,7 @@ class NodeDBService:
 
             return result
 
-    def add_data_object(self, c_hash: str, data_type: str, data_format: str, created_by: str,
+    def add_data_object(self, c_hash: str, r_hash: Optional[str], data_type: str, data_format: str, created_by: str,
                         gpp: Optional[dict], owner: Identity, access_restricted: bool, content_encrypted: bool) -> dict:
 
         with self._Session() as session:
@@ -324,7 +326,8 @@ class NodeDBService:
             obj_id = hash_string_object(f"{c_hash}{data_type}{data_format}{created_by}{created_t}{gpp_hash}").hex()
 
             # add a new data object record
-            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash, data_type=data_type, data_format=data_format,
+            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash, r_hash=r_hash,
+                                         data_type=data_type, data_format=data_format,
                                          created_by=created_by, created_t=created_t,
                                          gpp=json.dumps(gpp) if gpp else None,
                                          owner_iid=owner.id, access_restricted=access_restricted,
@@ -543,7 +546,7 @@ class NodeDBService:
         with self._Session() as session:
             return session.query(NetworkNode).all()
 
-    def add_recipe(self, c_hash: str, recipe: dict) -> None:
+    def add_recipe(self, c_hash: str, recipe: dict) -> str:
         with self._Session() as session:
             # convert recipe into string
             recipe = canonicaljson.encode_canonical_json(recipe)
@@ -555,12 +558,13 @@ class NodeDBService:
             # do we already have this recipe for the given content hash?
             if r_hash in self.get_recipe(c_hash):
                 logger.info(f"recipe {r_hash} for content {c_hash} already exists -> not adding")
-                return
+            else:
+                # add the provenance record
+                record = DataObjectRecipe(c_hash=c_hash, r_hash=r_hash, recipe=recipe)
+                session.add(record)
+                session.commit()
 
-            # add the provenance record
-            record = DataObjectRecipe(c_hash=c_hash, r_hash=r_hash, recipe=recipe)
-            session.add(record)
-            session.commit()
+        return r_hash
 
     def get_recipe(self, c_hash: str) -> dict[str, dict]:
         with self._Session() as session:
