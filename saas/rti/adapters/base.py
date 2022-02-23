@@ -61,7 +61,7 @@ def parse_stream(name: str, pipe: IO[AnyStr], file: TextIO = None, triggers: dic
                     info['func'](line, info['context'])
 
 
-def monitor_command(command: str, triggers: dict, ssh_credentials: SSHCredentials = None, cwd: str = None,
+def monitor_command(command: str, triggers: dict = None, ssh_credentials: SSHCredentials = None, cwd: str = None,
                     stdout_path: str = None, stderr_path: str = None) -> None:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
@@ -70,29 +70,36 @@ def monitor_command(command: str, triggers: dict, ssh_credentials: SSHCredential
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
         c = ['-oHostKeyAlgorithms=+ssh-rsa']
 
-        wrapped_command = [*a, 'ssh', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
+        wrapped_command = [*a, 'ssh', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}", f"cd {cwd}; {command}"]
 
     else:
-        wrapped_command = ['bash', '-c', command]
+        wrapped_command = ['bash', '-c', f"cd {cwd}; {command}"]
 
-    with open(stdout_path, 'x') as f_stdout:
-        with open(stderr_path, 'x') as f_stderr:
-            proc = subprocess.Popen(wrapped_command, cwd=cwd, stdout=subprocess.PIPE, stderr=f_stderr,
-                                    universal_newlines=True)
-            while proc.poll() is None:
-                parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
+    f_stdout = open(stdout_path, 'x') if stdout_path else None
+    f_stderr = open(stderr_path, 'x') if stderr_path else None
 
-            logger.debug(f"process is done: returncode= {proc.returncode} stdout={stdout_path} stderr={stderr_path}")
-            proc.stdout.close()
+    proc = subprocess.Popen(wrapped_command, cwd=None, stdout=subprocess.PIPE, stderr=f_stderr,
+                            universal_newlines=True)
+    while proc.poll() is None:
+        parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
 
-            if proc.returncode != 0:
-                raise RunCommandError({
-                    'wrapped_command': wrapped_command,
-                    'cwd': cwd,
-                    'stdout_path': stdout_path,
-                    'stderr_path': stderr_path,
-                    'returncode': proc.returncode
-                })
+    logger.debug(f"process is done: returncode= {proc.returncode} stdout={stdout_path} stderr={stderr_path}")
+    proc.stdout.close()
+
+    if f_stdout:
+        f_stdout.close()
+
+    if f_stderr:
+        f_stderr.close()
+
+    if proc.returncode != 0:
+        raise RunCommandError({
+            'wrapped_command': wrapped_command,
+            'cwd': cwd,
+            'stdout_path': stdout_path,
+            'stderr_path': stderr_path,
+            'returncode': proc.returncode
+        })
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None,

@@ -9,16 +9,17 @@ from saascore.api.sdk.exceptions import UnsuccessfulRequestError
 from saascore.api.sdk.proxies import DORProxy, RTIProxy, NodeDBProxy
 from saascore.cryptography.helpers import encrypt_file
 from saascore.cryptography.rsakeypair import RSAKeyPair
+from saascore.exceptions import RunCommandError
+from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials
 from saascore.keystore.identity import Identity
 from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
 import saas.rti.adapters.docker as docker_rti
+from saas.rti.adapters.base import monitor_command
 from saas.rti.status import State
 from saascore.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
-
-import saascore.keystore.assets.credentials as cred
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -1060,8 +1061,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
@@ -1119,8 +1120,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
@@ -1211,8 +1212,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
@@ -1285,8 +1286,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
         logger.info(f"proc_id={proc_id}")
 
-        asset: cred.CredentialsAsset = node.keystore.get_asset('ssh-credentials')
-        ssh_credentials: cred.SSHCredentials = asset.get('nscc')
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
 
         descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
         logger.info(f"descriptor={descriptor}")
@@ -1339,6 +1340,62 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         proc_descriptor = rti.undeploy(proc_id)
         assert proc_descriptor is not None
+
+
+
+    class RTIServiceTestCaseBase(unittest.TestCase, TestCaseBase):
+        def __init__(self, method_name='runTest'):
+            unittest.TestCase.__init__(self, method_name)
+            TestCaseBase.__init__(self)
+
+        def setUp(self):
+            self.initialise()
+
+        def tearDown(self):
+            self.cleanup()
+
+    def test_command_monitoring(self):
+        # load keystore with credentials and extract SSH credentials
+        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
+        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
+
+        cwd_local = os.environ['HOME']
+        cwd_remote = '~'
+        command_ok = "ls"
+        command_fail = "ls x"
+
+        # (1) Local + OK
+        try:
+            monitor_command(command_ok, {}, cwd=cwd_local)
+            assert True
+        except RunCommandError as e:
+            print(e)
+            assert False
+
+        # (2) Local + Fail
+        try:
+            monitor_command(command_fail, {}, cwd=cwd_local)
+            assert False
+        except RunCommandError as e:
+            print(e)
+            assert True
+
+        # (3) Remote + OK
+        try:
+            monitor_command(command_ok, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            assert True
+        except RunCommandError as e:
+            print(e)
+            assert False
+
+        # (4) Remote + Fail
+        try:
+            monitor_command(command_fail, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            assert False
+        except RunCommandError as e:
+            print(e)
+            assert True
 
 
 if __name__ == '__main__':
