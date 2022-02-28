@@ -225,7 +225,6 @@ class NodeDBService:
 
     def get_statistics(self) -> dict:
         with self._Session() as session:
-            test = session.query(DataObjectRecord.data_type).distinct()
             result = {
                 'data_types': [value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
                 'data_formats': [value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
