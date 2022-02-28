@@ -136,23 +136,25 @@ class DataObjectRepositoryService:
             os.rename(temp_content_path, destination_path)
             os.chmod(destination_path, S_IREAD | S_IRGRP)
 
-        # add data object to database
-        record = self.node.db.add_data_object(c_hash, data_type, data_format, created_by, gpp,
-                                              owner, access_restricted, content_encrypted)
-        obj_id = record['obj_id']
-        logger.info(f"database records for data object '{obj_id}' added with c_hash={c_hash}.")
-
         # add the recipe (if any) and broadcast it
         if recipe is not None:
             # insert the missing c_hash
             recipe['product']['c_hash'] = c_hash
 
             # add the recipe to the NodeDB
-            self.node.db.add_recipe(c_hash, recipe)
+            r_hash = self.node.db.add_recipe(c_hash, recipe)
             self.node.db.protocol.broadcast_update('add_recipe', {
                 'c_hash': c_hash,
                 'recipe': recipe
             })
+        else:
+            r_hash = None
+
+        # add data object to database
+        record = self.node.db.add_data_object(c_hash, r_hash, data_type, data_format, created_by, gpp,
+                                              owner, access_restricted, content_encrypted)
+        obj_id = record['obj_id']
+        logger.info(f"database records for data object '{obj_id}' added with c_hash={c_hash}.")
 
         return record
 
