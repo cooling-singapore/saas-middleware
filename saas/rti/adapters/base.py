@@ -522,7 +522,12 @@ class RTIProcessorAdapter(Thread, ABC):
                 input_content_path = os.path.join(working_directory, item['name'])
                 write_json_to_file(item['value'], input_content_path)
                 write_json_to_file({
-                    'data_type': 'JSONObject',
+                    # data type can be anything (it's application specific). assuming 'JSONObject' as data type is
+                    # not a good idea. instead, use the data type indicated in the input interface of the processor.
+                    # however, what about the format? only json data is allowed to be used for 'by-value' input
+                    # data objects. so hard-coding 'json' has data format seems justified. if the processor expects
+                    # a different format, then this will raise a MismatchingDataTypeOrFormatError exception.
+                    'data_type': self._input_interface[item['name']]['data_type'],
                     'data_format': 'json'
                 }, f"{input_content_path}.meta")
         status.remove('step')
