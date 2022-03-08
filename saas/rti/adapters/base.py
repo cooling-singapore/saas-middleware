@@ -16,7 +16,8 @@ from saascore.cryptography.helpers import encrypt_file, decrypt_file
 from saascore.cryptography.keypair import KeyPair
 from saascore.cryptography.rsakeypair import RSAKeyPair
 from saascore.exceptions import SaaSException, RunCommandError
-from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json
+from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json, \
+    get_timestamp_now
 from saascore.keystore.assets.credentials import SSHCredentials
 
 from saas.dor.exceptions import IdentityNotFoundError
@@ -41,64 +42,128 @@ class ProcessorState(Enum):
     STOPPED = 'stopped'
 
 
-def parse_stream(name: str, pipe: IO[AnyStr], file: TextIO = None, triggers: dict = None) -> None:
-    while True:
-        # read the line, strip the '\n' and break if nothing left
-        line = pipe.readline().rstrip()
-        logger.debug(f"parse_stream[{name}]\t{line}")
-        if not line:
-            break
+def monitor_command(command: str, generic_out_path: str, name: str, triggers: dict = None,
+                    ssh_credentials: SSHCredentials = None, cwd: str = None) -> None:
 
-        # if we have a file
-        if file is not None:
-            file.write(line+'\n')
-            file.flush()
+    # make the output directory (if it doesn't exist)
+    run_command(f"mkdir -p {generic_out_path}", ssh_credentials=ssh_credentials, timeout=2)
 
-        # parse the lines for this round
-        if triggers is not None:
-            for pattern, info in triggers.items():
-                if pattern in line:
-                    info['func'](line, info['context'])
+    # determine paths
+    run_path = os.path.join(generic_out_path, f"{name}.run.sh")
+    stdout_path = os.path.join(generic_out_path, f"{name}.stdout")
+    stderr_path = os.path.join(generic_out_path, f"{name}.stderr")
+    local_stdout_path = stdout_path.replace("~", os.environ['HOME'])
+    local_stderr_path = stderr_path.replace("~", os.environ['HOME'])
+    local_run_path = run_path.replace("~", os.environ['HOME'])
 
+    exitcode_path = os.path.join(generic_out_path, f"{name}.exitcode")
+    pid_path = os.path.join(generic_out_path, f"{name}.pid")
 
-def monitor_command(command: str, triggers: dict = None, ssh_credentials: SSHCredentials = None, cwd: str = None,
-                    stdout_path: str = None, stderr_path: str = None) -> None:
+    # wrap the command to run as daemon and redirect stdout/stderr
+    command = f"{command} > {stdout_path} 2> {stderr_path} & " \
+              f"pid=$!; " \
+              f"echo $pid > {pid_path}; " \
+              f"wait $pid; " \
+              f"echo $? > {exitcode_path}"
 
-    # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
+    # wrap the command to change the working directory (if applicable)
+    command = f"cd {cwd}; {command}" if cwd else command
+
+    # put the wrapped command into a shell script if execution is remote
     if ssh_credentials:
-        a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
-        b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-        c = ['-oHostKeyAlgorithms=+ssh-rsa']
+        # write command to remote shell script
+        with open(local_run_path, 'w') as f:
+            f.write(f"#!/bin/bash\n")
+            f.write(f"{command}")
 
-        wrapped_command = [*a, 'ssh', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}", f"cd {cwd}; {command}"]
+        # copy the script to the remote location
+        scp_local_to_remote(local_run_path, run_path, ssh_credentials)
 
-    else:
-        wrapped_command = ['bash', '-c', f"cd {cwd}; {command}"]
+        # make executable
+        run_command(f"chmod ugo+x {run_path}", ssh_credentials=ssh_credentials, timeout=2)
 
-    f_stdout = open(stdout_path, 'x') if stdout_path else None
-    f_stderr = open(stderr_path, 'x') if stderr_path else None
+        command = f"nohup {run_path} > /dev/null 2> /dev/null < /dev/null &"
 
-    proc = subprocess.Popen(wrapped_command, cwd=None, stdout=subprocess.PIPE, stderr=f_stderr,
-                            universal_newlines=True)
-    while proc.poll() is None:
-        parse_stream('stdout', proc.stdout, file=f_stdout, triggers=triggers)
+    # initiate the command
+    run_command(f"{command}", ssh_credentials=ssh_credentials, timeout=2)
 
-    logger.debug(f"process is done: returncode= {proc.returncode} stdout={stdout_path} stderr={stderr_path}")
-    proc.stdout.close()
+    # get the pid
+    result = run_command(f"cat {pid_path}", ssh_credentials=ssh_credentials, timeout=2)
+    pid = result.stdout.decode('utf-8').split('\n')[0]
 
-    if f_stdout:
-        f_stdout.close()
+    # monitor the process and logs
+    c_stdout_lines = 0
+    c_stderr_lines = 0
+    t_prev = get_timestamp_now() / 1000.0
+    while True:
+        try:
+            # get the number of lines in stdout and stderr
+            result_stdout = run_command(f"wc -l {stdout_path}", ssh_credentials=ssh_credentials, timeout=2)
+            n_stdout_lines = result_stdout.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stdout_lines = int(n_stdout_lines)
 
-    if f_stderr:
-        f_stderr.close()
+            result_stderr = run_command(f"wc -l {stderr_path}", ssh_credentials=ssh_credentials, timeout=2)
+            n_stderr_lines = result_stderr.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stderr_lines = int(n_stderr_lines)
 
-    if proc.returncode != 0:
+            # no new lines at all? check if the process is still running
+            if (n_stdout_lines-c_stdout_lines) == 0 and (c_stderr_lines-n_stderr_lines) == 0:
+                result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, suppress_exception=True, timeout=2)
+                if result.returncode != 0:
+                    break
+
+            # do we have new STDOUT lines to process?
+            if n_stdout_lines > c_stdout_lines:
+                result = run_command(f"tail -n +{c_stdout_lines+1} {stdout_path}", ssh_credentials=ssh_credentials, timeout=2)
+                lines = result.stdout.decode('utf-8').split('\n')
+
+                # parse the lines for this round
+                for line in lines:
+                    if triggers is not None:
+                        for pattern, info in triggers.items():
+                            if pattern in line:
+                                info['func'](line, info['context'])
+
+                c_stdout_lines += n_stdout_lines
+
+                # dump local if this is a remote execution
+                if ssh_credentials:
+                    with open(local_stdout_path, 'x') as f:
+                        f.writelines(lines)
+
+            # do we have new STDERR lines to process?
+            if n_stderr_lines > c_stderr_lines:
+                result = run_command(f"tail -n +{c_stderr_lines+1} {stderr_path}", ssh_credentials=ssh_credentials, timeout=2)
+                lines = result.stdout.decode('utf-8').split('\n')
+                c_stderr_lines += n_stderr_lines
+
+                # dump local if this is a remote execution
+                if ssh_credentials:
+                    with open(local_stderr_path, 'x') as f:
+                        f.writelines(lines)
+
+            # need pacing?
+            t_now = get_timestamp_now() / 1000.0
+            delay = max(2.0 - (t_now - t_prev), 0)
+            time.sleep(delay)
+
+        # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
+        # disconnect). wait and retry...
+        except RunCommandError as e:
+            logger.warning(f"error while monitoring command (reason: {e.reason}) -> retry after 5 seconds.")
+            time.sleep(5)
+
+    # get the error code returned by the process and raise exception if the process did not finish successfully.
+    result = run_command(f"cat {exitcode_path}", ssh_credentials=ssh_credentials, timeout=2)
+    exitcode = result.stdout.decode('utf-8').split('\n')[0]
+    exitcode = int(exitcode)
+    if exitcode != 0:
         raise RunCommandError({
-            'wrapped_command': wrapped_command,
+            'command': command,
             'cwd': cwd,
             'stdout_path': stdout_path,
             'stderr_path': stderr_path,
-            'returncode': proc.returncode
+            'returncode': result.returncode
         })
 
 
