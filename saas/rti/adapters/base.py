@@ -102,7 +102,7 @@ def monitor_command(command: str, triggers: dict = None, ssh_credentials: SSHCre
         })
 
 
-def run_command(command: str, ssh_credentials: SSHCredentials = None,
+def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = 10,
                 suppress_exception: bool = False) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
@@ -111,7 +111,8 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None,
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
         c = ['-oHostKeyAlgorithms=+ssh-rsa']
 
-        wrapped_command = [*a, 'ssh', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
+        wrapped_command = [*a, 'ssh', *b, *c, '-o', f"ConnectTimeout={timeout}",
+                           f"{ssh_credentials.login}@{ssh_credentials.host}", command]
 
     else:
         wrapped_command = ['bash', '-c', command]
