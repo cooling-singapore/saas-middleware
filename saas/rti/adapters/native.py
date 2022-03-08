@@ -93,8 +93,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         pass
 
     def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
-        # specify the working directory
-        working_directory = local_working_directory.replace(os.environ['HOME'], '$HOME')
+        # specify the generic working directory
+        generic_working_directory = local_working_directory.replace(os.environ['HOME'], '~')
 
         # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
         if self._ssh_credentials is not None:
@@ -103,40 +103,40 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             self._test_ssh_connection()
 
             # create the remote working directory
-            status.update('task', f"create remote working directory at {working_directory}")
-            self._execute_command(f"mkdir -p {working_directory}")
+            status.update('task', f"create remote working directory at {generic_working_directory}")
+            self._execute_command(f"mkdir -p {generic_working_directory}")
 
             # copy the input data objects to the remote working directory
             for obj_name in self._input_interface:
                 local_path = os.path.join(local_working_directory, obj_name)
-                status.update('task', f"copy data objects: {local_path} -> {working_directory}")
-                base.scp_local_to_remote(local_path, working_directory, self._ssh_credentials)
+                status.update('task', f"copy data objects: {local_path} -> {generic_working_directory}")
+                base.scp_local_to_remote(local_path, generic_working_directory, self._ssh_credentials)
 
         # run execute script
         status.update('task', f"run execute.sh: config={self._gpp['proc_config']} "
-                              f"working_directory={working_directory} "
+                              f"generic_working_directory={generic_working_directory} "
                               f"processor_path={self._processor_path}")
 
         # create the context information for this job
         context = {
             'task_descriptor': task_descriptor,
             'local_working_directory': local_working_directory,
-            'working_directory': working_directory,
+            'generic_working_directory': generic_working_directory,
             'job_id': job_id,
             'status': status,
             'threads': {}
         }
 
         # run the execute.sh script while monitoring its output
-        base.monitor_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
-                             {
+        base.monitor_command(f"./execute.sh {self._gpp['proc_config']} {generic_working_directory}",
+                             generic_working_directory, 'execute',
+                             triggers={
                                  'trigger:output': {'func': self._handle_trigger_output, 'context': context},
                                  'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
                              },
                              cwd=self._processor_path,
-                             ssh_credentials=self._ssh_credentials,
-                             stdout_path=os.path.join(local_working_directory, "execute.sh.stdout"),
-                             stderr_path=os.path.join(local_working_directory, "execute.sh.stderr"))
+                             ssh_credentials=self._ssh_credentials
+                             )
 
         # wait for all outputs to be processed
         while True:
@@ -150,8 +150,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
             # delete remote working directory
-            status.update('task', f"delete remote working directory: {working_directory}")
-            self._execute_command(f"rm -rf {working_directory}")
+            status.update('task', f"delete remote working directory: {generic_working_directory}")
+            self._execute_command(f"rm -rf {generic_working_directory}")
 
         status.remove('task')
 
@@ -220,7 +220,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         obj_name = context['obj_name']
         job_id = context['job_id']
         task_descriptor = context['task_descriptor']
-        working_directory = context['working_directory']
+        generic_working_directory = context['generic_working_directory']
         local_working_directory = context['local_working_directory']
         status: StatusLogger = context['status']
 
@@ -231,7 +231,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         if self._ssh_credentials is not None:
             status.update(f"process_output:{obj_name}", 'retrieve')
 
-            remote_path = os.path.join(working_directory, obj_name)
+            remote_path = os.path.join(generic_working_directory, obj_name)
             status.update('task', f"copy data objects: {remote_path} -> {local_working_directory}")
 
             base.scp_remote_to_local(remote_path, local_working_directory, self._ssh_credentials)

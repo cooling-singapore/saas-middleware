@@ -1360,14 +1360,16 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
         ssh_credentials: SSHCredentials = asset.get('nscc')
 
-        cwd_local = os.environ['HOME']
-        cwd_remote = '~'
+        wd_path = self.wd_path
+        generic_wd_path = wd_path.replace(os.environ['HOME'], '~')
+
+        cwd = '~'
         command_ok = "ls"
         command_fail = "ls x"
 
         # (1) Local + OK
         try:
-            monitor_command(command_ok, {}, cwd=cwd_local)
+            monitor_command(command_ok, generic_wd_path, 'test1', {}, cwd=cwd)
             assert True
         except RunCommandError as e:
             print(e)
@@ -1375,7 +1377,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (2) Local + Fail
         try:
-            monitor_command(command_fail, {}, cwd=cwd_local)
+            monitor_command(command_fail, generic_wd_path, 'test2', {}, cwd=cwd)
             assert False
         except RunCommandError as e:
             print(e)
@@ -1383,7 +1385,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (3) Remote + OK
         try:
-            monitor_command(command_ok, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            monitor_command(command_ok, generic_wd_path, 'test3', {}, cwd=cwd, ssh_credentials=ssh_credentials)
             assert True
         except RunCommandError as e:
             print(e)
@@ -1391,7 +1393,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (4) Remote + Fail
         try:
-            monitor_command(command_fail, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            monitor_command(command_fail, generic_wd_path, 'test4', {}, cwd=cwd, ssh_credentials=ssh_credentials)
             assert False
         except RunCommandError as e:
             print(e)
