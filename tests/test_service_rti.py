@@ -1335,13 +1335,13 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         # test if the remote path exists (it should)
         remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
         remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
-        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        result = docker_rti.base.run_command(f"ls {remote_path}",
+                                             ssh_credentials=ssh_credentials,
+                                             suppress_exception=True)
         assert(result.returncode == 0)
 
         proc_descriptor = rti.undeploy(proc_id)
         assert proc_descriptor is not None
-
-
 
     class RTIServiceTestCaseBase(unittest.TestCase, TestCaseBase):
         def __init__(self, method_name='runTest'):
