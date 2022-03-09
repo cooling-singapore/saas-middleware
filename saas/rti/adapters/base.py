@@ -8,7 +8,7 @@ import time
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, IO, TextIO, AnyStr
+from typing import Optional
 
 from saascore.api.sdk.proxies import DORProxy
 from saascore.log import Logging
@@ -42,133 +42,8 @@ class ProcessorState(Enum):
     STOPPED = 'stopped'
 
 
-def monitor_command(command: str, generic_out_path: str, name: str, triggers: dict = None,
-                    ssh_credentials: SSHCredentials = None, cwd: str = None) -> None:
-
-    # make the output directory (if it doesn't exist)
-    run_command(f"mkdir -p {generic_out_path}", ssh_credentials=ssh_credentials, timeout=2)
-
-    # determine paths
-    run_path = os.path.join(generic_out_path, f"{name}.run.sh")
-    stdout_path = os.path.join(generic_out_path, f"{name}.stdout")
-    stderr_path = os.path.join(generic_out_path, f"{name}.stderr")
-    local_stdout_path = stdout_path.replace("~", os.environ['HOME'])
-    local_stderr_path = stderr_path.replace("~", os.environ['HOME'])
-    local_run_path = run_path.replace("~", os.environ['HOME'])
-
-    exitcode_path = os.path.join(generic_out_path, f"{name}.exitcode")
-    pid_path = os.path.join(generic_out_path, f"{name}.pid")
-
-    # wrap the command to run as daemon and redirect stdout/stderr
-    command = f"{command} > {stdout_path} 2> {stderr_path} & " \
-              f"pid=$!; " \
-              f"echo $pid > {pid_path}; " \
-              f"wait $pid; " \
-              f"echo $? > {exitcode_path}"
-
-    # wrap the command to change the working directory (if applicable)
-    command = f"cd {cwd}; {command}" if cwd else command
-
-    # put the wrapped command into a shell script if execution is remote
-    if ssh_credentials:
-        # write command to remote shell script
-        with open(local_run_path, 'w') as f:
-            f.write(f"#!/bin/bash\n")
-            f.write(f"{command}")
-
-        # copy the script to the remote location
-        scp_local_to_remote(local_run_path, run_path, ssh_credentials)
-
-        # make executable
-        run_command(f"chmod ugo+x {run_path}", ssh_credentials=ssh_credentials, timeout=2)
-
-        command = f"nohup {run_path} > /dev/null 2> /dev/null < /dev/null &"
-
-    # initiate the command
-    run_command(f"{command}", ssh_credentials=ssh_credentials, timeout=2)
-
-    # get the pid
-    result = run_command(f"cat {pid_path}", ssh_credentials=ssh_credentials, timeout=2)
-    pid = result.stdout.decode('utf-8').split('\n')[0]
-
-    # monitor the process and logs
-    c_stdout_lines = 0
-    c_stderr_lines = 0
-    t_prev = get_timestamp_now() / 1000.0
-    while True:
-        try:
-            # get the number of lines in stdout and stderr
-            result_stdout = run_command(f"wc -l {stdout_path}", ssh_credentials=ssh_credentials, timeout=2)
-            n_stdout_lines = result_stdout.stdout.decode('utf-8').split('\n')[0].split()[0]
-            n_stdout_lines = int(n_stdout_lines)
-
-            result_stderr = run_command(f"wc -l {stderr_path}", ssh_credentials=ssh_credentials, timeout=2)
-            n_stderr_lines = result_stderr.stdout.decode('utf-8').split('\n')[0].split()[0]
-            n_stderr_lines = int(n_stderr_lines)
-
-            # no new lines at all? check if the process is still running
-            if (n_stdout_lines-c_stdout_lines) == 0 and (c_stderr_lines-n_stderr_lines) == 0:
-                result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, suppress_exception=True, timeout=2)
-                if result.returncode != 0:
-                    break
-
-            # do we have new STDOUT lines to process?
-            if n_stdout_lines > c_stdout_lines:
-                result = run_command(f"tail -n +{c_stdout_lines+1} {stdout_path}", ssh_credentials=ssh_credentials, timeout=2)
-                lines = result.stdout.decode('utf-8').split('\n')
-
-                # parse the lines for this round
-                for line in lines:
-                    if triggers is not None:
-                        for pattern, info in triggers.items():
-                            if pattern in line:
-                                info['func'](line, info['context'])
-
-                c_stdout_lines += n_stdout_lines
-
-                # dump local if this is a remote execution
-                if ssh_credentials:
-                    with open(local_stdout_path, 'x') as f:
-                        f.writelines(lines)
-
-            # do we have new STDERR lines to process?
-            if n_stderr_lines > c_stderr_lines:
-                result = run_command(f"tail -n +{c_stderr_lines+1} {stderr_path}", ssh_credentials=ssh_credentials, timeout=2)
-                lines = result.stdout.decode('utf-8').split('\n')
-                c_stderr_lines += n_stderr_lines
-
-                # dump local if this is a remote execution
-                if ssh_credentials:
-                    with open(local_stderr_path, 'x') as f:
-                        f.writelines(lines)
-
-            # need pacing?
-            t_now = get_timestamp_now() / 1000.0
-            delay = max(2.0 - (t_now - t_prev), 0)
-            time.sleep(delay)
-
-        # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
-        # disconnect). wait and retry...
-        except RunCommandError as e:
-            logger.warning(f"error while monitoring command (reason: {e.reason}) -> retry after 5 seconds.")
-            time.sleep(5)
-
-    # get the error code returned by the process and raise exception if the process did not finish successfully.
-    result = run_command(f"cat {exitcode_path}", ssh_credentials=ssh_credentials, timeout=2)
-    exitcode = result.stdout.decode('utf-8').split('\n')[0]
-    exitcode = int(exitcode)
-    if exitcode != 0:
-        raise RunCommandError({
-            'command': command,
-            'cwd': cwd,
-            'stdout_path': stdout_path,
-            'stderr_path': stderr_path,
-            'returncode': result.returncode
-        })
-
-
-def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = 10,
-                suppress_exception: bool = False) -> subprocess.CompletedProcess:
+def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
+                check_exitcode: bool = True) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
@@ -176,21 +51,34 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
         c = ['-oHostKeyAlgorithms=+ssh-rsa']
 
-        wrapped_command = [*a, 'ssh', *b, *c, '-o', f"ConnectTimeout={timeout}",
+        wrapped_command = [*a, 'ssh', *b, *c, '-o',
+                           f"ConnectTimeout={timeout}" if timeout else '',
                            f"{ssh_credentials.login}@{ssh_credentials.host}", command]
 
     else:
         wrapped_command = ['bash', '-c', command]
 
-    # execute command
-    result = subprocess.run(wrapped_command, capture_output=True)
-    if not suppress_exception and result.returncode != 0:
+    # try to execute the command
+    try:
+        result = subprocess.run(wrapped_command, capture_output=True, check=check_exitcode, timeout=timeout)
+        return result
+
+    except subprocess.CalledProcessError as e:
         raise RunCommandError({
+            'reason': 'non-zero return code',
+            'returncode': e.returncode,
+            'wrapped_command': wrapped_command,
+            'stdout': e.stdout.decode('utf-8'),
+            'stderr': e.stdout.decode('utf-8'),
+            'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
+        })
+
+    except subprocess.TimeoutExpired:
+        raise RunCommandError({
+            'reason': 'timeout',
             'wrapped_command': wrapped_command,
             'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
-            'result': result
         })
-    return result
 
 
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials) -> None:
@@ -225,6 +113,159 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
             'ssh_credentials': ssh_credentials.record,
             'result': result
         })
+
+
+def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None,
+                      remote_home_path: str = '~') -> (str, dict):
+
+    # determine remote output path (in case it's needed)
+    remote_output_path = local_output_path.replace(os.environ['HOME'], remote_home_path)
+
+    # check if the output path exists (locally and remotely, if applicable)
+    os.makedirs(local_output_path, exist_ok=True)
+    if ssh_credentials is not None:
+        run_command(f"mkdir -p {remote_output_path}", ssh_credentials=ssh_credentials, timeout=10)
+
+    # determine paths
+    paths = {
+        'local_stdout': os.path.join(local_output_path, f"{name}.stdout"),
+        'local_stderr': os.path.join(local_output_path, f"{name}.stderr"),
+        'local_pid': os.path.join(local_output_path, f"{name}.pid"),
+        'local_exitcode': os.path.join(local_output_path, f"{name}.exitcode"),
+        'local_script': os.path.join(local_output_path, f"{name}.sh"),
+        'remote_stdout': os.path.join(remote_output_path, f"{name}.stdout"),
+        'remote_stderr': os.path.join(remote_output_path, f"{name}.stderr"),
+        'remote_pid': os.path.join(remote_output_path, f"{name}.pid"),
+        'remote_exitcode': os.path.join(remote_output_path, f"{name}.exitcode"),
+        'remote_script': os.path.join(remote_output_path, f"{name}.sh"),
+    }
+    paths['stdout'] = paths['remote_stdout'] if ssh_credentials else paths['local_stdout']
+    paths['stderr'] = paths['remote_stderr'] if ssh_credentials else paths['local_stderr']
+    paths['pid'] = paths['remote_pid'] if ssh_credentials else paths['local_pid']
+    paths['script'] = paths['remote_script'] if ssh_credentials else paths['local_script']
+    paths['exitcode'] = paths['remote_exitcode'] if ssh_credentials else paths['local_exitcode']
+
+    # create the run script
+    with open(paths['local_script'], 'w') as f:
+        f.write('\n'.join([
+            f"#!/bin/bash",
+            f"{command} > {paths['stdout']} 2> {paths['stderr']} &",
+            f"pid=$!",
+            f"echo $pid > {paths['pid']}",
+            f"wait $pid",
+            f"echo $? > {paths['exitcode']}",
+            f""
+        ]))
+
+    # if needed copy the run script to the remote machine
+    if ssh_credentials is not None:
+        scp_local_to_remote(paths['local_script'], paths['remote_script'], ssh_credentials)
+
+    # make script executable
+    run_command(f"chmod u+x {paths['script']}", ssh_credentials=ssh_credentials, timeout=10)
+
+    # execute the script
+    command = f"nohup {paths['script']} > /dev/null 2> /dev/null < /dev/null &"
+    run_command(command, ssh_credentials=ssh_credentials, timeout=10)
+
+    # get the PID
+    time.sleep(0.5)
+    result = run_command(f"cat {paths['pid']}", ssh_credentials=ssh_credentials, timeout=10)
+    pid = result.stdout.decode('utf-8').split('\n')[0]
+    logger.info(f"started async process {pid} running {'REMOTE:' if ssh_credentials else 'LOCAL:'}{paths['script']}")
+
+    return pid, paths
+
+
+def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credentials: SSHCredentials = None,
+                    pace: int = 500) -> None:
+
+    logger.info(f"begin monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
+    c_stdout_lines = 0
+    c_stderr_lines = 0
+    t_prev = get_timestamp_now()
+    while True:
+        try:
+            # get the number of lines in stdout and stderr
+            result_stdout = run_command(f"wc -l {paths['stdout']}", ssh_credentials=ssh_credentials, timeout=10)
+            n_stdout_lines = result_stdout.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stdout_lines = int(n_stdout_lines)
+
+            result_stderr = run_command(f"wc -l {paths['stderr']}", ssh_credentials=ssh_credentials, timeout=10)
+            n_stderr_lines = result_stderr.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stderr_lines = int(n_stderr_lines)
+
+            # no new lines at all? check if the process is still running
+            if (n_stdout_lines - c_stdout_lines) == 0 and (c_stderr_lines - n_stderr_lines) == 0:
+                result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, check_exitcode=False, timeout=10)
+                if result.returncode != 0:
+                    logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
+                    break
+
+            # do we have new STDOUT lines to process?
+            d_stdout_lines = n_stdout_lines - c_stdout_lines
+            if d_stdout_lines > 0:
+                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']}",
+                                     ssh_credentials=ssh_credentials, timeout=10)
+                lines = result.stdout.decode('utf-8').split('\n')
+
+                # parse the lines for this round
+                for line in lines:
+                    if triggers is not None:
+                        for pattern, info in triggers.items():
+                            if pattern in line:
+                                info['func'](line, info['context'])
+
+                c_stdout_lines += d_stdout_lines
+
+            # do we have new STDERR lines to process?
+            d_stderr_lines = n_stderr_lines - c_stderr_lines
+            if d_stderr_lines > 0:
+                c_stderr_lines += d_stderr_lines
+
+            # need pacing?
+            t_now = get_timestamp_now()
+            delay = max(pace - (t_now - t_prev), 0)
+            time.sleep(delay / 1000.0)
+
+        # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
+        # disconnect). wait and retry...
+        except RunCommandError as e:
+            logger.warning(f"error while monitoring command (reason: {e.reason}) -> retry after 5 seconds.")
+            time.sleep(5)
+
+    # if needed copy the stdout/stderr/exitcode files from remote to the local machine
+    if ssh_credentials is not None:
+        todo = {
+            paths['remote_stdout']: paths['local_stdout'],
+            paths['remote_stderr']: paths['local_stderr'],
+            paths['remote_exitcode']: paths['local_exitcode']
+        }
+
+        for s, d in todo.items():
+            # wait for the source to be available
+            while not check_if_path_exists(s, ssh_credentials=ssh_credentials):
+                logger.warning(f"resource not available at {'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} -> retry in 5 seconds.")
+                time.sleep(5)
+
+            logger.info(f"copying from to local: {s} -> {d}")
+            scp_remote_to_local(s, d, ssh_credentials)
+
+    # get the error code returned by the process and raise exception if the process did not finish successfully.
+    with open(paths['local_exitcode'], 'r') as f:
+        line = f.readline()
+        exitcode = int(line)
+        if exitcode != 0:
+            raise RunCommandError({
+                'pid': pid,
+                'exitcode': exitcode,
+                'paths': paths
+            })
+
+
+def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = None) -> bool:
+    result = run_command(f"ls {path}", ssh_credentials=ssh_credentials, timeout=timeout, check_exitcode=False)
+    return result.returncode == 0
 
 
 def create_symbolic_link(link_path: str, target_path: str, working_directory: str = None) -> None:
