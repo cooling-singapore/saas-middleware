@@ -231,7 +231,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
         # disconnect). wait and retry...
         except RunCommandError as e:
-            logger.warning(f"error while monitoring command (reason: {e.reason}) -> retry after 5 seconds.")
+            logger.warning(f"error while monitoring command -> retry after 5 seconds. "
+                           f"reason: {e.reason} details: {e.details}")
             time.sleep(5)
 
     # if needed copy the stdout/stderr/exitcode files from remote to the local machine
