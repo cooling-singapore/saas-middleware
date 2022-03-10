@@ -197,8 +197,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
 
             # no new lines at all? check if the process is still running
             if (n_stdout_lines - c_stdout_lines) == 0 and (c_stderr_lines - n_stderr_lines) == 0:
-                result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, check_exitcode=False, timeout=10)
-                if result.returncode != 0:
+                # do we have an exit code file? (it is only generated when the process has terminated)
+                if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
                     logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
                     break
 
