@@ -289,6 +289,7 @@ class RTIProcessorAdapter(Thread, ABC):
         self._input_interface = {item['name']: item for item in gpp['proc_descriptor']['input']}
         self._output_interface = {item['name']: item for item in gpp['proc_descriptor']['output']}
         self._pending = []
+        self._active = None
         self._state = ProcessorState.UNINITIALISED
 
     @property
@@ -322,6 +323,20 @@ class RTIProcessorAdapter(Thread, ABC):
     @abstractmethod
     def delete(self) -> None:
         pass
+
+    def status(self) -> dict:
+        with self._mutex:
+            result = {
+                'state': self._state.value,
+                'pending': [{'job_id': item[0]['id'], 'task': item[0]['task']} for item in self._pending]
+            }
+            if self._active is not None:
+                result['active'] = {
+                    'job_id': self._active['id'],
+                    'task': self._active['task']
+                }
+
+            return result
 
     def pre_execute(self, job_id: str, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         logger.info(f"[adapter:{self._proc_id}][{job_id}] perform pre-execute routine...")
@@ -372,14 +387,16 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] started.")
         while self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
             # wait for a pending job (or for adapter to become inactive)
+            self._active = None
             self._state = ProcessorState.WAITING
             pending_job = self._wait_for_pending_job()
             if not pending_job:
                 break
 
             # process a job
-            self._state = ProcessorState.BUSY
             job_descriptor, status = pending_job
+            self._active = job_descriptor
+            self._state = ProcessorState.BUSY
 
             # set job state
             status.update_state(State.RUNNING)
@@ -403,6 +420,11 @@ class RTIProcessorAdapter(Thread, ABC):
                                        f"id: {e.id}\n"
                                        f"reason: {e.reason}\n"
                                        f"details: {e.details}")
+                status.update_state(State.FAILED)
+
+            except Exception as e:
+                status.update('error', f"unexpected exception while running job:\n"
+                                       f"exception: {e}")
                 status.update_state(State.FAILED)
 
             else:

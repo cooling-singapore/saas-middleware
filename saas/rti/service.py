@@ -16,6 +16,7 @@ import saas.dor.protocol as dor_prot
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.docker as docker_rti
 import saas.rti.adapters.native as native_rti
+from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, \
     ProcessorNotDeployedError, UnexpectedGPPMetaInformation, GPPDataObjectNotFound
 from saas.rti.status import StatusLogger, State
@@ -194,6 +195,16 @@ class RuntimeInfrastructureService:
                 })
 
             return self._deployed_processors[proc_id].gpp['proc_descriptor']
+
+    def get_status(self, proc_id: str) -> dict:
+        with self._mutex:
+            # do we have this processor deployed?
+            if proc_id not in self._deployed_processors:
+                raise ProcessorNotDeployedError({
+                    'proc_id': proc_id
+                })
+
+            return self._deployed_processors[proc_id].status()
 
     def submit(self, proc_id: str, task_descriptor: dict) -> dict:
         with self._mutex:

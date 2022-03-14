@@ -12,7 +12,7 @@ from saascore.log import Logging
 
 from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.request_manager import request_manager
-from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor
+from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor, ProcessorStatus
 
 logger = Logging.get('rti.blueprint')
 
@@ -59,6 +59,7 @@ class RTIBlueprint(SaaSBlueprint):
         self.add_rule('<proc_id>', self.deploy, ['POST'])
         self.add_rule('<proc_id>', self.undeploy, ['DELETE'])
         self.add_rule('<proc_id>/descriptor', self.get_descriptor, ['GET'])
+        self.add_rule('<proc_id>/status', self.get_status, ['GET'])
         self.add_rule('<proc_id>/jobs', self.submit_job, ['POST'])
         self.add_rule('<proc_id>/jobs', self.get_jobs, ['GET'])
         self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
@@ -115,6 +116,11 @@ class RTIBlueprint(SaaSBlueprint):
     @request_manager.require_rti()
     def get_descriptor(self, proc_id: str) -> (Response, int):
         return create_ok_response(self._node.rti.get_descriptor(proc_id))
+
+    @request_manager.handle_request(ProcessorStatus)
+    @request_manager.require_rti()
+    def get_status(self, proc_id: str) -> (Response, int):
+        return create_ok_response(self._node.rti.get_status(proc_id))
 
     @request_manager.handle_request(JobDescriptor)
     @request_manager.require_rti()
