@@ -319,6 +319,10 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] received stop signal.")
         self._state = ProcessorState.STOPPING
 
+    @abstractmethod
+    def delete(self) -> None:
+        pass
+
     def pre_execute(self, job_id: str, task_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         logger.info(f"[adapter:{self._proc_id}][{job_id}] perform pre-execute routine...")
 
