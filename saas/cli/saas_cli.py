@@ -7,7 +7,7 @@ from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DO
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
 from saas.cli.cmd_network import NetworkShow
-from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -76,6 +76,7 @@ def main():
                 RTIProcDeploy(),
                 RTIProcUndeploy(),
                 RTIProcList(),
+                RTIProcStatus(),
                 RTIJobSubmit(),
                 RTIJobStatus()
             ]),
