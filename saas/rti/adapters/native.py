@@ -159,6 +159,11 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         status.remove('task')
 
+    def delete(self) -> None:
+        logger.info(f"[adapter:{self._proc_id}] deleting adapter contents at "
+                    f"{'REMOTE' if self._ssh_credentials else 'LOCAL'}:{self._paths['repo']}.")
+        base.run_command(f"rm -rf {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
+
     def _handle_trigger_output(self, line: str, context: dict) -> None:
         obj_name = line.split(':')[2]
         context['obj_name'] = obj_name

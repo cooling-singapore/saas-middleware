@@ -176,6 +176,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         deployed = {i['proc_id']: i for i in deployed}
         assert(proc_id in deployed)
 
+        adapter_path = os.path.join(self.wd_path, 'node', 'proc-repositories', proc_id)
+        assert(os.path.isdir(adapter_path))
+
         try:
             rti.undeploy('false proc id')
             assert False
@@ -189,6 +192,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"deployed={deployed}")
         assert(deployed is not None)
         assert(len(deployed) == 0)
+
+        assert(not os.path.isdir(adapter_path))
 
     def test_processor_execution_value(self):
         # create node

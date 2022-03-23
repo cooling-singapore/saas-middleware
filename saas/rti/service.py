@@ -157,12 +157,19 @@ class RuntimeInfrastructureService:
             processor = self._deployed_processors.pop(proc_id)
 
             # stop the processor and wait for it to be done
+            logger.info(f"stopping processor {proc_id}...")
             processor.stop()
             processor.join()
 
+            # delete the processor
+            logger.info(f"deleting processor {proc_id}...")
+            processor.delete()
+
             # delete SSH credentials key (if any)
             if proc_id in self._ssh_credentials_paths:
-                os.remove(self._ssh_credentials_paths[proc_id])
+                cred_path = self._ssh_credentials_paths[proc_id]
+                logger.info(f"deleting SSH credentials at {cred_path}")
+                os.remove(cred_path)
                 self._ssh_credentials_paths.pop(proc_id)
 
             return processor.gpp['proc_descriptor']
