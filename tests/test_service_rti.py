@@ -16,7 +16,7 @@ from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
 import saas.rti.adapters.docker as docker_rti
-from saas.rti.adapters.base import monitor_command
+from saas.rti.adapters.base import monitor_command, run_command_async
 from saas.rti.status import State
 from saascore.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
@@ -1261,7 +1261,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         # test if the remote path exists (it shouldn't)
         remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
         remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
-        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, check_exitcode=False)
         assert(result.returncode != 0)
 
         proc_descriptor = rti.undeploy(proc_id)
@@ -1335,24 +1335,25 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         # test if the remote path exists (it should)
         remote_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id))
         remote_path = remote_path.replace(os.environ['HOME'], '$HOME')
-        result = docker_rti.base.run_command(f"ls {remote_path}", ssh_credentials=ssh_credentials, suppress_exception=True)
+        result = docker_rti.base.run_command(f"ls {remote_path}",
+                                             ssh_credentials=ssh_credentials,
+                                             check_exitcode=False)
         assert(result.returncode == 0)
 
         proc_descriptor = rti.undeploy(proc_id)
         assert proc_descriptor is not None
 
 
+class RTIServiceTestCaseBase(unittest.TestCase, TestCaseBase):
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
 
-    class RTIServiceTestCaseBase(unittest.TestCase, TestCaseBase):
-        def __init__(self, method_name='runTest'):
-            unittest.TestCase.__init__(self, method_name)
-            TestCaseBase.__init__(self)
+    def setUp(self):
+        self.initialise()
 
-        def setUp(self):
-            self.initialise()
-
-        def tearDown(self):
-            self.cleanup()
+    def tearDown(self):
+        self.cleanup()
 
     def test_command_monitoring(self):
         # load keystore with credentials and extract SSH credentials
@@ -1360,14 +1361,14 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
         ssh_credentials: SSHCredentials = asset.get('nscc')
 
-        cwd_local = os.environ['HOME']
-        cwd_remote = '~'
+        wd_path = self.wd_path
         command_ok = "ls"
         command_fail = "ls x"
 
         # (1) Local + OK
         try:
-            monitor_command(command_ok, {}, cwd=cwd_local)
+            pid, paths = run_command_async(command_ok, wd_path, 'test1')
+            monitor_command(pid, paths)
             assert True
         except RunCommandError as e:
             print(e)
@@ -1375,7 +1376,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (2) Local + Fail
         try:
-            monitor_command(command_fail, {}, cwd=cwd_local)
+            pid, paths = run_command_async(command_fail, wd_path, 'test2')
+            monitor_command(pid, paths)
             assert False
         except RunCommandError as e:
             print(e)
@@ -1383,7 +1385,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (3) Remote + OK
         try:
-            monitor_command(command_ok, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            pid, paths = run_command_async(command_ok, wd_path, 'test3', ssh_credentials=ssh_credentials)
+            monitor_command(pid, paths, ssh_credentials=ssh_credentials)
             assert True
         except RunCommandError as e:
             print(e)
@@ -1391,11 +1394,29 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # (4) Remote + Fail
         try:
-            monitor_command(command_fail, {}, cwd=cwd_remote, ssh_credentials=ssh_credentials)
+            pid, paths = run_command_async(command_fail, wd_path, 'test4', ssh_credentials=ssh_credentials)
+            monitor_command(pid, paths, ssh_credentials=ssh_credentials)
             assert False
         except RunCommandError as e:
             print(e)
             assert True
+
+    def test_simulate_vpn_disconnect(self):
+        # load keystore with credentials and extract SSH credentials
+        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
+        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
+
+        wd_path = self.wd_path
+        command = "sleep 60"
+
+        try:
+            pid, paths = run_command_async(command, wd_path, 'test_sleep', ssh_credentials=ssh_credentials)
+            monitor_command(pid, paths, ssh_credentials=ssh_credentials)
+            assert True
+        except RunCommandError as e:
+            print(e)
+            assert False
 
 
 if __name__ == '__main__':
