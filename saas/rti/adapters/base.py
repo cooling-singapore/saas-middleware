@@ -178,12 +178,13 @@ def run_command_async(command: str, local_output_path: str, name: str, ssh_crede
 
 
 def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credentials: SSHCredentials = None,
-                    pace: int = 500) -> None:
+                    pace: int = 500, max_attempts: int = 60, retry_delay: int = 10) -> None:
 
     logger.info(f"begin monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
     c_stdout_lines = 0
     c_stderr_lines = 0
     t_prev = get_timestamp_now()
+    n_attempts = 0
     while True:
         try:
             # get the number of lines in stdout and stderr
@@ -231,9 +232,21 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
         # disconnect). wait and retry...
         except RunCommandError as e:
-            logger.warning(f"error while monitoring command -> retry after 5 seconds. "
-                           f"reason: {e.reason} details: {e.details}")
-            time.sleep(5)
+            # increase attempt counter and check if limit is reached -> if so, then raise an exception
+            n_attempts += 1
+            if n_attempts >= max_attempts:
+                raise RunCommandError({
+                    'info': 'too many attempts',
+                    'n_attempts': n_attempts,
+                    'max_attempts': max_attempts,
+                    'most_recent_exception_details': e.details
+                })
+
+            else:
+                logger.warning(f"error while monitoring command (attempt {n_attempts} of {max_attempts}) "
+                               f"-> try again in {retry_delay} seconds. "
+                               f"reason: {e.reason} details: {e.details}")
+                time.sleep(retry_delay)
 
     # if needed copy the stdout/stderr/exitcode files from remote to the local machine
     if ssh_credentials is not None:
