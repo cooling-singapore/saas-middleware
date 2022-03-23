@@ -193,6 +193,30 @@ class RTIProcList(CLICommand):
                 print(f"{item['proc_id']}: {json.dumps(descriptor, indent=4)}")
 
 
+class RTIProcStatus(CLICommand):
+    def __init__(self) -> None:
+        super().__init__('proc-status', 'retrieves the status of all deployed processor and their active and pending '
+                                        'jobs (if any)',
+                         arguments=[])
+
+    def execute(self, args: dict) -> None:
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
+
+        rti = RTIProxy(args['address'].split(':'))
+        deployed = rti.get_deployed()
+        if len(deployed) == 0:
+            print(f"No processors deployed at {args['address']}")
+        else:
+            print(f"Found {len(deployed)} processor(s) deployed at {args['address']}:")
+            for item in deployed:
+                proc_id = item['proc_id']
+
+                status = rti.get_status(proc_id)
+                print(f"{proc_id}: {json.dumps(status, indent=4)}")
+
+
 class RTIJobSubmit(CLICommand):
     def __init__(self) -> None:
         super().__init__('submit', 'submit a new job', arguments=[
@@ -378,7 +402,7 @@ class RTIJobSubmit(CLICommand):
 
 class RTIJobStatus(CLICommand):
     def __init__(self):
-        super().__init__('status', 'retrieve the status of a job', arguments=[
+        super().__init__('job-status', 'retrieve the status of a job', arguments=[
             Argument('job-id', metavar='job-id', type=str, nargs='?',
                      help=f"the id of the job")
         ])

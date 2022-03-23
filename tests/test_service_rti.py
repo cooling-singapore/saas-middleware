@@ -25,19 +25,23 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-def wait_for_job(rti, job_id):
+def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
     while True:
         time.sleep(5)
         descriptor, status = rti.get_job_info(job_id)
         if descriptor and status:
-            logger.info(f"descriptor={descriptor}")
-            logger.info(f"status={status}")
+            print(f"job descriptor: {descriptor}")
+            print(f"job status: {status}")
 
             state = State(status['state'])
             if state == State.SUCCESSFUL:
                 return True
             elif state == State.FAILED:
                 return False
+
+        if proc_id is not None:
+            status = rti.get_status(proc_id)
+            print(f"proc status: {json.dumps(status, indent=4)}")
 
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
@@ -269,7 +273,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert(jobs is not None)
         assert(len(jobs) == 1)
 
-        wait_for_job(rti, job_id)
+        wait_for_job(rti, job_id, proc_id=proc_id)
 
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")

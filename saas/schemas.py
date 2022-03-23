@@ -56,6 +56,12 @@ class ProcessorDescriptor(BaseModel):
     configurations: List[str]
 
 
+class ProcessorStatus(BaseModel):
+    state: str
+    active: Optional[dict]
+    pending: List[dict]
+
+
 class GitProcessorPointer(BaseModel):
     source: str
     commit_id: str
