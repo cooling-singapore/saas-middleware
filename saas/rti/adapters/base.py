@@ -115,11 +115,22 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
         })
 
 
-def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None,
-                      remote_home_path: str = '~') -> (str, dict):
+def get_home_directory(ssh_credentials: SSHCredentials) -> str:
+    result = run_command("realpath ~", ssh_credentials=ssh_credentials)
+    _home = result.stdout.decode('utf-8').strip()
 
+    if _home.startswith("/cygdrive/"):  # fix path for Windows machine with cygwin
+        _home = _home.replace("/cygdrive/", "")
+        _home = f"{_home[:1]}:{_home[1:]}"
+
+    return _home
+
+
+def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None) -> (str, dict):
     # determine remote output path (in case it's needed)
-    remote_output_path = local_output_path.replace(os.environ['HOME'], remote_home_path)
+    # FIXME: Might not need this since ssh should open in HOME directory anyway
+    _home = get_home_directory(ssh_credentials)
+    remote_output_path = local_output_path.replace(os.environ['HOME'], _home)
 
     # check if the output path exists (locally and remotely, if applicable)
     os.makedirs(local_output_path, exist_ok=True)
@@ -165,7 +176,7 @@ def run_command_async(command: str, local_output_path: str, name: str, ssh_crede
     run_command(f"chmod u+x {paths['script']}", ssh_credentials=ssh_credentials, timeout=10)
 
     # execute the script
-    command = f"nohup {paths['script']} > /dev/null 2> /dev/null < /dev/null &"
+    command = f"nohup {paths['script']} > /dev/null 2>&1 &"
     run_command(command, ssh_credentials=ssh_credentials, timeout=10)
 
     # get the PID

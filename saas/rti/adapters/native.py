@@ -104,9 +104,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         pass
 
     def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
+        _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
-            'remote_wd': local_working_directory.replace(os.environ['HOME'], '~')
+            'remote_wd': local_working_directory.replace(os.environ['HOME'], _home)
         }
         paths['wd'] = paths['remote_wd'] if self._ssh_credentials else paths['local_wd']
 
@@ -125,7 +126,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                 status.update('task', f"copy '{obj_name}': LOCAL:{local_path} -> REMOTE:{paths['remote_wd']}")
                 base.scp_local_to_remote(local_path, paths['remote_wd'], self._ssh_credentials)
 
-        # run install script
+        # run execute script
         task_msg = f"starting {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}"
         status.update('task', task_msg)
         logger.debug(task_msg)
