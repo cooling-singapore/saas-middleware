@@ -70,7 +70,9 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             logger.debug(f"repository does not exist {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
                          f"{self._paths['repo']} -> clone")
 
-            base.run_command(f"git clone {url} {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
+            _dir, _name = os.path.split(self._paths['repo'])
+            base.run_command(f"mkdir -p {_dir}", ssh_credentials=self._ssh_credentials)
+            base.run_command(f"cd {_dir} && git clone {url} {_name}", ssh_credentials=self._ssh_credentials)
 
         # checkout the commit
         logger.debug(f"checkout commit {commit_id}")
