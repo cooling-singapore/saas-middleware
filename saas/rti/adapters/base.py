@@ -47,7 +47,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
-        a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
+        a = ['sshpass', '-p', f"{ssh_credentials.key}"] if ssh_credentials.key_is_password else []
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
         c = ['-oHostKeyAlgorithms=+ssh-rsa']
 
