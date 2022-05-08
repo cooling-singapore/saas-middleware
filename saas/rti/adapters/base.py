@@ -126,6 +126,12 @@ def get_home_directory(ssh_credentials: SSHCredentials) -> str:
     return _home
 
 
+def is_cygwin(ssh_credentials: SSHCredentials) -> bool:
+    result = run_command("uname", ssh_credentials=ssh_credentials)
+    env = result.stdout.decode('utf-8').strip()
+    return "cygwin" in env.lower()
+
+
 def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None) -> (str, dict):
     # determine remote output path (in case it's needed)
     # FIXME: Might not need this since ssh should open in HOME directory anyway
@@ -176,7 +182,11 @@ def run_command_async(command: str, local_output_path: str, name: str, ssh_crede
     run_command(f"chmod u+x {paths['script']}", ssh_credentials=ssh_credentials, timeout=10)
 
     # execute the script
-    command = f"nohup {paths['script']} > /dev/null 2>&1 &"
+    if is_cygwin(ssh_credentials):
+        # nohup does not really work in cygwin
+        command = f"cygstart {paths['script']}"
+    else:
+        command = f"nohup {paths['script']} > /dev/null 2>&1 &"
     run_command(command, ssh_credentials=ssh_credentials, timeout=10)
 
     # get the PID
