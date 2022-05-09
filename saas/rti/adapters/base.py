@@ -206,28 +206,32 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
     c_stderr_lines = 0
     t_prev = get_timestamp_now()
     n_attempts = 0
+
+    def get_line_count(file_path: str) -> int:
+        wc_result = run_command(f"wc -l {file_path}", ssh_credentials=ssh_credentials, timeout=10)
+        n_lines = wc_result.stdout.decode('utf-8').splitlines()[0].split()[0]
+        return int(n_lines)
+
     while True:
         try:
             # get the number of lines in stdout and stderr
-            result_stdout = run_command(f"wc -l {paths['stdout']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stdout_lines = result_stdout.stdout.decode('utf-8').splitlines()[0].split()[0]
-            n_stdout_lines = int(n_stdout_lines)
+            n_stdout_lines = get_line_count(paths['stdout'])
+            n_stderr_lines = get_line_count(paths['stderr'])
 
-            result_stderr = run_command(f"wc -l {paths['stderr']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stderr_lines = result_stderr.stdout.decode('utf-8').splitlines()[0].split()[0]
-            n_stderr_lines = int(n_stderr_lines)
+            # new line count
+            d_stdout_lines = n_stdout_lines - c_stdout_lines
+            d_stderr_lines = n_stderr_lines - c_stderr_lines
 
             # no new lines at all? check if the process is still running
-            if (n_stdout_lines - c_stdout_lines) == 0 and (c_stderr_lines - n_stderr_lines) == 0:
+            if d_stdout_lines == 0 and d_stderr_lines == 0:
                 # do we have an exit code file? (it is only generated when the process has terminated)
                 if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
                     logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
                     break
 
             # do we have new STDOUT lines to process?
-            d_stdout_lines = n_stdout_lines - c_stdout_lines
             if d_stdout_lines > 0:
-                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']}",
+                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']} | head -n {d_stdout_lines}",
                                      ssh_credentials=ssh_credentials, timeout=10)
                 lines = result.stdout.decode('utf-8').splitlines()
 
@@ -241,7 +245,6 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
                 c_stdout_lines += d_stdout_lines
 
             # do we have new STDERR lines to process?
-            d_stderr_lines = n_stderr_lines - c_stderr_lines
             if d_stderr_lines > 0:
                 c_stderr_lines += d_stderr_lines
 
