@@ -151,12 +151,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                              })
 
         # wait for all outputs to be processed
-        while True:
-            remaining = len(context['threads'])
-            if remaining == 0:
-                break
-
-            status.update('task', f"wait for all outputs to be processed: remaining={remaining}")
+        while len(context['threads']):
+            status.update('task', f"wait for all outputs to be processed: remaining={len(context['threads'])}")
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
@@ -174,14 +170,14 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def _handle_trigger_output(self, line: str, context: dict) -> None:
         obj_name = line.split(':')[2]
         context['obj_name'] = obj_name
-        context['threads'][obj_name] = threading.Thread(target=self._process_output, kwargs=context)
+        context['threads'][obj_name] = threading.Thread(target=self._process_output, args=(context,))
         context['threads'][obj_name].start()
 
     def _handle_trigger_progress(self, line: str, context: dict) -> None:
         status: StatusLogger = context['status']
         status.update('progress', line.split(':')[2])
 
-    def _process_output(self, **context) -> None:
+    def _process_output(self, context: dict) -> None:
         obj_name = context['obj_name']
         job_id = context['job_id']
         task_descriptor = context['task_descriptor']
