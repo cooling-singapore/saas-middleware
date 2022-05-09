@@ -172,7 +172,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         base.run_command(f"rm -rf {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
 
     def _handle_trigger_output(self, line: str, context: dict) -> None:
-        obj_name = line.split(':')[2]
+        obj_name = line.split(':')[2].strip()
         context['obj_name'] = obj_name
         context['threads'][obj_name] = threading.Thread(target=self._process_output, kwargs=context)
         context['threads'][obj_name].start()
