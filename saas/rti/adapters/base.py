@@ -192,7 +192,7 @@ def run_command_async(command: str, local_output_path: str, name: str, ssh_crede
     # get the PID
     time.sleep(0.5)
     result = run_command(f"cat {paths['pid']}", ssh_credentials=ssh_credentials, timeout=10)
-    pid = result.stdout.decode('utf-8').split('\n')[0]
+    pid = result.stdout.decode('utf-8').splitlines()[0]
     logger.info(f"started async process {pid} running {'REMOTE:' if ssh_credentials else 'LOCAL:'}{paths['script']}")
 
     return pid, paths
@@ -210,11 +210,11 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         try:
             # get the number of lines in stdout and stderr
             result_stdout = run_command(f"wc -l {paths['stdout']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stdout_lines = result_stdout.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stdout_lines = result_stdout.stdout.decode('utf-8').splitlines()[0].split()[0]
             n_stdout_lines = int(n_stdout_lines)
 
             result_stderr = run_command(f"wc -l {paths['stderr']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stderr_lines = result_stderr.stdout.decode('utf-8').split('\n')[0].split()[0]
+            n_stderr_lines = result_stderr.stdout.decode('utf-8').splitlines()[0].split()[0]
             n_stderr_lines = int(n_stderr_lines)
 
             # no new lines at all? check if the process is still running
@@ -229,7 +229,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
             if d_stdout_lines > 0:
                 result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']}",
                                      ssh_credentials=ssh_credentials, timeout=10)
-                lines = result.stdout.decode('utf-8').split('\n')
+                lines = result.stdout.decode('utf-8').splitlines()
 
                 # parse the lines for this round
                 for line in lines:
