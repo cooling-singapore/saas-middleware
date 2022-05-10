@@ -484,6 +484,8 @@ class RTIProcessorAdapter(Thread, ABC):
                             os.remove(path)
                         elif os.path.isdir(path):
                             shutil.rmtree(path)
+                        elif os.path.islink(path):
+                            os.unlink(path)
                         else:
                             logger.warning(f"Encountered neither file nor directory: {path}")
 
