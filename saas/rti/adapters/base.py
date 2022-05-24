@@ -69,7 +69,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
             'returncode': e.returncode,
             'wrapped_command': wrapped_command,
             'stdout': e.stdout.decode('utf-8'),
-            'stderr': e.stdout.decode('utf-8'),
+            'stderr': e.stderr.decode('utf-8'),
             'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
         })
 
