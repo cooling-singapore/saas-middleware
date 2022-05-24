@@ -116,7 +116,7 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
 
 
 def get_home_directory(ssh_credentials: SSHCredentials) -> str:
-    result = run_command("realpath ~", ssh_credentials=ssh_credentials)
+    result = run_command("readlink -f ~", ssh_credentials=ssh_credentials)
     _home = result.stdout.decode('utf-8').strip()
 
     if _home.startswith("/cygdrive/"):  # fix path for Windows machine with cygwin
