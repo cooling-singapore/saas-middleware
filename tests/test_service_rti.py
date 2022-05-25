@@ -16,7 +16,7 @@ from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
 import saas.rti.adapters.docker as docker_rti
-from saas.rti.adapters.base import monitor_command, run_command_async
+from saas.rti.adapters.base import monitor_command, run_command_async, ProcessorState
 from saas.rti.status import State
 from saascore.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
@@ -42,6 +42,13 @@ def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
         if proc_id is not None:
             status = rti.get_status(proc_id)
             print(f"proc status: {json.dumps(status, indent=4)}")
+
+
+def wait_for_deploy(rti: RTIProxy, proc_id: str):
+    while (state := ProcessorState(rti.get_status(proc_id).get('state'))) == ProcessorState.STARTING:
+        logger.info(f"Waiting for processor to deploy. {state.name=}")
+        time.sleep(1)
+    logger.info(f"Processor to deployed. {state.name=}")
 
 
 def add_test_processor_to_dor(dor: DORProxy, owner: Identity, config: str):
@@ -172,6 +179,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         descriptor = rti.get_descriptor(proc_id)
         logger.info(f"descriptor={descriptor}")
         assert(descriptor is not None)
+
+        # Processor has to be deployed for `adapter_path` to exist
+        wait_for_deploy(rti, proc_id)
 
         deployed = rti.get_deployed()
         logger.info(f"deployed={deployed}")
