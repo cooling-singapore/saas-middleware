@@ -52,7 +52,8 @@ class RuntimeInfrastructureService:
 
         # write the key to disk and change file permissions
         with open(key_path, 'w') as f:
-            f.write(ssh_credentials.key)
+            # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
+            f.write(f"{ssh_credentials.key}\n")
         os.chmod(key_path, S_IREAD | S_IWRITE)
 
         return key_path
