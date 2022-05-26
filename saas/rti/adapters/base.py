@@ -47,7 +47,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
-        a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
+        a = ['sshpass', '-p', f"{ssh_credentials.key}"] if ssh_credentials.key_is_password else []
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
         c = ['-oHostKeyAlgorithms=+ssh-rsa']
 
@@ -69,7 +69,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
             'returncode': e.returncode,
             'wrapped_command': wrapped_command,
             'stdout': e.stdout.decode('utf-8'),
-            'stderr': e.stdout.decode('utf-8'),
+            'stderr': e.stderr.decode('utf-8'),
             'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
         })
 
@@ -115,11 +115,28 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
         })
 
 
-def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None,
-                      remote_home_path: str = '~') -> (str, dict):
+def get_home_directory(ssh_credentials: SSHCredentials) -> str:
+    result = run_command("readlink -f ~", ssh_credentials=ssh_credentials)
+    _home = result.stdout.decode('utf-8').strip()
 
+    if _home.startswith("/cygdrive/"):  # fix path for Windows machine with cygwin
+        _home = _home.replace("/cygdrive/", "")
+        _home = f"{_home[:1]}:{_home[1:]}"
+
+    return _home
+
+
+def is_cygwin(ssh_credentials: SSHCredentials) -> bool:
+    result = run_command("uname", ssh_credentials=ssh_credentials)
+    env = result.stdout.decode('utf-8').strip()
+    return "cygwin" in env.lower()
+
+
+def run_command_async(command: str, local_output_path: str, name: str, ssh_credentials: SSHCredentials = None) -> (str, dict):
     # determine remote output path (in case it's needed)
-    remote_output_path = local_output_path.replace(os.environ['HOME'], remote_home_path)
+    # FIXME: Might not need this since ssh should open in HOME directory anyway
+    _home = get_home_directory(ssh_credentials)
+    remote_output_path = local_output_path.replace(os.environ['HOME'], _home)
 
     # check if the output path exists (locally and remotely, if applicable)
     os.makedirs(local_output_path, exist_ok=True)
@@ -165,13 +182,17 @@ def run_command_async(command: str, local_output_path: str, name: str, ssh_crede
     run_command(f"chmod u+x {paths['script']}", ssh_credentials=ssh_credentials, timeout=10)
 
     # execute the script
-    command = f"nohup {paths['script']} > /dev/null 2> /dev/null < /dev/null &"
+    if is_cygwin(ssh_credentials):
+        # nohup does not really work in cygwin
+        command = f"cygstart {paths['script']}"
+    else:
+        command = f"nohup {paths['script']} > /dev/null 2>&1 &"
     run_command(command, ssh_credentials=ssh_credentials, timeout=10)
 
     # get the PID
     time.sleep(0.5)
     result = run_command(f"cat {paths['pid']}", ssh_credentials=ssh_credentials, timeout=10)
-    pid = result.stdout.decode('utf-8').split('\n')[0]
+    pid = result.stdout.decode('utf-8').splitlines()[0]
     logger.info(f"started async process {pid} running {'REMOTE:' if ssh_credentials else 'LOCAL:'}{paths['script']}")
 
     return pid, paths
@@ -185,30 +206,34 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
     c_stderr_lines = 0
     t_prev = get_timestamp_now()
     n_attempts = 0
+
+    def get_line_count(file_path: str) -> int:
+        wc_result = run_command(f"wc -l {file_path}", ssh_credentials=ssh_credentials, timeout=10)
+        n_lines = wc_result.stdout.decode('utf-8').splitlines()[0].split()[0]
+        return int(n_lines)
+
     while True:
         try:
             # get the number of lines in stdout and stderr
-            result_stdout = run_command(f"wc -l {paths['stdout']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stdout_lines = result_stdout.stdout.decode('utf-8').split('\n')[0].split()[0]
-            n_stdout_lines = int(n_stdout_lines)
+            n_stdout_lines = get_line_count(paths['stdout'])
+            n_stderr_lines = get_line_count(paths['stderr'])
 
-            result_stderr = run_command(f"wc -l {paths['stderr']}", ssh_credentials=ssh_credentials, timeout=10)
-            n_stderr_lines = result_stderr.stdout.decode('utf-8').split('\n')[0].split()[0]
-            n_stderr_lines = int(n_stderr_lines)
+            # new line count
+            d_stdout_lines = n_stdout_lines - c_stdout_lines
+            d_stderr_lines = n_stderr_lines - c_stderr_lines
 
             # no new lines at all? check if the process is still running
-            if (n_stdout_lines - c_stdout_lines) == 0 and (c_stderr_lines - n_stderr_lines) == 0:
+            if d_stdout_lines == 0 and d_stderr_lines == 0:
                 # do we have an exit code file? (it is only generated when the process has terminated)
                 if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
                     logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
                     break
 
             # do we have new STDOUT lines to process?
-            d_stdout_lines = n_stdout_lines - c_stdout_lines
             if d_stdout_lines > 0:
-                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']}",
+                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']} | head -n {d_stdout_lines}",
                                      ssh_credentials=ssh_credentials, timeout=10)
-                lines = result.stdout.decode('utf-8').split('\n')
+                lines = result.stdout.decode('utf-8').splitlines()
 
                 # parse the lines for this round
                 for line in lines:
@@ -220,7 +245,6 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
                 c_stdout_lines += d_stdout_lines
 
             # do we have new STDERR lines to process?
-            d_stderr_lines = n_stderr_lines - c_stderr_lines
             if d_stderr_lines > 0:
                 c_stderr_lines += d_stderr_lines
 
@@ -460,6 +484,8 @@ class RTIProcessorAdapter(Thread, ABC):
                             os.remove(path)
                         elif os.path.isdir(path):
                             shutil.rmtree(path)
+                        elif os.path.islink(path):
+                            os.unlink(path)
                         else:
                             logger.warning(f"Encountered neither file nor directory: {path}")
 

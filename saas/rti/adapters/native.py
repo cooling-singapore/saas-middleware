@@ -70,18 +70,24 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             logger.debug(f"repository does not exist {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
                          f"{self._paths['repo']} -> clone")
 
-            base.run_command(f"git clone {url} {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
+            _dir, _name = os.path.split(self._paths['repo'])
+            base.run_command(f"mkdir -p {_dir}", ssh_credentials=self._ssh_credentials)
+            base.run_command(f"cd {_dir} && git clone {url} {_name}", ssh_credentials=self._ssh_credentials)
 
         # checkout the commit
         logger.debug(f"checkout commit {commit_id}")
         base.run_command(f"cd {self._paths['repo']} && git checkout {commit_id}",
                          ssh_credentials=self._ssh_credentials, timeout=10)
 
-        # make scripts executable
+        # make scripts executable and remove \r characters
         logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
+        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['install.sh']}""",
+                         ssh_credentials=self._ssh_credentials, timeout=10)
         base.run_command(f"chmod u+x {self._paths['install.sh']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
         logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}")
+        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['execute.sh']}""",
+                         ssh_credentials=self._ssh_credentials, timeout=10)
         base.run_command(f"chmod u+x {self._paths['execute.sh']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
         # run install script
@@ -98,9 +104,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         pass
 
     def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
+        _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
-            'remote_wd': local_working_directory.replace(os.environ['HOME'], '~')
+            'remote_wd': local_working_directory.replace(os.environ['HOME'], _home)
         }
         paths['wd'] = paths['remote_wd'] if self._ssh_credentials else paths['local_wd']
 
@@ -119,7 +126,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                 status.update('task', f"copy '{obj_name}': LOCAL:{local_path} -> REMOTE:{paths['remote_wd']}")
                 base.scp_local_to_remote(local_path, paths['remote_wd'], self._ssh_credentials)
 
-        # run install script
+        # run execute script
         task_msg = f"starting {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}"
         status.update('task', task_msg)
         logger.debug(task_msg)
@@ -144,12 +151,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                              })
 
         # wait for all outputs to be processed
-        while True:
-            remaining = len(context['threads'])
-            if remaining == 0:
-                break
-
-            status.update('task', f"wait for all outputs to be processed: remaining={remaining}")
+        while len(context['threads']):
+            status.update('task', f"wait for all outputs to be processed: remaining={len(context['threads'])}")
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
@@ -167,14 +170,14 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def _handle_trigger_output(self, line: str, context: dict) -> None:
         obj_name = line.split(':')[2]
         context['obj_name'] = obj_name
-        context['threads'][obj_name] = threading.Thread(target=self._process_output, kwargs=context)
+        context['threads'][obj_name] = threading.Thread(target=self._process_output, args=(context,))
         context['threads'][obj_name].start()
 
     def _handle_trigger_progress(self, line: str, context: dict) -> None:
         status: StatusLogger = context['status']
         status.update('progress', line.split(':')[2])
 
-    def _process_output(self, **context) -> None:
+    def _process_output(self, context: dict) -> None:
         obj_name = context['obj_name']
         job_id = context['job_id']
         task_descriptor = context['task_descriptor']
