@@ -1,220 +1,210 @@
 import json
-import logging
 import os
-import subprocess
-import traceback
+import threading
+import time
 
 from jsonschema import validate
 
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
-from saas.rti.adapters.adapters import RTITaskProcessorAdapter
+from saascore.exceptions import SaaSException
+from saascore.keystore.assets import credentials
+from saascore.log import Logging
+
+import saas.rti.adapters.base as base
 from saas.rti.status import StatusLogger
-from saas.schemas import git_proc_pointer_schema
+from saas.schemas import GitProcessorPointer
 
-logger = logging.getLogger('rti.adapters.native')
+logger = Logging.get('rti.adapters.native')
 
 
-class RTINativeProcessorAdapter(RTITaskProcessorAdapter):
-    def __init__(self, proc_id, proc_descriptor, obj_content_path, node,
-                 ssh_credentials: SSHCredentials = None,
-                 github_credentials: GithubCredentials = None):
-        super().__init__(proc_id, proc_descriptor, node)
+class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
+    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
+                 ssh_credentials: credentials.SSHCredentials = None,
+                 github_credentials: credentials.GithubCredentials = None,
+                 retain_remote_wdirs: bool = False) -> None:
+        super().__init__(proc_id, gpp, jobs_path, node)
 
+        # set credentials
         self._ssh_credentials = ssh_credentials
         self._github_credentials = github_credentials
+        self._retain_remote_wdirs = retain_remote_wdirs
 
-        # substitute home path with $HOME - check if $HOME is actually present
-        self._repo_home = os.path.join(node.datastore(), 'proc-repositories', proc_id)
-        if os.environ['HOME'] in self._repo_home:
-            self._repo_home = self._repo_home.replace(os.environ['HOME'], "$HOME")
-        else:
-            raise Exception(f"Unexpected datastore path encountered without $HOME prefix: datastore={self._repo_home} "
-                            f"home={os.environ['HOME']}")
-        logger.info(f"native processor adapter for proc_id={proc_id} using repository home at {self._repo_home}")
+        # create the proc-temp directory if doesn't already exist
+        self._proc_temp_path = os.path.join(node.datastore, 'proc-temp')
+        os.makedirs(self._proc_temp_path, exist_ok=True)
+
+        # create paths
+        local_repo_path = os.path.join(node.datastore, 'proc-repositories', proc_id)
+        local_adapter_path = os.path.join(local_repo_path, self._gpp['proc_path'])
+        self._paths = {
+            'local_repo': local_repo_path,
+            'local_adapter': local_adapter_path,
+            'remote_repo': local_repo_path.replace(os.environ['HOME'], '~'),
+            'remote_adapter': local_adapter_path.replace(os.environ['HOME'], '~')
+        }
+        self._paths['repo'] = self._paths['remote_repo'] if self._ssh_credentials else self._paths['local_repo']
+        self._paths['adapter'] = self._paths['remote_adapter'] if self._ssh_credentials else self._paths['local_adapter']
+        self._paths['install.sh'] = os.path.join(self._paths['adapter'], 'install.sh')
+        self._paths['execute.sh'] = os.path.join(self._paths['adapter'], 'execute.sh')
 
         # read the git processor pointer (gpp)
         with open(obj_content_path, 'rb') as f:
             self._gpp = json.load(f)
-            validate(instance=self._gpp, schema=git_proc_pointer_schema)
+            validate(instance=self._gpp, schema=GitProcessorPointer.schema())
 
-        # set the processor path
-        self._processor_path = os.path.join(self._repo_home, self._gpp['proc_path'])
-
-    def startup(self):
-        # clone the repository
-        self._clone_repository()
-
-        # install the processor
-        self._install()
-
-    def execute(self, task_descriptor: dict, local_working_directory: str, status_logger: StatusLogger):
-        try:
-            # specify the working directory
-            working_directory = local_working_directory.replace(os.environ['HOME'], '$HOME')
-
-            # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
-            if self._ssh_credentials is not None:
-                # create the remote working directory
-                msg = f"create remote working directory at {working_directory}"
-                status_logger.update('status', msg)
-                logger.info(msg)
-                result = self._execute_command(f"mkdir -p {working_directory}")
-                if result.returncode != 0:
-                    raise Exception(
-                        f"Failed to create remote working directory at {working_directory}: {result}")
-
-                # copy the input data objects to the remote working directory
-                for obj_name in self._input_interface:
-                    local_path = os.path.join(local_working_directory, obj_name)
-                    msg = f"copy local:{local_path} -> remote:{working_directory}"
-                    status_logger.update('status', msg)
-                    logger.info(msg)
-                    result = self._copy_local_to_remote(local_path, working_directory)
-                    if result.returncode != 0:
-                        raise Exception(f"Failed to copy local:{local_path} -> remote:{working_directory}: {result}")
-
-            # run execute script
-            msg = f"running execute.sh: config={self._gpp['proc_config']} working_directory={working_directory} "\
-                  f"processor_path={self._processor_path}"
-            status_logger.update('status', msg)
-            logger.info(msg)
-            result = self._execute_command(f"./execute.sh {self._gpp['proc_config']} {working_directory}",
-                                           cwd=self._processor_path)
-            self._write_to_file(os.path.join(working_directory, "execute.sh.stdout"), result.stdout.decode('utf-8'))
-            self._write_to_file(os.path.join(working_directory, "execute.sh.stderr"), result.stderr.decode('utf-8'))
-            if result.returncode != 0:
-                raise Exception(f"Could not successfully run execute script: {result}")
-
-            # if ssh_auth IS present, then we perform a remote execution -> copy output data to local working directory
-            if self._ssh_credentials is not None:
-                # copy the output data objects to the local working directory
-                for obj_name in self._output_interface:
-                    remote_path = os.path.join(working_directory, obj_name)
-                    msg = f"copy remote:{remote_path} -> local:{local_working_directory}"
-                    status_logger.update('status', msg)
-                    logger.info(msg)
-                    result = self._copy_remote_to_local(remote_path, local_working_directory)
-                    if result.returncode != 0:
-                        raise Exception(f"Failed to copy remote:{remote_path} -> local:{local_working_directory}: {result}")
-
-                # delete remote working directory
-                msg = f"delete remote working directory at {working_directory}"
-                status_logger.update('status', msg)
-                logger.info(msg)
-                result = self._execute_command(f"rm -rf {working_directory}")
-                if result.returncode != 0:
-                    raise Exception(
-                        f"Failed to delete remote working directory at {working_directory}: {result}")
-
-            status_logger.remove('status')
-            logger.info(f"running execute.sh was SUCCESSFUL")
-            return True
-
-        except Exception as e:
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            status_logger.update('trace', trace)
-
-            status_logger.remove('status')
-            logger.info(f"running execute.sh was UNSUCCESSFUL: {trace}")
-            return False
-
-    def _clone_repository(self):
+    def startup(self) -> None:
         url = self._gpp['source']
         commit_id = self._gpp['commit_id']
 
         # check if the repository has already been cloned
-        if self._path_exists(self._repo_home):
-            logger.info(f"repository already exists at {self._repo_home}.")
+        if base.check_if_path_exists(self._paths['repo'], ssh_credentials=self._ssh_credentials, timeout=10):
+            logger.debug(f"repository already exists {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
+                         f"{self._paths['repo']} -> skip cloning")
         else:
-            logger.info(f"cloning repository {url} to {self._repo_home}.")
-
             # do we have git credentials?
-            github_cred = self._node.keystore.get_asset('github-credentials')
-            if github_cred:
-                # do we have credentials for this repo?
-                cred = github_cred.get(url)
-                if cred:
-                    insert = f"{cred.login}:{cred.personal_access_token}@"
-                    index = url.find('github.com')
-                    url = url[:index] + insert + url[index:]
+            if self._github_credentials:
+                insert = f"{self._github_credentials.login}:{self._github_credentials.personal_access_token}@"
+                index = url.find('github.com')
+                url = url[:index] + insert + url[index:]
 
-            command = f"git clone {url} {self._repo_home}"
-            logger.debug(f"attemping to execute: {command}")
-            result = self._execute_command(command)
-            if result.returncode != 0:
-                raise Exception(f"Failed to clone repository: {result}")
+            # clone the repository
+            logger.debug(f"repository does not exist {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
+                         f"{self._paths['repo']} -> clone")
+
+            _dir, _name = os.path.split(self._paths['repo'])
+            base.run_command(f"mkdir -p {_dir}", ssh_credentials=self._ssh_credentials)
+            base.run_command(f"cd {_dir} && git clone {url} {_name}", ssh_credentials=self._ssh_credentials)
 
         # checkout the commit
-        logger.info(f"checkout commit {commit_id}")
-        result = self._execute_command(f"cd {self._repo_home} && git checkout {commit_id}")
-        if result.returncode != 0:
-            raise Exception(f"Failed to checkout commit with id={commit_id}")
+        logger.debug(f"checkout commit {commit_id}")
+        base.run_command(f"cd {self._paths['repo']} && git checkout {commit_id}",
+                         ssh_credentials=self._ssh_credentials, timeout=10)
 
-    def _install(self):
-        logger.info(f"check if install.sh and execute.sh scripts exist")
-        for script in ['install.sh', 'execute.sh']:
-            # check if the script exists
-            script_path = os.path.join(self._processor_path, script)
-            if not self._path_exists(script_path):
-                raise FileNotFoundError(f"Could not find '{script}' script at {script_path}")
+        # make scripts executable and remove \r characters
+        logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
+        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['install.sh']}""",
+                         ssh_credentials=self._ssh_credentials, timeout=10)
+        base.run_command(f"chmod u+x {self._paths['install.sh']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
-            # make script executable
-            result = self._execute_command(f"chmod u+x {script_path}")
-            if result.returncode != 0:
-                raise Exception(f"Could not make '{script}' script at {script_path} executable: {result}")
+        logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}")
+        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['execute.sh']}""",
+                         ssh_credentials=self._ssh_credentials, timeout=10)
+        base.run_command(f"chmod u+x {self._paths['execute.sh']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
         # run install script
-        logger.info(f"running install.sh...")
-        result = self._execute_command(f"./install.sh {self._gpp['proc_config']}", cwd=self._processor_path)
-        self._write_to_file(os.path.join(self._processor_path, "install.sh.stdout"), result.stdout.decode('utf-8'))
-        self._write_to_file(os.path.join(self._processor_path, "install.sh.stderr"), result.stderr.decode('utf-8'))
-        if result.returncode != 0:
-            raise Exception(f"Could not successfully run install script at {script_path}: {result}")
+        logger.debug(f"running {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
+        pid, paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['install.sh']} "
+                                            f"{self._gpp['proc_config']}",
+                                            local_output_path=self._paths['local_adapter'],
+                                            name='install_sh',
+                                            ssh_credentials=self._ssh_credentials)
 
-        logger.info("done running install.sh")
+        base.monitor_command(pid, paths, ssh_credentials=self._ssh_credentials)
 
-    def _run_script(self, working_directory, script_name, args=None):
-        # check if script exists
-        script_path = os.path.join(self._processor_path, script_name)
-        if not self._path_exists(script_path):
-            raise FileNotFoundError(f"Could not find script at {script_path}")
+    def shutdown(self) -> None:
+        pass
 
-        # make script executable
-        result = self._execute_command(f"chmod u+x {script_path}")
-        if result.returncode != 0:
-            raise Exception(f"Could not make script at {script_path} executable: {result}")
+    def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
+        _home = base.get_home_directory(self._ssh_credentials)
+        paths = {
+            'local_wd': local_working_directory,
+            'remote_wd': local_working_directory.replace(os.environ['HOME'], _home)
+        }
+        paths['wd'] = paths['remote_wd'] if self._ssh_credentials else paths['local_wd']
 
-        # run script
-        result = self._execute_command(f"./{script_name} {self._gpp['proc_config']}"
-                                       f"{args if args else ''}", cwd=self._processor_path)
-        self._write_to_file(os.path.join(working_directory, f"{script_name}.stdout"), result.stdout.decode('utf-8'))
-        self._write_to_file(os.path.join(working_directory, f"{script_name}.stderr"), result.stderr.decode('utf-8'))
-        if result.returncode != 0:
-            raise Exception(f"Could not execute script at {script_path}: {result}")
+        # make sure the wd path exists (locally and remotely, if applicable)
+        status.update('task', f"create working directory at LOCAL:{paths['local_wd']}")
+        os.makedirs(paths['local_wd'], exist_ok=True)
 
-    def _path_exists(self, path):
-        result = self._execute_command(f"ls {path}")
-        return result.returncode == 0
+        # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
+        if self._ssh_credentials is not None:
+            status.update('task', f"create working directory at REMOTE:{paths['remote_wd']}")
+            base.run_command(f"mkdir -p {paths['remote_wd']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
-    def _execute_command(self, command, cwd=None):
-        command = f"cd {cwd} && {command}" if cwd else command
-        command = ['ssh', '-i', self._ssh_credentials.key_path,
-                   f"{self._ssh_credentials.login}@{self._ssh_credentials.host}", command] \
-            if self._ssh_credentials else ['bash', '-c', command]
+            # copy the input data objects to the remote working directory
+            for obj_name in self._input_interface:
+                local_path = os.path.join(local_working_directory, obj_name)
+                status.update('task', f"copy '{obj_name}': LOCAL:{local_path} -> REMOTE:{paths['remote_wd']}")
+                base.scp_local_to_remote(local_path, paths['remote_wd'], self._ssh_credentials)
 
-        return subprocess.run(command, capture_output=True)
+        # run execute script
+        task_msg = f"starting {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}"
+        status.update('task', task_msg)
+        logger.debug(task_msg)
+        pid, pid_paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['execute.sh']} "
+                                                f"{self._gpp['proc_config']} {paths['wd']}",
+                                                local_output_path=paths['local_wd'],
+                                                name='execute_sh',
+                                                ssh_credentials=self._ssh_credentials)
 
-    def _copy_local_to_remote(self, local_path, remote_path):
-        remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_credentials.key_path, local_path,
-                               f"{self._ssh_credentials.login}@{self._ssh_credentials.host}:{remote_path}"],
-                              capture_output=True)
+        # create the context information for this job
+        context = {
+            'task_descriptor': task_descriptor,
+            'paths': paths,
+            'job_id': job_id,
+            'status': status,
+            'threads': {}
+        }
 
-    def _copy_remote_to_local(self, remote_path, local_path):
-        remote_path = remote_path.replace("$HOME", ".")
-        return subprocess.run(['scp', '-i', self._ssh_credentials.key_path,
-                               f"{self._ssh_credentials.login}@{self._ssh_credentials.host}:{remote_path}", local_path],
-                              capture_output=True)
+        base.monitor_command(pid, pid_paths, ssh_credentials=self._ssh_credentials, triggers={
+                                 'trigger:output': {'func': self._handle_trigger_output, 'context': context},
+                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+                             })
 
-    def _write_to_file(self, path, content):
-        return self._execute_command(f"echo \"{content}\" > {path}")
+        # wait for all outputs to be processed
+        while len(context['threads']):
+            status.update('task', f"wait for all outputs to be processed: remaining={len(context['threads'])}")
+            time.sleep(1)
+
+        # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
+        if not self._retain_remote_wdirs and self._ssh_credentials is not None:
+            status.update('task', f"delete working directory REMOTE:{paths['remote_wd']}")
+            base.run_command(f"rm -rf {paths['remote_wd']}", ssh_credentials=self._ssh_credentials)
+
+        status.remove('task')
+
+    def delete(self) -> None:
+        logger.info(f"[adapter:{self._proc_id}] deleting adapter contents at "
+                    f"{'REMOTE' if self._ssh_credentials else 'LOCAL'}:{self._paths['repo']}.")
+        base.run_command(f"rm -rf {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
+
+    def _handle_trigger_output(self, line: str, context: dict) -> None:
+        obj_name = line.split(':')[2]
+        context['obj_name'] = obj_name
+        context['threads'][obj_name] = threading.Thread(target=self._process_output, args=(context,))
+        context['threads'][obj_name].start()
+
+    def _handle_trigger_progress(self, line: str, context: dict) -> None:
+        status: StatusLogger = context['status']
+        status.update('progress', line.split(':')[2])
+
+    def _process_output(self, context: dict) -> None:
+        obj_name = context['obj_name']
+        job_id = context['job_id']
+        task_descriptor = context['task_descriptor']
+        paths = context['paths']
+        status: StatusLogger = context['status']
+
+        status.update(f"process_output:{obj_name}", 'started')
+
+        # if ssh_auth IS present, then we perform a remote execution
+        # -> copy output data to local working directory
+        if self._ssh_credentials is not None:
+            status.update(f"process_output:{obj_name}", 'retrieve')
+
+            remote_path = os.path.join(paths['remote_wd'], obj_name)
+            status.update('task', f"copy data objects: {remote_path} -> {paths['local_wd']}")
+
+            base.scp_remote_to_local(remote_path, paths['local_wd'], self._ssh_credentials)
+            status.remove('task')
+
+        # upload the data object to the target DOR
+        try:
+            status.update(f"process_output:{obj_name}", 'push')
+            self._push_data_object(job_id, obj_name, task_descriptor, paths['local_wd'], status)
+            status.update(f"process_output:{obj_name}", 'done')
+
+        except SaaSException as e:
+            status.update(f"process_output:{obj_name}", f"failed: id={e.id} reason={e.reason}")
+
+        # remove this thread
+        context['threads'].pop(obj_name)

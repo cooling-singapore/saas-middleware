@@ -1,107 +1,91 @@
-import logging
-from typing import Optional
+from __future__ import annotations
 
-from saas.keystore.identity import Identity
-from saas.keystore.schemas import identity_schema
-from saas.rest.proxy import EndpointProxy
+from typing import List
 
-from flask import Blueprint, jsonify
+from pydantic import BaseModel
+from requests import Response
+from saascore.api.sdk.helpers import create_ok_response
+from saascore.api.sdk.proxies import db_endpoint_prefix
+from saascore.log import Logging
+from saascore.keystore.schemas import Identity as IdentitySchema
 
+import saas.node
+from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.request_manager import request_manager
+from saas.schemas import NetworkNode, ObjectProvenance
 
-logger = logging.getLogger('nodedb.blueprint')
-endpoint_prefix = "/api/v1/nodedb"
+logger = Logging.get('nodedb.blueprint')
 
 
-class NodeDBBlueprint:
-    def __init__(self, node):
+class NetworkNodeDetail(BaseModel):
+    iid = str
+    identity: IdentitySchema
+    dor_service: bool
+    rti_service: bool
+    rest_service_address: str
+    p2p_service_address: str
+
+
+class NetworkNodes(BaseModel):
+    __root__: List[NetworkNode]
+
+
+class Identities(BaseModel):
+    __root__: List[IdentitySchema]
+
+
+class NodeDBBlueprint(SaaSBlueprint):
+    def __init__(self, node: saas.node.Node):
+        super().__init__('nodedb', __name__, db_endpoint_prefix)
         self._node = node
 
-    def blueprint(self):
-        blueprint = Blueprint('nodedb', __name__, url_prefix=endpoint_prefix)
-        blueprint.add_url_rule('/node', self.get_node.__name__, self.get_node, methods=['GET'])
-        blueprint.add_url_rule('/network', self.get_network.__name__, self.get_network, methods=['GET'])
-        blueprint.add_url_rule('/identity', self.get_identities.__name__, self.get_identities, methods=['GET'])
-        blueprint.add_url_rule('/identity', self.update_identity.__name__, self.update_identity, methods=['POST'])
-        blueprint.add_url_rule('/identity/<iid>', self.get_identity.__name__, self.get_identity, methods=['GET'])
-        return blueprint
+        self.add_rule('node', self.get_node, methods=['GET'])
+        self.add_rule('network', self.get_network, methods=['GET'])
+        self.add_rule('identity', self.get_identities, methods=['GET'])
+        self.add_rule('identity', self.update_identity, methods=['POST'])
+        self.add_rule('identity/<iid>', self.get_identity, methods=['GET'])
+        self.add_rule('provenance/<obj_id>', self.get_provenance, methods=['GET'])
 
-    def get_node(self):
-        return jsonify({
-            "iid": self._node.identity().id,
-            "identity": self._node.identity().serialise(),
+    @request_manager.handle_request(NetworkNodeDetail)
+    def get_node(self) -> (Response, int):
+        p2p_address = self._node.p2p.address()
+        rest_address = self._node.rest.address()
+
+        return create_ok_response({
+            "iid": self._node.identity.id,
+            "identity": self._node.identity.serialise(),
             "dor_service": self._node.dor is not None,
             "rti_service": self._node.rti is not None,
-            "rest_service_address": self._node.rest.address(),
-            "p2p_service_address": self._node.p2p.address()
-        }), 200
+            "rest_service_address": f"{p2p_address[0]}:{p2p_address[1]}",
+            "p2p_service_address": f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
+        })
 
-    def get_network(self):
-        result = []
-        for record in self._node.db.get_network():
-            result.append({
-                'iid': record.iid,
-                'last_seen': record.last_seen,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service,
-                'p2p_address': record.p2p_address,
-                'rest_address': record.rest_address
-            })
+    @request_manager.handle_request(NetworkNodes)
+    def get_network(self) -> (Response, int):
+        return create_ok_response(
+            [n.as_dict() for n in self._node.db.get_network_all()]
+        )
 
-        return jsonify(result), 200
+    @request_manager.handle_request(Identities)
+    def get_identities(self) -> (Response, int):
+        return create_ok_response(
+            [identity.serialise() for identity in self._node.db.get_all_identities().values()]
+        )
 
-    def get_identities(self):
-        result = []
-        for iid, identity in self._node.db.get_all_identities().items():
-            result.append(identity.serialise())
+    @request_manager.handle_request(IdentitySchema)
+    def get_identity(self, iid: str) -> (Response, int):
+        identity = self._node.db.get_identity(iid)
+        return create_ok_response(
+            identity.serialise() if identity else None
+        )
 
-        return jsonify(result), 200
+    @request_manager.handle_request()
+    @request_manager.verify_request_body(IdentitySchema)
+    def update_identity(self) -> (Response, int):
+        serialised_identity = request_manager.get_request_variable('body')
+        self._node.db.update_identity(serialised_identity)
+        return create_ok_response()
 
-    def get_identity(self, iid: str):
-        identity = self._node.db.get_identity(iid=iid)
-        if identity is not None:
-            return jsonify(identity.serialise()), 200
-
-        else:
-            return jsonify(f"No identity with id {iid} found."), 404
-
-    @request_manager.verify_request_body(identity_schema)
-    def update_identity(self):
-        identity_as_json = request_manager.get_request_variable('body')
-
-        if self._node.db.update_identity(identity_as_json):
-            return jsonify(identity_as_json), 200
-
-        else:
-            return jsonify(f"Identity not updated (either outdated record invalid signature)."), 405
-
-
-class NodeDBProxy(EndpointProxy):
-    def __init__(self, remote_address):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
-
-    def get_node(self) -> dict:
-        code, r = self.get("/node")
-        return r
-
-    def get_network(self) -> list[dict]:
-        code, r = self.get("/network")
-        return r
-
-    def get_identities(self) -> dict[str, Identity]:
-        code, r = self.get("/identity")
-
-        result = {}
-        for content in r:
-            identity = Identity.deserialise(content)
-            result[identity.id] = identity
-
-        return result
-
-    def get_identity(self, iid: str) -> Optional[Identity]:
-        code, r = self.get(f"/identity/{iid}")
-        return Identity.deserialise(r) if code == 200 else None
-
-    def update_identity(self, identity):
-        code, r = self.post('/identity', body=identity.serialise())
-        return r
+    @request_manager.handle_request(ObjectProvenance)
+    def get_provenance(self, obj_id: str) -> (Response, int):
+        return create_ok_response(self._node.db.get_provenance(obj_id))

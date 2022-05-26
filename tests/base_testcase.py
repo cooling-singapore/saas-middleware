@@ -1,16 +1,16 @@
 import os
-import subprocess
+import shutil
 import time
-import logging
 
 from multiprocessing import Lock
 
-from saas.keystore.assets.credentials import CredentialsAsset, SMTPCredentials, SSHCredentials, GithubCredentials
-from saas.keystore.keystore import Keystore
-from saas.node import Node
-from saas.helpers import get_timestamp_now, read_json_from_file
+from saascore.keystore.keystore import Keystore, update_keystore_from_credentials
+from saascore.log import Logging
 
-logger = logging.getLogger('tests.base_testcase')
+from saas.node import Node
+from saascore.helpers import get_timestamp_now
+
+logger = Logging.get('tests.base_testcase')
 
 
 class TestCaseBase:
@@ -24,7 +24,8 @@ class TestCaseBase:
         self._next_p2p_port = None
         self._next_rest_port = None
 
-    def initialise(self, wd_parent_path=None, host='127.0.0.1', next_p2p_port=4000, next_rest_port=5000):
+    def initialise(self, wd_parent_path: str = None, host: str = '127.0.0.1',
+                   next_p2p_port: int = 4000, next_rest_port: int = 5000) -> None:
         # determine the working directory for testing
         if wd_parent_path:
             self.wd_path = os.path.join(wd_parent_path, 'testing', str(get_timestamp_now()))
@@ -37,7 +38,7 @@ class TestCaseBase:
             raise Exception(f"path to working directory for testing '{self.wd_path}' already exists!")
 
         # create working directory
-        subprocess.check_output(['mkdir', '-p', self.wd_path])
+        os.makedirs(self.wd_path, exist_ok=True)
 
         self.host = host
         self.nodes = {}
@@ -46,37 +47,41 @@ class TestCaseBase:
         self._next_p2p_port = next_p2p_port
         self._next_rest_port = next_rest_port
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for name in self.nodes:
             logger.info(f"stopping node '{name}'")
             node = self.nodes[name]
             node.shutdown()
 
         # delete working directory
-        subprocess.check_output(['rm', '-rf', self.wd_path])
+        shutil.rmtree(self.wd_path)
 
-    def generate_p2p_address(self):
+    def generate_p2p_address(self) -> (str, int):
         with self._mutex:
             address = (self.host, self._next_p2p_port)
             self._next_p2p_port += 1
             return address
 
-    def generate_rest_address(self):
+    def generate_rest_address(self) -> (str, int):
         with self._mutex:
             address = (self.host, self._next_rest_port)
             self._next_rest_port += 1
             return address
 
-    def create_keystores(self, n):
+    def create_keystores(self, n: int, use_credentials: bool = False) -> list[Keystore]:
         keystores = []
         for i in range(n):
-            keystores.append(
-                Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
-            )
+            keystore = Keystore.create(self.wd_path, f"keystore_{i}", f"no-email-provided", f"password_{i}")
+            keystores.append(keystore)
+
+            # update keystore credentials (if applicable)
+            if use_credentials:
+                update_keystore_from_credentials(keystore)
 
         return keystores
 
-    def create_nodes(self, n, offset=0, use_credentials=True, perform_join=True, enable_rest=False):
+    def create_nodes(self, n: int, offset: int = 0, use_credentials: bool = True, perform_join: bool = True,
+                     enable_rest: bool = False) -> list[Node]:
         nodes = []
         for i in range(n):
             nodes.append(self.get_node(f"node_{i+offset}", use_credentials=use_credentials, enable_rest=enable_rest))
@@ -87,26 +92,26 @@ class TestCaseBase:
 
         return nodes
 
-    def generate_random_file(self, filename, size):
+    def generate_random_file(self, filename: str, size: int) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'wb') as f:
             f.write(os.urandom(int(size)))
         return path
 
-    def generate_zero_file(self, filename, size):
+    def generate_zero_file(self, filename: str, size: int) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'wb') as f:
             f.write(b"\0" * int(size))
         return path
 
-    def create_file_with_content(self, filename, content):
+    def create_file_with_content(self, filename: str, content: str) -> str:
         path = os.path.join(self.wd_path, filename)
         with open(path, 'w') as f:
             f.write(content)
         return path
 
-    def get_node(self, name, use_credentials=True, enable_rest=False, ssh_profile=None,
-                 use_dor: bool = True, use_rti: bool = True):
+    def get_node(self, name: str, use_credentials: bool = True, enable_rest: bool = False,
+                 use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True) -> Node:
         if name in self.nodes:
             return self.nodes[name]
 
@@ -115,46 +120,11 @@ class TestCaseBase:
             rest_address = self.generate_rest_address()
 
             storage_path = os.path.join(self.wd_path, name)
-            subprocess.check_output(['mkdir', '-p', storage_path])
+            os.makedirs(storage_path, exist_ok=True)
 
             if use_credentials:
-                credentials = read_json_from_file('credentials.json')
-                keystore = Keystore.create(storage_path, name, credentials['email'], 'password')
-
-                # do we have SMTP credentials?
-                if 'smtp-credentials' in credentials:
-                    smtp_cred = CredentialsAsset[SMTPCredentials].create('smtp-credentials', SMTPCredentials)
-                    smtp_cred.update(credentials['email'], SMTPCredentials(
-                        credentials['smtp-credentials']['server'],
-                        credentials['smtp-credentials']['login'],
-                        credentials['smtp-credentials']['password']
-                    ))
-                    keystore.update_asset(smtp_cred)
-
-                # do we have SSH credentials?
-                if 'ssh-credentials' in credentials:
-                    ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
-                    for item in credentials['ssh-credentials']:
-                        ssh_cred.update(item['name'], SSHCredentials(
-                            item['host'],
-                            item['login'],
-                            item['key_path']
-                        ))
-                    keystore.update_asset(ssh_cred)
-
-                    # get the specific SSH profile to be used for this node (if any)
-                    if ssh_profile and ssh_cred.get(ssh_profile) is None:
-                        return None
-
-                # do we have Github credentials?
-                if 'github-credentials' in credentials:
-                    github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
-                    for item in credentials['github-credentials']:
-                        github_cred.update(item['repository'], GithubCredentials(
-                            item['login'],
-                            item['personal_access_token']
-                        ))
-                    keystore.update_asset(github_cred)
+                keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
+                update_keystore_from_credentials(keystore)
 
             else:
                 keystore = Keystore.create(storage_path, name, f"no-email-provided", 'password')
@@ -162,7 +132,8 @@ class TestCaseBase:
             # create node and startup services
             node = Node(keystore, storage_path)
             node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
-                         rest_address=rest_address if enable_rest else None, ssh_profile=ssh_profile)
+                         rest_address=rest_address if enable_rest else None,
+                         retain_job_history=retain_job_history)
 
             self.nodes[name] = node
             return node

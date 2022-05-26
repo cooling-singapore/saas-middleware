@@ -1,96 +1,25 @@
 import functools
 import os
-import logging
 import json
 import tempfile
-import time
+import traceback
+from typing import Optional
 
 import flask
-from flask import request, Flask, g
+import pydantic
+from flask import request, Flask, g, Response
 
 from jsonschema import validate, ValidationError
+from saascore.api.sdk.exceptions import MalformedRequestError, AuthorisationFailedError, MissingResponseSchemaError, \
+    MalformedResponseError
+from saascore.api.sdk.helpers import verify_authorisation_token, create_error_response
 
-from saas.cryptography.hashing import hash_string_object, hash_json_object, hash_bytes_object
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
+from saascore.exceptions import RTIServiceNotSupportedError, DORServiceNotSupportedError, SaaSException
+from saascore.helpers import validate_json
+from saascore.keystore.identity import Identity
+from saascore.log import Logging
 
-logger = logging.getLogger('rest.request_manager')
-
-
-class RequestError(Exception):
-    def __init__(self, code, message):
-        self.code = code
-        self.message = message
-
-
-class AuthenticationFailedError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
-
-
-class AuthorisationFailedError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
-
-
-class MalformedRequestError(RequestError):
-    def __init__(self, code, message):
-        super().__init__(code, message)
-
-
-def sign_authorisation_token(authority: Keystore,
-                             url: str, body: dict = None, precision: int = 5) -> str:
-    slot = int(time.time() / precision)
-
-    # logger.info("sign_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-    token = hash_string_object(url).hex()
-
-    if body:
-        # logger.info("sign_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-        token += hash_json_object(body).hex()
-
-    # logger.info("sign_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-    token += hash_bytes_object(bytes(slot)).hex()
-
-    # logger.info("sign_authorisation_token\tH(self.public_as_string())={}".format(hash_string_object(self.public_as_string()).hex()))
-    token += hash_string_object(authority.signing_key().public_as_string()).hex()
-
-    token = hash_string_object(token)
-    # logger.info("sign_authorisation_token\ttoken={}".format(token.hex()))
-
-    return authority.sign(token)
-
-
-def verify_authorisation_token(identity: Identity, signature: str,
-                               url: str, body: dict = None, precision: int = 5) -> bool:
-    # determine time slots (we allow for some variation before and after)
-    ref = int(time.time() / precision)
-    slots = [ref - 1, ref, ref + 1]
-
-    # generate the token for each time slot and check if for one the signature is valid.
-    for slot in slots:
-        # logger.info("verify_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-        token = hash_string_object(url).hex()
-
-        if body:
-            # logger.info("verify_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
-
-        # logger.info("verify_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-        token += hash_bytes_object(bytes(slot)).hex()
-
-        # logger.info("verify_authorisation_token\tH(self.public_as_string())={}".format(
-        #     hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(identity.s_public_key_as_string()).hex()
-
-        token = hash_string_object(token)
-        # logger.info("verify_authorisation_token\ttoken={}".format(token.hex()))
-
-        if identity.verify(token, signature):
-            return True
-
-    # no valid signature for any of the eligible timeslots
-    return False
+logger = Logging.get('rest.request_manager')
 
 
 class RequestManager:
@@ -102,22 +31,6 @@ class RequestManager:
 
     def init_app(self, app: Flask, node):
         self.node = node
-        self._set_error_handler_callbacks(app)
-
-    def _set_error_handler_callbacks(self, app: Flask):
-        @app.errorhandler(RequestError)
-        def handle_failed_request(e: RequestError):
-            """
-            Handles any failed request such as authentication errors
-
-            :param e: RequestError object
-            :return: Response
-            """
-            logger.error(e)
-
-            response = flask.jsonify(e.message)
-            response.status_code = e.code
-            return response
 
     def _set_request_variable(self, name: str, value):
         """
@@ -134,10 +47,11 @@ class RequestManager:
         values = g.get('_request_var', {})
         return values.get(name, None)
 
-    def verify_request_body(self, body_specification):
+    def verify_request_body(self, body_specification: pydantic.BaseModel):
         def decorated_func(func):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
+                schema = body_specification if isinstance(body_specification, dict) else body_specification.schema()
                 # for debugging purposes, get the contents of 'values' and 'form'
                 values = {k: v for k, v in request.values.items()}
                 form = {k: v for k, v in request.form.items()}
@@ -153,11 +67,13 @@ class RequestManager:
                     body = {}
 
                 try:
-                    validate(instance=body, schema=body_specification)
+                    validate(instance=body, schema=schema)
 
                 except ValidationError:
-                    raise MalformedRequestError(400, f"Malformed content:\ncontent={json.dumps(body, indent=3)}\n"
-                                                     f"schema={json.dumps(body_specification, indent=3)}")
+                    raise MalformedRequestError({
+                        'content': body,
+                        'schema': schema
+                    })
 
                 self._set_request_variable('body', body)
                 return func(*args, **kwargs)
@@ -180,7 +96,10 @@ class RequestManager:
                 # check if all required files are available
                 for key in required_files:
                     if key not in files:
-                        raise MalformedRequestError(400, f"Missing content: file '{key}' required but not found.")
+                        raise MalformedRequestError({
+                            'expected': key,
+                            'found': [*files.keys()]
+                        })
 
                 self._set_request_variable('files', files)
                 return func(*args, **kwargs)
@@ -197,18 +116,154 @@ class RequestManager:
                 body = json.loads(request.values['body']) if 'body' in request.values else None
 
                 # get the owner identity
-                owner = self.node.db.get_owner(_obj_id)
+                owner: Identity = self.node.db.get_owner(_obj_id)
                 if not owner:
-                    raise AuthorisationFailedError(404, f"Owner for data object '{_obj_id}' not found.")
+                    raise AuthorisationFailedError({
+                        'obj_id': _obj_id,
+                        'owner': None
+                    })
 
                 # verify the the request using the owner public key
                 form = request.form.to_dict()
                 authorisation = json.loads(form['authorisation'])
                 if not verify_authorisation_token(owner, authorisation['signature'], url, body):
-                    raise AuthorisationFailedError(401, "Authorisation failed.")
+                    raise AuthorisationFailedError({
+                        'obj_id': _obj_id,
+                        'owner': owner.serialise(),
+                        'authorisation': authorisation,
+                        'url': url,
+                        'body': body
+                    })
 
                 return func(*args, **kwargs)
             return wrapper
+        return decorated_func
+
+    def verify_authorisation_by_user(self, obj_id: str):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                # determine url and body
+                url = f'{request.method}:{request.path}'
+                _obj_id = kwargs[obj_id]
+                body = json.loads(request.values['body']) if 'body' in request.values else None
+
+                # is the object access restricted?
+                obj_meta = self.node.db.get_object_by_id(_obj_id)
+                if obj_meta['access_restricted']:
+                    # get the authorisation information
+                    form = request.form.to_dict()
+                    authorisation = json.loads(form['authorisation'])
+
+                    # iterate over all identities and figure out if the authorisation public key is among
+                    # the identities that have access
+                    for user_iid in obj_meta['access']:
+                        user = self.node.db.get_identity(user_iid)
+                        user_public_key = user.s_public_key_as_string() if user else ''
+                        auth_public_key = authorisation['public_key']
+                        if user_public_key == auth_public_key:
+                            # verify the the request using the owner public key
+                            if verify_authorisation_token(user, authorisation['signature'], url, body):
+                                return func(*args, **kwargs)
+                            else:
+                                raise AuthorisationFailedError({
+                                    'obj_id': _obj_id,
+                                    'user': user.serialise(),
+                                    'authorisation': authorisation,
+                                    'url': url,
+                                    'body': body
+                                })
+
+                    # if we have reached here then either no user has been granted access or the authorisation
+                    # public key doesn't match. let's try the owner as last instance.
+                    owner: Identity = self.node.db.get_owner(_obj_id)
+                    if not owner:
+                        raise AuthorisationFailedError({
+                            'obj_id': _obj_id,
+                            'owner': None
+                        })
+
+                    # verify the the request using the owner public key
+                    if verify_authorisation_token(owner, authorisation['signature'], url, body):
+                        return func(*args, **kwargs)
+                    else:
+                        raise AuthorisationFailedError({
+                            'obj_id': _obj_id,
+                            'owner': owner.serialise(),
+                            'authorisation': authorisation,
+                            'url': url,
+                            'body': body
+                        })
+
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def require_dor(self):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                if self.node.dor is None:
+                    raise DORServiceNotSupportedError()
+
+                return func(*args, **kwargs)
+            return wrapper
+        return decorated_func
+
+    def require_rti(self):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                if self.node.rti is None:
+                    raise RTIServiceNotSupportedError()
+
+                return func(*args, **kwargs)
+
+            return wrapper
+
+        return decorated_func
+
+    def handle_request(self, response_schema: Optional[pydantic.BaseModel] = None):
+        def decorated_func(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                try:
+                    # call the function that handles this endpoint
+                    response: (Response, int) = func(*args, **kwargs)
+
+                    # if we have a response content, check if it is valid
+                    if response[0].headers['Content-Type'] == 'application/json':
+                        content = response[0].json
+                        if response[0].status_code == 200 and content != {}:
+                            # do we have a schema?
+                            if response_schema is None:
+                                raise MissingResponseSchemaError({
+                                    'rule': f"{request.method}:{request.url_rule}",
+                                    'content': content
+                                })
+
+                            # is the response content valid?
+                            schema = response_schema if isinstance(response_schema, dict) else response_schema.schema()
+                            if not validate_json(content, schema):
+                                raise MalformedResponseError({
+                                    'rule': f"{request.method}:{request.url_rule}",
+                                    'content': content,
+                                    'schema': schema
+                                })
+
+                    return response
+
+                except SaaSException as e:
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[endpoint_error:{e.id}] {e.reason}\n{e.details}\n{trace}")
+
+                    return create_error_response(
+                        reason=e.reason,
+                        exception_id=e.id
+                    )
+
+            return wrapper
+
         return decorated_func
 
 

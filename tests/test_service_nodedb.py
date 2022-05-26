@@ -1,18 +1,16 @@
+import os
 import unittest
 import logging
 import time
 
-from saas.keystore.identity import Identity
-from saas.nodedb.blueprint import NodeDBProxy
+from saascore.api.sdk.proxies import NodeDBProxy, DORProxy
+from saascore.log import Logging
+
+from saas.node import Node
 from tests.base_testcase import TestCaseBase
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-logger = logging.getLogger(__name__)
+Logging.initialise(level=logging.DEBUG)
+logger = Logging.get(__name__)
 
 
 class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -24,12 +22,13 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         self.initialise()
 
         self.node = self.get_node('node', enable_rest=True)
-        self.proxy = NodeDBProxy(self.node.rest.address())
+        self.db = NodeDBProxy(self.node.rest.address())
+        self.dor = DORProxy(self.node.rest.address())
 
         # create extra keystores and make them known to the node
         self.extras = self.create_keystores(2)
         for extra in self.extras:
-            self.proxy.update_identity(extra.identity)
+            self.db.update_identity(extra.identity)
 
     def tearDown(self):
         self.cleanup()
@@ -37,82 +36,93 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
     def test_node_self_awareness(self):
         identities = self.node.db.get_all_identities()
         assert(len(identities) == 1 + len(self.extras))
-        assert(identities[self.node.identity().id].name == 'node')
+        assert(identities[self.node.identity.id].name == 'node')
 
-        network = self.node.db.get_network()
+        network = self.node.db.get_network_all()
         assert(len(network) == 1)
-        assert(network[0].iid == self.node.identity().id)
+        assert(network[0].iid == self.node.identity.id)
 
     def test_add_update_remove_tags(self):
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 0)
+        # add dummy data object
+        owner = self.node.identity
+        meta0 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                         False, False, 'type', 'format', owner.name)
+        meta1 = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                         False, False, 'type', 'format', owner.name)
 
-        self.node.db.update_tags('aaa', [
+        obj_id0 = meta0['obj_id']
+        obj_id1 = meta1['obj_id']
+
+        assert(len(meta0['tags']) == 0)
+
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': 'v0'}
         ])
-
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 1)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 1)
+        tags = {i['key']: i['value'] for i in meta0['tags']}
         assert('k0' in tags)
 
-        self.node.db.update_tags('aaa', [
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k1', 'value': 'v1'},
             {'key': 'k2', 'value': 'v2'}
         ])
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 3)
-
-        self.node.db.update_tags('aaa', [
+        self.node.db.update_tags(obj_id0, [
             {'key': 'k0', 'value': '999'}
         ])
-
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 3)
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
+        tags = {i['key']: i['value'] for i in meta0['tags']}
         assert(tags['k0'] == '999')
 
-        self.node.db.remove_tags('aaa', ['k3'])
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 3)
+        self.node.db.remove_tags(obj_id0, ['k3'])
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
-        self.node.db.remove_tags('bbb', ['k2'])
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 3)
+        self.node.db.remove_tags(obj_id1, ['k2'])
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 3)
 
-        self.node.db.remove_tags('aaa', ['k2'])
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 2)
+        self.node.db.remove_tags(obj_id0, ['k2'])
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 2)
 
-        self.node.db.remove_tags('aaa', ['k0', 'k1'])
-        tags = self.node.db.get_tags('aaa')
-        assert(len(tags) == 0)
+        self.node.db.remove_tags(obj_id0, ['k0', 'k1'])
+        meta0 = self.node.db.get_object_by_id(obj_id0)
+        assert(len(meta0['tags']) == 0)
 
     def test_grant_revoke_permissions(self):
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 0)
+        owner = self.node.identity
+        meta = self.dor.add_data_object(self.generate_random_file('data000', 1024), owner,
+                                        False, False, 'type', 'format', owner.name)
+        obj_id = meta['obj_id']
 
-        result = self.node.db.has_access('aaa', self.extras[0].identity)
-        assert(not result)
+        assert(len(meta['access']) == 1)
+        assert(owner.id in meta['access'])
 
-        result = self.node.db.has_access('aaa', self.extras[1].identity)
-        assert(not result)
+        assert not self.node.db.has_access(obj_id, self.extras[0].identity)
 
-        self.node.db.grant_access('aaa', self.extras[0].identity)
+        assert not self.node.db.has_access(obj_id, self.extras[1].identity)
 
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 1)
-        assert(self.extras[0].identity.id in result)
+        self.node.db.grant_access(obj_id, self.extras[0].identity)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 2)
+        assert(owner.id in meta['access'])
+        assert(self.extras[0].identity.id in meta['access'])
 
-        self.node.db.revoke_access('aaa', self.extras[1].identity)
+        self.node.db.revoke_access(obj_id, self.extras[1].identity)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 2)
+        assert(owner.id in meta['access'])
+        assert(self.extras[0].identity.id in meta['access'])
 
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 1)
-        assert(self.extras[0].identity.id in result)
-
-        self.node.db.revoke_access('aaa', self.extras[0].identity)
-
-        result = self.node.db.get_access_list('aaa')
-        assert(len(result) == 0)
+        self.node.db.revoke_access(obj_id, self.extras[0].identity)
+        meta = self.node.db.get_object_by_id(obj_id)
+        assert(len(meta['access']) == 1)
+        assert(owner.id in meta['access'])
 
     def test_update_identity(self):
         # check identities known to nodes (they should all know of each other)
@@ -123,7 +133,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
             assert(len(ids) == 3)
 
         # get the starting nonce
-        node0_id = nodes[0].identity().id
+        node0_id = nodes[0].identity.id
         nonce0_by0_before = nodes[0].db.get_identity(node0_id).nonce
         nonce0_by1_before = nodes[1].db.get_identity(node0_id).nonce
         nonce0_by2_before = nodes[2].db.get_identity(node0_id).nonce
@@ -170,11 +180,11 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
             assert(len(ids) == 2)
 
         # send snapshot from node 0 to node 1
-        nodes[0].db.protocol.send_snapshot(nodes[1].p2p.address())
+        nodes[0].db.protocol.update_peer(nodes[1].p2p.address(), reciprocate=False, forward=False)
         time.sleep(2)
 
         # send snapshot from node 1 to node 2
-        nodes[1].db.protocol.send_snapshot(nodes[2].p2p.address())
+        nodes[1].db.protocol.update_peer(nodes[2].p2p.address(), reciprocate=False, forward=False)
         time.sleep(2)
 
         # node 0 should know about 2 identities now
@@ -200,7 +210,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         # feed each node with an extra identity
         extras = self.create_keystores(len(nodes))
         for i in range(len(nodes)):
-            nodes[i].db.update_identity(extras[i].identity.serialise(), propagate=False)
+            nodes[i].db.update_identity(extras[i].identity)
 
         # each node should know about 4 identities now
         for node in nodes:
@@ -224,7 +234,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         nodes = self.create_nodes(3, perform_join=True, enable_rest=True)
         time.sleep(2)
 
-        iid0 = nodes[0].identity().id
+        iid0 = nodes[0].identity.id
 
         proxy0 = NodeDBProxy(nodes[0].rest.address())
         proxy1 = NodeDBProxy(nodes[1].rest.address())
@@ -279,6 +289,55 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         print(result_e)
         assert (result_e['dor_service'] is False)
         assert (result_e['rti_service'] is True)
+
+    def test_different_address(self):
+        p2p_address = self.generate_p2p_address()
+
+        # manually create a node on a certain address and make it known to the self.node
+        node0 = Node(self.extras[0], os.path.join(self.wd_path, 'node0'))
+        node0.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
+        node0.join_network(self.node.p2p.address())
+
+        # the self.node should know of 2 nodes now
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity.id in network)
+        assert(node0.identity.id in network)
+
+        # shutdown the first node silently (i.e., not leaving the network) - this emulates what happens
+        # when a node suddenly crashes for example.
+        node0.shutdown(leave_network=False)
+
+        # the self.node should still know 2 nodes
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity.id in network)
+        assert(node0.identity.id in network)
+
+        # manually create a second node, using the same address but a different keystore
+        node1 = Node(self.extras[1], os.path.join(self.wd_path, 'node1'))
+        node1.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
+
+        # at this point node1 should only know about itself
+        network = node1.db.get_network_all()
+        network = [item.iid for item in network]
+        assert(len(network) == 1)
+        assert(node1.identity.id in network)
+
+        # perform the join
+        node1.join_network(self.node.p2p.address())
+
+        # the self.node should know still only know of 2 nodes now (the first node should be replaced)
+        network = self.db.get_network()
+        network = [item['iid'] for item in network]
+        assert(len(network) == 2)
+        assert(self.node.identity.id in network)
+        assert(node1.identity.id in network)
+
+        node0.shutdown()
+        node1.shutdown()
 
 
 if __name__ == '__main__':

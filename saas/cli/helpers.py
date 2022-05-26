@@ -10,50 +10,23 @@ from typing import Optional, Union
 
 import requests
 from PyInquirer import prompt
+from saascore.api.sdk.exceptions import UnsuccessfulRequestError
+from saascore.api.sdk.proxies import NodeDBProxy, DORProxy
+from saascore.log import Logging
 
-from saas.dor.blueprint import DORProxy
-from saas.helpers import read_json_from_file, validate_json, get_timestamp_now
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.keystore.schemas import keystore_schema
-from saas.nodedb.blueprint import NodeDBProxy
+from saas.cli.exceptions import CLIRuntimeError
+from saascore.helpers import read_json_from_file, validate_json
+from saascore.keystore.identity import Identity
+from saascore.keystore.keystore import Keystore
+from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
 
-logger = logging.getLogger('cli.helpers')
-
-
-def initialise_logging(path: str, logging_mode: str) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-    )
-
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(name)s] %(message)s')
-    root_logger = logging.getLogger()
-
-    file_handler = logging.FileHandler(os.path.join(path, f"log.{get_timestamp_now()}"))
-    file_handler.setFormatter(formatter)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-
-    root_logger.setLevel(logging.DEBUG)
-
-    if logging_mode == 'file':
-        root_logger.addHandler(file_handler)
-
-    elif logging_mode == 'console':
-        root_logger.addHandler(console_handler)
-
-    else:
-        root_logger.addHandler(file_handler)
-        root_logger.addHandler(console_handler)
+logger = Logging.get('cli.helpers')
 
 
 def initialise_storage_folder(path: str, usage: str) -> None:
     # check if the path is pointing at a file
     if os.path.isfile(path):
-        raise Exception(f"Storage path '{path}' is a file. This path cannot be used as storage ({usage}) directory.")
+        raise CLIRuntimeError(f"Storage path '{path}' is a file. This path cannot be used as storage ({usage}) directory.")
 
     # check if it already exists as directory
     if not os.path.isdir(path):
@@ -80,7 +53,7 @@ def get_available_keystores(path: str) -> list[dict[str, str]]:
         # read content and validate
         keystore_path = os.path.join(path, f)
         content = read_json_from_file(keystore_path)
-        if validate_json(content, keystore_schema):
+        if validate_json(content, KeystoreSchema.schema()):
             available.append({
                 'keystore-id': temp[0],
                 'keystore-path': keystore_path,
@@ -96,8 +69,7 @@ def prompt_for_keystore_selection(path: str, message: str) -> Optional[dict]:
     # get all available keystores
     available = get_available_keystores(path)
     if len(available) == 0:
-        print(f"No keystores found at '{path}'")
-        return None
+        raise CLIRuntimeError(f"No keystores found at '{path}'")
 
     return prompt_for_selection(available, message)
 
@@ -117,40 +89,59 @@ def prompt_for_identity_selection(address: str, message: str, id_name: str) -> O
 
         # prompt for selection
         if len(available) == 0:
-            print(f"No identities found at '{address}'")
-            return None
+            raise CLIRuntimeError(f"No identities found at '{address}'")
 
         return prompt_for_selection(available, message)
 
     except requests.exceptions.ConnectionError:
-        print(f"Could not connect to node at '{address}'.")
-        return None
+        raise CLIRuntimeError(f"Could not connect to node at '{address}'.")
 
     except requests.exceptions.InvalidURL:
-        print(f"Invalid node address: '{address}'.")
-        return None
+        raise CLIRuntimeError(f"Invalid node address: '{address}'.")
 
 
-def unlock_keystore(path: str, keystore_id: str, password: str) -> Optional[Keystore]:
+def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
+    # prompt for the keystore and id (if missing)
+    prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
+                      path=args['keystore'],
+                      message="Select the keystore:")
+
+    prompt_if_missing(args, 'password', prompt_for_password, confirm=False)
+
+    # try to unlock the keystore
     try:
-        return Keystore.load(path, keystore_id, password)
+        keystore = Keystore.load(args['keystore'], args['keystore-id'], args['password'])
 
-    except TypeError:
-        return None
+    except Exception:
+        raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']}. "
+                              f"Incorrect password? Keystore corrupted? Aborting.")
 
-    except ValueError:
-        return None
+    if ensure_publication:
+        # prompt for the address (if missing)
+        prompt_if_missing(args, address_arg, prompt_for_string,
+                          message="Enter the node's REST address",
+                          default='127.0.0.1:5001')
 
+        # try to ensure check if the identity is known and prompt to publish (if otherwise)
+        try:
+            # check if node knows about identity
+            db = NodeDBProxy(args[address_arg].split(":"))
+            if db.get_identity(keystore.identity.id) is None:
+                if prompt_for_confirmation(
+                        message=f"Identity {keystore.identity.id} is not known to the node at {args[address_arg]}. "
+                                f"Publish identity?",
+                        default=True
+                ):
+                    db.update_identity(keystore.identity)
+                    print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
+                else:
+                    raise CLIRuntimeError(f"Cannot proceed without node ")
 
-def get_keystore_content(path: str, keystore_id: str):
-    # load content and validate
-    keystore_path = os.path.join(path, f"{keystore_id}.json")
-    content = read_json_from_file(keystore_path)
-    if not validate_json(content, keystore_schema):
-        return None
+        except UnsuccessfulRequestError as e:
+            raise CLIRuntimeError(f"Could not ensure identity is known to node at {args[address_arg]}. Aborting. "
+                                  f"(Hint: {e.reason})")
 
-    else:
-        return content
+    return keystore
 
 
 def prompt_for_string(message: str, default: str = None, hide: bool = False, allow_empty: bool = False) -> str:
@@ -302,7 +293,7 @@ def prompt_for_tags(message: str) -> list[str]:
 
 
 def prompt_for_data_object_selection(address: str, owner: Identity, message: str,
-                                     allow_multiple=False) -> Union[Optional[str],list[str]]:
+                                     allow_multiple=False) -> Union[Optional[str], list[str]]:
     # find all data objects owned by the identity
     dor = DORProxy(address.split(':'))
     result = dor.search(owner_iid=owner.id)
@@ -313,9 +304,13 @@ def prompt_for_data_object_selection(address: str, owner: Identity, message: str
 
     # determine choices
     choices = []
-    for obj_id, tags in result.items():
+    for item in result:
+        obj_id = item['obj_id']
+        data_type = item['data_type']
+        data_format = item['data_format']
+        tags = [f"{tag['key']}={tag['value']}" for tag in item['tags']]
         choices.append({
-            'label': f"{obj_id} {tags}",
+            'label': f"{obj_id} [{data_type}/{data_format}] {tags}",
             'obj-id': obj_id
         })
 
@@ -336,11 +331,28 @@ def prompt_if_missing(args: dict, arg_key: str, function, **fargs) -> Union[str,
     return args[arg_key]
 
 
-def default_if_missing(args: dict, arg_key: str, default: str) -> str:
+def default_if_missing(args: dict, arg_key: str, default: Union[str, bool]) -> str:
     if args[arg_key] is None:
         args[arg_key] = default
 
     return args[arg_key]
+
+
+def get_nodes_by_service(address: [str, int]) -> dict[str, dict]:
+    result = {
+        'dor': {},
+        'rti': {}
+    }
+
+    db = NodeDBProxy(address)
+    for node in db.get_network():
+        if node['dor_service']:
+            result['dor'][node['iid']] = node
+
+        if node['rti_service']:
+            result['rti'][node['iid']] = node
+
+    return result
 
 
 class Argument:
@@ -417,7 +429,7 @@ class CLICommandGroup(CLIExecutable, ABC):
 
 
 class CLIArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
+    def error(self, message: str) -> None:
         self.print_help()
         sys.exit(1)
 
@@ -438,10 +450,18 @@ class CLIParser(CLICommandGroup):
 
             initialise_storage_folder(args['keystore'], 'keystore')
 
-            initialise_logging(args['temp-dir'], args['logging'])
+            if args['log-level'] == 'DEBUG':
+                level = logging.DEBUG
+            elif args['log-level'] == 'INFO':
+                level = logging.INFO
+            else:
+                level = logging.INFO
 
+            console_enabled = args['log-console'] is not None
+            log_path = args['log-path']
+            print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
+            Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 
         except argparse.ArgumentError:
             parser.print_help()
-            return None

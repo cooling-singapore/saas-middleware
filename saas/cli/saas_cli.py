@@ -1,24 +1,23 @@
-#! /usr/bin/env python3
-
 import os
 import sys
 import traceback
 
-from cli.cmd_dor import DORAdd, DORAddProc, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
+from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
-from cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
+from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
-from cli.cmd_network import NetworkShow
-from cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList
-from cli.cmd_service import Service
-from cli.helpers import CLIParser, Argument, CLICommandGroup
+from saas.cli.cmd_network import NetworkShow
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus
+from saas.cli.cmd_service import Service
+from saas.cli.exceptions import CLIRuntimeError
+from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
 
 
-if __name__ == "__main__":
+def main():
     try:
         default_keystore = os.path.join(os.environ['HOME'], '.keystore')
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
-        default_logging = 'file'
+        default_log_level = 'INFO'
 
         cli = CLIParser('SaaS Middleware command line interface (CLI)', arguments=[
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
@@ -30,9 +29,13 @@ if __name__ == "__main__":
                           f"(default: id of the only keystore if only one is available )"),
             Argument('--password', dest='password', action='store',
                      help=f"password for the keystore"),
-            Argument('--logging', dest='logging', action='store',
-                     choices=['console', 'file', 'both'], default=default_logging,
-                     help=f"indicate where log output should be written to (default: '{default_logging}')")
+            Argument('--log-level', dest='log-level', action='store',
+                     choices=['INFO', 'DEBUG'], default=default_log_level,
+                     help=f"set the log level (default: '{default_log_level}')"),
+            Argument('--log-path', dest='log-path', action='store',
+                     help=f"enables logging to file using the given path"),
+            Argument('--log-console', dest="log-console", action='store_const', const=False,
+                     help=f"enables logging to the console"),
 
         ], commands=[
             CLICommandGroup('identity', 'manage and explore identities', commands=[
@@ -56,7 +59,7 @@ if __name__ == "__main__":
             ], commands=[
                 DORSearch(),
                 DORAdd(),
-                DORAddProc(),
+                DORAddGPP(),
                 DORRemove(),
                 DORTag(),
                 DORUntag(),
@@ -70,15 +73,12 @@ if __name__ == "__main__":
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                CLICommandGroup('proc', 'manage processor deployment', commands=[
-                    RTIProcDeploy(),
-                    RTIProcUndeploy(),
-                    RTIProcList()
-                ]),
-                CLICommandGroup('job', 'submit jobs and retrieve status', commands=[
-                    RTIJobSubmit(),
-                    RTIJobStatus()
-                ])
+                RTIProcDeploy(),
+                RTIProcUndeploy(),
+                RTIProcList(),
+                RTIProcStatus(),
+                RTIJobSubmit(),
+                RTIJobStatus()
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',
@@ -91,7 +91,15 @@ if __name__ == "__main__":
         cli.execute(sys.argv[1:])
         sys.exit(0)
 
+    except CLIRuntimeError as e:
+        print(e.reason)
+        sys.exit(-1)
+
     except Exception as e:
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        print(trace)
-        sys.exit(-1)
+        print(f"Unrefined exception:\n{trace}")
+        sys.exit(-2)
+
+
+if __name__ == "__main__":
+    main()
