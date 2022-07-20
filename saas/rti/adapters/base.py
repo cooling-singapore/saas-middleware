@@ -212,6 +212,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         n_lines = wc_result.stdout.decode('utf-8').splitlines()[0].split()[0]
         return int(n_lines)
 
+    exitcode_found = False
     while True:
         try:
             # get the number of lines in stdout and stderr
@@ -227,7 +228,14 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
                 # do we have an exit code file? (it is only generated when the process has terminated)
                 if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
                     logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
-                    break
+
+                    if not exitcode_found:
+                        # set the flag, wait a second to allow stdout/stderr to flush, then give it another round
+                        exitcode_found = True
+                        time.sleep(1.0)
+                        continue
+                    else:
+                        break
 
             # do we have new STDOUT lines to process?
             if d_stdout_lines > 0:
