@@ -242,6 +242,23 @@ class RuntimeInfrastructureService:
             self._deployed_processors[proc_id].add(job_descriptor, status)
             return job_descriptor
 
+    def resume(self, proc_id: str, resume_descriptor: dict) -> dict:
+        with self._mutex:
+            paths = resume_descriptor['paths']
+
+            # read the job descriptor
+            job_descriptor_path = os.path.join(paths['local_wd'], 'job_descriptor.json')
+            job_descriptor = read_json_from_file(job_descriptor_path)
+
+            # create status logger
+            status_path = os.path.join(paths['local_wd'], 'job_status.json')
+            status = StatusLogger(status_path)
+            status.update_state(State.INITIALISED)
+
+            # add the job to the processor queue and return the job descriptor
+            self._deployed_processors[proc_id].resume(resume_descriptor, status)
+            return job_descriptor
+
     def get_jobs(self, proc_id: str) -> list[dict]:
         with self._mutex:
             # do we have this processor deployed?
