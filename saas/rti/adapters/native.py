@@ -5,7 +5,7 @@ import time
 
 from jsonschema import validate
 
-from saascore.exceptions import SaaSException
+from saascore.exceptions import SaaSException, RunCommandTimeoutError
 from saascore.keystore.assets import credentials
 from saascore.log import Logging
 
@@ -103,7 +103,9 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, status: StatusLogger) -> None:
+    def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, retain_job: bool,
+                status: StatusLogger) -> None:
+
         _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
@@ -136,19 +138,41 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                                                 name='execute_sh',
                                                 ssh_credentials=self._ssh_credentials)
 
-        # create the context information for this job
-        context = {
+        # create the (re)connect information
+        reconnect_info = {
+            'job_id': job_id,
             'task_descriptor': task_descriptor,
             'paths': paths,
-            'job_id': job_id,
+            'pid': pid,
+            'pid_paths': pid_paths,
+            'retain_job': retain_job
+        }
+        status.update('reconnect_info', reconnect_info)
+
+        # try to monitor the job by (re)connecting to it
+        self.connect_and_monitor(reconnect_info, status)
+
+    def connect_and_monitor(self, reconnect_info: dict, status: StatusLogger) -> None:
+        # create the context information for this job
+        context = {
+            'task_descriptor': reconnect_info['task_descriptor'],
+            'paths': reconnect_info['paths'],
+            'job_id': reconnect_info['job_id'],
             'status': status,
             'threads': {}
         }
 
-        base.monitor_command(pid, pid_paths, ssh_credentials=self._ssh_credentials, triggers={
-                                 'trigger:output': {'func': self._handle_trigger_output, 'context': context},
-                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
-                             })
+        try:
+            base.monitor_command(reconnect_info['pid'], reconnect_info['pid_paths'],
+                                 ssh_credentials=self._ssh_credentials, triggers={
+                                     'trigger:output': {'func': self._handle_trigger_output, 'context': context},
+                                     'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+                                 })
+
+        except RunCommandTimeoutError as e:
+            logger.error(f"[adapter:{self._proc_id}] monitoring command timed-out -> reconnect may be possible...")
+            e.details['reconnect_info'] = reconnect_info
+            raise e
 
         # wait for all outputs to be processed
         while len(context['threads']):
@@ -156,6 +180,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
+        paths = reconnect_info['paths']
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
             status.update('task', f"delete working directory REMOTE:{paths['remote_wd']}")
             base.run_command(f"rm -rf {paths['remote_wd']}", ssh_credentials=self._ssh_credentials)
