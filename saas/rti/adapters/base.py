@@ -15,7 +15,7 @@ from saascore.log import Logging
 from saascore.cryptography.helpers import encrypt_file, decrypt_file
 from saascore.cryptography.keypair import KeyPair
 from saascore.cryptography.rsakeypair import RSAKeyPair
-from saascore.exceptions import SaaSException, RunCommandError
+from saascore.exceptions import SaaSException, RunCommandError, RunCommandTimeoutError
 from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json, \
     get_timestamp_now
 from saascore.keystore.assets.credentials import SSHCredentials
@@ -67,8 +67,8 @@ def retry_command(wrapped_command: list[str], ssh_credentials: SSHCredentials = 
             # increase attempt counter and check if limit is reached -> if so, then raise an exception
             n_attempts += 1
             if n_attempts >= max_attempts:
-                raise RunCommandError({
-                    'reason': 'timeout (after too many unsuccessful attempts)',
+                raise RunCommandTimeoutError({
+                    'reason': 'too many attempts',
                     'wrapped_command': wrapped_command,
                     'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
                     'max_attempts': max_attempts,
@@ -82,7 +82,7 @@ def retry_command(wrapped_command: list[str], ssh_credentials: SSHCredentials = 
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, check_exitcode: bool = True,
-                timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
@@ -102,7 +102,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, check_exit
 
 
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials,
-                        timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                        timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
@@ -114,7 +114,7 @@ def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHC
 
 
 def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHCredentials,
-                        timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                        timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
@@ -234,7 +234,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # no new lines at all? check if the process is still running
         if d_stdout_lines == 0 and d_stderr_lines == 0:
             # do we have an exit code file? (it is only generated when the process has terminated)
-            if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
+            if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10, max_attempts=3,
+                                    retry_delay=1):
                 logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
 
                 if not exitcode_found:
@@ -248,7 +249,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # do we have new STDOUT lines to process?
         if d_stdout_lines > 0:
             result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']} | head -n {d_stdout_lines}",
-                                 ssh_credentials=ssh_credentials, timeout=10)
+                                 ssh_credentials=ssh_credentials, timeout=10, max_attempts=3, retry_delay=1)
             lines = result.stdout.decode('utf-8').splitlines()
 
             # parse the lines for this round
@@ -279,7 +280,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
 
         for s, d in todo.items():
             # wait for the source to be available
-            while not check_if_path_exists(s, ssh_credentials=ssh_credentials):
+            while not check_if_path_exists(s, ssh_credentials=ssh_credentials, timeout=10, max_attempts=3,
+                                           retry_delay=1):
                 logger.warning(f"resource not available at {'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} -> retry in 5 seconds.")
                 time.sleep(5)
 
@@ -298,8 +300,11 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
             })
 
 
-def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = None) -> bool:
-    result = run_command(f"ls {path}", ssh_credentials=ssh_credentials, timeout=timeout, check_exitcode=False)
+def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = 10, max_attempts: int = 3,
+                         retry_delay: int = 1) -> bool:
+
+    result = run_command(f"ls {path}", ssh_credentials=ssh_credentials, timeout=timeout, max_attempts=max_attempts,
+                         retry_delay=retry_delay, check_exitcode=False)
     return result.returncode == 0
 
 
@@ -347,7 +352,12 @@ class RTIProcessorAdapter(Thread, ABC):
         pass
 
     @abstractmethod
-    def execute(self, job_id: str, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+    def execute(self, job_id: str, job_descriptor: dict, working_directory: str, retain_job: bool,
+                status: StatusLogger) -> None:
+        pass
+
+    @abstractmethod
+    def connect_and_monitor(self, reconnect_info: dict, status: StatusLogger) -> None:
         pass
 
     def stop(self) -> None:
@@ -362,7 +372,7 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             result = {
                 'state': self._state.value,
-                'pending': [{'job_id': item[0]['id'], 'task': item[0]['task']} for item in self._pending]
+                'pending': [{'job_id': item[1]['id'], 'task': item[1]['task']} for item in self._pending]
             }
             if self._active is not None:
                 result['active'] = {
@@ -407,11 +417,22 @@ class RTIProcessorAdapter(Thread, ABC):
                     'job_descriptor': job_descriptor
                 })
 
-            self._pending.append((job_descriptor, status))
+            self._pending.append(('new', job_descriptor, status))
+
+    def resume(self, reconnect_info: dict, status: StatusLogger) -> None:
+        with self._mutex:
+            # are we accepting jobs?
+            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+                raise ProcessorNotAcceptingJobsError({
+                    'proc_id': self._proc_id,
+                    'reconnect_info': reconnect_info
+                })
+
+            self._pending.append(('resume', reconnect_info, status))
 
     def pending_jobs(self) -> list[dict]:
         with self._mutex:
-            return [job_descriptor for job_descriptor, _ in self._pending]
+            return [job_descriptor for _, job_descriptor, _ in self._pending]
 
     def run(self) -> None:
         logger.info(f"[adapter:{self._proc_id}] starting up...")
@@ -427,27 +448,68 @@ class RTIProcessorAdapter(Thread, ABC):
             if not pending_job:
                 break
 
-            # process a job
-            job_descriptor, status = pending_job
-            self._active = job_descriptor
-            self._state = ProcessorState.BUSY
-
             # set job state
+            status = pending_job[2]
             status.update_state(State.RUNNING)
 
-            job_id = str(job_descriptor['id'])
-            task_descriptor = job_descriptor['task']
-            wd_path = os.path.join(self._job_wd_path, job_id)
+            # set processor state
+            self._state = ProcessorState.BUSY
 
+            # process a job
+            job_id = 'undefined'
+            wd_path = 'undefined'
+            retain_job = True
             try:
-                # perform pre-execute routine
-                self.pre_execute(job_id, task_descriptor, wd_path, status)
+                if pending_job[0] == 'new':
+                    # extract job descriptor
+                    job_descriptor = pending_job[1]
+                    self._active = job_descriptor
 
-                # instruct processor adapter to execute the job
-                self.execute(job_id, task_descriptor, wd_path, status)
+                    job_id = job_descriptor['id']
+                    wd_path = os.path.join(self._job_wd_path, job_id)
+                    retain_job = job_descriptor['retain']
 
-                # perform post-execute routine
-                self.post_execute(job_id)
+                    # perform pre-execute routine
+                    task_descriptor = job_descriptor['task']
+                    self.pre_execute(job_id, task_descriptor, wd_path, status)
+
+                    # instruct processor adapter to execute the job
+                    self.execute(job_id, task_descriptor, wd_path, retain_job, status)
+
+                    # perform post-execute routine
+                    self.post_execute(job_id)
+
+                elif pending_job[0] == 'resume':
+                    reconnect_info = pending_job[1]
+
+                    # set job descriptor
+                    self._active = {
+                        'id': reconnect_info['job_id'],
+                        'proc_id': self._proc_id,
+                        'task': reconnect_info['task_descriptor'],
+                        'retain': reconnect_info['retain_job']
+                    }
+
+                    # extract job id and wd path
+                    job_id = reconnect_info['job_id']
+                    wd_path = reconnect_info['paths']['local_wd']
+                    retain_job = reconnect_info['retain_job']
+
+                    # instruct processor adapter to resume the job
+                    self.connect_and_monitor(reconnect_info, status)
+
+                    # perform post-execute routine
+                    self.post_execute(job_id)
+
+                else:
+                    raise SaaSException(f"unexpected job type '{pending_job[0]}'")
+
+            except RunCommandTimeoutError as e:
+                status.update('error', f"timeout while running job:\n"
+                                       f"id: {e.id}\n"
+                                       f"reason: {e.reason}\n"
+                                       f"details: {e.details}")
+                status.update_state(State.TIMEOUT)
 
             except SaaSException as e:
                 status.update('error', f"error while running job:\n"
@@ -466,7 +528,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
             # if the job history is not to be retained, delete its contents (with exception of the status and
             # the job descriptor)
-            if not job_descriptor['retain']:
+            if not retain_job:
                 exclusions = ['job_descriptor.json', 'job_status.json', '.sh.stderr', '.sh.stdout']
                 logger.info(f"[adapter:{self._proc_id}][{job_id}] delete working directory contents at {wd_path} "
                             f"(exclusions: {exclusions})...")
@@ -494,7 +556,7 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] shut down.")
         self._state = ProcessorState.STOPPED
 
-    def _wait_for_pending_job(self) -> Optional[tuple[dict, StatusLogger]]:
+    def _wait_for_pending_job(self) -> Optional[tuple[str, dict, StatusLogger]]:
         while True:
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
@@ -503,16 +565,16 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 # if there is a job, return it
                 elif len(self._pending) > 0:
-                    job_descriptor, status = self._pending.pop(0)
-                    return job_descriptor, status
+                    job_type, job_content, status = self._pending.pop(0)
+                    return job_type, job_content, status
 
             time.sleep(0.1)
 
     def _purge_pending_jobs(self) -> None:
         with self._mutex:
             while len(self._pending) > 0:
-                job_descriptor, status = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_descriptor}")
+                job_type, job_descriptor, _ = self._pending.pop(0)
+                logger.info(f"purged pending job: {job_type} {job_descriptor}")
 
     def _lookup_reference_input_data_objects(self, task_descriptor: dict, status: StatusLogger) -> dict:
         status.update('step', f"lookup by-reference input data objects")

@@ -16,7 +16,7 @@ from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
 import saas.rti.adapters.docker as docker_rti
-from saas.rti.adapters.base import monitor_command, run_command_async, ProcessorState
+from saas.rti.adapters.base import monitor_command, run_command_async, ProcessorState, run_command
 from saas.rti.status import State
 from saascore.helpers import read_json_from_file, generate_random_string
 from tests.base_testcase import TestCaseBase
@@ -28,7 +28,7 @@ logger = Logging.get(__name__)
 def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
     while True:
         time.sleep(5)
-        descriptor, status = rti.get_job_info(job_id)
+        descriptor, status, _ = rti.get_job_info(job_id)
         if descriptor and status:
             print(f"job descriptor: {descriptor}")
             print(f"job status: {status}")
@@ -36,6 +36,8 @@ def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
             state = State(status['state'])
             if state == State.SUCCESSFUL:
                 return True
+            elif state == State.TIMEOUT:
+                return False
             elif state == State.FAILED:
                 return False
 
@@ -372,22 +374,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        time.sleep(1)
-
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 1)
-
         wait_for_job(rti, job_id)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 0)
-
         # get job info and extract object id
-        descriptor, status = rti.get_job_info(job_id)
+        descriptor, status, _ = rti.get_job_info(job_id)
         outputs = status['output']
         output = {o['name']: o['obj_id'] for o in outputs}
         obj_id = output['c']
@@ -566,7 +556,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             assert (os.path.isfile(output_path))
             result = read_json_from_file(output_path)
 
-            descriptor, status = rti.get_job_info(job_id)
+            descriptor, status, _ = rti.get_job_info(job_id)
             output = {item['name']: item['obj_id'] for item in status['output']}
             obj_id = output['c']
 
@@ -920,6 +910,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (len(deployed) == 0)
 
         docker_rti.prune_image(proc_id)
+    #     assert result is not None
+    #
+    #     deployed = rti.get_deployed()
 
     def test_retain_job_history_false(self):
         # create node
@@ -1204,13 +1197,101 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
         assert os.path.isfile(output_path)
 
-        proc_descriptor = rti.undeploy(proc_id)
-        assert proc_descriptor is not None
+    def test_processor_resume_execution(self):
+        # create node
+        node = self.get_node('node', enable_rest=True)
+        if not node:
+            logger.info("Cannot test NSCC remote execution without SSH credentials.")
+            return
 
-        deployed = rti.get_deployed()
-        logger.info(f"deployed={deployed}")
-        assert(deployed is not None)
-        assert(len(deployed) == 0)
+        db = NodeDBProxy(node.rest.address())
+        rti = RTIProxy(node.rest.address())
+        dor = DORProxy(node.rest.address())
+
+        # create owner identity
+        keystores = self.create_keystores(2)
+        owner = keystores[0]
+        user = keystores[1]
+        db.update_identity(owner.identity)
+        db.update_identity(user.identity)
+
+        proc_id = add_test_processor_to_dor(dor, owner.identity, 'nscc')
+        logger.info(f"proc_id={proc_id}")
+
+        asset: CredentialsAsset = node.keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('nscc')
+
+        descriptor = rti.deploy(proc_id, ssh_credentials=ssh_credentials, gpp_custodian=node.identity.id)
+        logger.info(f"descriptor={descriptor}")
+        assert(descriptor is not None)
+
+        job_input = [
+            {
+                'name': 'a',
+                'type': 'value',
+                'value': {
+                    'v': 1
+                }
+            },
+            {
+                'name': 'b',
+                'type': 'value',
+                'value': {
+                    'v': 2
+                }
+            }
+        ]
+
+        job_output = [
+            {
+                'name': 'c',
+                'owner_iid': owner.identity.id,
+                'restricted_access': False,
+                'content_encrypted': False
+            }
+        ]
+
+        job_descriptor = rti.submit_job(proc_id, job_input, job_output, user.identity)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert(job_id is not None)
+
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
+        os.remove(output_path)
+
+        # attempt to resume the job. note: this should work even though the job has already finished. we just
+        # need to provide valid reconnect info.
+        descriptor, status, reconnect_info = rti.get_job_info(job_id)
+        assert(reconnect_info is not None)
+
+        # manually delete the remote exitcode file (we want to pretend the process hasn't finished yet)
+        exitcode_path = reconnect_info['pid_paths']['exitcode']
+        run_command(f"mv {exitcode_path} {exitcode_path}.backup", ssh_credentials=ssh_credentials)
+
+        job_descriptor = rti.resume_job(proc_id, reconnect_info)
+        job_id = job_descriptor['id']
+        logger.info(f"job_id={job_id}")
+        assert (job_id is not None)
+
+        def recreate_exitcode_file():
+            # wait 10 seconds until pretending for the process to have completed
+            time.sleep(10)
+            print('finishing now!!!')
+            run_command(f"mv {exitcode_path}.backup {exitcode_path}", ssh_credentials=ssh_credentials)
+
+        # the following wait would never return because the process didn't really get timed-out. it actually finished
+        # and we just 'resumed' it after renaming the exitcode file. unless the exitcode file is renamed back to what
+        # it was, the wait will not return. so we start a thread which will wait for some time and then move the file
+        # back to where it was.
+        Thread(target=recreate_exitcode_file).start()
+        wait_for_job(rti, job_id)
+
+        output_path = os.path.join(self.wd_path, node.datastore, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
+        os.remove(output_path)
 
     def test_retain_job_history_false(self):
         # create node

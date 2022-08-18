@@ -12,7 +12,7 @@ from saascore.log import Logging
 
 from saas.rest.blueprint import SaaSBlueprint
 from saas.rest.request_manager import request_manager
-from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor, ProcessorStatus
+from saas.schemas import JobDescriptor, ProcessorDescriptor, TaskDescriptor, ProcessorStatus, ResumeDescriptor
 
 logger = Logging.get('rti.blueprint')
 
@@ -61,6 +61,7 @@ class RTIBlueprint(SaaSBlueprint):
         self.add_rule('<proc_id>/descriptor', self.get_descriptor, ['GET'])
         self.add_rule('<proc_id>/status', self.get_status, ['GET'])
         self.add_rule('<proc_id>/jobs', self.submit_job, ['POST'])
+        self.add_rule('<proc_id>/jobs', self.resume_job, ['PUT'])
         self.add_rule('<proc_id>/jobs', self.get_jobs, ['GET'])
         self.add_rule('job/<job_id>', self.get_job_info, ['GET'])
         self.add_rule('permission/<req_id>', self.put_permission, ['POST'])
@@ -129,6 +130,13 @@ class RTIBlueprint(SaaSBlueprint):
         task_descriptor = request_manager.get_request_variable('body')
         return create_ok_response(self._node.rti.submit(proc_id, task_descriptor))
 
+    @request_manager.handle_request(JobDescriptor)
+    @request_manager.require_rti()
+    @request_manager.verify_request_body(ResumeDescriptor)
+    def resume_job(self, proc_id: str) -> (Response, int):
+        resume_descriptor = request_manager.get_request_variable('body')
+        return create_ok_response(self._node.rti.resume(proc_id, resume_descriptor))
+
     @request_manager.handle_request(JobDescriptors)
     @request_manager.require_rti()
     def get_jobs(self, proc_id: str) -> (Response, int):
@@ -140,7 +148,8 @@ class RTIBlueprint(SaaSBlueprint):
         job_info = self._node.rti.get_job_info(job_id)
         return create_ok_response({
             'job_descriptor': job_info['job_descriptor'],
-            'status': job_info['status']
+            'status': job_info['status'],
+            'reconnect_info': job_info['reconnect_info']
         })
 
     @request_manager.handle_request()
