@@ -505,7 +505,6 @@ class RTIProcessorAdapter(Thread, ABC):
                     raise SaaSException(f"unexpected job type '{pending_job[0]}'")
 
             except RunCommandTimeoutError as e:
-                status.update('reconnect_info', e.details.pop('reconnect_info'))
                 status.update('error', f"timeout while running job:\n"
                                        f"id: {e.id}\n"
                                        f"reason: {e.reason}\n"
