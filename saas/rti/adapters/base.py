@@ -82,7 +82,7 @@ def retry_command(wrapped_command: list[str], ssh_credentials: SSHCredentials = 
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, check_exitcode: bool = True,
-                timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
@@ -102,7 +102,7 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, check_exit
 
 
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials,
-                        timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                        timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
@@ -114,7 +114,7 @@ def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHC
 
 
 def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHCredentials,
-                        timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                        timeout: int = 10, max_attempts: int = 3, retry_delay: int = 1) -> subprocess.CompletedProcess:
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
@@ -234,7 +234,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # no new lines at all? check if the process is still running
         if d_stdout_lines == 0 and d_stderr_lines == 0:
             # do we have an exit code file? (it is only generated when the process has terminated)
-            if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
+            if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10, max_attempts=3,
+                                    retry_delay=1):
                 logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
 
                 if not exitcode_found:
@@ -248,7 +249,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
         # do we have new STDOUT lines to process?
         if d_stdout_lines > 0:
             result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']} | head -n {d_stdout_lines}",
-                                 ssh_credentials=ssh_credentials, timeout=10)
+                                 ssh_credentials=ssh_credentials, timeout=10, max_attempts=3, retry_delay=1)
             lines = result.stdout.decode('utf-8').splitlines()
 
             # parse the lines for this round
@@ -279,7 +280,8 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
 
         for s, d in todo.items():
             # wait for the source to be available
-            while not check_if_path_exists(s, ssh_credentials=ssh_credentials):
+            while not check_if_path_exists(s, ssh_credentials=ssh_credentials, timeout=10, max_attempts=3,
+                                           retry_delay=1):
                 logger.warning(f"resource not available at {'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} -> retry in 5 seconds.")
                 time.sleep(5)
 
@@ -298,8 +300,11 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
             })
 
 
-def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = None) -> bool:
-    result = run_command(f"ls {path}", ssh_credentials=ssh_credentials, timeout=timeout, check_exitcode=False)
+def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = 10, max_attempts: int = 3,
+                         retry_delay: int = 1) -> bool:
+
+    result = run_command(f"ls {path}", ssh_credentials=ssh_credentials, timeout=timeout, max_attempts=max_attempts,
+                         retry_delay=retry_delay, check_exitcode=False)
     return result.returncode == 0
 
 
