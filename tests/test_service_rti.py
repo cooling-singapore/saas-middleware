@@ -28,7 +28,7 @@ logger = Logging.get(__name__)
 def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
     while True:
         time.sleep(5)
-        descriptor, status = rti.get_job_info(job_id)
+        descriptor, status, _ = rti.get_job_info(job_id)
         if descriptor and status:
             print(f"job descriptor: {descriptor}")
             print(f"job status: {status}")
@@ -374,8 +374,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        time.sleep(1)
-
         jobs = rti.get_jobs(proc_id)
         logger.info(f"jobs={jobs}")
         assert(jobs is not None)
@@ -383,8 +381,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         wait_for_job(rti, job_id)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
         assert(jobs is not None)
         assert(len(jobs) == 0)
 
@@ -922,6 +918,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert (len(deployed) == 0)
 
         docker_rti.prune_image(proc_id)
+    #     assert result is not None
+    #
+    #     deployed = rti.get_deployed()
 
     def test_retain_job_history_false(self):
         # create node

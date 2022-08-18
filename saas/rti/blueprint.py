@@ -148,7 +148,8 @@ class RTIBlueprint(SaaSBlueprint):
         job_info = self._node.rti.get_job_info(job_id)
         return create_ok_response({
             'job_descriptor': job_info['job_descriptor'],
-            'status': job_info['status']
+            'status': job_info['status'],
+            'reconnect_info': job_info['reconnect_info']
         })
 
     @request_manager.handle_request()

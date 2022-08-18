@@ -272,18 +272,26 @@ class RuntimeInfrastructureService:
     def get_job_info(self, job_id: str) -> dict:
         with self._mutex:
             # does the descriptor exist?
-            descriptor_path = os.path.join(self._jobs_path, str(job_id), 'job_descriptor.json')
+            descriptor_path = os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
             if not os.path.isfile(descriptor_path):
                 raise JobDescriptorNotFoundError({
                     'job_id': job_id
                 })
 
             # does the job status file exist?
-            status_path = os.path.join(self._jobs_path, str(job_id), 'job_status.json')
+            status_path = os.path.join(self._jobs_path, job_id, 'job_status.json')
             if not os.path.isfile(status_path):
                 raise JobStatusNotFoundError({
                     'job_id': job_id
                 })
+
+            # do we have re-connect information?
+            reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
+            if os.path.isfile(reconnect_info_path):
+                with open(reconnect_info_path, 'r') as f:
+                    reconnect_info = json.load(f)
+            else:
+                reconnect_info = {}
 
             with open(descriptor_path, 'r') as f:
                 descriptor = json.load(f)
@@ -293,7 +301,8 @@ class RuntimeInfrastructureService:
 
             return {
                 'job_descriptor': descriptor,
-                'status': status
+                'status': status,
+                'reconnect_info': reconnect_info
             }
 
     def put_permission(self, req_id: str, content_key: str) -> None:

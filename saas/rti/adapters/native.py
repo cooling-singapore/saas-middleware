@@ -6,6 +6,7 @@ import time
 from jsonschema import validate
 
 from saascore.exceptions import SaaSException, RunCommandTimeoutError
+from saascore.helpers import write_json_to_file
 from saascore.keystore.assets import credentials
 from saascore.log import Logging
 
@@ -147,7 +148,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             'pid_paths': pid_paths,
             'retain_job': retain_job
         }
-        status.update('reconnect_info', reconnect_info)
+
+        # store the reconnect information
+        reconnect_info_path = os.path.join(local_working_directory, 'job_reconnect.json')
+        write_json_to_file(reconnect_info, reconnect_info_path)
 
         # try to monitor the job by (re)connecting to it
         self.connect_and_monitor(reconnect_info, status)
@@ -171,7 +175,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         except RunCommandTimeoutError as e:
             logger.error(f"[adapter:{self._proc_id}] monitoring command timed-out -> reconnect may be possible...")
-            e.details['reconnect_info'] = reconnect_info
             raise e
 
         # wait for all outputs to be processed
