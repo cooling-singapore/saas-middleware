@@ -374,18 +374,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         logger.info(f"job_id={job_id}")
         assert(job_id is not None)
 
-        jobs = rti.get_jobs(proc_id)
-        logger.info(f"jobs={jobs}")
-        assert(jobs is not None)
-        assert(len(jobs) == 1)
-
         wait_for_job(rti, job_id)
 
-        assert(jobs is not None)
-        assert(len(jobs) == 0)
-
         # get job info and extract object id
-        descriptor, status = rti.get_job_info(job_id)
+        descriptor, status, _ = rti.get_job_info(job_id)
         outputs = status['output']
         output = {o['name']: o['obj_id'] for o in outputs}
         obj_id = output['c']
@@ -564,7 +556,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             assert (os.path.isfile(output_path))
             result = read_json_from_file(output_path)
 
-            descriptor, status = rti.get_job_info(job_id)
+            descriptor, status, _ = rti.get_job_info(job_id)
             output = {item['name']: item['obj_id'] for item in status['output']}
             obj_id = output['c']
 
@@ -1272,8 +1264,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # attempt to resume the job. note: this should work even though the job has already finished. we just
         # need to provide valid reconnect info.
-        descriptor, status = rti.get_job_info(job_id)
-        reconnect_info = status.get('reconnect_info')
+        descriptor, status, reconnect_info = rti.get_job_info(job_id)
         assert(reconnect_info is not None)
 
         # manually delete the remote exitcode file (we want to pretend the process hasn't finished yet)
