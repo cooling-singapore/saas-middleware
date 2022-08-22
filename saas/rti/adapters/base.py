@@ -43,7 +43,8 @@ class ProcessorState(Enum):
 
 
 def retry_command(wrapped_command: list[str], ssh_credentials: SSHCredentials = None, check_exitcode: bool = True,
-                  timeout: int = 10, max_attempts: int = 60, retry_delay: int = 10) -> subprocess.CompletedProcess:
+                  timeout: Optional[int] = 10, max_attempts: int = 60,
+                  retry_delay: int = 10) -> subprocess.CompletedProcess:
 
     n_attempts = 0
     while True:
@@ -109,8 +110,7 @@ def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHC
     c = ['-oHostKeyAlgorithms=+ssh-rsa']
     wrapped_command = [*a, 'scp', *b, *c, local_path, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}"]
 
-    return retry_command(wrapped_command, ssh_credentials=ssh_credentials, check_exitcode=True,
-                         timeout=timeout, max_attempts=max_attempts, retry_delay=retry_delay)
+    return retry_command(wrapped_command, ssh_credentials=ssh_credentials, check_exitcode=True, timeout=None)
 
 
 def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHCredentials,
@@ -121,8 +121,7 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
     c = ['-oHostKeyAlgorithms=+ssh-rsa']
     wrapped_command = [*a, 'scp', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}", local_path]
 
-    return retry_command(wrapped_command, ssh_credentials=ssh_credentials, check_exitcode=True,
-                         timeout=timeout, max_attempts=max_attempts, retry_delay=retry_delay)
+    return retry_command(wrapped_command, ssh_credentials=ssh_credentials, check_exitcode=True, timeout=None)
 
 
 def get_home_directory(ssh_credentials: SSHCredentials) -> str:
