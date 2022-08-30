@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+import traceback
 
 from jsonschema import validate
 
@@ -233,6 +234,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         except SaaSException as e:
             status.update(f"process_output:{obj_name}", f"failed: id={e.id} reason={e.reason}")
+
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            status.update(f"process_output:{obj_name}", f"failed: {e} trace={trace}")
 
         # remove this thread
         context['threads'].pop(obj_name)
