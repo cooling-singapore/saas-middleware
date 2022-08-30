@@ -26,7 +26,7 @@ from saas.nodedb.service import NetworkNode
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
-    DataObjectContentNotFoundError, DataObjectOwnerNotFoundError
+    DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, UnexpectedObjectName
 
 from saas.rti.status import State, StatusLogger
 
@@ -811,6 +811,12 @@ class RTIProcessorAdapter(Thread, ABC):
 
         # convenience variables
         task_out_items = {item['name']: item for item in task_descriptor['output']}
+        if obj_name not in task_out_items:
+            raise UnexpectedObjectName({
+                'obj_name': obj_name,
+                'task_out_items': list(task_out_items.keys())
+            })
+
         task_out = task_out_items[obj_name]
         proc_out = self._output_interface[obj_name]
 
