@@ -13,6 +13,7 @@ RUN git checkout $COMMIT_ID
 
 FROM python:3-slim as install
 ARG PROC_ID
+ARG PROC_CONFIG=default
 ARG PROCESSOR_PATH=processor_test
 
 LABEL proc_id=$PROC_ID
@@ -21,7 +22,7 @@ COPY --from=clone /processor_repo /processor_repo
 
 WORKDIR /processor_repo/$PROCESSOR_PATH
 RUN echo "$PWD"
-RUN ./install.sh default
+RUN ./install.sh $PROC_CONFIG
 
 RUN mkdir /working_directory
 ENTRYPOINT ["./execute.sh", "default", "/working_directory"]
