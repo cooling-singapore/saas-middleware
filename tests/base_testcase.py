@@ -118,15 +118,16 @@ class TestCaseBase:
         return path
 
     def get_node(self, name: str, use_credentials: bool = True, enable_rest: bool = False,
-                 use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True) -> Node:
-        if name in self.nodes:
+                 use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True,
+                 keep_track: bool = True, wd_path: str = None) -> Node:
+        if keep_track and name in self.nodes:
             return self.nodes[name]
 
         else:
             p2p_address = self.generate_p2p_address()
             rest_address = self.generate_rest_address()
 
-            storage_path = os.path.join(self.wd_path, name)
+            storage_path = os.path.join(wd_path if wd_path else self.wd_path, name)
             os.makedirs(storage_path, exist_ok=True)
 
             if use_credentials:
@@ -142,7 +143,9 @@ class TestCaseBase:
                          rest_address=rest_address if enable_rest else None,
                          retain_job_history=retain_job_history)
 
-            self.nodes[name] = node
+            if keep_track:
+                self.nodes[name] = node
+
             return node
 
     def resume_node(self, name: str, enable_rest: bool = False, use_dor: bool = True, use_rti: bool = True,
