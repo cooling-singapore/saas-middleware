@@ -13,19 +13,40 @@ from saascore.helpers import get_timestamp_now
 logger = Logging.get('tests.base_testcase')
 
 
+class PortMaster:
+    _mutex = Lock()
+    _next_p2p = {}
+    _next_rest = {}
+
+    @classmethod
+    def generate_p2p_address(cls, host: str = '127.0.0.1') -> (str, int):
+        with cls._mutex:
+            if host not in cls._next_p2p:
+                cls._next_p2p[host] = 4000
+
+            address = (host, cls._next_p2p[host])
+            cls._next_p2p[host] += 1
+            return address
+
+    @classmethod
+    def generate_rest_address(cls, host: str = '127.0.0.1') -> (str, int):
+        with cls._mutex:
+            if host not in cls._next_rest:
+                cls._next_rest[host] = 5000
+
+            address = (host, cls._next_rest[host])
+            cls._next_rest[host] += 1
+            return address
+
 class TestCaseBase:
     def __init__(self):
         self._mutex = Lock()
-
         self.wd_path = None
         self.host = None
         self.nodes = None
         self.proxies = None
-        self._next_p2p_port = None
-        self._next_rest_port = None
 
-    def initialise(self, wd_parent_path: str = None, snapshot_path: str = None, host: str = '127.0.0.1',
-                   next_p2p_port: int = 4000, next_rest_port: int = 5000) -> None:
+    def initialise(self, wd_parent_path: str = None, snapshot_path: str = None, host: str = '127.0.0.1') -> None:
         # determine the working directory for testing
         if wd_parent_path:
             self.wd_path = os.path.join(wd_parent_path, 'testing', str(get_timestamp_now()))
@@ -48,9 +69,6 @@ class TestCaseBase:
         self.nodes = {}
         self.proxies = {}
 
-        self._next_p2p_port = next_p2p_port
-        self._next_rest_port = next_rest_port
-
     def cleanup(self, snapshot_path: str = None) -> None:
         for name in self.nodes:
             logger.info(f"stopping node '{name}'")
@@ -63,17 +81,17 @@ class TestCaseBase:
         else:
             shutil.rmtree(self.wd_path)
 
-    def generate_p2p_address(self) -> (str, int):
-        with self._mutex:
-            address = (self.host, self._next_p2p_port)
-            self._next_p2p_port += 1
-            return address
-
-    def generate_rest_address(self) -> (str, int):
-        with self._mutex:
-            address = (self.host, self._next_rest_port)
-            self._next_rest_port += 1
-            return address
+    # def generate_p2p_address(self) -> (str, int):
+    #     with self._mutex:
+    #         address = (self.host, self._next_p2p_port)
+    #         self._next_p2p_port += 1
+    #         return address
+    #
+    # def generate_rest_address(self) -> (str, int):
+    #     with self._mutex:
+    #         address = (self.host, self._next_rest_port)
+    #         self._next_rest_port += 1
+    #         return address
 
     def create_keystores(self, n: int, use_credentials: bool = False) -> list[Keystore]:
         keystores = []
@@ -124,8 +142,8 @@ class TestCaseBase:
             return self.nodes[name]
 
         else:
-            p2p_address = self.generate_p2p_address()
-            rest_address = self.generate_rest_address()
+            p2p_address = PortMaster.generate_p2p_address(self.host)
+            rest_address = PortMaster.generate_rest_address(self.host)
 
             storage_path = os.path.join(wd_path if wd_path else self.wd_path, name)
             os.makedirs(storage_path, exist_ok=True)
@@ -154,8 +172,8 @@ class TestCaseBase:
             return self.nodes[name]
 
         else:
-            p2p_address = self.generate_p2p_address()
-            rest_address = self.generate_rest_address()
+            p2p_address = PortMaster.generate_p2p_address(self.host)
+            rest_address = PortMaster.generate_rest_address(self.host)
 
             storage_path = os.path.join(self.wd_path, name)
             if not os.path.isdir(storage_path):
