@@ -265,7 +265,7 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulRequestError as e:
-            assert e.details['reason'] == 'identity not known to node'
+            assert e.details['reason'] == 'unknown identity'
 
         try:
             # this should succeed because the 'good' authority is known to the node

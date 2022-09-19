@@ -10,7 +10,7 @@ class VerifyAuthorisation:
     def __init__(self, node):
         self.node = node
 
-    async def __call__(self, request: Request):
+    async def __call__(self, request: Request) -> (Identity, dict):
         # check if there is the required saasauth header information
         if 'saasauth-iid' not in request.headers or 'saasauth-signature' not in request.headers:
             raise AuthorisationFailedError({
@@ -23,17 +23,20 @@ class VerifyAuthorisation:
         identity: Identity = self.node.db.get_identity(iid)
         if identity is None:
             raise AuthorisationFailedError({
-                'reason': 'identity not known to node',
+                'reason': 'unknown identity',
                 'iid': iid
             })
 
         # verify the signature
         signature = request.headers['saasauth-signature']
         body = await request.body()
-        body = json.loads(body.decode('utf-8'))
+        body = body.decode('utf-8')
+        body = json.loads(body) if body != '' else {}
         if not verify_authorisation_token(identity, signature, f"{request.method}:{request.url}", body):
             raise AuthorisationFailedError({
-                'reason': 'authorisation failed',
+                'reason': 'invalid signature',
                 'iid': iid,
                 'signature': signature
             })
+
+        return identity, body
