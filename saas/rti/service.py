@@ -5,8 +5,9 @@ import os
 from _stat import S_IWRITE
 from stat import S_IREAD
 from threading import Lock
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
+from saascore.api.sdk.proxies import rti_endpoint_prefix
 from saascore.log import Logging
 from saascore.helpers import write_json_to_file, generate_random_string, read_json_from_file
 from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
@@ -16,10 +17,13 @@ import saas.dor.protocol as dor_prot
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.docker as docker_rti
 import saas.rti.adapters.native as native_rti
+from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, \
     ProcessorNotDeployedError, UnexpectedGPPMetaInformation, GPPDataObjectNotFound
+from saas.rti.schemas import JobInfo, ProcessorDeploymentParameters, Permission, DeployedProcessorInfo
 from saas.rti.status import StatusLogger, State
+from saas.schemas import ProcessorDescriptor, ProcessorStatus, TaskDescriptor, JobDescriptor
 
 logger = Logging.get('rti.service')
 
@@ -286,3 +290,91 @@ class RuntimeInfrastructureService:
     def pop_permission(self, req_id: str) -> Optional[str]:
         with self._mutex:
             return self._content_keys.pop(req_id, None)
+
+
+class RESTRuntimeInfrastructureService(RuntimeInfrastructureService):
+    def __init__(self, node, retain_job_history: bool):
+        super().__init__(node, retain_job_history)
+
+    def endpoints(self) -> list:
+        return [
+            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='',
+                               function=self.rest_get_deployed, response_model=List[DeployedProcessorInfo]),
+
+            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='proc/{proc_id}',
+                               function=self.rest_deploy, response_model=ProcessorDescriptor),
+
+            EndpointDefinition(method='DELETE', prefix=rti_endpoint_prefix, rule='proc/{proc_id}',
+                               function=self.rest_undeploy, response_model=ProcessorDescriptor),
+
+            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/descriptor',
+                               function=self.rest_get_descriptor, response_model=ProcessorDescriptor),
+
+            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/status',
+                               function=self.rest_get_status, response_model=ProcessorStatus),
+
+            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/jobs',
+                               function=self.rest_submit_job, response_model=JobDescriptor),
+
+            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/jobs',
+                               function=self.rest_get_jobs, response_model=List[JobDescriptor]),
+
+            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='job/{job_id}',
+                               function=self.rest_get_job_info, response_model=JobInfo),
+
+            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='permission/{req_id}',
+                               function=self.rest_put_permission, response_model=None)
+        ]
+
+    def rest_get_deployed(self) -> List[DeployedProcessorInfo]:
+        return [DeployedProcessorInfo.parse_obj(item) for item in self.get_deployed()]
+
+    def rest_deploy(self, proc_id: str, p: ProcessorDeploymentParameters) -> ProcessorDescriptor:
+        if p.ssh_credentials is not None:
+            ssh_credentials = bytes.fromhex(p.ssh_credentials)
+            ssh_credentials = self._node.keystore.decrypt(ssh_credentials)
+            ssh_credentials = ssh_credentials.decode('utf-8')
+            ssh_credentials = json.loads(ssh_credentials)
+            ssh_credentials = SSHCredentials(host=ssh_credentials['host'],
+                                             login=ssh_credentials['login'],
+                                             key=ssh_credentials['key'],
+                                             key_is_password=ssh_credentials['key_is_password'])
+        else:
+            ssh_credentials = None
+
+        if p.github_credentials is not None:
+            github_credentials = bytes.fromhex(p.github_credentials)
+            github_credentials = self._node.keystore.decrypt(github_credentials)
+            github_credentials = github_credentials.decode('utf-8')
+            github_credentials = json.loads(github_credentials)
+            github_credentials = GithubCredentials(login=github_credentials['login'],
+                                                   personal_access_token=github_credentials['personal_access_token'])
+
+        else:
+            github_credentials = None
+
+        proc_descriptor = self._node.rti.deploy(proc_id, deployment=p.deployment, ssh_credentials=ssh_credentials,
+                                                github_credentials=github_credentials, gpp_custodian=p.gpp_custodian)
+
+        return ProcessorDescriptor.parse_obj(proc_descriptor)
+
+    def rest_undeploy(self, proc_id: str) -> ProcessorDescriptor:
+        return ProcessorDescriptor.parse_obj(self.undeploy(proc_id))
+
+    def rest_get_descriptor(self, proc_id: str) -> ProcessorDescriptor:
+        return ProcessorDescriptor.parse_obj(self.get_descriptor(proc_id))
+
+    def rest_get_status(self, proc_id: str) -> ProcessorStatus:
+        return ProcessorStatus.parse_obj(self.get_status(proc_id))
+
+    def rest_submit_job(self, proc_id: str, task_descriptor: TaskDescriptor) -> JobDescriptor:
+        return JobDescriptor.parse_obj(self.submit(proc_id, task_descriptor.dict()))
+
+    def rest_get_jobs(self, proc_id: str) -> List[JobDescriptor]:
+        return [JobDescriptor.parse_obj(item) for item in self.get_jobs(proc_id)]
+
+    def rest_get_job_info(self, job_id: str) -> JobInfo:
+        return JobInfo.parse_obj(self.get_job_info(job_id))
+
+    def rest_put_permission(self, req_id: str, permission: Permission) -> None:
+        self.put_permission(req_id, permission.content_key)
