@@ -623,6 +623,10 @@ class NodeDBService:
 
             # handle inputs and add more recipes (if any)
             for obj in recipe['input']:
+                # skip if it is a by-value input
+                if obj['type'] == 'value':
+                    continue
+
                 pending += [*self.get_recipe(obj['c_hash']).values()]
 
         # second: collect all data object nodes that are 'derived'
@@ -640,6 +644,11 @@ class NodeDBService:
         # third: collect all the data object nodes that are 'original'
         for recipe in all_recipes.values():
             for obj in recipe['input']:
+                # in case of a by-value object, calculate a c_hash value
+                if obj['type'] == 'value':
+                    obj['c_hash'] = hash_json_object(obj['value']).hex()
+
+                # add the object to the cache
                 if obj['c_hash'] not in cache:
                     node = {
                         'c_hash': obj['c_hash'],
@@ -647,6 +656,11 @@ class NodeDBService:
                         'data_type': obj['data_type'],
                         'data_format': obj['data_format']
                     }
+
+                    # if by-value, add the value as content
+                    if obj['type'] == 'value':
+                        node['content'] = obj['value']
+
                     cache[node['c_hash']] = node
                     content_nodes.append(node)
                     # print(json.dumps(node, indent=2))
@@ -654,7 +668,14 @@ class NodeDBService:
         # fourth: determine all the individual steps
         for recipe in all_recipes.values():
             c_hash = recipe['product']['c_hash']
-            consume = [o['c_hash'] for o in all_recipes[c_hash]['input']]
+
+            consume = []
+            for o in all_recipes[c_hash]['input']:
+                if o['type'] == 'value':
+                    consume.append(hash_json_object(obj['value']).hex())
+                else:
+                    consume.append(o['c_hash'])
+
             step = {
                 'consume': consume,
                 'processor': gpp_cache[c_hash],
