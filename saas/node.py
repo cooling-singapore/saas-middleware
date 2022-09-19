@@ -16,9 +16,6 @@ import saas.dor.service as dor_service
 import saas.rest.service as rest_service
 import saas.rti.service as rti_service
 import saas.nodedb.service as nodedb_service
-import saas.dor.blueprint as dor_blueprint
-import saas.rti.blueprint as rti_blueprint
-import saas.nodedb.blueprint as nodedb_blueprint
 
 logger = Logging.get('node')
 
@@ -49,38 +46,51 @@ class Node:
     def datastore(self) -> str:
         return self._datastore_path
 
-    def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool,
+    def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
                 retain_job_history: bool = False) -> None:
         logger.info("starting P2P service.")
         self.p2p = p2p_service.P2PService(self, server_address)
         self.p2p.start_service()
 
-        logger.info("starting NodeDB service.")
-        protocol = nodedb_prot.NodeDBP2PProtocol(self)
-        self.db = nodedb_service.NodeDBService(self, f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
-        self.p2p.add(protocol)
+        if rest_address is not None:
+            logger.info("starting REST service.")
+            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1])
+            self.rest.start_service()
+
+        if enable_db:
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}"
+            logger.info(f"enabling NodeDB service using {db_path}.")
+
+            protocol = nodedb_prot.NodeDBP2PProtocol(self)
+
+            if self.rest:
+                self.db = nodedb_service.RESTNodeDBService(self, db_path, protocol)
+                self.rest.add(self.db.endpoints())
+            else:
+                self.db = nodedb_service.NodeDBService(self, db_path, protocol)
+
+            self.p2p.add(protocol)
 
         if enable_dor:
-            logger.info("starting DOR service.")
-            self.dor = dor_service.DataObjectRepositoryService(self)
+            logger.info("enabling DOR service.")
+
+            if self.rest:
+                self.dor = dor_service.RESTDataObjectRepositoryService(self)
+                self.rest.add(self.dor.endpoints())
+            else:
+                self.dor = dor_service.DataObjectRepositoryService(self)
+
             self.p2p.add(dor_prot.DataObjectRepositoryP2PProtocol(self))
 
         if enable_rti:
-            logger.info("starting RTI service.")
-            self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
+            logger.info("enabling RTI service.")
 
-        if rest_address is not None:
-            blueprint_dor = dor_blueprint.DORBlueprint(self)
-            blueprint_rti = rti_blueprint.RTIBlueprint(self)
-            blueprint_nodedb = nodedb_blueprint.NodeDBBlueprint(self)
-
-            logger.info("starting REST service.")
-            self.rest = rest_service.RESTService(self, rest_address)
-            self.rest.add(blueprint_dor.generate_blueprint())
-            self.rest.add(blueprint_rti.generate_blueprint())
-            self.rest.add(blueprint_nodedb.generate_blueprint())
-            self.rest.start_service()
+            if self.rest:
+                self.rti = rti_service.RESTRuntimeInfrastructureService(self, retain_job_history)
+                self.rest.add(self.rti.endpoints())
+            else:
+                self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
 
         # update our node db
         self.db.update_identity(self.identity)
