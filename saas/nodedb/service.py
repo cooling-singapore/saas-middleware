@@ -2,7 +2,9 @@ import json
 import canonicaljson
 
 from dataclasses import dataclass, asdict
-from typing import Optional, Union
+from typing import Optional, Union, List
+
+from saascore.api.sdk.proxies import db_endpoint_prefix
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, Table
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, registry
@@ -14,7 +16,10 @@ from saascore.cryptography.rsakeypair import RSAKeyPair
 from saascore.helpers import get_timestamp_now
 from saascore.keystore.identity import Identity
 
+from saas.dor.schemas import Tag
 from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
+from saas.nodedb.schemas import NodeInfo, SerialisedIdentity, NetworkInfo, ProvenanceInfo
+from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('nodedb.service')
 
@@ -200,19 +205,19 @@ class NodeDBService:
 
     # BEGIN: things that do NOT require synchronisation
 
-    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
+    def update_tags(self, obj_id: str, tags: List[Tag]) -> None:
         self._require_data_object(obj_id)
         with self._Session() as session:
             # update the tags
             for tag in tags:
-                item = session.query(DataObjectTag).filter_by(obj_id=obj_id, key=tag['key']).first()
+                item = session.query(DataObjectTag).filter_by(obj_id=obj_id, key=tag.key).first()
                 if item:
-                    item.value = tag['value']
+                    item.value = tag.value
                 else:
-                    session.add(DataObjectTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
+                    session.add(DataObjectTag(obj_id=obj_id, key=tag.key, value=tag.value))
             session.commit()
 
-    def remove_tags(self, obj_id: str, keys: list[str] = None) -> None:
+    def remove_tags(self, obj_id: str, keys: List[str] = None) -> None:
         self._require_data_object(obj_id)
         with self._Session() as session:
             # remove specific tags
@@ -268,6 +273,7 @@ class NodeDBService:
                 # flatten all tags (keys values) into a single string for search purposes
                 flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
 
+                # TODO: decide if this information should be searchable via patterns. seems odd to do this here.
                 # add meta information to make them searchable
                 flattened += f" {obj_record.data_type}"
                 flattened += f" {obj_record.data_format}"
@@ -433,7 +439,7 @@ class NodeDBService:
                                          RSAKeyPair.from_public_key_string(record.e_public_key),
                                          record.nonce, record.signature) for record in records}
 
-    def update_identity(self, identity: Union[Identity, dict]) -> None:
+    def update_identity(self, identity: Union[Identity, dict]) -> Identity:
         # deserialise the identity (if necessary) and verify its authenticity
         identity = Identity.deserialise(identity) if not isinstance(identity, Identity) else identity
         if not identity.is_authentic():
@@ -446,9 +452,10 @@ class NodeDBService:
             # do we have the identity already on record?
             # only perform update if either the record does not exist yet OR if the information provided is valid
             # and more recent, i.e., if the nonce is greater than the one on record.
-            record = session.query(IdentityRecord).filter_by(iid=identity.id).first()
+            iid = identity.id
+            record = session.query(IdentityRecord).filter_by(iid=iid).first()
             if record is None:
-                session.add(IdentityRecord(iid=identity.id, name=identity.name, email=identity.email,
+                session.add(IdentityRecord(iid=iid, name=identity.name, email=identity.email,
                                            s_public_key=identity.s_public_key_as_string(),
                                            e_public_key=identity.e_public_key_as_string(),
                                            nonce=identity.nonce, signature=identity.signature))
@@ -465,6 +472,12 @@ class NodeDBService:
 
             else:
                 logger.debug("Ignore identity update as nonce on record is more recent.")
+
+            record = session.query(IdentityRecord).filter_by(iid=iid).first()
+            return Identity(record.iid, record.name, record.email,
+                            ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
+                            RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None,
+                            record.nonce, record.signature) if record else None
 
     def update_network(self, node_iid: str, last_seen: int, dor_service: bool, rti_service: bool,
                        p2p_address: (str, int), rest_address: (str, int) = None) -> None:
@@ -741,3 +754,59 @@ class NodeDBService:
             'update_network': network_items,
             'add_recipe': recipe_items
         }
+
+
+class RESTNodeDBService(NodeDBService):
+    def __init__(self, node, db_path, protocol):
+        super().__init__(node, db_path, protocol)
+
+    def endpoints(self) -> list:
+        return [
+            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='node',
+                               function=self.rest_get_node, response_model=NodeInfo),
+
+            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='network',
+                               function=self.rest_get_network, response_model=List[NetworkInfo]),
+
+            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='identity',
+                               function=self.rest_get_identities, response_model=List[SerialisedIdentity]),
+
+            EndpointDefinition(method='POST', prefix=db_endpoint_prefix, rule='identity',
+                               function=self.rest_update_identity, response_model=Optional[SerialisedIdentity]),
+
+            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='identity/{iid}',
+                               function=self.rest_get_identity, response_model=Optional[SerialisedIdentity]),
+
+            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='provenance/{obj_id}',
+                               function=self.rest_get_provenance, response_model=ProvenanceInfo)
+        ]
+
+    def rest_get_node(self) -> NodeInfo:
+        p2p_address = self._node.p2p.address()
+        rest_address = self._node.rest.address()
+
+        return NodeInfo(
+            iid=self._node.identity.id,
+            identity=self._node.identity.serialise(),
+            dor_service=self._node.dor is not None,
+            rti_service=self._node.rti is not None,
+            rest_service_address=f"{p2p_address[0]}:{p2p_address[1]}",
+            p2p_service_address=f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
+        )
+
+    def rest_get_network(self) -> List[NetworkInfo]:
+        return [n.as_dict() for n in self._node.db.get_network_all()]
+
+    def rest_get_identities(self) -> List[SerialisedIdentity]:
+        return [identity.serialise() for identity in self._node.db.get_all_identities().values()]
+
+    def rest_get_identity(self, iid: str) -> Optional[SerialisedIdentity]:
+        identity = self._node.db.get_identity(iid)
+        return identity.serialise() if identity else None
+
+    def rest_update_identity(self, identity: SerialisedIdentity) -> Optional[SerialisedIdentity]:
+        identity = self._node.db.update_identity(identity.dict())
+        return identity.serialise() if identity else None
+
+    def rest_get_provenance(self, obj_id: str) -> ProvenanceInfo:
+        return self._node.db.get_provenance(obj_id)
