@@ -293,9 +293,6 @@ class RuntimeInfrastructureService:
 
 
 class RESTRuntimeInfrastructureService(RuntimeInfrastructureService):
-    def __init__(self, node, retain_job_history: bool):
-        super().__init__(node, retain_job_history)
-
     def endpoints(self) -> list:
         return [
             EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='',

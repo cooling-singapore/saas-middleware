@@ -239,9 +239,6 @@ class VerifyUserHasAccess:
 
 
 class RESTDataObjectRepositoryService(DataObjectRepositoryService):
-    def __init__(self, node):
-        super().__init__(node)
-
     def endpoints(self) -> list:
         return [
             EndpointDefinition(method='GET', prefix=dor_endpoint_prefix, rule='',

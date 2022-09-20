@@ -757,9 +757,6 @@ class NodeDBService:
 
 
 class RESTNodeDBService(NodeDBService):
-    def __init__(self, node, db_path, protocol):
-        super().__init__(node, db_path, protocol)
-
     def endpoints(self) -> list:
         return [
             EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='node',
