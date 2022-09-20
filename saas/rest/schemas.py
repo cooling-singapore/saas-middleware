@@ -1,9 +1,9 @@
+from dataclasses import dataclass
 from typing import Optional, Sequence, Any
 
-from pydantic import BaseModel
 
-
-class EndpointDefinition(BaseModel):
+@dataclass
+class EndpointDefinition:
     method: str
     prefix: str
     rule: str

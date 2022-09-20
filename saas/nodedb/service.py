@@ -759,23 +759,23 @@ class NodeDBService:
 class RESTNodeDBService(NodeDBService):
     def endpoints(self) -> list:
         return [
-            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='node',
-                               function=self.rest_get_node, response_model=NodeInfo),
+            EndpointDefinition('GET', db_endpoint_prefix, 'node',
+                               self.rest_get_node, NodeInfo, None),
 
-            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='network',
-                               function=self.rest_get_network, response_model=List[NetworkInfo]),
+            EndpointDefinition('GET', db_endpoint_prefix, 'network',
+                               self.rest_get_network, List[NetworkInfo], None),
 
-            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='identity',
-                               function=self.rest_get_identities, response_model=List[SerialisedIdentity]),
+            EndpointDefinition('GET', db_endpoint_prefix, 'identity',
+                               self.rest_get_identities, List[SerialisedIdentity], None),
 
-            EndpointDefinition(method='POST', prefix=db_endpoint_prefix, rule='identity',
-                               function=self.rest_update_identity, response_model=Optional[SerialisedIdentity]),
+            EndpointDefinition('POST', db_endpoint_prefix, 'identity',
+                               self.rest_update_identity, Optional[SerialisedIdentity], None),
 
-            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='identity/{iid}',
-                               function=self.rest_get_identity, response_model=Optional[SerialisedIdentity]),
+            EndpointDefinition('GET', db_endpoint_prefix, 'identity/{iid}',
+                               self.rest_get_identity, Optional[SerialisedIdentity], None),
 
-            EndpointDefinition(method='GET', prefix=db_endpoint_prefix, rule='provenance/{obj_id}',
-                               function=self.rest_get_provenance, response_model=ProvenanceInfo)
+            EndpointDefinition('GET', db_endpoint_prefix, 'provenance/{obj_id}',
+                               self.rest_get_provenance, ProvenanceInfo, None)
         ]
 
     def rest_get_node(self) -> NodeInfo:

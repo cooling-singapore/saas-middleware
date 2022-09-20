@@ -295,32 +295,32 @@ class RuntimeInfrastructureService:
 class RESTRuntimeInfrastructureService(RuntimeInfrastructureService):
     def endpoints(self) -> list:
         return [
-            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='',
-                               function=self.rest_get_deployed, response_model=List[DeployedProcessorInfo]),
+            EndpointDefinition('GET', rti_endpoint_prefix, '',
+                               self.rest_get_deployed, List[DeployedProcessorInfo], None),
 
-            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='proc/{proc_id}',
-                               function=self.rest_deploy, response_model=ProcessorDescriptor),
+            EndpointDefinition('POST', rti_endpoint_prefix, 'proc/{proc_id}',
+                               self.rest_deploy, ProcessorDescriptor, None),
 
-            EndpointDefinition(method='DELETE', prefix=rti_endpoint_prefix, rule='proc/{proc_id}',
-                               function=self.rest_undeploy, response_model=ProcessorDescriptor),
+            EndpointDefinition('DELETE', rti_endpoint_prefix, 'proc/{proc_id}',
+                               self.rest_undeploy, ProcessorDescriptor, None),
 
-            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/descriptor',
-                               function=self.rest_get_descriptor, response_model=ProcessorDescriptor),
+            EndpointDefinition('GET', rti_endpoint_prefix, 'proc/{proc_id}/descriptor',
+                               self.rest_get_descriptor, ProcessorDescriptor, None),
 
-            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/status',
-                               function=self.rest_get_status, response_model=ProcessorStatus),
+            EndpointDefinition('GET', rti_endpoint_prefix, 'proc/{proc_id}/status',
+                               self.rest_get_status, ProcessorStatus, None),
 
-            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/jobs',
-                               function=self.rest_submit_job, response_model=JobDescriptor),
+            EndpointDefinition('POST', rti_endpoint_prefix, 'proc/{proc_id}/jobs',
+                               self.rest_submit_job, JobDescriptor, None),
 
-            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='proc/{proc_id}/jobs',
-                               function=self.rest_get_jobs, response_model=List[JobDescriptor]),
+            EndpointDefinition('GET', rti_endpoint_prefix, 'proc/{proc_id}/jobs',
+                               self.rest_get_jobs, List[JobDescriptor], None),
 
-            EndpointDefinition(method='GET', prefix=rti_endpoint_prefix, rule='job/{job_id}',
-                               function=self.rest_get_job_info, response_model=JobInfo),
+            EndpointDefinition('GET', rti_endpoint_prefix, 'job/{job_id}',
+                               self.rest_get_job_info, JobInfo, None),
 
-            EndpointDefinition(method='POST', prefix=rti_endpoint_prefix, rule='permission/{req_id}',
-                               function=self.rest_put_permission, response_model=None)
+            EndpointDefinition('POST', rti_endpoint_prefix, 'permission/{req_id}',
+                               self.rest_put_permission, None, None)
         ]
 
     def rest_get_deployed(self) -> List[DeployedProcessorInfo]:

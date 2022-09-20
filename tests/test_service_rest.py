@@ -43,24 +43,23 @@ class TestRESTService:
 
     def endpoints(self) -> list:
         return [
-            EndpointDefinition(method='POST', prefix=endpoint_prefix, rule='create/{value}',
-                               function=self.rest_post, response_model=TestResponse),
+            EndpointDefinition('POST', endpoint_prefix, 'create/{value}',
+                               self.rest_post, TestResponse, None),
 
-            EndpointDefinition(method='GET', prefix=endpoint_prefix, rule='read/{key}',
-                               function=self.rest_get, response_model=TestResponse),
+            EndpointDefinition('GET', endpoint_prefix, 'read/{key}',
+                               self.rest_get, TestResponse, None),
 
-            EndpointDefinition(method='PUT', prefix=endpoint_prefix, rule='update/{key}/{value}',
-                               function=self.rest_put, response_model=TestResponse),
+            EndpointDefinition('PUT', endpoint_prefix, 'update/{key}/{value}',
+                               self.rest_put, TestResponse, None),
 
-            EndpointDefinition(method='DELETE', prefix=endpoint_prefix, rule='delete/{key}',
-                               function=self.rest_delete, response_model=TestResponse),
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete/{key}',
+                               self.rest_delete, TestResponse, None),
 
-            EndpointDefinition(method='DELETE', prefix=endpoint_prefix, rule='delete_body',
-                               function=self.rest_delete_with_body, response_model=TestResponse),
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete_body',
+                               self.rest_delete_with_body, TestResponse, None),
 
-            EndpointDefinition(method='DELETE', prefix=endpoint_prefix, rule='delete_auth',
-                               function=self.rest_delete_with_body, response_model=TestResponse,
-                               dependencies=[VerifyAuthorisation]),
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete_auth',
+                               self.rest_delete_with_body, TestResponse, [VerifyAuthorisation])
         ]
 
     def rest_post(self, value: str) -> TestResponse:

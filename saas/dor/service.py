@@ -241,48 +241,42 @@ class VerifyUserHasAccess:
 class RESTDataObjectRepositoryService(DataObjectRepositoryService):
     def endpoints(self) -> list:
         return [
-            EndpointDefinition(method='GET', prefix=dor_endpoint_prefix, rule='',
-                               function=self.rest_search, response_model=List[DataObject]),
+            EndpointDefinition('GET', dor_endpoint_prefix, '',
+                               self.rest_search, List[DataObject], None),
 
-            EndpointDefinition(method='GET', prefix=dor_endpoint_prefix, rule='statistics',
-                               function=self.rest_statistics, response_model=DORStatistics),
+            EndpointDefinition('GET', dor_endpoint_prefix, 'statistics',
+                               self.rest_statistics, DORStatistics, None),
 
-            EndpointDefinition(method='POST', prefix=dor_endpoint_prefix, rule='add',
-                               function=self.rest_add, response_model=DataObject),
+            EndpointDefinition('POST', dor_endpoint_prefix, 'add',
+                               self.rest_add, DataObject, None),
 
-            EndpointDefinition(method='POST', prefix=dor_endpoint_prefix, rule='add-gpp',
-                               function=self.rest_add_gpp, response_model=DataObject),
+            EndpointDefinition('POST', dor_endpoint_prefix, 'add-gpp',
+                               self.rest_add_gpp, DataObject, None),
 
-            EndpointDefinition(method='DELETE', prefix=dor_endpoint_prefix, rule='{obj_id}',
-                               function=self.rest_delete, response_model=DataObject,
-                               dependencies=[VerifyIsOwner]),
+            EndpointDefinition('DELETE', dor_endpoint_prefix, '{obj_id}',
+                               self.rest_delete, DataObject, [VerifyIsOwner]),
 
-            EndpointDefinition(method='GET', prefix=dor_endpoint_prefix, rule='{obj_id}/meta',
-                               function=self.rest_get_meta, response_model=Optional[DataObject]),
+            EndpointDefinition('GET', dor_endpoint_prefix, '{obj_id}/meta',
+                               self.rest_get_meta, Optional[DataObject], None),
 
-            EndpointDefinition(method='GET', prefix=dor_endpoint_prefix, rule='{obj_id}/content',
-                               function=self.rest_get_content, response_model=None,
-                               dependencies=[VerifyUserHasAccess]),
+            EndpointDefinition('GET', dor_endpoint_prefix, '{obj_id}/content',
+                               self.rest_get_content, None, [VerifyUserHasAccess]),
 
-            EndpointDefinition(method='POST', prefix=dor_endpoint_prefix, rule='{obj_id}/access/{iid}',
-                               function=self.rest_grant_access, response_model=DataObject,
-                               dependencies=[VerifyIsOwner]),
+            EndpointDefinition('POST', dor_endpoint_prefix, '{obj_id}/access/{iid}',
+                               self.rest_grant_access, DataObject, [VerifyIsOwner]),
 
-            EndpointDefinition(method='DELETE', prefix=dor_endpoint_prefix, rule='{obj_id}/access/{iid}',
-                               function=self.rest_revoke_access, response_model=DataObject,
-                               dependencies=[VerifyIsOwner]),
+            EndpointDefinition('DELETE', dor_endpoint_prefix, '{obj_id}/access/{iid}',
+                               self.rest_revoke_access, DataObject, [VerifyIsOwner]),
 
-            EndpointDefinition(method='PUT', prefix=dor_endpoint_prefix, rule='{obj_id}/owner/{iid}',
-                               function=self.rest_transfer_ownership, response_model=DataObject,
-                               dependencies=[VerifyIsOwner]),
+            EndpointDefinition('PUT', dor_endpoint_prefix, '{obj_id}/owner/{iid}',
+                               self.rest_transfer_ownership, DataObject, [VerifyIsOwner]),
 
-            EndpointDefinition(method='PUT', prefix=dor_endpoint_prefix, rule='{obj_id}/tags',
-                               function=self.rest_update_tags, response_model=DataObject,
-                               dependencies=[VerifyIsOwner]),
+            EndpointDefinition('PUT', dor_endpoint_prefix, '{obj_id}/tags',
+                               self.rest_update_tags, DataObject,
+                               [VerifyIsOwner]),
 
-            EndpointDefinition(method='DELETE', prefix=dor_endpoint_prefix, rule='{obj_id}/tags',
-                               function=self.rest_remove_tags, response_model=DataObject,
-                               dependencies=[VerifyIsOwner])
+            EndpointDefinition('DELETE', dor_endpoint_prefix, '{obj_id}/tags',
+                               self.rest_remove_tags, DataObject, [VerifyIsOwner])
         ]
 
     def rest_search(self, parameters: SearchParameters) -> List[DataObject]:
