@@ -144,8 +144,6 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
         unittest.TestCase.__init__(self, method_name)
         TestCaseBase.__init__(self)
 
-        self.proxy = None
-
     @classmethod
     def tearDownClass(cls):
         if cls._node is not None:
@@ -165,94 +163,92 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
             RESTServiceTestCase._proxy = TestProxy(RESTServiceTestCase._node.rest.address())
             time.sleep(1)
 
-        self.proxy = RESTServiceTestCase._proxy
-
     def tearDown(self):
         self.cleanup()
 
     def test_create_read(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         assert(result is not None)
         assert(result.value == 'hello world')
 
-        result = self.proxy.read(result.key)
+        result = self._proxy.read(result.key)
         assert(result is not None)
         assert(result.value == 'hello world')
 
     def test_update_ok(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         assert(result is not None)
         assert(result.value == 'hello world')
         key = result.key
 
-        result = self.proxy.update(key, 'hello new world')
+        result = self._proxy.update(key, 'hello new world')
         assert(result is not None)
         assert(result.value == 'hello new world')
 
     def test_update_fails(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         assert(result is not None)
         assert(result.value == 'hello world')
 
         try:
-            self.proxy.update('invalid', 'hello new world')
+            self._proxy.update('invalid', 'hello new world')
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
     def test_delete_ok(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         assert(result is not None)
         assert(result.value == 'hello world')
         key = result.key
 
-        result = self.proxy.remove(key)
+        result = self._proxy.remove(key)
         assert(result is not None)
 
         try:
-            self.proxy.read(key)
+            self._proxy.read(key)
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
     def test_delete_fails(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         assert(result is not None)
         assert(result.value == 'hello world')
         key = result.key
 
         try:
-            self.proxy.remove('invalid_key')
+            self._proxy.remove('invalid_key')
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
         try:
-            self.proxy.read(key)
+            self._proxy.read(key)
             assert True
 
         except UnsuccessfulRequestError:
             assert False
 
     def test_delete_with_body(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         key = result.key
 
-        result = self.proxy.remove_with_body(key)
+        result = self._proxy.remove_with_body(key)
         assert(result is not None)
 
         try:
-            self.proxy.read(key)
+            self._proxy.read(key)
             assert False
 
         except UnsuccessfulRequestError:
             assert True
 
     def test_delete_with_auth(self):
-        result = self.proxy.create('hello world')
+        result = self._proxy.create('hello world')
         key = result.key
 
         good_authority = self._node.keystore
@@ -260,7 +256,7 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
         try:
             # this should fail because the 'bad' authority is not known to the node
-            self.proxy.remove_with_auth(key, authority=bad_authority)
+            self._proxy.remove_with_auth(key, authority=bad_authority)
             assert False
 
         except UnsuccessfulRequestError as e:
@@ -268,14 +264,14 @@ class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
 
         try:
             # this should succeed because the 'good' authority is known to the node
-            result = self.proxy.remove_with_auth(key, authority=good_authority)
+            result = self._proxy.remove_with_auth(key, authority=good_authority)
             assert (result is not None)
 
         except UnsuccessfulRequestError:
             assert False
 
         try:
-            self.proxy.read(key)
+            self._proxy.read(key)
             assert False
 
         except UnsuccessfulRequestError:
