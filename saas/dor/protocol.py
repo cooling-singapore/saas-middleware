@@ -92,7 +92,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
     def _handle_fetch(self, message: dict, peer: Identity) -> P2PMessage:
         # check if we have that data object
         obj_id = message['obj_id']
-        obj_record = self.node.db.get_object_by_id(obj_id)
+        obj_record = self.node.dor.get_meta(obj_id)
         if not obj_record:
             return self.prepare_message('fetch_data_object_response', {
                 'successful': False,
@@ -101,7 +101,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # check if the data object access is restricted and (if so) if the user has the required permission
-        if obj_record['access_restricted']:
+        if obj_record.access_restricted:
             # get the identity of the user
             user = self.node.db.get_identity(message['user_iid'])
             if user is None:
@@ -112,8 +112,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 })
 
             # check if the user has permission to access this data object
-            has_access = self.node.db.has_access(obj_id, user)
-            if not has_access:
+            if user.id not in obj_record.access:
                 return self.prepare_message('fetch_data_object_response', {
                     'successful': False,
                     'reason': 'user does not have access',
@@ -134,19 +133,19 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 })
 
         # we should have the data object content in our local DOR
-        content_path = self.node.dor.obj_content_path(obj_record['c_hash'])
+        content_path = self.node.dor.obj_content_path(obj_record.c_hash)
         if not os.path.isfile(content_path):
             return self.prepare_message('fetch_data_object_response', {
                 'successful': False,
                 'reason': 'data object content not found',
                 'user_iid': message['user_iid'],
                 'object_id': obj_id,
-                'c_hash': obj_record['c_hash']
+                'c_hash': obj_record.c_hash
             })
 
         # if all is good, send a reply with the meta information followed by the data object content as attachment
-        record = self.node.db.get_object_by_id(obj_id)
+        record = self.node.dor.get_meta(obj_id)
         return self.prepare_message('fetch_data_object_response', {
             'successful': True,
-            'meta': record
+            'meta': record.dict()
         }, content_path)
