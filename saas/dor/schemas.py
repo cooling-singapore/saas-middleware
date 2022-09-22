@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
@@ -24,46 +24,39 @@ class GithubCredentials(BaseModel):
     personal_access_token: str
 
 
-class GitProcessorPointer(BaseModel):
+class CObjectNode(BaseModel):
+    c_hash: str
+    # name: str
+    data_type: str
+    data_format: str
+    content: Optional[dict]
+
+
+class GPPObjectNode(BaseModel):
     source: str
     commit_id: str
     proc_path: str
     proc_config: str
+    proc_descriptor: ProcessorDescriptor
 
 
 class DataObjectRecipe(BaseModel):
-    class GPPObject(GitProcessorPointer):
-        c_hash: str
-        proc_descriptor: ProcessorDescriptor
-
-    class Object(BaseModel):
-        c_hash: str
-        name: str
-        data_type: str
-        data_format: str
-        value: Optional[dict]
-
-    product: Object
-    processor: GPPObject
-    input: List[Object]
+    processor: GPPObjectNode
+    consumes: Dict[str, CObjectNode]
+    product: CObjectNode
+    name: str
 
 
 class DataObjectProvenance(BaseModel):
-    class ObjectNode(BaseModel):
-        is_derived: bool
-        c_hash: str
-        data_type: str
-        data_format: str
-        content: Optional[dict]
+    class Step(BaseModel):
+        processor: str
+        consumes: Dict[str, str]
+        produces: Dict[str, str]
 
-    class ProcNode(BaseModel):
-        gpp: GitProcessorPointer
-        proc_descriptor: ProcessorDescriptor
-        consumes: dict[str, int]
-        produces: int
-
-    data_nodes: List[ObjectNode]
-    proc_nodes: List[ProcNode]
+    data_nodes: Dict[str, CObjectNode]
+    proc_nodes: Dict[str, GPPObjectNode]
+    steps: List[Step]
+    missing: List[str]
 
 
 class DataObject(BaseModel):
@@ -89,7 +82,6 @@ class GPPDataObject(DataObject):
 
 class CDataObject(DataObject):
     content_encrypted: bool
-    r_hash: Optional[str]
     recipe: Optional[DataObjectRecipe]
 
 

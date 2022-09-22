@@ -8,7 +8,7 @@ import os
 
 from saascore.api.sdk.exceptions import UnsuccessfulRequestError
 from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
-from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
+from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt, hash_json_object
 from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saascore.log import Logging
 
@@ -232,6 +232,86 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
 
         except UnsuccessfulRequestError:
             assert False
+
+    def test_get_provenance(self):
+        processor = {
+            # 'c_hash': '0123456789abcdef',
+            'source': 'github.com/source',
+            'commit_id': '34534ab',
+            'proc_path': '/proc',
+            'proc_config': 'default',
+            'proc_descriptor': {
+                'name': 'proc0',
+                'input': [{
+                    'name': 'a',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }, {
+                    'name': 'b',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }],
+                'output': [{
+                    'name': 'c',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }],
+                'configurations': ['default']
+            }
+        }
+
+        owner = self._node.identity
+
+        # create contents
+        content_path_a = os.path.join(self.wd_path, 'a.json')
+        content_path_c = os.path.join(self.wd_path, 'c.json')
+        self.create_file_with_content(content_path_a, json.dumps({'v': 1}))
+        self.create_file_with_content(content_path_c, json.dumps({'v': 3}))
+        b_c_hash = hash_json_object({'v': 2}).hex()
+
+        meta_a = self._dor.add_data_object(content_path_a, owner, False, False, 'JSON', 'json', recipe=None)
+        result = self._dor.get_provenance(meta_a['c_hash'])
+        print(result)
+        assert(result is not None)
+        assert(meta_a['c_hash'] in result['data_nodes'])
+        assert(meta_a['c_hash'] in result['missing'])
+
+        meta_c = self._dor.add_data_object(content_path_c, owner, False, False, 'JSON', 'json', recipe={
+            'processor': processor,
+            'consumes': {
+                'a': {
+                    'c_hash': meta_a['c_hash'],
+                    'data_type': 'JSON',
+                    'data_format': 'json'
+                },
+                'b': {
+                    'c_hash': b_c_hash,
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                    'content': {'v': 2}
+                }
+            },
+            'product': {
+                'c_hash': 'unknown',
+                'data_type': 'JSON',
+                'data_format': 'json'
+            },
+            'name': 'c'
+        })
+
+        result = self._dor.get_provenance(b_c_hash)
+        print(result)
+        assert(result is not None)
+
+        result = self._dor.get_provenance(meta_c['c_hash'])
+        print(result)
+        assert(result is not None)
+        assert(len(result['steps']) == 1)
+        step = result['steps'][0]
+        assert(step['processor'] == '5e4871029fd3a88f72f43377223e7efc37aa5a579ad464c59c593695a40c79aa')
+        assert(step['consumes']['a'] == '9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1')
+        assert(step['consumes']['b'] == '2b5442799fccc3af2e7e790017697373913b7afcac933d72fb5876de994f659a')
+        assert(step['produces']['c'] == 'b460644a73d5df6998c57c4eaf43ebc3e595bd06930af6e42d0008f84d91c849')
 
     def test_grant_revoke_access(self):
         owner = self._node.keystore

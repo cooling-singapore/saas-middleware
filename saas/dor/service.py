@@ -9,6 +9,7 @@ from typing import Optional, List, Union
 from fastapi import UploadFile, Request, Form, File
 from fastapi.responses import FileResponse, Response
 from saascore.api.sdk.exceptions import AuthorisationFailedError
+from saascore.api.sdk.proxies import DORProxy
 from saascore.cryptography.helpers import hash_file_content, hash_json_object, hash_string_object
 from saascore.log import Logging
 from saascore.helpers import read_json_from_file, validate_json, generate_random_string, get_timestamp_now
@@ -23,7 +24,7 @@ from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, Proce
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.dor.schemas import DataObject, SearchParameters, AddGPPDataObjectParameters, Tag, CDataObject, \
-    GPPDataObject, AddCDataObjectParameters, DataObjectRecipe, DataObjectProvenance, GitProcessorPointer, DORStatistics
+    GPPDataObject, AddCDataObjectParameters, DataObjectProvenance, DORStatistics, CObjectNode, DataObjectRecipe
 from saas.rest.auth import VerifyAuthorisation
 from saas.rest.schemas import EndpointDefinition
 from saas.schemas import ProcessorDescriptor
@@ -44,13 +45,47 @@ def _generate_object_id(c_hash: str, data_type: str, data_format: str, created_i
     return hash_string_object(f"{c_hash}{data_type}{data_format}{created_iid}{created_t}").hex()
 
 
-def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_config: str) -> str:
+def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_config: str, proc_descriptor: dict) -> str:
     return hash_json_object({
         'source': source,
         'commit_id': commit_id,
         'proc_path': proc_path,
-        'proc_config': proc_config
+        'proc_config': proc_config,
+        'proc_descriptor': proc_descriptor
     }).hex()
+
+
+def _generate_missing_provenance(c_hash: str, data_type: str, data_format: str) -> DataObjectProvenance:
+    provenance = DataObjectProvenance.parse_obj({
+        'data_nodes': {
+            c_hash: CObjectNode.parse_obj({
+                'c_hash': c_hash,
+                'data_type': data_type,
+                'data_format': data_format
+            })
+        },
+        'proc_nodes': {},
+        'steps': [],
+        'missing': [c_hash]
+    })
+    return provenance
+
+
+def _generate_by_value_provenance(c_hash: str, data_type: str, data_format: str, content: dict) -> DataObjectProvenance:
+    provenance = DataObjectProvenance.parse_obj({
+        'data_nodes': {
+            c_hash: CObjectNode.parse_obj({
+                'c_hash': c_hash,
+                'data_type': data_type,
+                'data_format': data_format,
+                'content': content
+            })
+        },
+        'proc_nodes': {},
+        'steps': [],
+        'missing': []
+    })
+    return provenance
 
 
 class DataObjectRecord(Base):
@@ -77,6 +112,7 @@ class DataObjectRecord(Base):
 class DataObjectProvenanceRecord(Base):
     __tablename__ = 'obj_provenance'
     c_hash = Column(String(64), primary_key=True)
+    p_hash = Column(String(64), primary_key=True)
     provenance = Column(NestedMutableJson, nullable=False)
 
 
@@ -151,82 +187,111 @@ class DORService:
         with self._Session() as session:
             return session.query(DataObjectRecord).filter_by(c_hash=c_hash).all()
 
-    def _get_recipes_by_content_hash(self, c_hash: str) -> list[DataObjectRecipe]:
-        recipes = []
-        records: List[DataObjectRecord] = self._get_object_records_by_content_hash(c_hash)
+    def _add_provenance_record(self, c_hash: str, provenance: dict) -> None:
+        with self._Session() as session:
+            # determine provenance hash and see if we already have that in the database. if not, add a db record.
+            p_hash = hash_json_object(provenance).hex()
+            record = session.query(DataObjectProvenanceRecord).filter_by(p_hash=p_hash).first()
+            if record is None:
+                session.add(DataObjectProvenanceRecord(c_hash=c_hash, p_hash=p_hash, provenance=provenance))
+                session.commit()
+                logger.info(f"database provenance record created for c_hash={c_hash} and p_hash={p_hash}.")
+            else:
+                logger.info(f"database provenance record already exists for c_hash={c_hash} and p_hash={p_hash}.")
 
-        for record in records:
-            details = dict(record.details)
-            if record.data_type != const_gpp_data_type and details['recipe'] is not None:
-                recipes.append(DataObjectRecipe.parse_obj(details['recipe']))
+    def _search_network_for_provenance(self, c_hash: str) -> List[DataObjectProvenance]:
+        # check every node in the network for provenance information
+        result = []
+        for node in self._node.db.get_network():
+            if node.dor_service and node.rest_address is not None:
+                dor = DORProxy(node.rest_address)
+                provenance = dor.get_provenance(c_hash)
+                if provenance is not None:
+                    # TODO: change once proxy has been refactored
+                    result.append(DataObjectProvenance.parse_obj(provenance))
+        return result
 
-        return recipes
+    def _generate_provenance_information(self, c_hash: str, recipe: DataObjectRecipe) -> DataObjectProvenance:
+        data_nodes = {}
+        proc_nodes = {}
+        steps = []
+        missing = []
 
-    def _generate_provenance_information(self, obj_recipe: DataObjectRecipe) -> DataObjectProvenance:
-        data_nodes = []
-        proc_nodes = []
-        obj_mapping = {}
-
-        # add the terminal object node
-        obj_node = DataObjectProvenance.ObjectNode.parse_obj({
-            'is_derived': True,
-            'c_hash': obj_recipe.product.c_hash,
-            'data_type': obj_recipe.product.data_type,
-            'data_format': obj_recipe.product.data_format
+        # handle the product
+        product_node = CObjectNode.parse_obj({
+            'c_hash': c_hash,
+            'data_type': recipe.product.data_type,
+            'data_format': recipe.product.data_format,
         })
-        data_nodes.append(obj_node)
-        obj_mapping[obj_node] = len(data_nodes) - 1
+        data_nodes[product_node.c_hash] = product_node
 
-        # process all product nodes
-        pending = [(obj_node, obj_recipe)]
-        while len(pending) > 0:
-            product_node, product_recipe = pending.pop(0)
+        # construct the step
+        step = {
+            'processor': None,
+            'consumes': {},
+            'produces': {
+                recipe.name: product_node.c_hash
+            }
+        }
 
-            # create object nodes for all consumed data objects
-            consumes = {}
-            for obj in product_recipe.input:
-                # is there a recipe for this object?
-                obj_recipe = self._get_recipes_by_content_hash(obj.c_hash)
-                obj_recipe = obj_recipe[0] if len(obj_recipe) > 0 else None
+        # get provenance information for all the input data objects
+        for name, obj in recipe.consumes.items():
+            # is it a by-reference object
+            if obj.content is None:
+                # search the network for provenance information. if there are multiple provenance instances (unlikely
+                # but not impossible), just use the first one.
+                # TODO: this behaviour should possibly be improved at some point
+                provenance = self._search_network_for_provenance(obj.c_hash)
+                provenance = provenance[0] if len(provenance) > 0 else None
 
-                # create an object node
-                obj_node = DataObjectProvenance.ObjectNode.parse_obj({
-                    'is_derived': obj_recipe is not None,
-                    'c_hash': obj.c_hash,
-                    'data_type': obj.data_type,
-                    'data_format': obj.data_format,
-                    'content': obj.value if obj.value else None
-                })
-                data_nodes.append(obj_node)
-                obj_mapping[obj_node] = len(data_nodes) - 1
+                # is the provenance information missing?
+                if provenance is None:
+                    provenance = _generate_missing_provenance(obj.c_hash, obj.data_type, obj.data_format)
+                    missing.append(obj.c_hash)
 
-                # add the object to consumes
-                consumes[obj.name] = obj_mapping[obj_node]
+                # add to step
+                step['consumes'][name] = obj.c_hash
 
-                # add the obj and recipe to pending as it needs to be processed further
-                if obj_recipe:
-                    pending.append((obj_node, obj_recipe))
+                # merge dicts
+                data_nodes.update(provenance.data_nodes)
+                proc_nodes.update(provenance.proc_nodes)
+                steps += provenance.steps
+                missing += provenance.missing
 
-            proc_nodes.append(DataObjectProvenance.ProcNode.parse_obj({
-                'gpp': GitProcessorPointer.parse_obj({
-                    'source': product_recipe.processor.source,
-                    'commit_id': product_recipe.processor.commit_id,
-                    'proc_path': product_recipe.processor.proc_path,
-                    'proc_config': product_recipe.processor.proc_config
-                }),
-                'proc_descriptor': product_recipe.processor.proc_descriptor,
-                'consumes': consumes,
-                'produces': obj_mapping[product_node]
-            }))
+            else:
+                # by-value objects are not uploaded to the DOR, so their provenance information is not generated
+                # when adding a data object to the DOR. let's generate provenance information for this by-value
+                # object on the fly
+                provenance = _generate_by_value_provenance(obj.c_hash, obj.data_type, obj.data_format, obj.content)
+                self._add_provenance_record(obj.c_hash, provenance.dict())
+
+                # add to step
+                step['consumes'][name] = obj.c_hash
+
+                # get the object node
+                obj_node = provenance.data_nodes[obj.c_hash]
+                data_nodes[obj.c_hash] = obj_node
+
+        # calculate c_hash for processor and keep the GPP in the dict that keeps all unique processors involved
+        step['processor'] = _generate_gpp_hash(recipe.processor.source, recipe.processor.commit_id,
+                                               recipe.processor.proc_path, recipe.processor.proc_config,
+                                               recipe.processor.proc_descriptor.dict())
+        if step['processor'] not in proc_nodes:
+            proc_nodes[step['processor']] = recipe.processor
+
+        # add the step
+        steps.append(step)
 
         provenance = DataObjectProvenance.parse_obj({
             'data_nodes': data_nodes,
-            'proc_nodes': proc_nodes
+            'proc_nodes': proc_nodes,
+            'steps': steps,
+            'missing': missing
         })
 
         return provenance
 
-    def endpoints(self) -> list:
+    def endpoints(self) -> List[EndpointDefinition]:
         return [
             EndpointDefinition('GET', self._endpoint_prefix, '',
                                self.search, List[DataObject], None),
@@ -248,6 +313,9 @@ class DORService:
 
             EndpointDefinition('GET', self._endpoint_prefix, '{obj_id}/content',
                                self.get_content, None, [VerifyUserHasAccess]),
+
+            EndpointDefinition('GET', self._endpoint_prefix, '{c_hash}/provenance',
+                               self.get_provenance, Optional[DataObjectProvenance], None),
 
             EndpointDefinition('POST', self._endpoint_prefix, '{obj_id}/access/{user_iid}',
                                self.grant_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
@@ -350,13 +418,11 @@ class DORService:
         os.chmod(destination_path, S_IREAD | S_IRGRP)
 
         # determine the object id
-
         created_t = get_timestamp_now()
         obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, creator.id, created_t)
 
         with self._Session() as session:
             # add a new data object record
-            r_hash = hash_json_object(p.recipe.dict()) if p.recipe is not None else None
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
                                          data_type=p.data_type, data_format=p.data_format,
                                          creator_iid=creator.id, created_t=created_t,
@@ -364,19 +430,15 @@ class DORService:
                                          access=[owner.id], tags={},
                                          details={
                                              'content_encrypted': p.content_encrypted,
-                                             'r_hash': r_hash,
-                                             'recipe': p.recipe
+                                             'recipe': p.recipe.dict() if p.recipe else None
                                          }))
             session.commit()
             logger.info(f"database record for data object '{obj_id}' added with c_hash={c_hash}.")
 
-            # generate the provenance information (if applicable)
-            if p.recipe is not None:
-                provenance = self._generate_provenance_information(p.recipe)
-                session.add(DataObjectProvenanceRecord(c_hash=c_hash, provenance=provenance))
-
-                session.commit()
-                logger.info(f"database provenance record created for data object with c_hash={c_hash}.")
+            # determine the provenance and add to the database
+            provenance = self._generate_provenance_information(c_hash, p.recipe) if p.recipe else \
+                _generate_missing_provenance(c_hash, p.data_type, p.data_format)
+            self._add_provenance_record(c_hash, provenance.dict())
 
             # check if temp file still exists.
             if os.path.exists(temp.name):
@@ -443,14 +505,14 @@ class DORService:
             raise DORException(reason=f"Processor configuration '{p.proc_config}' not supported by processor.",
                                details={
                                    'proc_config': p.proc_config,
-                                   'proc_descriptor': proc_descriptor
+                                   'proc_descriptor': proc_descriptor.dict()
                                })
 
         # we don't need the repository anymore -> delete it
         shutil.rmtree(repo_path)
 
         # determine the content hash for the GPP
-        c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config)
+        c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config, proc_descriptor.dict())
 
         with self._Session() as session:
             # determine the object id
@@ -547,8 +609,8 @@ class DORService:
                     'tags': record.tags,
 
                     'content_encrypted': details['content_encrypted'],
-                    'recipe': details['recipe'] if 'recipe' in details else None,
-                    'r_hash': details['r_hash'] if 'r_hash' in details else None
+                    'recipe': details['recipe'] if 'recipe' in details else None
+                    # 'r_hash': details['r_hash'] if 'r_hash' in details else None
                 })
 
     def get_content(self, obj_id: str) -> Response:
@@ -565,6 +627,13 @@ class DORService:
             })
 
         return FileResponse(content_path, media_type='application/octet-stream')
+
+    def get_provenance(self, c_hash: str) -> Optional[DataObjectProvenance]:
+        with self._Session() as session:
+            # do we have an object with this id?
+            records: DataObjectProvenanceRecord = session.query(DataObjectProvenanceRecord).filter(
+                (DataObjectProvenanceRecord.c_hash == c_hash)).all()
+            return DataObjectProvenance.parse_obj(records[0].provenance) if records else None
 
     def grant_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
         # do we have an identity for this iid?
