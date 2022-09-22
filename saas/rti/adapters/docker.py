@@ -1,8 +1,10 @@
 import os
 import traceback
+from contextlib import contextmanager
 
+import paramiko
 from saascore.exceptions import SaaSException
-from saascore.keystore.assets.credentials import GithubCredentials
+from saascore.keystore.assets.credentials import GithubCredentials, SSHCredentials
 from saascore.log import Logging
 
 import docker
@@ -30,32 +32,78 @@ def prune_image(proc_id: str) -> None:
     client.close()
 
 
-class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
-    def delete(self) -> None:
-        pass
+def add_ssh_host_keys(host: str, username: str, password: str = None, key_path: str = None):
+    client = paramiko.client.SSHClient()
+    client.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
+    # TODO: Might be dangerous to auto accept host key if it changes
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
-                 github_credentials: GithubCredentials) -> None:
+    client.connect(host, username=username, key_filename=key_path, password=password)
+
+
+def add_host_to_ssh_config(host_id: str, host: str, username: str, key_path: str):
+    config_path = os.path.expanduser("~/.ssh/config")
+    ssh_config = paramiko.config.SSHConfig.from_path(config_path)
+
+    if host_id not in ssh_config.get_hostnames():
+        ssh_host_template = f"\n" \
+                            f"Host {host_id}\n" \
+                            f"  HostName {host}\n" \
+                            f"  User {username}\n" \
+                            f"  IdentityFile {key_path}\n"
+        with open(config_path, "a") as f:
+            f.write(ssh_host_template)
+
+
+class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
+    def __init__(self, proc_id: str, gpp: dict, jobs_path: str, node,
+                 ssh_credentials: SSHCredentials = None,
+                 github_credentials: GithubCredentials = None) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 
         self._gpp = gpp
+        self._ssh_credentials = ssh_credentials
         self._github_credentials = github_credentials
 
         self.docker_image_tag = get_image_tag(proc_id)
 
+    @contextmanager
+    def get_docker_client(self):
+        environment = os.environ
+
+        # try to use remote docker if remote host is found
+        # user must make sure that the login has permission to run commands on the remote host
+        # e.g. sudo usermod -aG docker username
+        if self._ssh_credentials:
+            login = self._ssh_credentials.login
+            host = self._ssh_credentials.host
+            key = self._ssh_credentials.key
+
+            # Make sure host keys are added
+            add_ssh_host_keys(host, login, key_path=key)
+            # Add host to ssh config
+            add_host_to_ssh_config(self._proc_id, host, login, key)
+
+            environment["DOCKER_HOST"] = f"ssh://{self._proc_id}"
+
+        client = docker.from_env(environment=environment)
+        try:
+            yield client
+        finally:
+            client.close()
+
     def startup(self) -> None:
         logger.info(f"Building Docker image with tag: {self.docker_image_tag}")
         try:
-            client = docker.from_env()
-            client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
-                                tag=self.docker_image_tag,
-                                forcerm=True,  # remove intermediate containers
-                                buildargs={"GIT_REPO": self._gpp["source"],
-                                           "COMMIT_ID": self._gpp["commit_id"],
-                                           "PROCESSOR_PATH": self._gpp["proc_path"],
-                                           "PROC_CONFIG": self._gpp['proc_config'],
-                                           "PROC_ID": self._proc_id})
-            client.close()
+            with self.get_docker_client() as client:
+                client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
+                                    tag=self.docker_image_tag,
+                                    forcerm=True,  # remove intermediate containers
+                                    buildargs={"GIT_REPO": self._gpp["source"],
+                                               "COMMIT_ID": self._gpp["commit_id"],
+                                               "PROCESSOR_PATH": self._gpp["proc_path"],
+                                               "PROC_CONFIG": self._gpp['proc_config'],
+                                               "PROC_ID": self._proc_id})
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
@@ -68,29 +116,29 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
     def execute(self, job_id: str, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
         try:
-            client = docker.from_env()
-            full_working_directory = os.path.realpath(working_directory)
+            with self.get_docker_client() as client:
+                full_working_directory = os.path.realpath(working_directory)
 
-            # Detach and stream docker container output
-            container = client.containers.run(self.docker_image_tag, full_working_directory,
-                                              volumes={
-                                                  full_working_directory: {'bind': '/working_directory', 'mode': 'rw'}
-                                              },
-                                              remove=True,  # Auto remove container once done
-                                              detach=True)
+                # Detach and stream docker container output
+                container = client.containers.run(self.docker_image_tag, full_working_directory,
+                                                  volumes={
+                                                      full_working_directory: {
+                                                          'bind': '/working_directory', 'mode': 'rw'
+                                                      }
+                                                  },
+                                                  remove=True,  # Auto remove container once done
+                                                  detach=True)
 
-            # Block and go through logs until container closes
-            for log in container.logs(stream=True):
-                lines = log.decode('utf-8').splitlines()
+                # Block and go through logs until container closes
+                for log in container.logs(stream=True):
+                    lines = log.decode('utf-8').splitlines()
 
-                for line in lines:
-                    if line.startswith('trigger:output'):
-                        self._handle_trigger_output(line, status, job_id, job_descriptor, working_directory)
+                    for line in lines:
+                        if line.startswith('trigger:output'):
+                            self._handle_trigger_output(line, status, job_id, job_descriptor, working_directory)
 
-                    if line.startswith('trigger:progress'):
-                        self._handle_trigger_progress(line, status)
-
-            client.close()
+                        if line.startswith('trigger:progress'):
+                            self._handle_trigger_progress(line, status)
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))

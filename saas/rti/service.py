@@ -132,8 +132,9 @@ class RuntimeInfrastructureService:
 
                 elif deployment == 'docker':
                     self._deployed_processors[proc_id] = \
-                        docker_rti.RTIDockerProcessorAdapter(proc_id, meta['gpp'], content_path, self._jobs_path,
+                        docker_rti.RTIDockerProcessorAdapter(proc_id, meta['gpp'], self._jobs_path,
                                                              self._node,
+                                                             ssh_credentials=ssh_credentials,
                                                              github_credentials=github_credentials)
 
                 # start the processor
