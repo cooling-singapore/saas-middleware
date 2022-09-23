@@ -4,18 +4,18 @@ import os
 from threading import Lock
 from typing import Optional
 
+from saascore.api.sdk.proxies import dor_endpoint_prefix, db_endpoint_prefix
 from saascore.helpers import get_timestamp_now
 from saascore.keystore.identity import Identity
 from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
-import saas.nodedb.protocol as nodedb_prot
-import saas.dor.protocol as dor_prot
 import saas.p2p.service as p2p_service
 import saas.dor.service as dor_service
 import saas.rest.service as rest_service
 import saas.rti.service as rti_service
-import saas.nodedb.service as nodedb_service
+import saas.nodedb.service as db_service
+from saas.nodedb.schemas import NodeInfo
 
 logger = Logging.get('node')
 
@@ -28,10 +28,10 @@ class Node:
         self._mutex = Lock()
         self._datastore_path = datastore_path
         self._keystore = keystore
-        self.db: Optional[nodedb_service.NodeDBService] = None
+        self.db: Optional[db_service.NodeDBService] = None
         self.p2p: Optional[p2p_service.P2PService] = None
         self.rest: Optional[rest_service.RESTService] = None
-        self.dor: Optional[dor_service.DataObjectRepositoryService] = None
+        self.dor: Optional[dor_service.DORService] = None
         self.rti: Optional[rti_service.RuntimeInfrastructureService] = None
 
     @property
@@ -53,50 +53,42 @@ class Node:
         self.p2p = p2p_service.P2PService(self, server_address)
         self.p2p.start_service()
 
+        endpoints = []
+        if enable_db:
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}"
+            logger.info(f"enabling NodeDB service using {db_path}.")
+            self.db = db_service.NodeDBService(self, db_endpoint_prefix, db_path)
+            self.p2p.add(self.db.protocol)
+            endpoints += self.db.endpoints()
+
+        if enable_dor:
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'dor.db')}"
+            logger.info(f"enabling DOR service using {db_path}.")
+            self.dor = dor_service.DORService(self, dor_endpoint_prefix, db_path)
+            self.p2p.add(self.dor.protocol)
+            endpoints += self.db.endpoints()
+
+        if enable_rti:
+            self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
+            logger.info("enabling RTI service.")
+            # endpoints += self.rti.endpoints()
+
         if rest_address is not None:
             logger.info("starting REST service.")
             self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1])
             self.rest.start_service()
-
-        if enable_db:
-            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}"
-            logger.info(f"enabling NodeDB service using {db_path}.")
-
-            protocol = nodedb_prot.NodeDBP2PProtocol(self)
-
-            if self.rest:
-                self.db = nodedb_service.RESTNodeDBService(self, db_path, protocol)
-                self.rest.add(self.db.endpoints())
-            else:
-                self.db = nodedb_service.NodeDBService(self, db_path, protocol)
-
-            self.p2p.add(protocol)
-
-        if enable_dor:
-            logger.info("enabling DOR service.")
-
-            if self.rest:
-                self.dor = dor_service.RESTDataObjectRepositoryService(self)
-                self.rest.add(self.dor.endpoints())
-            else:
-                self.dor = dor_service.DataObjectRepositoryService(self)
-
-            self.p2p.add(dor_prot.DataObjectRepositoryP2PProtocol(self))
-
-        if enable_rti:
-            logger.info("enabling RTI service.")
-
-            if self.rest:
-                self.rti = rti_service.RESTRuntimeInfrastructureService(self, retain_job_history)
-                self.rest.add(self.rti.endpoints())
-            else:
-                self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
+            self.rest.add(endpoints)
 
         # update our node db
         self.db.update_identity(self.identity)
-        self.db.update_network(self.identity.id, get_timestamp_now(),
-                               self.dor is not None, self.rti is not None,
-                               self.p2p.address(), self.rest.address() if self.rest else None)
+        self.db.update_network(NodeInfo.parse_obj({
+            'identity': self.identity,
+            'last_seen': get_timestamp_now(),
+            'dor_service': self.dor is not None,
+            'rti_service': self.rti is not None,
+            'p2p_address': self.p2p.address(),
+            'rest_address': self.rest.address() if self.rest else None
+        }))
 
         # join an existing network of nodes?
         if boot_node_address:
@@ -119,7 +111,7 @@ class Node:
         self.db.protocol.perform_join(boot_node_address)
 
     def leave_network(self) -> None:
-        self.db.protocol.broadcast_leave()
+        self.db.protocol.perform_leave()
 
     def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
@@ -131,9 +123,7 @@ class Node:
 
             # propagate only if flag is set
             if propagate:
-                self.db.protocol.broadcast_update('update_identity', {
-                    'identity': identity.serialise()
-                })
+                self.db.protocol.broadcast_identity_update(identity)
 
             return identity
 

@@ -180,6 +180,10 @@ class DORService:
         os.makedirs(os.path.join(self._node.datastore, const_dor_infix_master_path), exist_ok=True)
         os.makedirs(os.path.join(self._node.datastore, const_dor_infix_temp_path), exist_ok=True)
 
+    @property
+    def protocol(self) -> DataObjectRepositoryP2PProtocol:
+        return self._protocol
+
     def obj_content_path(self, c_hash: str) -> str:
         return os.path.join(self._node.datastore, const_dor_infix_master_path, c_hash)
 
