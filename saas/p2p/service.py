@@ -9,9 +9,8 @@ from typing import Optional
 from saascore.keystore.identity import Identity
 from saascore.log import Logging
 
-from saas.p2p.exceptions import P2PException, MalformedMessageError, UnsupportedProtocolError, \
-    UnexpectedMessageTypeError
-from saas.p2p.protocol import SecureMessenger, P2PProtocol, P2PMessage
+from saas.p2p.exceptions import P2PException, UnsupportedProtocolError, UnexpectedMessageTypeError
+from saas.p2p.protocol import SecureMessenger, P2PProtocol
 
 logger = Logging.get('p2p.service')
 
@@ -117,54 +116,37 @@ class P2PService:
         try:
             request = messenger.receive_request()
 
-            # check if th request is well-formed
-            required = ['request_id', 'content', 'attachment']
-            if not all(p in request for p in required):
-                raise MalformedMessageError({
-                    'request': request,
-                    'required': required
-                })
-
-            # check if th request content is well-formed
-            try:
-                content = P2PMessage(**request['content'])
-            except TypeError:
-                raise MalformedMessageError({
-                    'request_content': request['content'],
-                    'required': P2PMessage.__annotations__
-                })
-
             # is the protocol supported?
-            if not content.protocol in self._registered_protocols:
+            if request.protocol not in self._registered_protocols:
                 raise UnsupportedProtocolError({
-                    'request_content': request['content'],
+                    'request': request.dict(),
                     'supported': [*self._registered_protocols.keys()]
                 })
 
             # is the message type supported by the protocol?
-            protocol: P2PProtocol = self._registered_protocols[content.protocol]
-            if not protocol.supports(content.type):
+            protocol: P2PProtocol = self._registered_protocols[request.protocol]
+            if not protocol.supports(request.type):
                 raise UnexpectedMessageTypeError({
-                    'request': request,
-                    'type': content.type,
+                    'request': request.dict(),
+                    'type': request.type,
                     'protocol_name': protocol.name
                 })
 
             # let the protocol handle the message and send response back to peer (if any)
-            response = protocol.handle_message(content, peer)
+            response = protocol.handle_message(request, peer)
             if response:
-                messenger.send_response(request['request_id'], response.content, response.attachment)
-            else:
-                # if no response is provided, we reply with a simple 'acknowledge'
-                messenger.send_response(request['request_id'], protocol.prepare_message('acknowledge'))
+                response.sequence_id = request.sequence_id
+                messenger.send_response(response)
 
         except P2PException as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity.name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] problem encountered while handling "
+                           f"client '{peer.id}: {e}\n{trace}")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving "
+                           f"client '{peer.id}': {e}\n{trace}")
 
         messenger.close()
         logger.debug(f"[{self._node.identity.name}] done serving client '{peer.id}'")
