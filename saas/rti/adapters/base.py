@@ -20,9 +20,9 @@ from saascore.helpers import write_json_to_file, read_json_from_file, generate_r
     get_timestamp_now
 from saascore.keystore.assets.credentials import SSHCredentials
 
-from saas.dor.exceptions import IdentityNotFoundError
+from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.nodedb.service import NetworkNode
+from saas.nodedb.schemas import NodeInfo
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
@@ -611,7 +611,7 @@ class RTIProcessorAdapter(Thread, ABC):
             content_path = os.path.join(working_directory, f"{obj_id}.content")
 
             # fetch the data object
-            custodian: NetworkNode = record['custodian']
+            custodian: NodeInfo = record['custodian']
             protocol.fetch(custodian.get_p2p_address(), obj_id, meta_path, content_path,
                            task_descriptor['user_iid'] if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
