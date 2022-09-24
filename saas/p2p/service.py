@@ -114,7 +114,7 @@ class P2PService:
         logger.debug(f"[{self._node.identity.name}] begin serving client '{peer.id}'")
 
         try:
-            request = messenger.receive_request()
+            request = messenger.receive_message()
 
             # is the protocol supported?
             if request.protocol not in self._registered_protocols:
@@ -137,6 +137,8 @@ class P2PService:
             if response:
                 response.sequence_id = request.sequence_id
                 messenger.send_response(response)
+            else:
+                messenger.send_null()
 
         except P2PException as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))

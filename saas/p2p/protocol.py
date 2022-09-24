@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any, Tuple
 
 from pydantic import BaseModel
 from saascore.log import Logging
@@ -15,7 +15,7 @@ logger = Logging.get('p2p.protocol')
 
 
 class BroadcastResponse(BaseModel):
-    responses: Dict[str, P2PMessage]
+    responses: Dict[str, Tuple[Any, Optional[str], Identity]]
     unavailable: List[NodeInfo]
 
 
@@ -24,10 +24,11 @@ class P2PProtocol:
     P2PProtocol is the base class for all P2P protocol classes. It provides convenience methods that are
     needed regardless of the specific protocol implementation.
     """
-    def __init__(self, node, protocol_name: str, function_mapping: dict):
+
+    def __init__(self, node, protocol_name: str, mapping: list[tuple]):
         self._node = node
         self._protocol_name = protocol_name
-        self._function_mapping = function_mapping
+        self._function_mapping = {item[0].__name__: item for item in mapping}
         self._seq_id_counter = 0
 
     def _next_seq_id(self) -> int:
@@ -53,58 +54,67 @@ class P2PProtocol:
         :param peer: the identity of the peer that sent the message
         :return: the response to be sent back to the peer (if any - None if not)
         """
-        f, t = self._function_mapping[message.type]
-        return f(t.parse_obj(message.content), peer)
+        req_class, function, resp_class = self._function_mapping[message.type]
+        response = function(req_class.parse_obj(message.content), peer)
+        if response is None:
+            content = None
+            attachment = None
 
-    def prepare_message(self, message_type: str, content: BaseModel = None, attachment: str = None,
-                        sequence_id: int = None) -> P2PMessage:
-        """
-        Convenience method for preparing a message. It creates the body of the message and fills in the 'protocol',
-        'type' and 'payload' fields.
-        :param message_type: the message type
-        :param content: the (optional) type-specific content of the message
-        :param attachment: the (optional) path to an attachment for the message
-        :param sequence_id: an (optional) sequence id in order to create a logical link between request/response
-        messages
-        :return: a valid P2P protocol message
-        """
-        return P2PMessage(protocol=self._protocol_name, type=message_type, content=content.dict() if content else None,
-                          attachment=attachment, sequence_id=sequence_id)
+        else:
+            if isinstance(response, tuple):
+                content = response[0]
+                attachment = response[1]
 
-    def request(self, address: (str, int), request: P2PMessage) -> (P2PMessage, Identity):
-        """
-        Connects to a peer address, sends a request message and waits for a response message.
-        :param address: the address (host:port) of the peer
-        :param request: the request message
-        :return: the response message
-        """
-        request.sequence_id = self._next_seq_id()
+            else:
+                content = response
+                attachment = None
 
+        return P2PMessage(protocol=self._protocol_name,
+                          type=resp_class.__name__,
+                          content=content.dict() if content else None,
+                          attachment=attachment,
+                          sequence_id=message.sequence_id) if resp_class else None
+
+    def request(self, address: (str, int), request: BaseModel,
+                attachment: str = None) -> (Optional[BaseModel], str, Identity):
+
+        # convert the request into the outgoing message
+        request_type = type(request).__name__
+        message_out = P2PMessage(protocol=self._protocol_name, type=request_type, content=request.dict(),
+                                 attachment=attachment, sequence_id=self._next_seq_id())
+
+        # send the message...
         peer, messenger = SecureMessenger.connect(address, self._node.identity, self._node.datastore)
-        logger.debug(f"[req:{request.sequence_id:06d}] ({self._node.identity.id[:8]}) -> ({peer.id[:8]}) "
-                     f"{request.protocol} {request.type} {request.attachment is not None}")
+        logger.debug(f"[req:{message_out.sequence_id:06d}] ({self._node.identity.id[:8]}) -> ({peer.id[:8]}) "
+                     f"{message_out.protocol} {message_out.type} {message_out.attachment is not None}")
 
-        response = messenger.send_request(request)
-        logger.debug(f"[res:{request.sequence_id:06d}] ({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
+        # ...and wait for the response
+        message_in = messenger.send_message(message_out)
+        if message_in:
+            messenger.close()
+            logger.debug(f"[res:{message_in.sequence_id:06d}] ({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
 
-        messenger.close()
-        return response, peer
+            # convert the incoming message in the response
+            _, _, resp_class = self._function_mapping[request_type]
+            response = resp_class.parse_obj(message_in.content) if message_in.content else None
+            return response, message_in.attachment, peer
 
-    def broadcast(self, message: P2PMessage, exclude: list[str] = None) -> Optional[BroadcastResponse]:
-        """
-        Broadcasts a message to all known peers (according to the db registry) unless they are excluded from the
-        broadcast. Note that the db registry typically also includes a record for the db its hosted on. In order
-        to prevent nodes sending messages to themselves as part of a broadcast, the sending db is added to the
-        exclusion list by default. If a peer cannot be reached, it is ignored.
-        :param message: the message to be broadcast
-        :param exclude: an (optional) list of peer iids which are to be excluded from the broadcast
-        :return: all responses from peers that could be connected in form of a dict[peer_id, response]
-        """
-        message.sequence_id = self._next_seq_id()
+        else:
+            messenger.close()
+            return None, None, peer
 
-        # we always exclude ourselves
+    def broadcast(self, request: BaseModel, attachment: str = None, exclude: list[str] = None,
+                  exclude_self: bool = True) -> Optional[BroadcastResponse]:
+
+        # convert the request into the outgoing message
+        request_type = type(request).__name__
+        message_out = P2PMessage(protocol=self._protocol_name, type=request_type, content=request.dict(),
+                                 attachment=attachment, sequence_id=self._next_seq_id())
+
+        # determine the exclude list
         exclude = exclude if exclude else []
-        exclude.append(self._node.identity.id)
+        if exclude_self:
+            exclude.append(self._node.identity.id)
 
         # send requests to all peers we know of and collect the responses
         responses = {}
@@ -117,8 +127,24 @@ class P2PProtocol:
             # connect to the peer (if it is online), send a request and keep the response. if a peer is not available,
             # we just skip it (as this is a broadcast we can't expect every peer in the list to be online/reachable).
             try:
+                # send the message...
                 peer, messenger = SecureMessenger.connect(node.p2p_address, self._node.identity, self._node.datastore)
-                responses[peer.id] = messenger.send_request(message)
+                logger.debug(f"[Breq:{message_out.sequence_id:06d}] ({self._node.identity.id[:8]}) -> ({peer.id[:8]}) "
+                             f"{message_out.protocol} {message_out.type} {message_out.attachment is not None}")
+
+                # ...and wait for the response
+                message_in = messenger.send_message(message_out)
+                if message_in:
+                    logger.debug(f"[Bres:{message_in.sequence_id:06d}] ({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
+
+                    # convert the incoming message in the response and keep it
+                    _, _, resp_class = self._function_mapping[request_type]
+                    response = resp_class.parse_obj(message_in.content) if message_in.content and resp_class else None
+                    responses[peer.id] = (response, message_in.attachment, peer)
+
+                else:
+                    responses[peer.id] = (None, None, peer)
+
                 messenger.close()
 
             except PeerUnavailableError:

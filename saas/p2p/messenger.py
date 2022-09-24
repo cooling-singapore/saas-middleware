@@ -22,7 +22,7 @@ from cryptography.fernet import Fernet
 from saascore.log import Logging
 
 from saas.p2p.exceptions import ReceiveDataError, SendDataError, MismatchingBytesWrittenError, ResourceNotFoundError, \
-    HandshakeFailedError, MismatchingRequestIdError, PeerUnavailableError, P2PException
+    HandshakeFailedError, PeerUnavailableError, P2PException
 
 logger = Logging.get('p2p.messenger')
 
@@ -97,7 +97,7 @@ class SecureMessenger:
         if self._peer_socket:
             self._peer_socket.close()
 
-    def send_request(self, request: P2PMessage) -> P2PMessage:
+    def send_message(self, request: P2PMessage) -> Optional[P2PMessage]:
         """
         Sends a request and waits for a response.
         :param request: the request message
@@ -113,29 +113,20 @@ class SecureMessenger:
         if request.attachment:
             self._send_stream(request.attachment)
 
-        # receive the response
-        response = P2PMessage.parse_obj(self._receive_object())
-
-        # check if the sequence id matches
-        if response.sequence_id != request.sequence_id:
-            raise MismatchingRequestIdError({
-                'request': request.dict(),
-                'response': response.dict()
-            })
-
-        # receive the attachment (if any)
-        if response.attachment:
-            response.attachment = os.path.join(self._storage_path, f"attachment_{generate_random_string(16)}")
-            self._receive_stream(response.attachment)
-
+        response = self.receive_message()
         return response
 
-    def receive_request(self) -> P2PMessage:
+    def receive_message(self) -> Optional[P2PMessage]:
         """
         Receives a request, i.e., a dict with the following keys: 'type', 'request_id', 'content', 'has_attachment'.
         :return: the request
         """
-        request = P2PMessage.parse_obj(self._receive_object())
+        received = self._receive_object()
+        if not received:
+            return None
+
+        # convert the object into a P2P message
+        request = P2PMessage.parse_obj(received)
 
         # receive the attachment (if any)
         if request.attachment:
@@ -161,6 +152,10 @@ class SecureMessenger:
         self._send_object(response.dict())
         if response.attachment:
             self._send_stream(response.attachment)
+
+    def send_null(self) -> None:
+        length = 0
+        self._send_data(length.to_bytes(4, byteorder='big'))
 
     def _handshake(self, identity: Identity) -> Identity:
         try:
@@ -214,15 +209,20 @@ class SecureMessenger:
         total_sent += self._send_data(encrypted_obj)
         return total_sent
 
-    def _receive_object(self) -> dict:
-        # receive the message
+    def _receive_object(self) -> Optional[dict]:
+        # receive the message length
         length = int.from_bytes(self._receive_data(4), 'big')
-        encrypted_obj = self._receive_data(length)
+        if length > 0:
+            # receive the encrypted object
+            encrypted_obj = self._receive_data(length)
 
-        # decrypt and inflate the object
-        obj = self._cipher.decrypt(encrypted_obj)
-        obj = obj.decode('utf-8')
-        obj = json.loads(obj)
+            # decrypt and inflate the object
+            obj = self._cipher.decrypt(encrypted_obj)
+            obj = obj.decode('utf-8')
+            obj = json.loads(obj)
+
+        else:
+            obj = None
 
         return obj
 

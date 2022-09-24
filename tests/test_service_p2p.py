@@ -11,12 +11,11 @@ from saascore.cryptography.helpers import hash_file_content
 from saascore.keystore.identity import Identity
 from saascore.log import Logging
 
-from saas.p2p.exceptions import ReceiveDataError, PeerUnavailableError, MismatchingRequestIdError
+from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage
 from saascore.keystore.keystore import Keystore
 from saas.node import Node
-from saas.p2p.protocol import P2PProtocol
-from saas.p2p.service import P2PService
+from saas.p2p.protocol import P2PProtocol, BroadcastResponse
 from tests.base_testcase import TestCaseBase, PortMaster
 
 Logging.initialise(level=logging.DEBUG)
@@ -28,19 +27,43 @@ class Bounce(BaseModel):
     bounced_to: Optional[Identity]
 
 
+class BounceRequest(BaseModel):
+    value: int
+
+
+class BounceResponse(BaseModel):
+    value: int
+
+
+class OneWayMessage(BaseModel):
+    msg: str
+
+
 class SimpleProtocol(P2PProtocol):
     def __init__(self, node):
-        P2PProtocol.__init__(self, node, 'simple_protocol', {
-            'bounce': (self._handle_bounce, Bounce)
-        })
+        P2PProtocol.__init__(self, node, 'simple_protocol', [
+            (BounceRequest, self._handle_bounce, BounceResponse),
+            (OneWayMessage, self._handle_oneway, None)
+        ])
 
-    def send_bounce(self, peer_address: (str, int), value: str) -> P2PMessage:
-        request = self.prepare_message('bounce', Bounce(value=value))
-        return self.request(peer_address, request)
+    def send_bounce(self, peer_address: (str, int), value: int) -> int:
+        response, attachment, peer = self.request(peer_address, BounceRequest(value=value))
+        return response.value
 
-    def _handle_bounce(self, message: Bounce, peer: Identity) -> P2PMessage:
-        message.bounced_to = peer
-        return self.prepare_message('bounce_reply', message)
+    def send_oneway(self, peer_address: (str, int), msg: str) -> None:
+        response, attachment, peer = self.request(peer_address, OneWayMessage(msg=msg))
+        assert(response is None)
+        assert(attachment is None)
+        assert(peer is not None)
+
+    def broadcast_bounce(self, value: int) -> BroadcastResponse:
+        return self.broadcast(BounceRequest(value=value), exclude_self=False)
+
+    def _handle_bounce(self, request: BounceRequest, _: Identity) -> BounceResponse:
+        return BounceResponse(value=request.value+1)
+
+    def _handle_oneway(self, request: OneWayMessage, _: Identity) -> None:
+        print(f"received one-way message: {request.msg}")
 
 
 class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
@@ -55,79 +78,34 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         self.keystore = Keystore.create(self.wd_path, name, f"{name}@somewhere.com", 'password')
         self.node = Node(self.keystore, self.wd_path)
         self.p2p_address = PortMaster.generate_p2p_address()
-        self.service = P2PService(self.node, self.p2p_address)
+        self.rest_address = PortMaster.generate_rest_address()
+
+        self.node.startup(self.p2p_address, False, False, True, self.rest_address)
 
     def tearDown(self):
         self.cleanup()
 
-    def test_start_and_stop(self):
-        self.service.start_service()
-        self.service.stop_service()
-        assert True
-
     def test_simple_protocol(self):
         protocol = SimpleProtocol(self.node)
-        self.service.add(protocol)
+        self.node.p2p.add(protocol)
 
-        self.service.start_service()
+        value = protocol.send_bounce(self.p2p_address, 42)
+        assert(value == 43)
 
-        response, _ = protocol.send_bounce(self.p2p_address, '42')
-        content = Bounce.parse_obj(response.content)
-        assert(content.value == '42')
-        assert(content.bounced_to.id == self.node.identity.id)
+        b_response = protocol.broadcast_bounce(42)
+        assert(len(b_response.responses) == 1)
+        assert(self.node.identity.id in b_response.responses)
+        for response, attachment, peer in b_response.responses.values():
+            assert(response.value == 43)
+            assert(attachment is None)
+            assert(peer.id == self.node.identity.id)
 
-        self.service.stop_service()
-
-    def test_invalid_messages(self):
-        protocol = SimpleProtocol(self.node)
-        self.service.add(protocol)
-
-        self.service.start_service()
-
-        # protocol not supported
-        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
-        assert (messenger is not None)
-
-        try:
-            # prepare a message and then replace the protocol manually with something invalid
-            message = protocol.prepare_message('msg_type', Bounce(value='23'))
-            message.protocol = 'alsjdfhskjdf'
-            _ = messenger.send_request(message)
-            assert False
-
-        except ReceiveDataError:
-            assert True
-
-        except Exception:
-            assert False
-
-        finally:
-            messenger.close()
-
-        # message type not supported
-        _, messenger = SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
-        assert (messenger is not None)
-
-        try:
-            # prepare a message and then replace the protocol manually with something invalid
-            message = protocol.prepare_message('invalid_msg_type', Bounce(value='23'))
-            _ = messenger.send_request(message)
-            assert False
-
-        except ReceiveDataError:
-            assert True
-
-        except Exception:
-            assert False
-
-        finally:
-            messenger.close()
-
-        self.service.stop_service()
+        protocol.send_oneway(self.p2p_address, 'hello!!!')
 
     def test_unreachable(self):
         try:
-            SecureMessenger.connect(self.p2p_address, self.node.identity, self.wd_path)
+            p2p_address = PortMaster.generate_p2p_address()
+            SecureMessenger.connect(p2p_address, self.node.identity, self.wd_path)
             assert False
 
         except PeerUnavailableError:
@@ -293,7 +271,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
                     SecureMessenger.accept(peer_socket, SecureMessengerTestCase._server_identity, wd_path)
                 assert(server_peer_identity.id == SecureMessengerTestCase._client_identity.id)
 
-                request: P2PMessage = server_messenger.receive_request()
+                request: P2PMessage = server_messenger.receive_message()
                 assert(request.type == 'Q')
                 assert('question' in request.content)
                 logger.debug(f"request received: {request}")
@@ -315,7 +293,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
         client_peer_identity, client_messenger = SecureMessenger.connect(server_address, self._client_identity, wd_path)
         assert(client_peer_identity.id == self._server_identity.id)
 
-        response = client_messenger.send_request(P2PMessage.parse_obj({
+        response = client_messenger.send_message(P2PMessage.parse_obj({
             'protocol': 'Hitchhiker',
             'type': 'Q',
             'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'}
@@ -327,62 +305,3 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
         assert(response.content['answer'] == '42')
 
         client_messenger.close()
-
-    def test_send_receive_request_invalid_request_id(self):
-        wd_path = self.wd_path
-        server_address = PortMaster.generate_p2p_address()
-
-        class TestServer(Thread):
-            def run(self):
-                # create server socket
-                server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                server_socket.bind(server_address)
-                server_socket.listen(1)
-
-                peer_socket, peer_address = server_socket.accept()
-
-                # create messenger and perform handshake
-                server_peer_identity, server_messenger = \
-                    SecureMessenger.accept(peer_socket, SecureMessengerTestCase._server_identity, wd_path)
-                assert(server_peer_identity.id == SecureMessengerTestCase._client_identity.id)
-
-                request: P2PMessage = server_messenger.receive_request()
-                assert(request.type == 'Q')
-                assert('question' in request.content)
-                logger.debug(f"request received: {request}")
-
-                server_messenger.send_response(P2PMessage.parse_obj({
-                    'sequence_id': 99,
-                    'protocol': request.protocol,
-                    'type': 'A',
-                    'content': {'answer': '42'}
-                }))
-                server_messenger.close()
-
-                server_socket.close()
-
-        server = TestServer()
-        server.start()
-        time.sleep(1)
-
-        client_peer_identity, client_messenger = SecureMessenger.connect(server_address, self._client_identity, wd_path)
-        assert(client_peer_identity.id == self._server_identity.id)
-
-        try:
-            client_messenger.send_request(P2PMessage.parse_obj({
-                'protocol': 'Hitchhiker',
-                'type': 'Q',
-                'content': {
-                    'question': 'What is the answer to the ultimate question of life, the universe and everything?'}
-            }))
-            assert False
-
-        except MismatchingRequestIdError:
-            assert True
-
-        client_messenger.close()
-
-
-if __name__ == '__main__':
-    unittest.main()
