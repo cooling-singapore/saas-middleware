@@ -1,4 +1,5 @@
 import os
+import re
 import traceback
 from contextlib import contextmanager
 
@@ -46,13 +47,39 @@ def add_host_to_ssh_config(host_id: str, host: str, username: str, key_path: str
     ssh_config = paramiko.config.SSHConfig.from_path(config_path)
 
     if host_id not in ssh_config.get_hostnames():
-        ssh_host_template = f"\n" \
+        ssh_host_template = f"\n### Added by saas-mw\n" \
                             f"Host {host_id}\n" \
                             f"  HostName {host}\n" \
                             f"  User {username}\n" \
-                            f"  IdentityFile {key_path}\n"
+                            f"  IdentityFile {key_path}\n" \
+                            f"###\n"
         with open(config_path, "a") as f:
             f.write(ssh_host_template)
+
+
+def remove_host_from_ssh_config(host_id: str):
+    """
+    Removes host from config with the format:
+    Host name
+      Hostname host
+      User username
+      IdentityFile file
+    """
+    config_path = os.path.expanduser("~/.ssh/config")
+    ssh_config = paramiko.config.SSHConfig.from_path(config_path)
+
+    if host_id in ssh_config.get_hostnames():
+        regexp = re.compile(f"\n### Added by saas-mw\n"
+                            f"Host {host_id}\n"
+                            f"(\n|.)*?"
+                            f"###\n")
+
+        with open(config_path, "r") as f:
+            config = f.read()
+
+        with open(config_path, "w") as f:
+            new_config = regexp.sub("", config)
+            f.write(new_config)
 
 
 class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
@@ -148,6 +175,12 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 'working_directory': working_directory,
                 'trace': trace
             })
+
+    def delete(self) -> None:
+        # FIXME: Might not be thread safe
+        # Remove entry added to ssh config
+        if self._ssh_credentials:
+            remove_host_from_ssh_config(self._proc_id)
 
     def _handle_trigger_output(self, line: str, status: StatusLogger, job_id: str,
                                task_descriptor: dict, working_directory: str) -> None:
