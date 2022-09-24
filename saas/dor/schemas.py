@@ -2,7 +2,7 @@ from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
-from saas.schemas import ProcessorDescriptor
+from saas.schemas import GitProcessorPointer
 
 
 class SearchParameters(BaseModel):
@@ -26,22 +26,13 @@ class GithubCredentials(BaseModel):
 
 class CObjectNode(BaseModel):
     c_hash: str
-    # name: str
     data_type: str
     data_format: str
     content: Optional[dict]
 
 
-class GPPObjectNode(BaseModel):
-    source: str
-    commit_id: str
-    proc_path: str
-    proc_config: str
-    proc_descriptor: ProcessorDescriptor
-
-
 class DataObjectRecipe(BaseModel):
-    processor: GPPObjectNode
+    processor: GitProcessorPointer
     consumes: Dict[str, CObjectNode]
     product: CObjectNode
     name: str
@@ -54,7 +45,7 @@ class DataObjectProvenance(BaseModel):
         produces: Dict[str, str]
 
     data_nodes: Dict[str, CObjectNode]
-    proc_nodes: Dict[str, GPPObjectNode]
+    proc_nodes: Dict[str, GitProcessorPointer]
     steps: List[Step]
     missing: List[str]
 
@@ -73,11 +64,7 @@ class DataObject(BaseModel):
 
 
 class GPPDataObject(DataObject):
-    source: str
-    commit_id: str
-    proc_path: str
-    proc_config: str
-    proc_descriptor: ProcessorDescriptor
+    gpp: GitProcessorPointer
 
 
 class CDataObject(DataObject):

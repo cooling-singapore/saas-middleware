@@ -403,6 +403,10 @@ class DORService:
         # calculate the hash for the data object content
         c_hash = hash_file_content(temp.name).hex()
 
+        # fix the c_hash in the recipe (if any)
+        if p.recipe:
+            p.recipe.product.c_hash = c_hash
+
         # check if there are already data objects with the same content
         if len(self._get_object_records_by_content_hash(c_hash)) > 0:
             # it is possible for cases like this to happen. despite the exact same content, this may well be
@@ -416,10 +420,10 @@ class DORService:
         else:
             logger.info(f"data object content '{c_hash}' does not exist yet -> adding content to DOR.")
 
-        # move the temporary content to its destination and make it read-only
-        destination_path = self.obj_content_path(c_hash)
-        os.rename(temp.name, destination_path)
-        os.chmod(destination_path, S_IREAD | S_IRGRP)
+            # move the temporary content to its destination and make it read-only
+            destination_path = self.obj_content_path(c_hash)
+            os.rename(temp.name, destination_path)
+            os.chmod(destination_path, S_IREAD | S_IRGRP)
 
         # determine the object id
         created_t = get_timestamp_now()
@@ -533,7 +537,7 @@ class DORService:
                                              'source': p.source,
                                              'commit_id': p.commit_id,
                                              'proc_path': p.proc_path,
-                                             'proc_config': p.proc_path,
+                                             'proc_config': p.proc_config,
                                              'proc_descriptor': proc_descriptor.dict()
                                          }))
 
@@ -592,11 +596,13 @@ class DORService:
                     'access': record.access,
                     'tags': record.tags,
 
-                    'source': details['source'],
-                    'commit_id': details['commit_id'],
-                    'proc_path': details['proc_path'],
-                    'proc_config': details['proc_path'],
-                    'proc_descriptor': details['proc_descriptor']
+                    'gpp': {
+                        'source': details['source'],
+                        'commit_id': details['commit_id'],
+                        'proc_path': details['proc_path'],
+                        'proc_config': details['proc_config'],
+                        'proc_descriptor': details['proc_descriptor']
+                    }
                 })
 
             else:
@@ -614,7 +620,6 @@ class DORService:
 
                     'content_encrypted': details['content_encrypted'],
                     'recipe': details['recipe'] if 'recipe' in details else None
-                    # 'r_hash': details['r_hash'] if 'r_hash' in details else None
                 })
 
     def get_content(self, obj_id: str) -> Response:

@@ -13,6 +13,7 @@ class TaskInputReference(BaseModel):
     type: Literal["reference"]
     obj_id: str
     user_signature: Optional[str]
+    c_hash: Optional[str]
 
 
 class TaskInputValue(BaseModel):
@@ -58,10 +59,15 @@ class ProcessorDescriptor(BaseModel):
     configurations: List[str]
 
 
+class JobStatus(BaseModel):
+    job_id: str
+    task: dict
+
+
 class ProcessorStatus(BaseModel):
     state: str
-    active: Optional[dict]
     pending: List[dict]
+    active: Optional[dict]
 
 
 class GitProcessorPointer(BaseModel):
@@ -70,12 +76,3 @@ class GitProcessorPointer(BaseModel):
     proc_path: str
     proc_config: str
     proc_descriptor: Optional[ProcessorDescriptor]
-
-
-# class NetworkNode(BaseModel):
-#     iid: str
-#     last_seen: int
-#     p2p_address: str
-#     rest_address: Optional[str]
-#     dor_service: bool
-#     rti_service: bool

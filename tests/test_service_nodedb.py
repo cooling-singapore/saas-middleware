@@ -210,30 +210,6 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
                 assert(len(network) == 1)
                 assert(network[0].identity.id == node.identity.id)
 
-        #
-        # # feed each node with an extra identity
-        # extras = self.create_keystores(len(nodes))
-        # for i in range(len(nodes)):
-        #     nodes[i].db.update_identity(extras[i].identity)
-        #
-        # # each node should know about 4 identities now
-        # for node in nodes:
-        #     ids = node.db.get_identities()
-        #     assert(len(ids) == 4)
-        #
-        # # create more nodes and manually join them with the existing nodes
-        # nodes2 = self.create_nodes(len(nodes), offset=len(nodes), perform_join=False)
-        # for i in range(len(nodes2)):
-        #     nodes2[i].join_network(nodes[i].p2p.address())
-        #
-        # time.sleep(2)
-        #
-        # # each node should know about 9 identities (len(nodes) + len(extras) + len(nodes2))
-        # all_nodes = nodes + nodes2
-        # for node in all_nodes:
-        #     ids = node.db.get_identities()
-        #     assert(len(ids) == len(nodes) + len(extras) + len(nodes2))
-
     def test_update_identity(self):
         # all nodes should now know about each other
         nodes = self.create_nodes(3, perform_join=True)
