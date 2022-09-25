@@ -4,12 +4,11 @@ import json
 import os
 import subprocess
 import time
-import traceback
 from _stat import S_IWRITE
 from json import JSONDecodeError
 from stat import S_IREAD
 from threading import Lock
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 
 from fastapi import Request
 from fastapi.responses import FileResponse, Response
@@ -31,6 +30,18 @@ from saas.rti.status import StatusLogger, State
 from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
 
 logger = Logging.get('rti.service')
+
+
+def _try_load_json(path: str, max_attempts: int = 10, delay: float = 0.5) -> Union[List, Dict]:
+    for i in range(max_attempts):
+        try:
+            with open(path, 'r') as f:
+                content = json.load(f)
+                return content
+        except JSONDecodeError:
+            logger.warning(f"could not parse JSON content in {path} (attempt: {i + 1}) "
+                           f"-> trying again in {delay} seconds...")
+            time.sleep(delay)
 
 
 class RTIService:
@@ -283,12 +294,9 @@ class RTIService:
                     'job_id': job_id
                 })
 
-            with open(descriptor_path, 'r') as f:
-                descriptor = json.load(f)
-
-            with open(status_path, 'r') as f:
-                status = json.load(f)
-
+            # try to load the descriptor and status
+            descriptor = _try_load_json(descriptor_path)
+            status = _try_load_json(status_path)
             return Job(descriptor=descriptor, status=status)
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
