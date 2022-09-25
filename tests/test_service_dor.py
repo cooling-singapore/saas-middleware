@@ -507,6 +507,20 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
+        # try to set a complex tag by owner
+        try:
+            meta = self._dor.update_tags(obj_id, owner, {'profile': {
+                'name': 'mr a',
+                'email': 'somewhere@internet.com'
+            }})
+            assert(len(meta['tags']) == 1)
+            assert('profile' in meta['tags'])
+            assert('name' in meta['tags']['profile'])
+            assert('email' in meta['tags']['profile'])
+
+        except UnsuccessfulRequestError:
+            assert False
+
     def test_content_encryption(self):
         # create content for the data object and encrypt it
         content_plain = "my little secret..."

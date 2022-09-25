@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 
 from pydantic import BaseModel
 
@@ -95,4 +95,4 @@ class AddCDataObjectParameters(AddDataObjectParameters):
 
 class Tag(BaseModel):
     key: str
-    value: str
+    value: Union[str, int, float, List, Dict]
