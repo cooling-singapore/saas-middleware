@@ -43,19 +43,18 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        if DORRESTTestCase._node is None:
-            DORRESTTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                  wd_path=DORRESTTestCase._wd_path)
-            DORRESTTestCase._db = NodeDBProxy(DORRESTTestCase._node.rest.address())
-            DORRESTTestCase._dor = DORProxy(DORRESTTestCase._node.rest.address())
+        if DORTestCase._node is None:
+            DORTestCase._node = self.get_node('node', enable_rest=True, keep_track=False, wd_path=DORTestCase._wd_path)
+            DORTestCase._db = NodeDBProxy(DORTestCase._node.rest.address())
+            DORTestCase._dor = DORProxy(DORTestCase._node.rest.address())
 
             extras = self.create_keystores(3)
-            DORRESTTestCase._unknown_user = extras[0]
-            DORRESTTestCase._known_user0 = extras[1]
-            DORRESTTestCase._known_user1 = extras[2]
+            DORTestCase._unknown_user = extras[0]
+            DORTestCase._known_user0 = extras[1]
+            DORTestCase._known_user1 = extras[2]
 
-            DORRESTTestCase._node.db.update_identity(DORRESTTestCase._known_user0.identity)
-            DORRESTTestCase._node.db.update_identity(DORRESTTestCase._known_user1.identity)
+            DORTestCase._node.db.update_identity(DORTestCase._known_user0.identity)
+            DORTestCase._node.db.update_identity(DORTestCase._known_user1.identity)
 
             time.sleep(1)
 
