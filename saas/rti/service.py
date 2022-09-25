@@ -134,6 +134,9 @@ class RTIService:
             EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/info',
                                self.job_info, Job, [VerifyUserIsJobOwner]),
 
+            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/logs',
+                               self.job_logs, None, [VerifyUserIsJobOwner]),
+
             EndpointDefinition('POST', self._endpoint_prefix, 'permission/{req_id}',
                                self.put_permission, None, None)
         ]
@@ -298,6 +301,39 @@ class RTIService:
             descriptor = _try_load_json(descriptor_path)
             status = _try_load_json(status_path)
             return Job(descriptor=descriptor, status=status)
+
+    def job_logs(self, job_id: str) -> Response:
+        # collect log files (if they exist)
+        existing = []
+        for filename in ['execute_sh.stdout', 'execute_sh.stderr']:
+            log_path = os.path.join(self._jobs_path, job_id, filename)
+            if os.path.isfile(log_path):
+                existing.append(os.path.basename(log_path))
+
+        # do we have anything?
+        if not existing:
+            raise RTIException(f"No execute logs available.", details={
+                'job_id': job_id
+            })
+
+        # build the command for archiving the logs
+        wd_path = os.path.join(self._jobs_path, job_id)
+        archive_path = os.path.join(self._jobs_path, job_id, 'execute_logs.tar.gz')
+        command = ['tar', 'czf', archive_path, '-C', wd_path] + existing
+
+        try:
+            # archive the logs and return as stream
+            subprocess.run(command, capture_output=True, check=True)
+            return FileResponse(archive_path, media_type='application/octet-stream')
+
+        except subprocess.CalledProcessError as e:
+            raise RunCommandError({
+                'reason': 'archiving execute logs failed',
+                'returncode': e.returncode,
+                'command': command,
+                'stdout': e.stdout.decode('utf-8'),
+                'stderr': e.stderr.decode('utf-8')
+            })
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
         with self._mutex:

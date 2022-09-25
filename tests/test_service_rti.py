@@ -188,6 +188,20 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             print(content)
             assert(content['v'] == 3)
 
+        download_path = os.path.join(self.wd_path, 'log.tar.gz')
+
+        # try to get the job logs as the wrong user
+        try:
+            self._rti.get_job_logs(job_id, wrong_user, download_path)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert(e.details['reason'] == 'user is not the job owner')
+            assert(not os.path.isfile(download_path))
+
+        self._rti.get_job_logs(job_id, owner, download_path)
+        assert(os.path.isfile(download_path))
+
     def test_rest_job_logs(self):
         deploy_and_wait(self._rti, self._test_proc_id, self._test_proc_gh_cred)
 
