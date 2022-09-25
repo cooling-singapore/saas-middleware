@@ -14,6 +14,7 @@ RUN git checkout $COMMIT_ID
 FROM python:3-slim as install
 ARG PROC_ID
 ARG PROC_CONFIG=default
+ENV PROC_CONFIG=$PROC_CONFIG
 ARG PROCESSOR_PATH=processor_test
 
 LABEL proc_id=$PROC_ID
@@ -25,4 +26,4 @@ RUN echo "$PWD"
 RUN ./install.sh $PROC_CONFIG
 
 RUN mkdir /working_directory
-ENTRYPOINT ["./execute.sh", "default", "/working_directory"]
+ENTRYPOINT  ./execute.sh $PROC_CONFIG /working_directory
