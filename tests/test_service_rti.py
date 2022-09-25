@@ -35,6 +35,22 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     asset: CredentialsAsset = owner.get_asset('github-credentials')
     github_credentials: GithubCredentials = asset.get(source)
 
+def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
+    while True:
+        time.sleep(5)
+        descriptor, status, _ = rti.get_job_info(job_id)
+        if descriptor and status:
+            print(f"job descriptor: {descriptor}")
+            print(f"job status: {status}")
+
+            state = State(status['state'])
+            if state == State.SUCCESSFUL:
+                return True
+            elif state == State.TIMEOUT:
+                return False
+            elif state == State.FAILED:
+                return False
+
     meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity, owner.identity.name,
                                    github_credentials=github_credentials)
     return meta['obj_id'], github_credentials

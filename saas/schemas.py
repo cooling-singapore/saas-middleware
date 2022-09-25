@@ -1,4 +1,4 @@
-from typing import Union, Literal, List, Optional
+from typing import Union, Literal, List, Optional, Dict
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,15 @@ class TaskDescriptor(BaseModel):
     input: List[Union[TaskInputReference, TaskInputValue]]
     output: List[TaskOutput]
     user_iid: str
+
+
+class ResumeDescriptor(BaseModel):
+    job_id: str
+    task_descriptor: TaskDescriptor
+    paths: Dict[str, str]
+    pid: str
+    pid_paths: Dict[str, str]
+    retain_job: bool
 
 
 class JobDescriptor(BaseModel):

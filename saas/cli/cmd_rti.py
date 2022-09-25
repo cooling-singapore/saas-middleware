@@ -416,9 +416,10 @@ class RTIJobStatus(CLICommand):
         prompt_if_missing(args, 'job-id', prompt_for_string, message='Enter the job id:')
 
         try:
-            descriptor, status = rti.get_job_info(args['job-id'])
+            descriptor, status, reconnect = rti.get_job_info(args['job-id'])
             print(f"Job descriptor: {json.dumps(descriptor, indent=4)}")
             print(f"Status: {json.dumps(status, indent=4)}")
+            print(f"Reconnect: {json.dumps(reconnect, indent=4)}")
 
         except UnsuccessfulRequestError:
             print(f"Job {args['job-id']} not found.")
