@@ -1,13 +1,16 @@
 import io
 import os
 import re
+import shutil
+import subprocess
 import tarfile
+import tempfile
 import traceback
 from contextlib import contextmanager
 from typing import Optional
 
 import paramiko
-from saascore.exceptions import SaaSException
+from saascore.exceptions import SaaSException, RunCommandError
 from saascore.keystore.assets.credentials import GithubCredentials, SSHCredentials
 from saascore.log import Logging
 
@@ -59,6 +62,22 @@ def add_host_to_ssh_config(host_id: str, host: str, username: str, key_path: str
                             f"###\n"
         with open(config_path, "a") as f:
             f.write(ssh_host_template)
+
+
+def clone_github_repo(gpp: dict, repo_path: str, github_credentials: GithubCredentials = None):
+    git_source = gpp["source"]
+    commit_id = gpp['commit_id']
+
+    if github_credentials:
+        login = github_credentials.login
+        token = github_credentials.personal_access_token
+        git_source = git_source.replace("github.com", f"{login}:{token}@github.com")
+
+    cmd1 = f"git clone {git_source} {repo_path}"
+    cmd2 = f"cd {repo_path} && git checkout {commit_id}"
+
+    base.run_command(cmd1)
+    base.run_command(cmd2)
 
 
 def remove_host_from_ssh_config(host_id: str):
@@ -132,21 +151,28 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
     def startup(self) -> None:
         logger.info(f"Building Docker image with tag: {self.docker_image_tag}")
         try:
-            with self.get_docker_client() as client:
-                client.images.build(path=os.path.join(os.path.dirname(__file__), "utilities"),
-                                    tag=self.docker_image_tag,
-                                    forcerm=True,  # remove intermediate containers
-                                    buildargs={"GIT_REPO": self._gpp["source"],
-                                               "COMMIT_ID": self._gpp["commit_id"],
-                                               "PROCESSOR_PATH": self._gpp["proc_path"],
-                                               "PROC_CONFIG": self._gpp['proc_config'],
-                                               "PROC_ID": self._proc_id})
+            # Setup docker build context
+            with tempfile.TemporaryDirectory() as tempdir:
+                dockerfile_path = os.path.join(os.path.dirname(__file__), "utilities", "Dockerfile")
+                shutil.copyfile(dockerfile_path, os.path.join(tempdir, "Dockerfile"))
+
+                # Clone git repo to temp directory
+                repo_path = os.path.join(tempdir, "processor_repo")
+                clone_github_repo(self._gpp, repo_path, self._github_credentials)
+
+                with self.get_docker_client() as client:
+                    client.images.build(path=tempdir,
+                                        tag=self.docker_image_tag,
+                                        forcerm=True,  # remove intermediate containers
+                                        buildargs={"PROCESSOR_PATH": self._gpp["proc_path"],
+                                                   "PROC_CONFIG": self._gpp['proc_config'],
+                                                   "PROC_ID": self._proc_id})
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise BuildDockerImageError({
                 'trace': trace
-            })
+            }) from e
 
     def shutdown(self) -> None:
         pass
