@@ -1,9 +1,13 @@
 import json
+import os
 
 from fastapi import Request
 from saascore.api.sdk.exceptions import AuthorisationFailedError
 from saascore.api.sdk.helpers import verify_authorisation_token
 from saascore.keystore.identity import Identity
+
+from saas.rti.exceptions import JobDescriptorNotFoundError, ProcessorNotDeployedError
+from saas.schemas import JobDescriptor
 
 
 class VerifyAuthorisation:
@@ -40,3 +44,66 @@ class VerifyAuthorisation:
             })
 
         return identity, body
+
+
+class VerifyIsOwner:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, obj_id: str, request: Request):
+        identity, body = await VerifyAuthorisation(self.node).__call__(request)
+
+        # get the meta information of the object
+        meta = self.node.dor.get_meta(obj_id)
+        if meta is None:
+            raise AuthorisationFailedError({
+                'reason': 'data object does not exist',
+                'obj_id': obj_id
+            })
+
+        # check if the identity is the owner of that data object
+        if meta.owner_iid != identity.id:
+            raise AuthorisationFailedError({
+                'reason': 'user is not the data object owner',
+                'obj_id': obj_id,
+                'user_iid': identity.id
+            })
+
+
+class VerifyUserHasAccess:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, obj_id: str, request: Request):
+        identity, body = await VerifyAuthorisation(self.node).__call__(request)
+
+        # get the meta information of the object
+        meta = self.node.dor.get_meta(obj_id)
+        if meta is None:
+            raise AuthorisationFailedError({
+                'reason': 'data object does not exist',
+                'obj_id': obj_id
+            })
+
+        # check if the identity has access to the data object content
+        if identity.id not in meta.access:
+            raise AuthorisationFailedError({
+                'reason': 'user has no access to the data object content',
+                'obj_id': obj_id,
+                'user_iid': identity.id
+            })
+
+
+class VerifyProcessorDeployed:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, proc_id: str):
+        # is the processor already deployed?
+        for deployed in self.node.rti.deployed():
+            if deployed.proc_id == proc_id:
+                return
+
+        raise ProcessorNotDeployedError({
+            'proc_id': proc_id
+        })

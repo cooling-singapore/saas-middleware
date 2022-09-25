@@ -13,6 +13,7 @@ from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentia
 
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
+from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, ProcessorNotDeployedError, \
@@ -22,21 +23,6 @@ from saas.rti.status import StatusLogger, State
 from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
 
 logger = Logging.get('rti.service')
-
-
-class VerifyProcessorDeployed:
-    def __init__(self, node):
-        self.node = node
-
-    async def __call__(self, proc_id: str):
-        # is the processor already deployed?
-        for deployed in self.node.rti.deployed():
-            if deployed.proc_id == proc_id:
-                return
-
-        raise ProcessorNotDeployedError({
-            'proc_id': proc_id
-        })
 
 
 class RTIService:
