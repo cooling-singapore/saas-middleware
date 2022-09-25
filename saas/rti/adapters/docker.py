@@ -2,7 +2,6 @@ import io
 import os
 import re
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import traceback
@@ -15,6 +14,7 @@ from saascore.keystore.assets.credentials import GithubCredentials, SSHCredentia
 from saascore.log import Logging
 
 import docker
+from docker.errors import BuildError
 from docker.models.containers import Container
 
 import saas.rti.adapters.base as base
@@ -161,12 +161,21 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 clone_github_repo(self._gpp, repo_path, self._github_credentials)
 
                 with self.get_docker_client() as client:
-                    client.images.build(path=tempdir,
-                                        tag=self.docker_image_tag,
-                                        forcerm=True,  # remove intermediate containers
-                                        buildargs={"PROCESSOR_PATH": self._gpp["proc_path"],
-                                                   "PROC_CONFIG": self._gpp['proc_config'],
-                                                   "PROC_ID": self._proc_id})
+                    image, info = client.images.build(path=tempdir,
+                                                      tag=self.docker_image_tag,
+                                                      forcerm=True,  # remove intermediate containers
+                                                      buildargs={"PROCESSOR_PATH": self._gpp["proc_path"],
+                                                                 "PROC_CONFIG": self._gpp['proc_config'],
+                                                                 "PROC_ID": self._proc_id})
+
+        except BuildError as e:
+            print(e.msg)
+            for log in e.build_log:
+                print(log.get("stream"))
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            raise BuildDockerImageError({
+                'trace': trace
+            }) from e
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
