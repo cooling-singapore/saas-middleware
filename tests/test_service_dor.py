@@ -471,7 +471,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             assert('name' in meta['tags'])
             assert(meta['tags']['name'] == 'abc')
 
-        except UnsuccessfulRequestError as e:
+        except UnsuccessfulRequestError:
             assert False
 
         # try to set tags by owner
@@ -481,7 +481,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             assert('name' in meta['tags'])
             assert(meta['tags']['name'] == 'bcd')
 
-        except UnsuccessfulRequestError as e:
+        except UnsuccessfulRequestError:
             assert False
 
         # try to remove existing tag by non-owner
