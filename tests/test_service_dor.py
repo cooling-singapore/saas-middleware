@@ -21,7 +21,7 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-class DORRESTTestCase(unittest.TestCase, TestCaseBase):
+class DORTestCase(unittest.TestCase, TestCaseBase):
     _wd_path = os.path.join(os.environ['HOME'], 'testing', str(get_timestamp_now()))
     _node = None
     _db = None
