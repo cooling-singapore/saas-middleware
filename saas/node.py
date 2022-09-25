@@ -4,7 +4,7 @@ import os
 from threading import Lock
 from typing import Optional
 
-from saascore.api.sdk.proxies import dor_endpoint_prefix, db_endpoint_prefix
+from saascore.api.sdk.proxies import dor_endpoint_prefix, db_endpoint_prefix, rti_endpoint_prefix
 from saascore.helpers import get_timestamp_now
 from saascore.keystore.identity import Identity
 from saascore.keystore.keystore import Keystore
@@ -32,7 +32,7 @@ class Node:
         self.p2p: Optional[p2p_service.P2PService] = None
         self.rest: Optional[rest_service.RESTService] = None
         self.dor: Optional[dor_service.DORService] = None
-        self.rti: Optional[rti_service.RuntimeInfrastructureService] = None
+        self.rti: Optional[rti_service.RTIService] = None
 
     @property
     def keystore(self) -> Keystore:
@@ -66,12 +66,12 @@ class Node:
             logger.info(f"enabling DOR service using {db_path}.")
             self.dor = dor_service.DORService(self, dor_endpoint_prefix, db_path)
             self.p2p.add(self.dor.protocol)
-            endpoints += self.db.endpoints()
+            endpoints += self.dor.endpoints()
 
         if enable_rti:
-            self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
+            self.rti = rti_service.RTIService(self, rti_endpoint_prefix, retain_job_history)
             logger.info("enabling RTI service.")
-            # endpoints += self.rti.endpoints()
+            endpoints += self.rti.endpoints()
 
         if rest_address is not None:
             logger.info("starting REST service.")

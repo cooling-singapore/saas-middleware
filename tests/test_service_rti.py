@@ -35,7 +35,7 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     asset: CredentialsAsset = owner.get_asset('github-credentials')
     github_credentials: GithubCredentials = asset.get(source)
 
-    meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity, owner.identity.name,
+    meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity,
                                    github_credentials=github_credentials)
     return meta['obj_id'], github_credentials
 
@@ -95,7 +95,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(result is not None)
 
         # get the descriptor
-        result = self._rti.get_descriptor(self._test_proc_id)
+        result = self._rti.get_gpp(self._test_proc_id)
         print(result)
         assert(result is not None)
 
@@ -104,7 +104,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             result = self._rti.get_status(self._test_proc_id)
             assert(result is not None)
 
-            if result['state'] not in ['starting', 'waiting']:
+            if result['state'] not in ['starting', 'waiting', 'uninitialised']:
                 assert False
 
             if result['state'] == 'waiting':
@@ -371,7 +371,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
@@ -394,7 +394,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner, False, False, 'JSONObject', 'json')
         obj_id, c_hash = meta['obj_id'], meta['c_hash']
 
         obj_id_a = obj_id
@@ -435,7 +435,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             print(f"{item[0]} + {item[1]} = {item[2]}")
 
         # get the provenance and print it
-        provenance = self._db.get_provenance(obj_id)
+        provenance = self._dor.get_provenance(log[2][2])
         assert(provenance is not None)
         print(json.dumps(provenance, indent=2))
 
@@ -447,7 +447,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
@@ -478,7 +478,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner.identity, True, False, 'JSONObject', 'json', owner.identity.name)
+                                         owner.identity, True, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         user = self._known_user0
@@ -510,10 +510,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulJob as e:
-            assert('authorisation failed' in e.details['as_string'])
+            assert('authorisation failed' in e.details['reason'])
 
         # create valid and invalid task input
-        valid_signature = user.sign(f"{rti_node_info['iid']}:{a_obj_id}".encode('utf-8'))
+        valid_signature = user.sign(f"{rti_node_info['identity']['id']}:{a_obj_id}".encode('utf-8'))
         task_input_valid = [
             {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature},
             {'name': 'b', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature}
@@ -521,10 +521,11 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # access rights and valid signature
         try:
-            job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input_valid, task_output, user.identity)
+            job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input_valid, task_output,
+                                             user.identity)
             assert('c' in output)
 
-        except UnsuccessfulJob as e:
+        except UnsuccessfulJob:
             assert False
 
     def test_processor_execution_reference_encrypted(self):
@@ -534,8 +535,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_path = self.create_file_with_content(f"{generate_random_string(4)}.json", json.dumps({'v': 1}))
         content_key = encrypt_file(obj_path, encrypt_for=owner.identity, delete_source=True)
 
-        meta = self._dor.add_data_object(obj_path, owner.identity, False, True, 'JSONObject', 'json',
-                                         owner.identity.name)
+        meta = self._dor.add_data_object(obj_path, owner.identity, False, True, 'JSONObject', 'json')
         obj_id = meta['obj_id']
 
         task_input = [
@@ -661,7 +661,6 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                                                          wd_path=RTIServiceTestCaseNSCC._wd_path)
             RTIServiceTestCaseNSCC._rti = RTIProxy(RTIServiceTestCaseNSCC._node.rest.address())
             RTIServiceTestCaseNSCC._dor = DORProxy(RTIServiceTestCaseNSCC._node.rest.address())
-            # RTIServiceTestCaseNSCC._db = NodeDBProxy(RTIServiceTestCaseNSCC._node.rest.address())
             time.sleep(1)
 
             # extract the NSCC SSH credentials
@@ -681,7 +680,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                          ssh_credentials=self._nscc_ssh_cred)
 
         # wait for processor to be deployed
-        while (state := ProcessorState(self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -702,7 +702,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                          ssh_credentials=self._nscc_ssh_cred)
 
         # wait for processor to be deployed
-        while (state := ProcessorState(self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -711,7 +712,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         owner = self._node.identity
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
