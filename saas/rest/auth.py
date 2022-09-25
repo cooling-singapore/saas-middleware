@@ -107,3 +107,29 @@ class VerifyProcessorDeployed:
         raise ProcessorNotDeployedError({
             'proc_id': proc_id
         })
+
+
+class VerifyUserIsJobOwner:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, job_id: str, request: Request):
+        identity, _ = await VerifyAuthorisation(self.node).__call__(request)
+
+        # does the descriptor exist?
+        descriptor_path = self.node.rti.job_descriptor_path(job_id)
+        if not os.path.isfile(descriptor_path):
+            raise JobDescriptorNotFoundError({
+                'job_id': job_id
+            })
+
+        with open(descriptor_path, 'r') as f:
+            descriptor = JobDescriptor.parse_obj(json.load(f))
+
+            if descriptor.owner_iid != identity.id:
+                raise AuthorisationFailedError({
+                    'reason': 'user is not the job owner',
+                    'job_id': job_id,
+                    'user_iid': identity.id,
+                    'owner_iid': descriptor.owner_iid
+                })

@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import time
+import traceback
 from _stat import S_IWRITE
+from json import JSONDecodeError
 from stat import S_IREAD
 from threading import Lock
 from typing import Optional, Dict, List
+
+from fastapi import Request
+from fastapi.responses import FileResponse, Response
+from saascore.exceptions import RunCommandError
+from saascore.keystore.identity import Identity
 
 from saascore.log import Logging
 from saascore.helpers import write_json_to_file, generate_random_string
@@ -16,8 +25,7 @@ import saas.rti.adapters.native as native_rti
 from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
-from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, ProcessorNotDeployedError, \
-    GPPDataObjectNotFound
+from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
 from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
@@ -83,6 +91,12 @@ class RTIService:
             except PeerUnavailableError:
                 continue
 
+    def job_descriptor_path(self, job_id: str) -> str:
+        return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
+
+    def job_status_path(self, job_id: str) -> str:
+        return os.path.join(self._jobs_path, job_id, 'job_status.json')
+
     def endpoints(self) -> List[EndpointDefinition]:
         return [
             EndpointDefinition('GET', self._endpoint_prefix, '',
@@ -101,13 +115,13 @@ class RTIService:
                                self.status, ProcessorStatus, [VerifyProcessorDeployed]),
 
             EndpointDefinition('POST', self._endpoint_prefix, 'proc/{proc_id}/jobs',
-                               self.submit, JobDescriptor, [VerifyProcessorDeployed]),
+                               self.submit, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('GET', self._endpoint_prefix, 'proc/{proc_id}/jobs',
                                self.jobs, List[JobDescriptor], [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}',
-                               self.job, Job, None),
+            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/info',
+                               self.job_info, Job, [VerifyUserIsJobOwner]),
 
             EndpointDefinition('POST', self._endpoint_prefix, 'permission/{req_id}',
                                self.put_permission, None, None)
@@ -220,10 +234,14 @@ class RTIService:
         with self._mutex:
             return self._deployed[proc_id].status()
 
-    def submit(self, proc_id: str, task_descriptor: dict) -> JobDescriptor:
+    def submit(self, proc_id: str, task_descriptor: dict, request: Request) -> JobDescriptor:
         with self._mutex:
+            # get the user's identity
+            iid = request.headers['saasauth-iid']
+            owner: Identity = self._node.db.get_identity(iid)
+
             # create job descriptor with a generated job id
-            job_descriptor = JobDescriptor(id=generate_random_string(8), proc_id=proc_id,
+            job_descriptor = JobDescriptor(id=generate_random_string(8), proc_id=proc_id, owner_iid=owner.id,
                                            task=task_descriptor, retain=self._retain_job_history)
 
             # create working directory or log a warning if it already exists
@@ -249,17 +267,17 @@ class RTIService:
         with self._mutex:
             return self._deployed[proc_id].pending_jobs()
 
-    def job(self, job_id: str) -> Job:
+    def job_info(self, job_id: str) -> Job:
         with self._mutex:
             # does the descriptor exist?
-            descriptor_path = os.path.join(self._jobs_path, str(job_id), 'job_descriptor.json')
+            descriptor_path = self.job_descriptor_path(job_id)
             if not os.path.isfile(descriptor_path):
                 raise JobDescriptorNotFoundError({
                     'job_id': job_id
                 })
 
             # does the job status file exist?
-            status_path = os.path.join(self._jobs_path, str(job_id), 'job_status.json')
+            status_path = self.job_status_path(job_id)
             if not os.path.isfile(status_path):
                 raise JobStatusNotFoundError({
                     'job_id': job_id

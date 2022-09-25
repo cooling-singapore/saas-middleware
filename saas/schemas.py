@@ -50,6 +50,7 @@ class ResumeDescriptor(BaseModel):
 class JobDescriptor(BaseModel):
     id: str
     proc_id: str
+    owner_iid: str
     task: TaskDescriptor
     retain: bool
 
