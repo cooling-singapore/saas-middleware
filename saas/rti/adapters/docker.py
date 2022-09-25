@@ -1,7 +1,10 @@
+import io
 import os
 import re
+import tarfile
 import traceback
 from contextlib import contextmanager
+from typing import Optional
 
 import paramiko
 from saascore.exceptions import SaaSException
@@ -9,6 +12,7 @@ from saascore.keystore.assets.credentials import GithubCredentials, SSHCredentia
 from saascore.log import Logging
 
 import docker
+from docker.models.containers import Container
 
 import saas.rti.adapters.base as base
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
@@ -93,6 +97,12 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         self._github_credentials = github_credentials
 
         self.docker_image_tag = get_image_tag(proc_id)
+        self.container: Optional[Container] = None
+        self.container_working_directory = "/working_directory"
+
+    @property
+    def using_remote(self):
+        return self._ssh_credentials is not None
 
     @contextmanager
     def get_docker_client(self):
@@ -101,7 +111,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         # try to use remote docker if remote host is found
         # user must make sure that the login has permission to run commands on the remote host
         # e.g. sudo usermod -aG docker username
-        if self._ssh_credentials:
+        if self.using_remote:
             login = self._ssh_credentials.login
             host = self._ssh_credentials.host
             key = self._ssh_credentials.key
@@ -146,18 +156,36 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with self.get_docker_client() as client:
                 full_working_directory = os.path.realpath(working_directory)
 
-                # Detach and stream docker container output
-                container = client.containers.run(self.docker_image_tag, full_working_directory,
-                                                  volumes={
-                                                      full_working_directory: {
-                                                          'bind': '/working_directory', 'mode': 'rw'
-                                                      }
-                                                  },
-                                                  remove=True,  # Auto remove container once done
-                                                  detach=True)
+                # REMOTE
+                if self.using_remote:
+                    # Send input files to remote container before running
+                    self.container = client.containers.create(self.docker_image_tag)
 
+                    stream = io.BytesIO()
+                    with tarfile.open(fileobj=stream, mode='w|') as tar:
+                        for obj_name in self._input_interface:
+                            local_path = os.path.join(full_working_directory, obj_name)
+                            with open(local_path, 'rb') as f:
+                                info = tar.gettarinfo(fileobj=f)
+                                info.name = os.path.basename(local_path)
+                                tar.addfile(info, f)
+
+                    self.container.put_archive(self.container_working_directory, stream.getvalue())
+
+                # LOCAL
+                else:
+                    # Create container with local directory attached
+                    self.container = client.containers.create(self.docker_image_tag,
+                                                              volumes={
+                                                                  full_working_directory: {
+                                                                      'bind': self.container_working_directory,
+                                                                      'mode': 'rw'
+                                                                  }
+                                                              })
+
+                self.container.start()
                 # Block and go through logs until container closes
-                for log in container.logs(stream=True):
+                for log in self.container.logs(stream=True):
                     lines = log.decode('utf-8').splitlines()
 
                     for line in lines:
@@ -175,11 +203,14 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 'working_directory': working_directory,
                 'trace': trace
             })
+        finally:
+            if self.container:
+                self.container.remove()
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
         # Remove entry added to ssh config
-        if self._ssh_credentials:
+        if self.using_remote:
             remove_host_from_ssh_config(self._proc_id)
 
     def _handle_trigger_output(self, line: str, status: StatusLogger, job_id: str,
@@ -187,6 +218,15 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         obj_name = line.split(':')[2]
         try:
             status.update(f"process_output:{obj_name}", 'push')
+
+            if self.using_remote:
+                # Fetch object from remote container
+                remote_obj = f"{self.container_working_directory}/{obj_name}"
+                data, stat = self.container.get_archive(remote_obj)
+                datastream = generator_to_stream(data)
+                with tarfile.open(fileobj=datastream, mode='r|*') as tf:
+                    tf.extractall(working_directory)
+
             self._push_data_object(job_id, obj_name, task_descriptor, working_directory, status)
             status.update(f"process_output:{obj_name}", 'done')
         except SaaSException as e:
@@ -197,3 +237,27 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         Line is in the format `trigger:progress:<int>`
         """
         status.update('progress', line.split(':')[2])
+
+
+def generator_to_stream(generator):
+    """
+    Receives a generator object and returns a file-like object based on it
+    """
+    class GeneratorStream(io.RawIOBase):
+        def __init__(self):
+            self.leftover = None
+
+        def readable(self):
+            return True
+
+        def readinto(self, b):
+            try:
+                read_bytes = len(b)  # number of bytes to be read
+                chunk = self.leftover or next(generator)
+                output, self.leftover = chunk[:read_bytes], chunk[read_bytes:]
+                b[:len(output)] = output
+                return len(output)
+            except StopIteration:
+                return 0  # : Indicate EOF
+
+    return io.BufferedReader(GeneratorStream())
