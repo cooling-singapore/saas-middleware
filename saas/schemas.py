@@ -8,27 +8,29 @@ class ObjectTag(BaseModel):
     value: str
 
 
+class TaskInputReference(BaseModel):
+    name: str
+    type: Literal["reference"]
+    obj_id: str
+    user_signature: Optional[str]
+
+
+class TaskInputValue(BaseModel):
+    name: str
+    type: Literal["value"]
+    value: dict
+
+
+class TaskOutput(BaseModel):
+    name: str
+    owner_iid: str
+    restricted_access: bool
+    content_encrypted: bool
+    target_node_iid: Optional[str]
+
+
 # TODO: Update schema once pydantic supports discriminator
 class TaskDescriptor(BaseModel):
-
-    class TaskInputReference(BaseModel):
-        name: str
-        type: Literal["reference"]
-        obj_id: str
-        user_signature: Optional[str]
-
-    class TaskInputValue(BaseModel):
-        name: str
-        type: Literal["value"]
-        value: dict
-
-    class TaskOutput(BaseModel):
-        name: str
-        owner_iid: str
-        restricted_access: bool
-        content_encrypted: bool
-        target_node_iid: Optional[str]
-
     processor_id: str
     input: List[Union[TaskInputReference, TaskInputValue]]
     output: List[TaskOutput]

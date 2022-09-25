@@ -1,52 +1,105 @@
-import threading
+import uvicorn
 
-from flask import Flask, Blueprint
-from flask_cors import CORS
+from threading import Thread
+from fastapi import FastAPI, Request, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from saascore.exceptions import SaaSException
 from saascore.log import Logging
-from werkzeug.serving import make_server
+from starlette.responses import JSONResponse
 
-from saas.rest.request_manager import request_manager
+from saas.rest.exceptions import UnsupportedRESTMethod
+from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('rest.service')
 
 
-class FlaskServerThread(threading.Thread):
-    def __init__(self, app: Flask, address: (str, int)):
-        threading.Thread.__init__(self)
-        self.setDaemon(True)
-        self.srv = make_server(address[0], address[1], app, threaded=True)
-        self.ctx = app.app_context()
-        self.ctx.push()
+class RESTApp:
+    def __init__(self, origins: list[str] = None) -> None:
+        self.api = FastAPI()
+        self.api.on_event("shutdown")(self.close)
 
-    def run(self) -> None:
-        logger.debug("Flask server thread running")
-        self.srv.serve_forever()
-        logger.debug("Flask server thread terminated")
+        @self.api.exception_handler(SaaSException)
+        async def saas_exception_handler(_: Request, exception: SaaSException):
+            return JSONResponse(
+                status_code=500,
+                content={
+                    'reason': exception.reason,
+                    'id': exception.id,
+                    'details': exception.details
+                }
+            )
 
-    def shutdown(self) -> None:
-        self.srv.shutdown()
+        # setup CORS
+        self.api.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins if origins else ['*'],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    def register(self, endpoint: EndpointDefinition) -> None:
+        route = f"{endpoint.prefix}/{endpoint.rule}"
+        logger.info(f"REST app is mapping {endpoint.method}:{route} to {endpoint.function}")
+        if endpoint.method == 'POST':
+            self.api.post(route,
+                          response_model=endpoint.response_model,
+                          dependencies=endpoint.dependencies)(endpoint.function)
+        elif endpoint.method == 'GET':
+            self.api.get(route,
+                         response_model=endpoint.response_model,
+                         dependencies=endpoint.dependencies)(endpoint.function)
+        elif endpoint.method == 'PUT':
+            self.api.put(route,
+                         response_model=endpoint.response_model,
+                         dependencies=endpoint.dependencies)(endpoint.function)
+        elif endpoint.method == 'DELETE':
+            self.api.delete(route,
+                            response_model=endpoint.response_model,
+                            dependencies=endpoint.dependencies)(endpoint.function)
+        else:
+            raise UnsupportedRESTMethod(endpoint.method, route)
+
+    async def close(self) -> None:
+        logger.info(f"REST app is shutting down.")
 
 
 class RESTService:
-    def __init__(self, node, address: (str, int)) -> None:
+    def __init__(self, node, host: str, port: int) -> None:
         self._node = node
-        self._address = address
-        self._app = Flask(__name__)
-        CORS(self._app, resources={r"/api/*": {"origins": "*"}})
-        request_manager.init_app(self._app, self._node)
-
+        self._host = host
+        self._port = port
+        self._app = RESTApp()
         self._thread = None
 
     def address(self) -> (str, int):
-        return self._address
+        return self._host, self._port
 
-    def add(self, blueprint: Blueprint) -> None:
-        self._app.register_blueprint(blueprint)
+    def add(self, endpoints: list[EndpointDefinition]) -> None:
+        for endpoint in endpoints:
+            if endpoint.dependencies:
+                endpoint.dependencies = [Depends(d(self._node)) for d in endpoint.dependencies]
+
+            self._app.register(endpoint)
 
     def start_service(self) -> None:
-        self._thread = FlaskServerThread(self._app, self._address)
-        self._thread.start()
+        if self._thread is None:
+            logger.info(f"REST service starting up...")
+            self._thread = Thread(target=uvicorn.run, args=(self._app.api,),
+                                  kwargs={"host": self._host, "port": self._port, "log_level": "info"},
+                                  daemon=True)
+
+            self._thread.start()
+            # await asyncio.sleep(0.1)
+
+        else:
+            logger.warning(f"REST service asked to start up but thread already exists! Ignoring...")
 
     def stop_service(self) -> None:
-        if self._thread:
-            self._thread.shutdown()
+        if self._thread is None:
+            logger.warning(f"REST service asked to shut down but thread does not exist! Ignoring...")
+
+        else:
+            logger.info(f"REST service shutting down...")
+            # there is no way to terminate a thread...
+            # self._thread.terminate()

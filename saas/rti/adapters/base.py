@@ -284,7 +284,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
                 logger.warning(f"resource not available at {'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} -> retry in 5 seconds.")
                 time.sleep(5)
 
-            logger.info(f"copying from to local: {s} -> {d}")
+            logger.info(f"copying from remote to local: {s} -> {d}")
             scp_remote_to_local(s, d, ssh_credentials)
 
     # get the error code returned by the process and raise exception if the process did not finish successfully.
@@ -855,7 +855,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
         # do we have a target node specified for storing the data object?
         target_address = self._node.rest.address()
-        if 'target_node_iid' in task_out:
+        if 'target_node_iid' in task_out and task_out['target_node_iid'] is not None:
             # check with the node db to see if we know about this node
             node_record = self._node.db.get_network(task_out['target_node_iid'])
 
@@ -917,4 +917,3 @@ class RTIProcessorAdapter(Thread, ABC):
             'obj_id': obj_id
         })
         status.update('output', output)
-
