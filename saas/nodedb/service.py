@@ -76,25 +76,25 @@ class NodeDBService:
     def get_node(self) -> NodeInfo:
         with self._Session() as session:
             record = session.query(NodeRecord).get(self._node.identity.id)
-            return NodeInfo.parse_obj({
-                'identity': self._node.identity,
-                'last_seen': record.last_seen,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None
-            })
+            return NodeInfo(
+                identity=self._node.identity,
+                last_seen=record.last_seen,
+                dor_service=record.dor_service,
+                rti_service=record.rti_service,
+                p2p_address=record.p2p_address.split(':'),
+                rest_address=record.rest_address.split(':') if record.rest_address else None
+            )
 
     def get_network(self) -> List[NodeInfo]:
         with self._Session() as session:
-            return [NodeInfo.parse_obj({
-                'identity': self.get_identity(record.iid, raise_if_unknown=True),
-                'last_seen': record.last_seen,
-                'dor_service': record.dor_service,
-                'rti_service': record.rti_service,
-                'p2p_address': record.p2p_address.split(':'),
-                'rest_address': record.rest_address.split(':') if record.rest_address else None
-            }) for record in session.query(NodeRecord).all()]
+            return [NodeInfo(
+                identity=self.get_identity(record.iid, raise_if_unknown=True),
+                last_seen=record.last_seen,
+                dor_service=record.dor_service,
+                rti_service=record.rti_service,
+                p2p_address=record.p2p_address.split(':'),
+                rest_address=record.rest_address.split(':') if record.rest_address else None
+            ) for record in session.query(NodeRecord).all()]
 
     def update_network(self, node: NodeInfo) -> None:
         with self._Session() as session:
@@ -173,29 +173,29 @@ class NodeDBService:
             if raise_if_unknown and record is None:
                 raise IdentityNotFoundError(iid)
 
-            return Identity.parse_obj({
-                'id': record.iid,
-                'name': record.name,
-                'email': record.email,
-                's_public_key': record.s_public_key,
-                'e_public_key': record.e_public_key,
-                'nonce': record.nonce,
-                'signature': record.signature
-            }) if record else None
+            return Identity(
+                id=record.iid,
+                name=record.name,
+                email=record.email,
+                s_public_key=record.s_public_key,
+                e_public_key=record.e_public_key,
+                nonce=record.nonce,
+                signature=record.signature
+            ) if record else None
 
     def get_identities(self) -> List[Identity]:
         with self._Session() as session:
             records = session.query(IdentityRecord).all()
             return [
-                Identity.parse_obj({
-                    'id': record.iid,
-                    'name': record.name,
-                    'email': record.email,
-                    's_public_key': record.s_public_key,
-                    'e_public_key': record.e_public_key,
-                    'nonce': record.nonce,
-                    'signature': record.signature
-                }) for record in records
+                Identity(
+                    id=record.iid,
+                    name=record.name,
+                    email=record.email,
+                    s_public_key=record.s_public_key,
+                    e_public_key=record.e_public_key,
+                    nonce=record.nonce,
+                    signature=record.signature
+                ) for record in records
             ]
 
     def update_identity(self, identity: Identity) -> Identity:
@@ -244,7 +244,4 @@ class NodeDBService:
             if not exclude or identity.id not in exclude:
                 identities.append(identity)
 
-        return NodeDBSnapshot.parse_obj({
-            'update_identity': identities,
-            'update_network': nodes
-        })
+        return NodeDBSnapshot(update_identity=identities, update_network=nodes)

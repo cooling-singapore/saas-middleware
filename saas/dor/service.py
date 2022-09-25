@@ -222,11 +222,11 @@ class DORService:
         missing = []
 
         # handle the product
-        product_node = CObjectNode.parse_obj({
-            'c_hash': c_hash,
-            'data_type': recipe.product.data_type,
-            'data_format': recipe.product.data_format,
-        })
+        product_node = CObjectNode(
+            c_hash=c_hash,
+            data_type=recipe.product.data_type,
+            data_format=recipe.product.data_format
+        )
         data_nodes[product_node.c_hash] = product_node
 
         # construct the step
@@ -286,12 +286,12 @@ class DORService:
         # add the step
         steps.append(step)
 
-        provenance = DataObjectProvenance.parse_obj({
-            'data_nodes': data_nodes,
-            'proc_nodes': proc_nodes,
-            'steps': steps,
-            'missing': missing
-        })
+        provenance = DataObjectProvenance(
+            data_nodes=data_nodes,
+            proc_nodes=proc_nodes,
+            steps=steps,
+            missing=missing
+        )
 
         return provenance
 
@@ -380,12 +380,11 @@ class DORService:
 
     def statistics(self) -> DORStatistics:
         with self._Session() as session:
-            result = {
-                'data_types': [value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
-                'data_formats': [value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
-                'tag_keys': []  # sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
-            }
-            return DORStatistics.parse_obj(result)
+            return DORStatistics(
+                data_types=[value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
+                data_formats=[value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
+                tag_keys=[]  # sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
+            )
 
     def add_c(self, body: str = Form(...), attachment: UploadFile = File(...)) -> CDataObject:
         # create parameters object

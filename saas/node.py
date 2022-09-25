@@ -81,14 +81,14 @@ class Node:
 
         # update our node db
         self.db.update_identity(self.identity)
-        self.db.update_network(NodeInfo.parse_obj({
-            'identity': self.identity,
-            'last_seen': get_timestamp_now(),
-            'dor_service': self.dor is not None,
-            'rti_service': self.rti is not None,
-            'p2p_address': self.p2p.address(),
-            'rest_address': self.rest.address() if self.rest else None
-        }))
+        self.db.update_network(NodeInfo(
+            identity=self.identity,
+            last_seen=get_timestamp_now(),
+            dor_service=self.dor is not None,
+            rti_service=self.rti is not None,
+            p2p_address=self.p2p.address(),
+            rest_address=self.rest.address() if self.rest else None
+        ))
 
         # join an existing network of nodes?
         if boot_node_address:

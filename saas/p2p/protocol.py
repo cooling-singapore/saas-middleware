@@ -150,7 +150,4 @@ class P2PProtocol:
             except PeerUnavailableError:
                 unavailable.append(node)
 
-        return BroadcastResponse.parse_obj({
-            'responses': responses,
-            'unavailable': unavailable
-        })
+        return BroadcastResponse(responses=responses, unavailable=unavailable)
