@@ -14,6 +14,7 @@ class State(Enum):
     INITIALISED = 'initialised'
     RUNNING = 'running'
     FAILED = 'failed'
+    TIMEOUT = 'timeout'
     SUCCESSFUL = 'successful'
 
 

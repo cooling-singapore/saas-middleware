@@ -61,7 +61,7 @@ class P2PService:
 
                 # start the server thread
                 thread = threading.Thread(target=self._handle_incoming_connections)
-                thread.setDaemon(True)
+                thread.daemon = True
                 thread.start()
 
     def stop_service(self) -> None:

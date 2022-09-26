@@ -90,3 +90,9 @@ class DockerRuntimeError(RTIException):
 class BuildDockerImageError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Error while building Docker image', details=details)
+
+
+class UnexpectedObjectName(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Unexpected object name encountered when processing push triggers', details=details)
+

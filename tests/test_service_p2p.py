@@ -16,8 +16,7 @@ from saascore.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol
 from saas.p2p.service import P2PService
-from tests.base_testcase import TestCaseBase
-
+from tests.base_testcase import TestCaseBase, PortMaster
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -48,7 +47,7 @@ class P2PServiceTestCase(unittest.TestCase, TestCaseBase):
         name = 'node'
         self.keystore = Keystore.create(self.wd_path, name, f"{name}@somewhere.com", 'password')
         self.node = Node(self.keystore, self.wd_path)
-        self.p2p_address = self.generate_p2p_address()
+        self.p2p_address = PortMaster.generate_p2p_address()
         self.service = P2PService(self.node, self.p2p_address)
 
     def tearDown(self):
@@ -144,7 +143,8 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
 
     def test_connect_accept(self):
         keystores = self.create_keystores(2)
-        server_address = self.generate_p2p_address()
+        server_address = PortMaster.generate_p2p_address()
+
         wd_path = self.wd_path
 
         server_identity = keystores[0].identity
@@ -177,7 +177,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
 
     def test_send_receive_object(self):
         keystores = self.create_keystores(2)
-        server_address = self.generate_p2p_address()
+        server_address = PortMaster.generate_p2p_address()
         wd_path = self.wd_path
 
         server_identity = keystores[0].identity
@@ -232,7 +232,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
         file_hash = hash_file_content(source_path).hex()
 
         keystores = self.create_keystores(2)
-        server_address = self.generate_p2p_address()
+        server_address = PortMaster.generate_p2p_address()
 
         server_identity = keystores[0].identity
         client_identity = keystores[1].identity
@@ -272,7 +272,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
 
     def test_send_receive_request(self):
         keystores = self.create_keystores(2)
-        server_address = self.generate_p2p_address()
+        server_address = PortMaster.generate_p2p_address()
         wd_path = self.wd_path
 
         server_identity = keystores[0].identity
@@ -322,7 +322,7 @@ class SecureMessengerTestCase(unittest.TestCase, TestCaseBase):
 
     def test_send_receive_request_invalid_request_id(self):
         keystores = self.create_keystores(2)
-        server_address = self.generate_p2p_address()
+        server_address = PortMaster.generate_p2p_address()
         wd_path = self.wd_path
 
         server_identity = keystores[0].identity
