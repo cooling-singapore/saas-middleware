@@ -6,9 +6,8 @@ from stat import S_IREAD, S_IRGRP
 from tempfile import NamedTemporaryFile
 from typing import Optional, List, Union
 
-from fastapi import UploadFile, Request, Form, File
+from fastapi import UploadFile, Form, File
 from fastapi.responses import FileResponse, Response
-from saascore.api.sdk.exceptions import AuthorisationFailedError
 from saascore.api.sdk.proxies import DORProxy
 from saascore.cryptography.helpers import hash_file_content, hash_json_object, hash_string_object
 from saascore.log import Logging
@@ -25,7 +24,7 @@ from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.dor.schemas import DataObject, SearchParameters, AddGPPDataObjectParameters, Tag, CDataObject, \
     GPPDataObject, AddCDataObjectParameters, DataObjectProvenance, DORStatistics, CObjectNode, DataObjectRecipe
-from saas.rest.auth import VerifyAuthorisation
+from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
 from saas.rest.schemas import EndpointDefinition
 from saas.schemas import ProcessorDescriptor
 
@@ -114,54 +113,6 @@ class DataObjectProvenanceRecord(Base):
     c_hash = Column(String(64), primary_key=True)
     p_hash = Column(String(64), primary_key=True)
     provenance = Column(NestedMutableJson, nullable=False)
-
-
-class VerifyIsOwner:
-    def __init__(self, node):
-        self.node = node
-
-    async def __call__(self, obj_id: str, request: Request):
-        identity, body = await VerifyAuthorisation(self.node).__call__(request)
-
-        # get the meta information of the object
-        meta = self.node.dor.get_meta(obj_id)
-        if meta is None:
-            raise AuthorisationFailedError({
-                'reason': 'data object does not exist',
-                'obj_id': obj_id
-            })
-
-        # check if the identity is the owner of that data object
-        if meta.owner_iid != identity.id:
-            raise AuthorisationFailedError({
-                'reason': 'user is not the data object owner',
-                'obj_id': obj_id,
-                'user_iid': identity.id
-            })
-
-
-class VerifyUserHasAccess:
-    def __init__(self, node):
-        self.node = node
-
-    async def __call__(self, obj_id: str, request: Request):
-        identity, body = await VerifyAuthorisation(self.node).__call__(request)
-
-        # get the meta information of the object
-        meta = self.node.dor.get_meta(obj_id)
-        if meta is None:
-            raise AuthorisationFailedError({
-                'reason': 'data object does not exist',
-                'obj_id': obj_id
-            })
-
-        # check if the identity has access to the data object content
-        if identity.id not in meta.access:
-            raise AuthorisationFailedError({
-                'reason': 'user has no access to the data object content',
-                'obj_id': obj_id,
-                'user_iid': identity.id
-            })
 
 
 class DORService:

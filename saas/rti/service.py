@@ -2,10 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import time
 from _stat import S_IWRITE
+from json import JSONDecodeError
 from stat import S_IREAD
 from threading import Lock
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
+
+from fastapi import Request
+from fastapi.responses import FileResponse, Response
+from saascore.exceptions import RunCommandError
+from saascore.keystore.identity import Identity
 
 from saascore.log import Logging
 from saascore.helpers import write_json_to_file, generate_random_string
@@ -13,10 +21,10 @@ from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentia
 
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
+from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
-from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, ProcessorNotDeployedError, \
-    GPPDataObjectNotFound
+from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
 from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
@@ -24,19 +32,16 @@ from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
 logger = Logging.get('rti.service')
 
 
-class VerifyProcessorDeployed:
-    def __init__(self, node):
-        self.node = node
-
-    async def __call__(self, proc_id: str):
-        # is the processor already deployed?
-        for deployed in self.node.rti.deployed():
-            if deployed.proc_id == proc_id:
-                return
-
-        raise ProcessorNotDeployedError({
-            'proc_id': proc_id
-        })
+def _try_load_json(path: str, max_attempts: int = 10, delay: float = 0.5) -> Union[List, Dict]:
+    for i in range(max_attempts):
+        try:
+            with open(path, 'r') as f:
+                content = json.load(f)
+                return content
+        except JSONDecodeError:
+            logger.warning(f"could not parse JSON content in {path} (attempt: {i + 1}) "
+                           f"-> trying again in {delay} seconds...")
+            time.sleep(delay)
 
 
 class RTIService:
@@ -97,6 +102,12 @@ class RTIService:
             except PeerUnavailableError:
                 continue
 
+    def job_descriptor_path(self, job_id: str) -> str:
+        return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
+
+    def job_status_path(self, job_id: str) -> str:
+        return os.path.join(self._jobs_path, job_id, 'job_status.json')
+
     def endpoints(self) -> List[EndpointDefinition]:
         return [
             EndpointDefinition('GET', self._endpoint_prefix, '',
@@ -115,13 +126,16 @@ class RTIService:
                                self.status, ProcessorStatus, [VerifyProcessorDeployed]),
 
             EndpointDefinition('POST', self._endpoint_prefix, 'proc/{proc_id}/jobs',
-                               self.submit, JobDescriptor, [VerifyProcessorDeployed]),
+                               self.submit, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('GET', self._endpoint_prefix, 'proc/{proc_id}/jobs',
                                self.jobs, List[JobDescriptor], [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}',
-                               self.job, Job, None),
+            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/info',
+                               self.job_info, Job, [VerifyUserIsJobOwner]),
+
+            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/logs',
+                               self.job_logs, None, [VerifyUserIsJobOwner]),
 
             EndpointDefinition('POST', self._endpoint_prefix, 'permission/{req_id}',
                                self.put_permission, None, None)
@@ -234,10 +248,14 @@ class RTIService:
         with self._mutex:
             return self._deployed[proc_id].status()
 
-    def submit(self, proc_id: str, task_descriptor: dict) -> JobDescriptor:
+    def submit(self, proc_id: str, task_descriptor: dict, request: Request) -> JobDescriptor:
         with self._mutex:
+            # get the user's identity
+            iid = request.headers['saasauth-iid']
+            owner: Identity = self._node.db.get_identity(iid)
+
             # create job descriptor with a generated job id
-            job_descriptor = JobDescriptor(id=generate_random_string(8), proc_id=proc_id,
+            job_descriptor = JobDescriptor(id=generate_random_string(8), proc_id=proc_id, owner_iid=owner.id,
                                            task=task_descriptor, retain=self._retain_job_history)
 
             # create working directory or log a warning if it already exists
@@ -263,29 +281,59 @@ class RTIService:
         with self._mutex:
             return self._deployed[proc_id].pending_jobs()
 
-    def job(self, job_id: str) -> Job:
+    def job_info(self, job_id: str) -> Job:
         with self._mutex:
             # does the descriptor exist?
-            descriptor_path = os.path.join(self._jobs_path, str(job_id), 'job_descriptor.json')
+            descriptor_path = self.job_descriptor_path(job_id)
             if not os.path.isfile(descriptor_path):
                 raise JobDescriptorNotFoundError({
                     'job_id': job_id
                 })
 
             # does the job status file exist?
-            status_path = os.path.join(self._jobs_path, str(job_id), 'job_status.json')
+            status_path = self.job_status_path(job_id)
             if not os.path.isfile(status_path):
                 raise JobStatusNotFoundError({
                     'job_id': job_id
                 })
 
-            with open(descriptor_path, 'r') as f:
-                descriptor = json.load(f)
-
-            with open(status_path, 'r') as f:
-                status = json.load(f)
-
+            # try to load the descriptor and status
+            descriptor = _try_load_json(descriptor_path)
+            status = _try_load_json(status_path)
             return Job(descriptor=descriptor, status=status)
+
+    def job_logs(self, job_id: str) -> Response:
+        # collect log files (if they exist)
+        existing = []
+        for filename in ['execute_sh.stdout', 'execute_sh.stderr']:
+            log_path = os.path.join(self._jobs_path, job_id, filename)
+            if os.path.isfile(log_path):
+                existing.append(os.path.basename(log_path))
+
+        # do we have anything?
+        if not existing:
+            raise RTIException(f"No execute logs available.", details={
+                'job_id': job_id
+            })
+
+        # build the command for archiving the logs
+        wd_path = os.path.join(self._jobs_path, job_id)
+        archive_path = os.path.join(self._jobs_path, job_id, 'execute_logs.tar.gz')
+        command = ['tar', 'czf', archive_path, '-C', wd_path] + existing
+
+        try:
+            # archive the logs and return as stream
+            subprocess.run(command, capture_output=True, check=True)
+            return FileResponse(archive_path, media_type='application/octet-stream')
+
+        except subprocess.CalledProcessError as e:
+            raise RunCommandError({
+                'reason': 'archiving execute logs failed',
+                'returncode': e.returncode,
+                'command': command,
+                'stdout': e.stdout.decode('utf-8'),
+                'stderr': e.stderr.decode('utf-8')
+            })
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
         with self._mutex:
