@@ -33,10 +33,10 @@ logger = Logging.get('dor.service')
 
 Base = declarative_base()
 
-const_gpp_data_type = 'GitProcessorPointer'
-const_gpp_data_format = 'json'
-const_dor_infix_master_path = 'dor-master'
-const_dor_infix_temp_path = 'dor-temp'
+GPP_DATA_TYPE = 'GitProcessorPointer'
+GPP_DATA_FORMAT = 'json'
+DOR_INFIX_MASTER_PATH = 'dor-master'
+DOR_INFIX_TEMP_PATH = 'dor-temp'
 
 
 def _generate_object_id(c_hash: str, data_type: str, data_format: str, created_iid: str, created_t: int) -> str:
@@ -177,15 +177,15 @@ class DORService:
         self._Session = sessionmaker(bind=self._engine)
 
         # initialise directories
-        os.makedirs(os.path.join(self._node.datastore, const_dor_infix_master_path), exist_ok=True)
-        os.makedirs(os.path.join(self._node.datastore, const_dor_infix_temp_path), exist_ok=True)
+        os.makedirs(os.path.join(self._node.datastore, DOR_INFIX_MASTER_PATH), exist_ok=True)
+        os.makedirs(os.path.join(self._node.datastore, DOR_INFIX_TEMP_PATH), exist_ok=True)
 
     @property
     def protocol(self) -> DataObjectRepositoryP2PProtocol:
         return self._protocol
 
     def obj_content_path(self, c_hash: str) -> str:
-        return os.path.join(self._node.datastore, const_dor_infix_master_path, c_hash)
+        return os.path.join(self._node.datastore, DOR_INFIX_MASTER_PATH, c_hash)
 
     def _get_object_records_by_content_hash(self, c_hash: str) -> list[DataObjectRecord]:
         with self._Session() as session:
@@ -469,7 +469,7 @@ class DORService:
 
         # try to clone the repository
         temp_id = generate_random_string(8)
-        repo_path = os.path.join(self._node.datastore, const_dor_infix_temp_path, f"{temp_id}.repo")
+        repo_path = os.path.join(self._node.datastore, DOR_INFIX_TEMP_PATH, f"{temp_id}.repo")
         result = subprocess.run(['git', 'clone', url, repo_path], capture_output=True)
         if result.returncode != 0:
             raise CloneRepositoryError({
@@ -524,11 +524,11 @@ class DORService:
         with self._Session() as session:
             # determine the object id
             created_t = get_timestamp_now()
-            obj_id = _generate_object_id(c_hash, const_gpp_data_type, const_gpp_data_format, creator.id, created_t)
+            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, creator.id, created_t)
 
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
-                                         data_type=const_gpp_data_type, data_format=const_gpp_data_format,
+                                         data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
                                          creator_iid=creator.id, created_t=created_t,
                                          owner_iid=owner.id, access_restricted=False, access=[owner.id],
                                          tags={},
@@ -557,7 +557,7 @@ class DORService:
             session.commit()
 
         # is it a C data object?
-        if meta.data_type != const_gpp_data_type:
+        if meta.data_type != GPP_DATA_TYPE:
             # if it's a content data object, we need to check if there are other data objects that point to the same
             # content (unlikely but not impossible). if so, then do NOT delete the data object content. otherwise
             # delete it.
@@ -582,7 +582,7 @@ class DORService:
 
             # is it a GPP data object?
             details = dict(record.details)
-            if record.data_type == const_gpp_data_type:
+            if record.data_type == GPP_DATA_TYPE:
                 return GPPDataObject.parse_obj({
                     'obj_id': record.obj_id,
                     'c_hash': record.c_hash,
