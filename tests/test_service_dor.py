@@ -471,7 +471,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             assert('name' in meta['tags'])
             assert(meta['tags']['name'] == 'abc')
 
-        except UnsuccessfulRequestError as e:
+        except UnsuccessfulRequestError:
             assert False
 
         # try to set tags by owner
@@ -481,7 +481,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             assert('name' in meta['tags'])
             assert(meta['tags']['name'] == 'bcd')
 
-        except UnsuccessfulRequestError as e:
+        except UnsuccessfulRequestError:
             assert False
 
         # try to remove existing tag by non-owner
@@ -503,6 +503,20 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         try:
             meta = self._dor.remove_tags(obj_id, owner, ['name'])
             assert (len(meta['tags']) == 0)
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # try to set a complex tag by owner
+        try:
+            meta = self._dor.update_tags(obj_id, owner, {'profile': {
+                'name': 'mr a',
+                'email': 'somewhere@internet.com'
+            }})
+            assert(len(meta['tags']) == 1)
+            assert('profile' in meta['tags'])
+            assert('name' in meta['tags']['profile'])
+            assert('email' in meta['tags']['profile'])
 
         except UnsuccessfulRequestError:
             assert False
