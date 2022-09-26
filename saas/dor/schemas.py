@@ -1,23 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from pydantic import BaseModel
 
-from saas.schemas import ObjectRecipe
-
-
-class DataObject(BaseModel):
-    obj_id: str
-    c_hash: str
-    data_type: str
-    data_format: str
-    created_by: str
-    created_t: int
-    owner_iid: str
-    access_restricted: bool
-    content_encrypted: bool
-    r_hash: Optional[str]
-    tags: List[dict]
-    access: List[str]
+from saas.schemas import GitProcessorPointer
 
 
 class SearchParameters(BaseModel):
@@ -34,32 +19,78 @@ class DORStatistics(BaseModel):
     tag_keys: List[str]
 
 
-class AddDataObjectParameters(BaseModel):
+class GithubCredentials(BaseModel):
+    login: str
+    personal_access_token: str
+
+
+class CObjectNode(BaseModel):
+    c_hash: str
     data_type: str
     data_format: str
-    created_by: str
+    content: Optional[dict]
+
+
+class DataObjectRecipe(BaseModel):
+    processor: GitProcessorPointer
+    consumes: Dict[str, CObjectNode]
+    product: CObjectNode
+    name: str
+
+
+class DataObjectProvenance(BaseModel):
+    class Step(BaseModel):
+        processor: str
+        consumes: Dict[str, str]
+        produces: Dict[str, str]
+
+    data_nodes: Dict[str, CObjectNode]
+    proc_nodes: Dict[str, GitProcessorPointer]
+    steps: List[Step]
+    missing: List[str]
+
+
+class DataObject(BaseModel):
+    obj_id: str
+    c_hash: str
+    data_type: str
+    data_format: str
+    creator_iid: str
+    created_t: int
     owner_iid: str
-    access_restricted: Optional[bool]
-    content_encrypted: Optional[bool]
-    recipe: Optional[ObjectRecipe]
+    access_restricted: bool
+    access: List[str]
+    tags: dict
+
+
+class GPPDataObject(DataObject):
+    gpp: GitProcessorPointer
+
+
+class CDataObject(DataObject):
+    content_encrypted: bool
+    recipe: Optional[DataObjectRecipe]
+
+
+class AddDataObjectParameters(BaseModel):
+    owner_iid: str
+    creator_iid: str
 
 
 class AddGPPDataObjectParameters(AddDataObjectParameters):
-    class GPP(BaseModel):
-        source: str
-        commit_id: str
-        proc_path: str
-        proc_config: str
-
-    class GithubCredentials(BaseModel):
-        login: str
-        personal_access_token: str
-
-    gpp: GPP
-    created_by: str
-    owner_iid: str
-    recipe: Optional[ObjectRecipe]
+    source: str
+    commit_id: str
+    proc_path: str
+    proc_config: str
     github_credentials: Optional[GithubCredentials]
+
+
+class AddCDataObjectParameters(AddDataObjectParameters):
+    data_type: str
+    data_format: str
+    access_restricted: bool
+    content_encrypted: bool
+    recipe: Optional[DataObjectRecipe]
 
 
 class Tag(BaseModel):

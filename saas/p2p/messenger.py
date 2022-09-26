@@ -5,12 +5,11 @@ import os
 import json
 import base64
 import socket
-from typing import Optional, Any
+from typing import Optional
 
 import snappy
-from json import JSONDecodeError
-from dataclasses import dataclass, is_dataclass
 
+from pydantic import BaseModel
 from saascore.cryptography.eckeypair import ECKeyPair
 from saascore.helpers import generate_random_string
 from saascore.keystore.identity import Identity
@@ -22,124 +21,23 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
 from saascore.log import Logging
 
-from saas.p2p.exceptions import ReceiveDataError, SendDataError, MalformedPreambleError, MismatchingBytesWrittenError, \
-    ResourceNotFoundError, DecodingJSONError, EncodingJSONError, HandshakeFailedError, MalformedMessageError, \
-    UnexpectedMessageTypeError, MismatchingRequestIdError, PeerUnavailableError, P2PException
+from saas.p2p.exceptions import ReceiveDataError, SendDataError, MismatchingBytesWrittenError, ResourceNotFoundError, \
+    HandshakeFailedError, PeerUnavailableError, P2PException
 
 logger = Logging.get('p2p.messenger')
 
 
-class SecureMessage:
-    class CustomEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if is_dataclass(obj):
-                return obj.__dict__
-            return json.JSONEncoder.default(self, obj)
-
-    @classmethod
-    def decrypt(cls, message_bytes: bytes, cipher: Fernet) -> dict:
-        message_str = cipher.decrypt(message_bytes).decode('utf-8')
-        try:
-            return json.loads(message_str)
-        except JSONDecodeError as e:
-            raise DecodingJSONError({
-                'message': message_str,
-                'e': e
-            })
-
-    def encrypt(self, cipher: Fernet) -> bytes:
-        try:
-            message_str = json.dumps(self, cls=self.CustomEncoder).encode('utf-8')
-            return cipher.encrypt(message_str)
-        except TypeError as e:
-            raise EncodingJSONError({
-                'content': self.__dict__,
-                'e': e
-            })
-
-
-@dataclass
-class SecureHandshake(SecureMessage):
-    identity: dict
-
-
-@dataclass
-class SecureRequest(SecureMessage):
+class P2PMessage(BaseModel):
+    protocol: str
     type: str
-    request_id: str
-    content: Any
-    has_attachment: bool
-
-    @classmethod
-    def create_request(cls, content, has_attachment: bool) -> SecureRequest:
-        return cls(type="request", request_id=generate_random_string(16), content=content,
-                   has_attachment=has_attachment)
-
-    @classmethod
-    def create_response(cls, request_id: str, content, has_attachment: bool) -> SecureRequest:
-        return cls(type="response", request_id=request_id, content=content,
-                   has_attachment=has_attachment)
-
-    @classmethod
-    def verify_request_dict(cls, request_dict: dict) -> SecureRequest:
-        try:
-            request = cls(**request_dict)
-        except TypeError as e:
-            raise MalformedMessageError({
-                'request': request_dict,
-            }) from e
-
-        expected_type = 'request'
-        if request.type != expected_type:
-            raise UnexpectedMessageTypeError({
-                'expected': expected_type,
-                'request': request
-            })
-
-        return request
-
-    @classmethod
-    def verify_response_dict(cls, response_dict: dict, related_request: SecureRequest) -> SecureRequest:
-        try:
-            response = cls(**response_dict)
-        except TypeError as e:
-            raise MalformedMessageError({
-                'response': response_dict,
-                'related_request': related_request
-            }) from e
-
-        expected_type = 'response'
-        if response.type != expected_type:
-            raise UnexpectedMessageTypeError({
-                'expected': expected_type,
-                'response': response,
-                'related_request': related_request
-            })
-
-        if response.request_id != related_request.request_id:
-            raise MismatchingRequestIdError({
-                'request': related_request,
-                'response': response
-            })
-
-        return response
+    content: Optional[dict]
+    attachment: Optional[str]
+    sequence_id: Optional[int]
 
 
-@dataclass
-class SecureStreamPreamble(SecureMessage):
-    content_size: float
+class SecureStreamPreamble(BaseModel):
+    content_size: int
     n_chunks: int
-
-    @classmethod
-    def verify_preamble_dict(cls, preamble_dict: dict) -> SecureStreamPreamble:
-        try:
-            preamble = cls(**preamble_dict)
-        except TypeError as e:
-            raise MalformedPreambleError({
-                'preamble': preamble_dict
-            }) from e
-
-        return preamble
 
 
 class SecureMessenger:
@@ -199,81 +97,65 @@ class SecureMessenger:
         if self._peer_socket:
             self._peer_socket.close()
 
-    def send_request(self, content: Any, attachment_path: str = None) -> dict:
+    def send_message(self, request: P2PMessage) -> Optional[P2PMessage]:
         """
         Sends a request and waits for a response.
-        :param content: the request content
-        :param attachment_path: (optional) path to an attachment that is sent as byte stream after the content
+        :param request: the request message
         :return: the response
         """
 
         # check if the attachment exists (if applicable)
-        if attachment_path and not os.path.isfile(attachment_path):
-            raise FileNotFoundError(f"attachment at {attachment_path} does not exist")
+        if request.attachment and not os.path.isfile(request.attachment):
+            raise FileNotFoundError(f"attachment at {request.attachment} does not exist")
 
         # send the request content, followed by the attachment (if any)
-        request = SecureRequest.create_request(content=content, has_attachment=attachment_path is not None)
-        self._send_object(request)
-        if attachment_path:
-            self._send_stream(attachment_path)
+        self._send_object(request.dict())
+        if request.attachment:
+            self._send_stream(request.attachment)
 
-        # receive the response
-        response_dict = self._receive_object()
-        response = SecureRequest.verify_response_dict(response_dict, request)
+        response = self.receive_message()
+        return response
 
-        # receive the attachment (if any)
-        destination_path = None
-        if response.has_attachment:
-            destination_path = os.path.join(self._storage_path, f"attachment_{generate_random_string(16)}")
-            self._receive_stream(destination_path)
-
-        return {
-            'content': response.content,
-            'attachment': destination_path
-        }
-
-    def receive_request(self) -> dict:
+    def receive_message(self) -> Optional[P2PMessage]:
         """
         Receives a request, i.e., a dict with the following keys: 'type', 'request_id', 'content', 'has_attachment'.
         :return: the request
         """
+        received = self._receive_object()
+        if not received:
+            return None
 
-        request_dict = self._receive_object()
-        request = SecureRequest.verify_request_dict(request_dict)
+        # convert the object into a P2P message
+        request = P2PMessage.parse_obj(received)
 
         # receive the attachment (if any)
-        destination_path = None
-        if request.has_attachment:
-            destination_path = os.path.join(self._storage_path, f"attachment_{generate_random_string(16)}")
-            self._receive_stream(destination_path)
+        if request.attachment:
+            request.attachment = os.path.join(self._storage_path, f"attachment_{generate_random_string(16)}")
+            self._receive_stream(request.attachment)
 
-        return {
-            'request_id': request.request_id,
-            'content': request.content,
-            'attachment': destination_path
-        }
+        return request
 
-    def send_response(self, request_id: str, content: Any, attachment_path: str = None) -> None:
+    def send_response(self, response: P2PMessage) -> None:
         """
         Sends a response to a previously received request.
-        :param request_id: the id of the request this response is referring to
-        :param content: the response content
-        :param attachment_path: (optional) path to an attachment that is sent as byte stream after the content
+        :param response: the response message
         :return:
         """
 
         # check if the attachment exists (if applicable)
-        if attachment_path and not os.path.isfile(attachment_path):
+        if response.attachment and not os.path.isfile(response.attachment):
             raise ResourceNotFoundError({
-                'attachment_path': attachment_path
+                'attachment_path': response.attachment
             })
 
-        # send the request content, followed by the attachment (if any)
-        response = SecureRequest.create_response(request_id=request_id, content=content,
-                                                 has_attachment=attachment_path is not None)
-        self._send_object(response)
-        if attachment_path:
-            self._send_stream(attachment_path)
+        # send the response content, followed by the attachment (if any)
+        self._send_object(response.dict())
+        if response.attachment:
+            self._send_stream(response.attachment)
+
+    def send_null(self) -> None:
+        length = 0
+        self._send_data(length.to_bytes(4, byteorder='big'))
 
     def _handshake(self, identity: Identity) -> Identity:
         try:
@@ -299,10 +181,8 @@ class SecureMessenger:
 
             # exchange identities. note that this is not strictly speaking part of the handshake. it is merely for the
             # benefit of the peers to know who their counterparty is.
-            handshake = SecureHandshake(identity=identity.serialise())
-            self._send_object(handshake)
-            response = SecureHandshake(**self._receive_object())
-            self.peer = Identity.deserialise(response.identity)
+            self._send_object(identity.dict())
+            self.peer = Identity.parse_obj(self._receive_object())
 
             return self.peer
 
@@ -317,27 +197,34 @@ class SecureMessenger:
                 'e': e
             })
 
-    def _send_object(self, message: SecureMessage) -> int:
-        # convert the content object into the message and encrypt it
-        encrypted_message = message.encrypt(self._cipher)
+    def _send_object(self, obj: dict) -> int:
+        # deflate and encode the object
+        obj = json.dumps(obj)
+        obj = obj.encode('utf-8')
+        encrypted_obj = self._cipher.encrypt(obj)
 
         # send the message
-        length = len(encrypted_message)
+        length = len(encrypted_obj)
         total_sent = self._send_data(length.to_bytes(4, byteorder='big'))
-        total_sent += self._send_data(encrypted_message)
+        total_sent += self._send_data(encrypted_obj)
         return total_sent
 
-    def _receive_object(self) -> dict:
-        # receive the message
+    def _receive_object(self) -> Optional[dict]:
+        # receive the message length
         length = int.from_bytes(self._receive_data(4), 'big')
-        message = self._receive_data(length)
+        if length > 0:
+            # receive the encrypted object
+            encrypted_obj = self._receive_data(length)
 
-        # decrypt and convert the message into the content object
-        message = self._cipher.decrypt(message)
-        message = message.decode('utf-8')
-        content = json.loads(message)
+            # decrypt and inflate the object
+            obj = self._cipher.decrypt(encrypted_obj)
+            obj = obj.decode('utf-8')
+            obj = json.loads(obj)
 
-        return content
+        else:
+            obj = None
+
+        return obj
 
     def _send_stream(self, source: str, chunk_size: int = None) -> int:
         # does the file exist?
@@ -350,9 +237,10 @@ class SecureMessenger:
         chunk_size = chunk_size if chunk_size else SecureMessenger.default_chunk_size
 
         # send the preamble
-        file_size = os.path.getsize(source)
-        preamble = SecureStreamPreamble(content_size=file_size, n_chunks=math.ceil(file_size / chunk_size))
-        total_sent = self._send_object(preamble)
+        content_size = os.path.getsize(source)
+        n_chunks = int(math.ceil(content_size / chunk_size))
+        preamble = SecureStreamPreamble(content_size=content_size, n_chunks=n_chunks)
+        total_sent = self._send_object(preamble.dict())
 
         # read from the source and send the stream of chunks
         with open(source, 'rb') as f:
@@ -366,10 +254,10 @@ class SecureMessenger:
 
     def _receive_stream(self, destination: str) -> int:
         # receive the preamble
-        preamble_dict = self._receive_object()
-        preamble = SecureStreamPreamble.verify_preamble_dict(preamble_dict)
+        preamble = self._receive_object()
+        preamble = SecureStreamPreamble.parse_obj(preamble)
 
-        # read all the chunks and write the to the file
+        # read all the chunks and write to the file
         total_written = 0
         with open(destination, 'wb') as f:
             for i in range(preamble.n_chunks):

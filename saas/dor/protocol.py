@@ -1,152 +1,165 @@
 import os
+from typing import List, Optional, Dict
 
+from pydantic import BaseModel
 from saascore.log import Logging
 from saascore.keystore.identity import Identity
 from saascore.helpers import write_json_to_file
 
 from saas.dor.exceptions import FetchDataObjectFailedError
+from saas.dor.schemas import CDataObject, GPPDataObject
 from saas.p2p.exceptions import AttachmentNotFoundError
-from saas.p2p.protocol import P2PProtocol, P2PMessage
+from saas.p2p.protocol import P2PProtocol
+from saas.schemas import GitProcessorPointer
 
 logger = Logging.get('dor.protocol')
+
+
+class LookupRequest(BaseModel):
+    obj_ids: List[str]
+
+
+class LookupResponse(BaseModel):
+    records: Dict[str, dict]
+
+
+class LookupGPPRequest(BaseModel):
+    obj_id: str
+
+
+class LookupGPPResponse(BaseModel):
+    successful: bool
+    meta: Optional[GPPDataObject]
+    details: Optional[Dict]
+
+
+class FetchRequest(BaseModel):
+    obj_id: str
+    user_iid: Optional[str]
+    user_signature: Optional[str]
+
+
+class FetchResponse(BaseModel):
+    successful: bool
+    meta: Optional[Dict]
+    details: Optional[Dict]
 
 
 class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
     def __init__(self, node) -> None:
-        super().__init__(node, DataObjectRepositoryP2PProtocol.id, {
-            'lookup': self._handle_lookup,
-            'fetch': self._handle_fetch
-        })
+        super().__init__(node, DataObjectRepositoryP2PProtocol.id, [
+            (LookupRequest, self._handle_lookup, LookupResponse),
+            (LookupGPPRequest, self._handle_lookup_gpp, LookupGPPResponse),
+            (FetchRequest, self._handle_fetch, FetchResponse)
+        ])
 
-    def lookup(self, peer_address: (str, int), obj_ids: list[str], user: Identity = None) -> dict:
-        result, _ = self.request(peer_address, self.prepare_message("lookup", {
-            'obj_ids': obj_ids,
-            'user_iid': user.id if user else None
-        }))
-        return result
+    def lookup(self, peer_address: (str, int), obj_ids: List[str]) -> Dict[str, dict]:
+        response, _, _ = self.request(peer_address, LookupRequest(obj_ids=obj_ids))
+        return response.records
 
-    def _handle_lookup(self, message: dict, _) -> P2PMessage:
-        # get the records for all the objects
-        records = {}
-        for obj_id in message['obj_ids']:
-            # do we have a record for this data object?
-            record = self.node.db.get_object_by_id(obj_id)
-            if record is not None:
-                records[obj_id] = record
+    def _handle_lookup(self, request: LookupRequest, _) -> LookupResponse:
+        records = {obj_id: self.node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
+        return LookupResponse(records=records)
 
-        # if we have a user id, then we need to check if this user has access to the objects
-        if message['user_iid'] is not None and len(records) > 0:
-            # do we have an identity for the user?
-            user = self.node.db.get_identity(message['user_iid'])
-            if user is None:
-                return self.prepare_message('lookup_response', {
-                    'successful': False,
-                    'reason': 'identity of user not found',
-                    'user_iid': message['user_iid']
-                })
+    def lookup_gpp(self, peer_address: (str, int), obj_id: str) -> Optional[GitProcessorPointer]:
+        response, _, _ = self.request(peer_address, LookupGPPRequest(obj_id=obj_id))
+        return response.meta.gpp if response.successful else None
 
-            # check for every object
-            for obj_id, record in records.items():
-                record['user_has_permission'] = self.node.db.has_access(obj_id, user)
+    def _handle_lookup_gpp(self, request: LookupGPPRequest, _) -> LookupGPPResponse:
+        # get the meta information for this object id
+        meta = self.node.dor.get_meta(request.obj_id)
+        if meta is None or isinstance(meta, CDataObject):
+            return LookupGPPResponse(successful=False, details={
+                'reason': 'object not found or not a GPP',
+                'obj_id': request.obj_id,
+                'meta': meta
+            })
 
-        return self.prepare_message('lookup_response', records)
+        # check if the user has access to the object
+        if meta.access_restricted:
+            return LookupGPPResponse(successful=False, details={
+                'reason': 'access to this GPP is restricted',
+                'obj_id': request.obj_id
+            })
+
+        return LookupGPPResponse(successful=True, meta=meta)
 
     def fetch(self, peer_address: (str, int), obj_id: str,
               destination_meta_path: str, destination_content_path: str,
               user_iid: str = None, user_signature: str = None) -> None:
 
-        response, attachment_path = self.request(peer_address, self.prepare_message("fetch", {
-            'obj_id': obj_id,
-            'user_iid': user_iid,
-            'user_signature': user_signature
-        }))
+        response, attachment, _ = self.request(peer_address, FetchRequest(obj_id=obj_id, user_iid=user_iid,
+                                                                          user_signature=user_signature))
 
         # was the fetch attempt successful?
-        if not response['successful']:
-            raise FetchDataObjectFailedError({
-                'peer_address': peer_address,
-                'obj_id': obj_id,
-                'user_iid': user_iid,
-                'user_signature': user_signature,
-                'response': response
-            })
+        if not response.successful:
+            raise FetchDataObjectFailedError(details=response.details)
 
         # have we received an attachment?
-        if not attachment_path or not os.path.isfile(attachment_path):
+        if not attachment or not os.path.isfile(attachment):
             raise AttachmentNotFoundError({
                 'peer_address': peer_address,
                 'obj_id': obj_id,
                 'user_iid': user_iid,
                 'user_signature': user_signature,
-                'response': response
+                'response': response.dict()
             })
 
         # write the data object descriptor to the destination path
-        write_json_to_file(response['meta'], destination_meta_path)
+        write_json_to_file(response.meta, destination_meta_path)
 
         # move the data object content to the destination path
-        os.rename(attachment_path, destination_content_path)
+        os.rename(attachment, destination_content_path)
 
-    def _handle_fetch(self, message: dict, peer: Identity) -> P2PMessage:
+    def _handle_fetch(self, request: FetchRequest, peer: Identity) -> (FetchResponse, str):
         # check if we have that data object
-        obj_id = message['obj_id']
-        obj_record = self.node.db.get_object_by_id(obj_id)
-        if not obj_record:
-            return self.prepare_message('fetch_data_object_response', {
-                'successful': False,
+        meta = self.node.dor.get_meta(request.obj_id)
+        if not meta:
+            return FetchResponse(successful=False, details={
                 'reason': 'object not found',
-                'object_id': obj_id
+                'obj_id': request.obj_id
             })
 
         # check if the data object access is restricted and (if so) if the user has the required permission
-        if obj_record['access_restricted']:
+        if meta.access_restricted:
             # get the identity of the user
-            user = self.node.db.get_identity(message['user_iid'])
+            user = self.node.db.get_identity(request.user_iid)
             if user is None:
-                return self.prepare_message('fetch_data_object_response', {
-                    'successful': False,
+                return FetchResponse(successful=False, details={
                     'reason': 'identity of user not found',
-                    'user_iid': message['user_iid']
+                    'user_iid': request.user_iid
                 })
 
             # check if the user has permission to access this data object
-            has_access = self.node.db.has_access(obj_id, user)
-            if not has_access:
-                return self.prepare_message('fetch_data_object_response', {
-                    'successful': False,
+            if user.id not in meta.access:
+                return FetchResponse(successful=False, details={
                     'reason': 'user does not have access',
-                    'user_iid': message['user_iid'],
-                    'object_id': obj_id
+                    'user_iid': request.user_iid,
+                    'obj_id': request.obj_id
                 })
 
             # verify the access request
-            token = f"{peer.id}:{obj_id}".encode('utf-8')
-            if not user.verify(token, message['user_signature']):
-                return self.prepare_message('fetch_data_object_response', {
-                    'successful': False,
+            token = f"{peer.id}:{request.obj_id}".encode('utf-8')
+            if not user.verify(token, request.user_signature):
+                return FetchResponse(successful=False, details={
                     'reason': 'authorisation failed',
-                    'user_iid': message['user_iid'],
-                    'object_id': obj_id,
+                    'user_iid': request.user_iid,
+                    'obj_id': request.obj_id,
                     'token': token.decode('utf-8'),
-                    'signature': message['user_signature']
+                    'signature': request.user_signature
                 })
 
         # we should have the data object content in our local DOR
-        content_path = self.node.dor.obj_content_path(obj_record['c_hash'])
+        content_path = self.node.dor.obj_content_path(meta.c_hash)
         if not os.path.isfile(content_path):
-            return self.prepare_message('fetch_data_object_response', {
-                'successful': False,
+            return FetchResponse(successful=False, details={
                 'reason': 'data object content not found',
-                'user_iid': message['user_iid'],
-                'object_id': obj_id,
-                'c_hash': obj_record['c_hash']
+                'user_iid': request.user_iid,
+                'obj_id': request.obj_id,
+                'c_hash': meta.c_hash
             })
 
         # if all is good, send a reply with the meta information followed by the data object content as attachment
-        record = self.node.db.get_object_by_id(obj_id)
-        return self.prepare_message('fetch_data_object_response', {
-            'successful': True,
-            'meta': record
-        }, content_path)
+        return FetchResponse(successful=True, meta=meta), content_path

@@ -1,25 +1,20 @@
-import json
 import os
 import threading
 import time
-import traceback
 
-from jsonschema import validate
-
-from saascore.exceptions import SaaSException, RunCommandTimeoutError
-from saascore.helpers import write_json_to_file
+from saascore.exceptions import SaaSException
 from saascore.keystore.assets import credentials
 from saascore.log import Logging
 
 import saas.rti.adapters.base as base
 from saas.rti.status import StatusLogger
-from saas.schemas import GitProcessorPointer
+from saas.schemas import GitProcessorPointer, TaskDescriptor
 
 logger = Logging.get('rti.adapters.native')
 
 
 class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
-    def __init__(self, proc_id: str, gpp: dict, obj_content_path: str, jobs_path: str, node,
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
                  ssh_credentials: credentials.SSHCredentials = None,
                  github_credentials: credentials.GithubCredentials = None,
                  retain_remote_wdirs: bool = False) -> None:
@@ -36,7 +31,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # create paths
         local_repo_path = os.path.join(node.datastore, 'proc-repositories', proc_id)
-        local_adapter_path = os.path.join(local_repo_path, self._gpp['proc_path'])
+        local_adapter_path = os.path.join(local_repo_path, self._gpp.proc_path)
         self._paths = {
             'local_repo': local_repo_path,
             'local_adapter': local_adapter_path,
@@ -48,14 +43,9 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         self._paths['install.sh'] = os.path.join(self._paths['adapter'], 'install.sh')
         self._paths['execute.sh'] = os.path.join(self._paths['adapter'], 'execute.sh')
 
-        # read the git processor pointer (gpp)
-        with open(obj_content_path, 'rb') as f:
-            self._gpp = json.load(f)
-            validate(instance=self._gpp, schema=GitProcessorPointer.schema())
-
     def startup(self) -> None:
-        url = self._gpp['source']
-        commit_id = self._gpp['commit_id']
+        url = self._gpp.source
+        commit_id = self._gpp.commit_id
 
         # check if the repository has already been cloned
         if base.check_if_path_exists(self._paths['repo'], ssh_credentials=self._ssh_credentials, timeout=10):
@@ -95,7 +85,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         # run install script
         logger.debug(f"running {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
         pid, paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['install.sh']} "
-                                            f"{self._gpp['proc_config']}",
+                                            f"{self._gpp.proc_config}",
                                             local_output_path=self._paths['local_adapter'],
                                             name='install_sh',
                                             ssh_credentials=self._ssh_credentials)
@@ -105,7 +95,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, task_descriptor: dict, local_working_directory: str, retain_job: bool,
+    def execute(self, job_id: str, task_descriptor: TaskDescriptor, local_working_directory: str,
                 status: StatusLogger) -> None:
 
         _home = base.get_home_directory(self._ssh_credentials)
@@ -135,48 +125,24 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         status.update('task', task_msg)
         logger.debug(task_msg)
         pid, pid_paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['execute.sh']} "
-                                                f"{self._gpp['proc_config']} {paths['wd']}",
+                                                f"{self._gpp.proc_config} {paths['wd']}",
                                                 local_output_path=paths['local_wd'],
                                                 name='execute_sh',
                                                 ssh_credentials=self._ssh_credentials)
 
-        # create the (re)connect information
-        reconnect_info = {
-            'job_id': job_id,
-            'task_descriptor': task_descriptor,
-            'paths': paths,
-            'pid': pid,
-            'pid_paths': pid_paths,
-            'retain_job': retain_job
-        }
-
-        # store the reconnect information
-        reconnect_info_path = os.path.join(local_working_directory, 'job_reconnect.json')
-        write_json_to_file(reconnect_info, reconnect_info_path)
-
-        # try to monitor the job by (re)connecting to it
-        self.connect_and_monitor(reconnect_info, status)
-
-    def connect_and_monitor(self, reconnect_info: dict, status: StatusLogger) -> None:
         # create the context information for this job
         context = {
-            'task_descriptor': reconnect_info['task_descriptor'],
-            'paths': reconnect_info['paths'],
-            'job_id': reconnect_info['job_id'],
+            'task_descriptor': task_descriptor.dict(),
+            'paths': paths,
+            'job_id': job_id,
             'status': status,
             'threads': {}
         }
 
-        try:
-            base.monitor_command(reconnect_info['pid'], reconnect_info['pid_paths'],
-                                 ssh_credentials=self._ssh_credentials, triggers={
-                                     'trigger:output': {'func': self._handle_trigger_output, 'context': context},
-                                     'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
-                                 })
-
-        except RunCommandTimeoutError as e:
-            logger.error(f"[adapter:{self._proc_id}] monitoring command timed-out -> reconnect may be possible...")
-            raise e
+        base.monitor_command(pid, pid_paths, ssh_credentials=self._ssh_credentials, triggers={
+                                 'trigger:output': {'func': self._handle_trigger_output, 'context': context},
+                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+                             })
 
         # wait for all outputs to be processed
         while len(context['threads']):
@@ -184,7 +150,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
-        paths = reconnect_info['paths']
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
             status.update('task', f"delete working directory REMOTE:{paths['remote_wd']}")
             base.run_command(f"rm -rf {paths['remote_wd']}", ssh_credentials=self._ssh_credentials)
@@ -209,7 +174,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def _process_output(self, context: dict) -> None:
         obj_name = context['obj_name']
         job_id = context['job_id']
-        task_descriptor = context['task_descriptor']
+        task_descriptor = TaskDescriptor.parse_obj(context['task_descriptor'])
         paths = context['paths']
         status: StatusLogger = context['status']
 
@@ -234,10 +199,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         except SaaSException as e:
             status.update(f"process_output:{obj_name}", f"failed: id={e.id} reason={e.reason}")
-
-        except Exception as e:
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            status.update(f"process_output:{obj_name}", f"failed: {e} trace={trace}")
 
         # remove this thread
         context['threads'].pop(obj_name)

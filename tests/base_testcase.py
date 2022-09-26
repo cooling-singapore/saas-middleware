@@ -73,25 +73,13 @@ class TestCaseBase:
         for name in self.nodes:
             logger.info(f"stopping node '{name}'")
             node = self.nodes[name]
-            node.shutdown()
+            node.shutdown(leave_network=False)
 
         # retain the working directory as snapshot?
         if snapshot_path:
             os.rename(self.wd_path, snapshot_path)
         else:
             shutil.rmtree(self.wd_path)
-
-    # def generate_p2p_address(self) -> (str, int):
-    #     with self._mutex:
-    #         address = (self.host, self._next_p2p_port)
-    #         self._next_p2p_port += 1
-    #         return address
-    #
-    # def generate_rest_address(self) -> (str, int):
-    #     with self._mutex:
-    #         address = (self.host, self._next_rest_port)
-    #         self._next_rest_port += 1
-    #         return address
 
     def create_keystores(self, n: int, use_credentials: bool = False) -> list[Keystore]:
         keystores = []

@@ -3,10 +3,10 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from saas.schemas import JobDescriptor, ProcessorDescriptor
+from saas.schemas import JobDescriptor, GitProcessorPointer
 
 
-class ProcessorDeploymentParameters(BaseModel):
+class DeployParameters(BaseModel):
     @unique
     class ProcessorDeploymentType(str, Enum):
         native = 'native'
@@ -18,13 +18,13 @@ class ProcessorDeploymentParameters(BaseModel):
     gpp_custodian: Optional[str]
 
 
-class DeployedProcessorInfo(BaseModel):
+class Processor(BaseModel):
     proc_id: str
-    proc_descriptor: ProcessorDescriptor
+    gpp: GitProcessorPointer
 
 
-class JobInfo(BaseModel):
-    job_descriptor: JobDescriptor
+class Job(BaseModel):
+    descriptor: JobDescriptor
     status: dict
     reconnect_info: Optional[dict]
 

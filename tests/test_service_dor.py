@@ -8,12 +8,11 @@ import os
 
 from saascore.api.sdk.exceptions import UnsuccessfulRequestError
 from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
-from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt
+from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt, hash_json_object
 from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saascore.log import Logging
 
 from saas.dor.exceptions import FetchDataObjectFailedError
-from saas.dor.schemas import Tag
 from tests.base_testcase import TestCaseBase
 from saascore.helpers import generate_random_string, get_timestamp_now
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -22,9 +21,10 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-class DORRESTTestCase(unittest.TestCase, TestCaseBase):
+class DORTestCase(unittest.TestCase, TestCaseBase):
     _wd_path = os.path.join(os.environ['HOME'], 'testing', str(get_timestamp_now()))
     _node = None
+    _db = None
     _dor = None
     _unknown_user = None
     _known_user0 = None
@@ -43,59 +43,35 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
     def setUp(self):
         self.initialise()
 
-        if DORRESTTestCase._node is None:
-            DORRESTTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                  wd_path=DORRESTTestCase._wd_path)
-            DORRESTTestCase._dor = DORProxy(DORRESTTestCase._node.rest.address())
+        if DORTestCase._node is None:
+            DORTestCase._node = self.get_node('node', enable_rest=True, keep_track=False, wd_path=DORTestCase._wd_path)
+            DORTestCase._db = NodeDBProxy(DORTestCase._node.rest.address())
+            DORTestCase._dor = DORProxy(DORTestCase._node.rest.address())
 
             extras = self.create_keystores(3)
-            DORRESTTestCase._unknown_user = extras[0]
-            DORRESTTestCase._known_user0 = extras[1]
-            DORRESTTestCase._known_user1 = extras[2]
+            DORTestCase._unknown_user = extras[0]
+            DORTestCase._known_user0 = extras[1]
+            DORTestCase._known_user1 = extras[2]
 
-            DORRESTTestCase._node.db.update_identity(DORRESTTestCase._known_user0.identity)
-            DORRESTTestCase._node.db.update_identity(DORRESTTestCase._known_user1.identity)
+            DORTestCase._node.db.update_identity(DORTestCase._known_user0.identity)
+            DORTestCase._node.db.update_identity(DORTestCase._known_user1.identity)
 
             time.sleep(1)
 
     def tearDown(self):
         self.cleanup()
 
-    def test_rest_search(self):
-        meta0 = self._node.db.add_data_object('foobaa0', None, 'data_type', 'data_format', 'created_by', None,
-                                              self._node.identity, False, False)
-        obj_id0 = meta0['obj_id']
-        self._node.db.update_tags(obj_id0, [
-            Tag(key='aaa', value='bbb')
-        ])
-
-        meta1 = self._node.db.add_data_object('foobaa1', None, 'data_type', 'data_format', 'created_by', None,
-                                              self._node.identity, False, False)
-        obj_id1 = meta1['obj_id']
-        self._node.db.update_tags(obj_id1, [
-            Tag(key='ccc', value='ddd')
-        ])
-
+    def test_search(self):
         result = self._dor.search()
         print(result)
         assert(result is not None)
 
-        result = self._dor.search(patterns=['aaa'])
-        print(result)
-        assert(result is not None)
-        assert(len(result) == 1)
-
-        result = self._dor.search(patterns=['zzz'])
-        print(result)
-        assert(result is not None)
-        assert(len(result) == 0)
-
-    def test_rest_statistics(self):
+    def test_statistics(self):
         result = self._dor.statistics()
         print(result)
         assert(result is not None)
 
-    def test_rest_add(self):
+    def test_add_c(self):
         owner = self._node.identity
 
         # create content
@@ -105,12 +81,28 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner.name)
+        # unknown owner
+        try:
+            self._dor.add_data_object(content_path, self._unknown_user.identity, False, False, 'JSON', 'json', owner)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert('Identity not found' in e.reason)
+
+        # unknown creator
+        try:
+            self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', self._unknown_user.identity)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert('Identity not found' in e.reason)
+
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner)
         print(result)
         assert(result is not None)
         assert('obj_id' in result)
 
-    def test_rest_add_gpp(self):
+    def test_add_gpp(self):
         owner = self._node.identity
 
         source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
@@ -121,16 +113,14 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         asset: CredentialsAsset = self._node.keystore.get_asset('github-credentials')
         github_credentials: GithubCredentials = asset.get(source)
 
-        result = self._dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner, owner.name,
+        result = self._dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
                                                github_credentials=github_credentials)
 
         print(result)
         assert(result is not None)
         assert('obj_id' in result)
 
-    def test_rest_delete(self):
-        owner = self._node.identity
-
+    def test_remove(self):
         # create content
         content_path = os.path.join(self.wd_path, 'test.json')
         with open(content_path, 'w') as f:
@@ -138,21 +128,41 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = DORRESTTestCase._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner.name)
+        result = self._dor.add_data_object(content_path, self._known_user0.identity, False, False, 'JSON', 'json')
         print(result)
-        assert(result is not None)
-        assert('obj_id' in result)
         obj_id = result['obj_id']
 
-        result = DORRESTTestCase._dor.delete_data_object(obj_id, with_authorisation_by=self._node.keystore)
-        print(result)
-        assert(result is not None)
+        # try to delete non-existent object
+        try:
+            self._dor.delete_data_object('invalid obj id', with_authorisation_by=self._known_user0)
+            assert False
 
-        result = DORRESTTestCase._dor.get_meta(obj_id)
+        except UnsuccessfulRequestError as e:
+            assert('data object does not exist' in e.details['reason'])
+
+        # try to delete with wrong authority
+        try:
+            self._dor.delete_data_object(obj_id, with_authorisation_by=self._known_user1)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('user is not the data object owner' in e.details['reason'])
+
+        # try to delete with correct authority
+        try:
+            result = self._dor.delete_data_object(obj_id, with_authorisation_by=self._known_user0)
+            print(result)
+            assert(result is not None)
+            assert(result['obj_id'] == obj_id)
+
+        except UnsuccessfulRequestError as e:
+            assert ('' in e.reason)
+
+        result = self._dor.get_meta(obj_id)
         print(result)
         assert(result is None)
 
-    def test_rest_get_meta(self):
+    def test_get_meta(self):
         owner = self._node.identity
 
         # create content
@@ -162,7 +172,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner.name)
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
         valid_obj_id = result['obj_id']
         invalid_obj_id = 'invalid_obj_id'
 
@@ -173,7 +183,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(result is not None)
         assert(result['obj_id'] == valid_obj_id)
 
-    def test_rest_get_content(self):
+    def test_get_content(self):
         owner = self._node.identity
 
         # create content
@@ -183,7 +193,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner.name)
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
         valid_obj_id = result['obj_id']
         invalid_obj_id = 'invalid_obj_id'
 
@@ -222,7 +232,87 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
-    def test_rest_grant_revoke_access(self):
+    def test_get_provenance(self):
+        processor = {
+            # 'c_hash': '0123456789abcdef',
+            'source': 'github.com/source',
+            'commit_id': '34534ab',
+            'proc_path': '/proc',
+            'proc_config': 'default',
+            'proc_descriptor': {
+                'name': 'proc0',
+                'input': [{
+                    'name': 'a',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }, {
+                    'name': 'b',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }],
+                'output': [{
+                    'name': 'c',
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                }],
+                'configurations': ['default']
+            }
+        }
+
+        owner = self._node.identity
+
+        # create contents
+        content_path_a = os.path.join(self.wd_path, 'a.json')
+        content_path_c = os.path.join(self.wd_path, 'c.json')
+        self.create_file_with_content(content_path_a, json.dumps({'v': 1}))
+        self.create_file_with_content(content_path_c, json.dumps({'v': 3}))
+        b_c_hash = hash_json_object({'v': 2}).hex()
+
+        meta_a = self._dor.add_data_object(content_path_a, owner, False, False, 'JSON', 'json', recipe=None)
+        result = self._dor.get_provenance(meta_a['c_hash'])
+        print(result)
+        assert(result is not None)
+        assert(meta_a['c_hash'] in result['data_nodes'])
+        assert(meta_a['c_hash'] in result['missing'])
+
+        meta_c = self._dor.add_data_object(content_path_c, owner, False, False, 'JSON', 'json', recipe={
+            'processor': processor,
+            'consumes': {
+                'a': {
+                    'c_hash': meta_a['c_hash'],
+                    'data_type': 'JSON',
+                    'data_format': 'json'
+                },
+                'b': {
+                    'c_hash': b_c_hash,
+                    'data_type': 'JSON',
+                    'data_format': 'json',
+                    'content': {'v': 2}
+                }
+            },
+            'product': {
+                'c_hash': 'unknown',
+                'data_type': 'JSON',
+                'data_format': 'json'
+            },
+            'name': 'c'
+        })
+
+        result = self._dor.get_provenance(b_c_hash)
+        print(result)
+        assert(result is not None)
+
+        result = self._dor.get_provenance(meta_c['c_hash'])
+        print(result)
+        assert(result is not None)
+        assert(len(result['steps']) == 1)
+        step = result['steps'][0]
+        assert(step['processor'] == '5e4871029fd3a88f72f43377223e7efc37aa5a579ad464c59c593695a40c79aa')
+        assert(step['consumes']['a'] == '9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1')
+        assert(step['consumes']['b'] == '2b5442799fccc3af2e7e790017697373913b7afcac933d72fb5876de994f659a')
+        assert(step['produces']['c'] == 'b460644a73d5df6998c57c4eaf43ebc3e595bd06930af6e42d0008f84d91c849')
+
+    def test_grant_revoke_access(self):
         owner = self._node.keystore
 
         # create content
@@ -232,8 +322,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json',
-                                           owner.identity.name)
+        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
         obj_id = result['obj_id']
 
         user0 = self._known_user0
@@ -275,7 +364,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
-        # try to revoke access form a user that has access without being the owner
+        # try to revoke access from a user that has access without being the owner
         try:
             self._dor.revoke_access(obj_id, user0, user1.identity)
             assert False
@@ -283,7 +372,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError as e:
             assert(e.details['reason'] == 'user is not the data object owner')
 
-        # try to revoke access form a user that has access
+        # try to revoke access from a user that has access
         try:
             meta = self._dor.revoke_access(obj_id, owner, user1.identity)
             assert (owner.identity.id == meta['owner_iid'])
@@ -294,7 +383,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
-        # try to revoke access form a user that doesn't have access
+        # try to revoke access from a user that doesn't have access
         try:
             meta = self._dor.revoke_access(obj_id, owner, user0.identity)
             assert (owner.identity.id == meta['owner_iid'])
@@ -305,7 +394,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
-    def test_rest_transfer_ownership(self):
+    def test_transfer_ownership(self):
         owner = self._node.keystore
 
         # create content
@@ -315,8 +404,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json',
-                                           owner.identity.name)
+        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
         obj_id = result['obj_id']
 
         user0 = self._known_user0
@@ -350,7 +438,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError:
             assert False
 
-    def test_rest_update_remove_tags(self):
+    def test_update_remove_tags(self):
         owner = self._node.keystore
 
         # create content
@@ -360,8 +448,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json',
-                                           owner.identity.name)
+        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
         obj_id = result['obj_id']
 
         wrong_user = self._known_user0
@@ -381,8 +468,8 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         try:
             meta = self._dor.update_tags(obj_id, owner, {'name': 'abc'})
             assert(len(meta['tags']) == 1)
-            assert(meta['tags'][0]['key'] == 'name')
-            assert(meta['tags'][0]['value'] == 'abc')
+            assert('name' in meta['tags'])
+            assert(meta['tags']['name'] == 'abc')
 
         except UnsuccessfulRequestError as e:
             assert False
@@ -391,8 +478,8 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         try:
             meta = self._dor.update_tags(obj_id, owner, {'name': 'bcd'})
             assert(len(meta['tags']) == 1)
-            assert(meta['tags'][0]['key'] == 'name')
-            assert(meta['tags'][0]['value'] == 'bcd')
+            assert('name' in meta['tags'])
+            assert(meta['tags']['name'] == 'bcd')
 
         except UnsuccessfulRequestError as e:
             assert False
@@ -409,7 +496,7 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
         try:
             self._dor.remove_tags(obj_id, owner, ['invalid_key'])
 
-        except UnsuccessfulRequestError as e:
+        except UnsuccessfulRequestError:
             assert False
 
         # try to remove existing tag by owner
@@ -419,48 +506,6 @@ class DORRESTTestCase(unittest.TestCase, TestCaseBase):
 
         except UnsuccessfulRequestError:
             assert False
-
-
-class DORServiceTestCase(unittest.TestCase, TestCaseBase):
-    _wd_path = os.path.join(os.environ['HOME'], 'testing', str(get_timestamp_now()))
-    _node = None
-    _dor = None
-    _db = None
-    _unknown_user = None
-    _known_user0 = None
-    _known_user1 = None
-
-    def __init__(self, method_name='runTest'):
-        unittest.TestCase.__init__(self, method_name)
-        TestCaseBase.__init__(self)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._node is not None:
-            shutil.rmtree(cls._wd_path, ignore_errors=True)
-            cls._node.shutdown(leave_network=False)
-
-    def setUp(self):
-        self.initialise()
-
-        if DORServiceTestCase._node is None:
-            DORServiceTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                     wd_path=DORServiceTestCase._wd_path)
-            DORServiceTestCase._dor = DORProxy(DORServiceTestCase._node.rest.address())
-            DORServiceTestCase._db = NodeDBProxy(DORServiceTestCase._node.rest.address())
-
-            extras = self.create_keystores(3)
-            DORServiceTestCase._unknown_user = extras[0]
-            DORServiceTestCase._known_user0 = extras[1]
-            DORServiceTestCase._known_user1 = extras[2]
-
-            DORServiceTestCase._node.db.update_identity(DORServiceTestCase._known_user0.identity)
-            DORServiceTestCase._node.db.update_identity(DORServiceTestCase._known_user1.identity)
-
-            time.sleep(1)
-
-    def tearDown(self):
-        self.cleanup()
 
     def test_content_encryption(self):
         # create content for the data object and encrypt it
@@ -476,8 +521,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # add data object with the encrypted content
         protected_content_key1 = owner1.encrypt(content_key).decode('utf-8')
-        meta = self._dor.add_data_object(content_enc_path, owner1.identity, False, True, 'map', 'json',
-                                         owner1.identity.name)
+        meta = self._dor.add_data_object(content_enc_path, owner1.identity, False, True, 'map', 'json')
         obj_id = meta['obj_id']
 
         # transfer ownership now
@@ -494,7 +538,7 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
     def test_fetch_data_object(self):
         owner = self._known_user0
         meta = self._dor.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
-                                         owner.identity, True, False, 'map', 'json', owner.identity.name)
+                                         owner.identity, True, False, 'map', 'json')
         obj_id = meta['obj_id']
 
         # create the receiving node
@@ -552,11 +596,11 @@ class DORServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # create data objects
         meta0 = self._dor.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
-                                          owner.identity, False, False, 'map', 'json', owner.identity.name)
+                                          owner.identity, False, False, 'map', 'json')
         meta1 = self._dor.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
-                                          owner.identity, False, False, 'map', 'json', owner.identity.name)
+                                          owner.identity, False, False, 'map', 'json')
         meta2 = self._dor.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
-                                          owner.identity, False, False, 'map', 'json', owner.identity.name)
+                                          owner.identity, False, False, 'map', 'json')
         obj_id0 = meta0['obj_id']
         obj_id1 = meta1['obj_id']
         obj_id2 = meta2['obj_id']
