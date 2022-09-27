@@ -19,13 +19,6 @@ class DataObjectContentNotFoundError(DORException):
         super().__init__('Data object content not found', details=details)
 
 
-class IdentityNotFoundError(DORException):
-    def __init__(self, iid: str) -> None:
-        super().__init__('Identity not found', details={
-            'iid': iid
-        })
-
-
 class ProcessorDescriptorNotFoundError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Processor descriptor not found', details=details)

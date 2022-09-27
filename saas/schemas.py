@@ -13,6 +13,7 @@ class TaskInputReference(BaseModel):
     type: Literal["reference"]
     obj_id: str
     user_signature: Optional[str]
+    c_hash: Optional[str]
 
 
 class TaskInputValue(BaseModel):
@@ -49,6 +50,7 @@ class ResumeDescriptor(BaseModel):
 class JobDescriptor(BaseModel):
     id: str
     proc_id: str
+    owner_iid: str
     task: TaskDescriptor
     retain: bool
 
@@ -67,10 +69,15 @@ class ProcessorDescriptor(BaseModel):
     configurations: List[str]
 
 
+class JobStatus(BaseModel):
+    job_id: str
+    task: dict
+
+
 class ProcessorStatus(BaseModel):
     state: str
-    active: Optional[dict]
     pending: List[dict]
+    active: Optional[dict]
 
 
 class GitProcessorPointer(BaseModel):
@@ -79,63 +86,3 @@ class GitProcessorPointer(BaseModel):
     proc_path: str
     proc_config: str
     proc_descriptor: Optional[ProcessorDescriptor]
-
-
-class NetworkNode(BaseModel):
-    iid: str
-    last_seen: int
-    p2p_address: str
-    rest_address: Optional[str]
-    dor_service: bool
-    rti_service: bool
-
-
-class ObjectRecipe(BaseModel):
-    class RecipeProduct(BaseModel):
-        name: str
-        c_hash: str
-        data_type: str
-        data_format: str
-
-    class RecipeProcessor(BaseModel):
-        proc_id: str
-        gpp: GitProcessorPointer
-
-    class RecipeInputReference(BaseModel):
-        name: str
-        data_type: str
-        data_format: str
-        type: Literal["reference"]
-        c_hash: str
-
-    class RecipeInputValue(BaseModel):
-        name: str
-        data_type: str
-        data_format: str
-        type: Literal["value"]
-        value: dict
-
-    product: RecipeProduct
-    processor: RecipeProcessor
-    input: List[Union[RecipeInputReference, RecipeInputValue]]
-
-
-class ObjectProvenance(BaseModel):
-    class ProvenanceContentNode(BaseModel):
-        c_hash: str
-        type: Literal['original', 'derived']
-        data_type: str
-        data_format: str
-
-    class ProvenanceProcNode(BaseModel):
-        gpp_hash: str
-        gpp: GitProcessorPointer
-
-    class ProvenanceSteps(BaseModel):
-        consume: List[str]
-        processor: Optional[str]
-        produce: Optional[str]
-
-    content_nodes: Optional[List[ProvenanceContentNode]]
-    proc_nodes: Optional[List[ProvenanceProcNode]]
-    steps: Optional[List[ProvenanceSteps]]

@@ -1,43 +1,36 @@
 from typing import Optional
 
-from saascore.helpers import get_timestamp_now
+from pydantic import BaseModel
 from saascore.keystore.identity import Identity
 from saascore.log import Logging
 
 from saas.nodedb.exceptions import UnexpectedIdentityError
+from saas.nodedb.schemas import NodeInfo, NodeDBSnapshot
 from saas.p2p.exceptions import PeerUnavailableError
-from saas.p2p.protocol import P2PProtocol, P2PMessage
+from saas.p2p.protocol import P2PProtocol
 
 logger = Logging.get('nodedb.protocol')
+
+
+class UpdateMessage(BaseModel):
+    origin_who: Identity
+    origin_node: NodeInfo
+    snapshot: NodeDBSnapshot
+    reciprocate: bool
+
+
+class LeaveRequest(BaseModel):
+    pass
 
 
 class NodeDBP2PProtocol(P2PProtocol):
     id = "node_db"
 
     def __init__(self, node) -> None:
-        super().__init__(node, NodeDBP2PProtocol.id, {
-            'update': self._handle_update,
-            'leave': self._handle_leave
-        })
-
-    def _prepare_update_message(self, snapshot: dict, reciprocate: bool, forward: bool,
-                                ignore: list[str] = None) -> P2PMessage:
-        return self.prepare_message('update', {
-            'self': {
-                'identity': self.node.identity.serialise(),
-                'network': {
-                    'node_iid': self.node.identity.id,
-                    'dor_service': self.node.dor is not None,
-                    'rti_service': self.node.rti is not None,
-                    'p2p_address': self.node.p2p.address(),
-                    'rest_address': self.node.rest.address() if self.node.rest else None
-                }
-            },
-            'snapshot': snapshot,
-            'reciprocate': reciprocate,
-            'forward': forward,
-            'forward_ignore': [self.node.identity.id, *ignore] if ignore else [self.node.identity.id]
-        })
+        super().__init__(node, NodeDBP2PProtocol.id, [
+            (UpdateMessage, self._handle_update, UpdateMessage),
+            (LeaveRequest, self._handle_leave, None)
+        ])
 
     def perform_join(self, boot_node_address: (str, int)) -> None:
         # send an update to the boot node, then proceed to send updates to all peers that discovered along the way
@@ -50,100 +43,69 @@ class NodeDBP2PProtocol(P2PProtocol):
             # for join, we expect the peer to reciprocate and not to forward our message (because we will
             # contact them directly)
             try:
-                self.update_peer(peer_address, reciprocate=True, forward=False)
+                response, _, peer = self.request(peer_address, UpdateMessage(
+                    origin_who=self.node.identity,
+                    origin_node=self.node.db.get_node(),
+                    snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id]),
+                    reciprocate=True
+                ))
+
+                self._handle_update(response, peer)
 
             except PeerUnavailableError:
                 logger.debug(f"Peer at {peer_address} unavailable -> Removing from NodeDB.")
-                self.node.db.remove_network(node_address=peer_address)
+                self.node.db.remove_node_by_address(peer_address)
 
             # get all nodes in the network and add any nodes that we may not have been aware of
-            network = self.node.db.get_network_all()
-            for record in network:
-                _address = record.get_p2p_address()
-                if _address not in processed and _address not in remaining:
-                    remaining.append(_address)
+            for node in self.node.db.get_network():
+                if node.p2p_address not in processed and node.p2p_address not in remaining and \
+                        node.p2p_address != self.node.p2p.address():
+                    remaining.append(node.p2p_address)
 
-    def update_peer(self, peer_address: (str, int), reciprocate: bool, forward: bool) -> Optional[dict]:
-        # send the message via request to the peer
-        snapshot = self.node.db.create_sync_snapshot(exclude_self=True)
-        message = self._prepare_update_message(snapshot, reciprocate=reciprocate, forward=forward)
-        response, _ = self.request(peer_address, message)
+    def perform_leave(self) -> None:
+        self.broadcast(LeaveRequest())
+        self.node.db.reset_network()
 
-        if reciprocate:
-            self._handle_update(response, Identity.deserialise(response['self']['identity']))
+    def _handle_update(self, request: UpdateMessage, peer: Identity) -> Optional[UpdateMessage]:
+        # does the identity check out?
+        if request.origin_who.id != peer.id:
+            raise UnexpectedIdentityError({
+                'expected': peer.dict(),
+                'actual': request.origin_who.dict()
+            })
 
-        return response
+        # update the db information about the originator
+        self.node.db.update_identity(request.origin_who)
+        self.node.db.update_network(request.origin_node)
 
-    def broadcast_update(self, method: str, args: dict) -> None:
-        # for a simple update, we except the peer to NOT reciprocate and to NOT forward our message (because we are
+        # process the snapshot identities (if any)
+        if request.snapshot.update_identity:
+            for identity in request.snapshot.update_identity:
+                self.node.db.update_identity(identity)
+
+        # process the snapshot nodes (if any)
+        if request.snapshot.update_network:
+            for node in request.snapshot.update_network:
+                self.node.db.update_network(node)
+
+        # reciprocate with an update message (if requested)
+        return UpdateMessage(
+            origin_who=self.node.identity,
+            origin_node=self.node.db.get_node(),
+            snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id, peer.id]),
+            reciprocate=False
+        ) if request.reciprocate else None
+
+    def _handle_leave(self, _: LeaveRequest, peer: Identity) -> None:
+        self.node.db.update_identity(peer)
+        self.node.db.remove_node_by_id(peer)
+
+    def broadcast_identity_update(self, identity: Identity) -> None:
+        # this is a simple update. we expect the peer to NOT reciprocate and to NOT forward our message (because we are
         # broadcasting to everyone we know)
-        snapshot = {
-            method: [args]
-        }
-        message = self._prepare_update_message(snapshot, reciprocate=False, forward=False)
-        self.broadcast(message)
-
-    def _handle_update(self, message: dict, peer: Identity) -> P2PMessage:
-        # does the identity check out?
-        if message['self']['identity']['iid'] != peer.id:
-            raise UnexpectedIdentityError({
-                'expected': peer,
-                'message': message
-            })
-
-        # update the db information about the peer
-        self.node.db.update_identity(message['self']['identity'])
-        self.node.db.update_network(
-            node_iid=message['self']['network']['node_iid'],
-            last_seen=get_timestamp_now(),
-            dor_service=message['self']['network']['dor_service'],
-            rti_service=message['self']['network']['rti_service'],
-            p2p_address=message['self']['network']['p2p_address'],
-            rest_address=message['self']['network']['rest_address']
-        )
-
-        # process the snapshot
-        for method_name in message['snapshot']:
-            method = getattr(self.node.db, method_name)
-            for args in message['snapshot'][method_name]:
-                method(**args)
-
-        # are we supposed to forward the message?
-        if message['forward']:
-            # add ourselves to the forward_ignore list and disable reciprocity (we don't do that when forwarding)
-            message['forward_ignore'].append(self.node.identity.id)
-            message['reciprocate'] = False
-
-            # forward the message to all peers we know of (while skipping the ones in the ignore list)
-            for record in self.node.db.get_network_all():
-                if record.iid not in message['forward_ignore']:
-                    self.request(record.p2p_address, message)
-
-        # reciprocate with an update message
-        return self._prepare_update_message(self.node.db.create_sync_snapshot(exclude_self=True),
-                                            reciprocate=False, forward=False) if message['reciprocate'] else None
-
-    def broadcast_leave(self) -> None:
-        message = self.prepare_message('leave', {
-            'self': {
-                'identity': self.node.identity.serialise(),
-            }
-        })
-
-        result = self.broadcast(message)
-        for unavailable in result['unavailable']:
-            logger.debug(f"unavailable peer at {unavailable.get_p2p_address()} known to us as {unavailable.iid} -> "
-                         f"remove network record")
-            self.node.db.remove_network(node_iid=unavailable.iid)
-
-    def _handle_leave(self, message: dict, peer: Identity) -> None:
-        # does the identity check out?
-        if message['self']['identity']['iid'] != peer.id:
-            raise UnexpectedIdentityError({
-                'expected': peer,
-                'message': message
-            })
-
-        # update the db information about the peer
-        self.node.db.update_identity(message['self']['identity'])
-        self.node.db.remove_network(node_iid=peer.id)
+        self.broadcast(UpdateMessage(
+            origin_who=self.node.identity,
+            origin_node=self.node.db.get_node(),
+            snapshot=NodeDBSnapshot(update_identity=[identity]),
+            reciprocate=False
+        ))

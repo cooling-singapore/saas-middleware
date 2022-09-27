@@ -13,7 +13,6 @@ from saascore.cryptography.helpers import encrypt_file
 from saascore.cryptography.rsakeypair import RSAKeyPair
 from saascore.exceptions import RunCommandError, SaaSException
 from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saascore.keystore.identity import Identity
 from saascore.keystore.keystore import Keystore
 from saascore.log import Logging
 
@@ -35,23 +34,7 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     asset: CredentialsAsset = owner.get_asset('github-credentials')
     github_credentials: GithubCredentials = asset.get(source)
 
-def wait_for_job(rti: RTIProxy, job_id: str, proc_id: str = None):
-    while True:
-        time.sleep(5)
-        descriptor, status, _ = rti.get_job_info(job_id)
-        if descriptor and status:
-            print(f"job descriptor: {descriptor}")
-            print(f"job status: {status}")
-
-            state = State(status['state'])
-            if state == State.SUCCESSFUL:
-                return True
-            elif state == State.TIMEOUT:
-                return False
-            elif state == State.FAILED:
-                return False
-
-    meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity, owner.identity.name,
+    meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity,
                                    github_credentials=github_credentials)
     return meta['obj_id'], github_credentials
 
@@ -111,7 +94,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(result is not None)
 
         # get the descriptor
-        result = self._rti.get_descriptor(self._test_proc_id)
+        result = self._rti.get_gpp(self._test_proc_id)
         print(result)
         assert(result is not None)
 
@@ -120,7 +103,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             result = self._rti.get_status(self._test_proc_id)
             assert(result is not None)
 
-            if result['state'] not in ['starting', 'waiting']:
+            if result['state'] not in ['starting', 'waiting', 'uninitialised']:
                 assert False
 
             if result['state'] == 'waiting':
@@ -142,6 +125,10 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             assert('Processor not deployed' in e.reason)
 
     def test_rest_submit_get_job(self):
+        # create an extra identity
+        wrong_user = self.create_keystores(1)[0]
+        self._node.db.update_identity(wrong_user.identity)
+
         deploy_and_wait(self._rti, self._test_proc_id, self._test_proc_gh_cred)
 
         owner = self._node.keystore
@@ -156,7 +143,81 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         # submit the job
-        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner.identity)
+        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner)
+        print(result)
+        assert(result is not None)
+
+        job_id = result['id']
+
+        # get information about all jobs
+        result = self._rti.get_jobs(self._test_proc_id)
+        print(result)
+        assert(result is not None)
+
+        # try to get the job info as the wrong user
+        try:
+            self._rti.get_job_info(job_id, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert(e.details['reason'] == 'user is not the job owner')
+
+        while True:
+            # get information about the running job
+            _, status, _ = self._rti.get_job_info(job_id, owner)
+            print(status)
+            assert(status is not None)
+
+            state = State(status['state'])
+            if state == State.SUCCESSFUL or state == State.FAILED:
+                break
+
+            time.sleep(1)
+
+        # check if we have an object id for output object 'c'
+        output = {item['name']: item['obj_id'] for item in status['output']}
+        assert('c' in output)
+
+        # get the contents of the output data object
+        download_path = os.path.join(self.wd_path, 'c.json')
+        self._dor.get_content(output['c'], owner, download_path)
+        assert(os.path.isfile(download_path))
+
+        with open(download_path, 'r') as f:
+            content = json.load(f)
+            print(content)
+            assert(content['v'] == 3)
+
+        download_path = os.path.join(self.wd_path, 'log.tar.gz')
+
+        # try to get the job logs as the wrong user
+        try:
+            self._rti.get_job_logs(job_id, wrong_user, download_path)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert(e.details['reason'] == 'user is not the job owner')
+            assert(not os.path.isfile(download_path))
+
+        self._rti.get_job_logs(job_id, owner, download_path)
+        assert(os.path.isfile(download_path))
+
+    def test_rest_job_logs(self):
+        deploy_and_wait(self._rti, self._test_proc_id, self._test_proc_gh_cred)
+
+        owner = self._node.keystore
+
+        task_input = [
+            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit the job
+        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner)
         print(result)
         assert(result is not None)
 
@@ -169,7 +230,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         while True:
             # get information about the running job
-            _, status, _ = self._rti.get_job_info(job_id)
+            _, status, _ = self._rti.get_job_info(job_id, owner)
             print(status)
             assert(status is not None)
 
@@ -202,15 +263,15 @@ class UnsuccessfulJob(SaaSException):
         super().__init__(f"Unsuccessful job: {reason}", details=details)
 
 
-def submit_job(rti: RTIProxy, proc_id: str, task_input: list[dict], task_output: list[dict], user: Identity) -> str:
-    result = rti.submit_job(proc_id, task_input, task_output, user)
+def submit_job(rti: RTIProxy, proc_id: str, task_input: list[dict], task_output: list[dict], owner: Keystore) -> str:
+    result = rti.submit_job(proc_id, task_input, task_output, owner)
     job_id = result['id']
     return job_id
 
 
-def wait_for_job(rti: RTIProxy, job_id: str) -> dict:
+def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
     while True:
-        _, status, _ = rti.get_job_info(job_id)
+        _, status, _ = rti.get_job_info(job_id, owner)
 
         state = State(status['state'])
         if state == State.SUCCESSFUL:
@@ -250,6 +311,8 @@ def wait_for_job(rti: RTIProxy, job_id: str) -> dict:
                             details = {
                                 'as_string': line[1]
                             }
+                        except Exception as e:
+                            print(e)
 
             raise UnsuccessfulJob(f"Job failed: {reason}", details=details)
 
@@ -257,9 +320,9 @@ def wait_for_job(rti: RTIProxy, job_id: str) -> dict:
 
 
 def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: list[dict], task_output: list[dict],
-                    user: Identity) -> (str, dict):
-    job_id = submit_job(rti, proc_id, task_input, task_output, user)
-    output = wait_for_job(rti, job_id)
+                    owner: Keystore) -> (str, dict):
+    job_id = submit_job(rti, proc_id, task_input, task_output, owner)
+    output = wait_for_job(rti, job_id, owner)
     return job_id, output
 
 
@@ -331,7 +394,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
                     return
 
     def test_processor_execution_value(self):
-        owner = self._node.identity
+        owner = self._node.keystore
 
         task_input = [
             {'name': 'a', 'type': 'value', 'value': {'v': 1}},
@@ -339,7 +402,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False}
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
         ]
 
         # submit and wait
@@ -354,7 +417,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         target_dor = DORProxy(target_node.rest.address())
         time.sleep(2)
 
-        owner = self._node.identity
+        owner = self._node.keystore
 
         task_input = [
             {'name': 'a', 'type': 'value', 'value': {'v': 1}},
@@ -362,7 +425,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False,
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False,
              'target_node_iid': target_node.identity.id}
         ]
 
@@ -382,12 +445,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         time.sleep(2)
 
     def test_processor_execution_reference_unrestricted(self):
-        owner = self._node.identity
+        owner = self._node.keystore
 
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner.identity, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
@@ -396,7 +459,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False}
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
         ]
 
         # submit and wait
@@ -405,12 +468,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('c' in output)
 
     def test_provenance(self):
-        owner = self._node.identity
+        owner = self._node.keystore
 
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner.identity, False, False, 'JSONObject', 'json')
         obj_id, c_hash = meta['obj_id'], meta['c_hash']
 
         obj_id_a = obj_id
@@ -427,7 +490,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             ]
 
             task_output = [
-                {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False}
+                {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
             ]
 
             # submit and wait
@@ -451,19 +514,19 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             print(f"{item[0]} + {item[1]} = {item[2]}")
 
         # get the provenance and print it
-        provenance = self._db.get_provenance(obj_id)
+        provenance = self._dor.get_provenance(log[2][2])
         assert(provenance is not None)
         print(json.dumps(provenance, indent=2))
 
     def test_processor_execution_same_reference(self):
         # test for issue #110: https://github.com/cooling-singapore/saas-middleware/issues/110
 
-        owner = self._node.identity
+        owner = self._node.keystore
 
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner.identity, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
@@ -472,7 +535,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False}
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
         ]
 
         # submit and wait
@@ -494,7 +557,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # add test data object
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner.identity, True, False, 'JSONObject', 'json', owner.identity.name)
+                                         owner.identity, True, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         user = self._known_user0
@@ -511,7 +574,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # no access rights and no valid signature
         try:
-            submit_and_wait(self._rti, self._test_proc_id, task_input_invalid, task_output, user.identity)
+            submit_and_wait(self._rti, self._test_proc_id, task_input_invalid, task_output, user)
             assert False
 
         except UnsuccessfulJob as e:
@@ -522,14 +585,14 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # access rights but invalid signature
         try:
-            submit_and_wait(self._rti, self._test_proc_id, task_input_invalid, task_output, user.identity)
+            submit_and_wait(self._rti, self._test_proc_id, task_input_invalid, task_output, user)
             assert False
 
         except UnsuccessfulJob as e:
-            assert('authorisation failed' in e.details['as_string'])
+            assert('authorisation failed' in e.details['reason'])
 
         # create valid and invalid task input
-        valid_signature = user.sign(f"{rti_node_info['iid']}:{a_obj_id}".encode('utf-8'))
+        valid_signature = user.sign(f"{rti_node_info['identity']['id']}:{a_obj_id}".encode('utf-8'))
         task_input_valid = [
             {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature},
             {'name': 'b', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature}
@@ -537,10 +600,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # access rights and valid signature
         try:
-            job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input_valid, task_output, user.identity)
+            job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input_valid, task_output, user)
             assert('c' in output)
 
-        except UnsuccessfulJob as e:
+        except UnsuccessfulJob:
             assert False
 
     def test_processor_execution_reference_encrypted(self):
@@ -550,8 +613,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_path = self.create_file_with_content(f"{generate_random_string(4)}.json", json.dumps({'v': 1}))
         content_key = encrypt_file(obj_path, encrypt_for=owner.identity, delete_source=True)
 
-        meta = self._dor.add_data_object(obj_path, owner.identity, False, True, 'JSONObject', 'json',
-                                         owner.identity.name)
+        meta = self._dor.add_data_object(obj_path, owner.identity, False, True, 'JSONObject', 'json')
         obj_id = meta['obj_id']
 
         task_input = [
@@ -564,7 +626,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         # submit the job
-        job_id = submit_job(self._rti, self._test_proc_id, task_input, task_output, owner.identity)
+        job_id = submit_job(self._rti, self._test_proc_id, task_input, task_output, owner)
 
         # determine the status path
         status_path = os.path.join(self._node.datastore, 'jobs', job_id, 'job_status.json')
@@ -575,7 +637,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         thread.start()
 
         # wait for the job to finish
-        output = wait_for_job(self._rti, job_id)
+        output = wait_for_job(self._rti, job_id, owner)
         assert('c' in output)
 
     def test_docker_processor_execution_value(self):
@@ -604,7 +666,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         # submit and wait
-        job_id, output = submit_and_wait(target_rti, proc_id, task_input, task_output, owner.identity)
+        job_id, output = submit_and_wait(target_rti, proc_id, task_input, task_output, owner)
         assert(output is not None)
         assert('c' in output)
 
@@ -638,7 +700,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         ]
 
         # submit and wait
-        job_id, output = submit_and_wait(target_rti, proc_id, task_input, task_output, owner.identity)
+        job_id, output = submit_and_wait(target_rti, proc_id, task_input, task_output, owner)
         assert(output is not None)
         assert('c' in output)
 
@@ -677,7 +739,6 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                                                          wd_path=RTIServiceTestCaseNSCC._wd_path)
             RTIServiceTestCaseNSCC._rti = RTIProxy(RTIServiceTestCaseNSCC._node.rest.address())
             RTIServiceTestCaseNSCC._dor = DORProxy(RTIServiceTestCaseNSCC._node.rest.address())
-            # RTIServiceTestCaseNSCC._db = NodeDBProxy(RTIServiceTestCaseNSCC._node.rest.address())
             time.sleep(1)
 
             # extract the NSCC SSH credentials
@@ -697,7 +758,8 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                          ssh_credentials=self._nscc_ssh_cred)
 
         # wait for processor to be deployed
-        while (state := ProcessorState(self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -718,16 +780,17 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
                          ssh_credentials=self._nscc_ssh_cred)
 
         # wait for processor to be deployed
-        while (state := ProcessorState(self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
 
         # add test data object
-        owner = self._node.identity
+        owner = self._node.keystore
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
-                                         owner, False, False, 'JSONObject', 'json', owner.name)
+                                         owner.identity, False, False, 'JSONObject', 'json')
         a_obj_id = meta['obj_id']
 
         task_input = [
@@ -736,7 +799,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.id, 'restricted_access': False, 'content_encrypted': False}
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
         ]
 
         # submit and wait
