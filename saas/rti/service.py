@@ -16,7 +16,7 @@ from saascore.exceptions import RunCommandError
 from saascore.keystore.identity import Identity
 
 from saascore.log import Logging
-from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string
+from saascore.helpers import write_json_to_file, generate_random_string
 from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
 
 from saas.p2p.exceptions import PeerUnavailableError
@@ -277,13 +277,13 @@ class RTIService:
             self._deployed[proc_id].add(job_descriptor, status)
             return job_descriptor
 
-    def resume(self, proc_id: str, resume_descriptor: ResumeDescriptor) -> dict:
+    def resume(self, proc_id: str, resume_descriptor: ResumeDescriptor) -> JobDescriptor:
         with self._mutex:
             paths = resume_descriptor.paths
 
             # read the job descriptor
             job_descriptor_path = os.path.join(paths['local_wd'], 'job_descriptor.json')
-            job_descriptor = read_json_from_file(job_descriptor_path)
+            job_descriptor = JobDescriptor.parse_obj(_try_load_json(job_descriptor_path))
 
             # create status logger
             status_path = os.path.join(paths['local_wd'], 'job_status.json')
