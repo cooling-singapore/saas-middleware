@@ -16,7 +16,7 @@ from saascore.exceptions import RunCommandError
 from saascore.keystore.identity import Identity
 
 from saascore.log import Logging
-from saascore.helpers import write_json_to_file, generate_random_string
+from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string
 from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
 
 from saas.p2p.exceptions import PeerUnavailableError
@@ -27,7 +27,7 @@ from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
-from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
+from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer, ResumeDescriptor
 
 logger = Logging.get('rti.service')
 
@@ -277,6 +277,23 @@ class RTIService:
             self._deployed[proc_id].add(job_descriptor, status)
             return job_descriptor
 
+    def resume(self, proc_id: str, resume_descriptor: ResumeDescriptor) -> dict:
+        with self._mutex:
+            paths = resume_descriptor.paths
+
+            # read the job descriptor
+            job_descriptor_path = os.path.join(paths['local_wd'], 'job_descriptor.json')
+            job_descriptor = read_json_from_file(job_descriptor_path)
+
+            # create status logger
+            status_path = os.path.join(paths['local_wd'], 'job_status.json')
+            status = StatusLogger(status_path)
+            status.update_state(State.INITIALISED)
+
+            # add the job to the processor queue and return the job descriptor
+            self._deployed[proc_id].resume(resume_descriptor, status)
+            return job_descriptor
+
     def jobs(self, proc_id: str) -> List[JobDescriptor]:
         with self._mutex:
             return self._deployed[proc_id].pending_jobs()
@@ -297,10 +314,19 @@ class RTIService:
                     'job_id': job_id
                 })
 
+            # do we have re-connect information?
+            reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
+            if os.path.isfile(reconnect_info_path):
+                with open(reconnect_info_path, 'r') as f:
+                    reconnect_info = json.load(f)
+            else:
+                reconnect_info = {}
+
             # try to load the descriptor and status
             descriptor = _try_load_json(descriptor_path)
             status = _try_load_json(status_path)
-            return Job(descriptor=descriptor, status=status)
+
+            return Job(descriptor=descriptor, status=status, reconnect_info=reconnect_info)
 
     def job_logs(self, job_id: str) -> Response:
         # collect log files (if they exist)
