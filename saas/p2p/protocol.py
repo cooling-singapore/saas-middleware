@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Optional, Dict, List, Any, Tuple
 
 from pydantic import BaseModel
-from saascore.log import Logging
 
-from saascore.keystore.identity import Identity
-
+from saas.keystore.identity import Identity
+from saas.log import Logging
 from saas.nodedb.schemas import NodeInfo
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage
@@ -135,7 +134,8 @@ class P2PProtocol:
                 # ...and wait for the response
                 message_in = messenger.send_message(message_out)
                 if message_in:
-                    logger.debug(f"[Bres:{message_in.sequence_id:06d}] ({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
+                    logger.debug(f"[Bres:{message_in.sequence_id:06d}] "
+                                 f"({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
 
                     # convert the incoming message in the response and keep it
                     _, _, resp_class = self._function_mapping[request_type]

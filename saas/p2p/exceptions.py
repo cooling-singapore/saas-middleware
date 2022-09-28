@@ -1,4 +1,4 @@
-from saascore.exceptions import SaaSException
+from saas.exceptions import SaaSException
 
 
 class P2PException(SaaSException):
@@ -75,4 +75,3 @@ class PeerUnavailableError(P2PException):
 class AttachmentNotFoundError(P2PException):
     def __init__(self, details: dict) -> None:
         super().__init__('Attachment expected but not found', details=details)
-

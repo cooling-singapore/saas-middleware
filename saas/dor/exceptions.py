@@ -1,4 +1,4 @@
-from saascore.exceptions import SaaSException
+from saas.exceptions import SaaSException
 
 
 class DORException(SaaSException):
@@ -47,4 +47,3 @@ class CheckoutCommitError(DORException):
 class FetchDataObjectFailedError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object could not be fetched', details=details)
-

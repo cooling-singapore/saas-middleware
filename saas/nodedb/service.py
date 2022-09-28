@@ -1,15 +1,14 @@
 from typing import Optional, List
 
-from saascore.api.sdk.proxies import db_endpoint_prefix
 from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from saascore.log import Logging
-from saascore.keystore.identity import Identity
-
+from saas.keystore.identity import Identity
+from saas.log import Logging
 from saas.nodedb.exceptions import InvalidIdentityError, IdentityNotFoundError
 from saas.nodedb.protocol import NodeDBP2PProtocol
+from saas.nodedb.proxy import DB_ENDPOINT_PREFIX
 from saas.nodedb.schemas import NodeInfo, NodeDBSnapshot
 from saas.rest.schemas import EndpointDefinition
 
@@ -40,10 +39,9 @@ class IdentityRecord(Base):
 
 
 class NodeDBService:
-    def __init__(self, node, endpoint_prefix: str, db_path: str):
+    def __init__(self, node, db_path: str):
         # initialise properties
         self._node = node
-        self._endpoint_prefix = endpoint_prefix
         self._protocol = NodeDBP2PProtocol(node)
 
         # initialise database things
@@ -57,19 +55,19 @@ class NodeDBService:
 
     def endpoints(self) -> List[EndpointDefinition]:
         return [
-            EndpointDefinition('GET', db_endpoint_prefix, 'node',
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'node',
                                self.get_node, NodeInfo, None),
 
-            EndpointDefinition('GET', db_endpoint_prefix, 'network',
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'network',
                                self.get_network, List[NodeInfo], None),
 
-            EndpointDefinition('GET', db_endpoint_prefix, 'identity/{iid}',
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'identity/{iid}',
                                self.get_identity, Optional[Identity], None),
 
-            EndpointDefinition('GET', db_endpoint_prefix, 'identity',
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'identity',
                                self.get_identities, List[Identity], None),
 
-            EndpointDefinition('POST', db_endpoint_prefix, 'identity',
+            EndpointDefinition('POST', DB_ENDPOINT_PREFIX, 'identity',
                                self.update_identity, Identity, None),
         ]
 
