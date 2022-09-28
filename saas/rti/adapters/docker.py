@@ -5,6 +5,7 @@ import shutil
 import tarfile
 import tempfile
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Optional
 
@@ -12,6 +13,7 @@ import paramiko
 from saascore.exceptions import SaaSException, RunCommandError
 from saascore.keystore.assets.credentials import GithubCredentials, SSHCredentials
 from saascore.log import Logging
+from saascore.helpers import write_json_to_file
 
 import docker
 from docker.errors import BuildError
@@ -20,6 +22,7 @@ from docker.models.containers import Container
 import saas.rti.adapters.base as base
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.status import StatusLogger
+from saas.schemas import GitProcessorPointer, ResumeDescriptor, TaskDescriptor
 
 logger = Logging.get('rti.adapters.docker')
 
@@ -64,9 +67,9 @@ def add_host_to_ssh_config(host_id: str, host: str, username: str, key_path: str
             f.write(ssh_host_template)
 
 
-def clone_github_repo(gpp: dict, repo_path: str, github_credentials: GithubCredentials = None):
-    git_source = gpp["source"]
-    commit_id = gpp['commit_id']
+def clone_github_repo(gpp: GitProcessorPointer, repo_path: str, github_credentials: GithubCredentials = None):
+    git_source = gpp.source
+    commit_id = gpp.commit_id
 
     if github_credentials:
         login = github_credentials.login
@@ -106,7 +109,7 @@ def remove_host_from_ssh_config(host_id: str):
 
 
 class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
-    def __init__(self, proc_id: str, gpp: dict, jobs_path: str, node,
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
                  ssh_credentials: SSHCredentials = None,
                  github_credentials: GithubCredentials = None) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
@@ -164,8 +167,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                     image, info = client.images.build(path=tempdir,
                                                       tag=self.docker_image_tag,
                                                       forcerm=True,  # remove intermediate containers
-                                                      buildargs={"PROCESSOR_PATH": self._gpp["proc_path"],
-                                                                 "PROC_CONFIG": self._gpp['proc_config'],
+                                                      buildargs={"PROCESSOR_PATH": self._gpp.proc_path,
+                                                                 "PROC_CONFIG": self._gpp.proc_config,
                                                                  "PROC_ID": self._proc_id})
 
         except BuildError as e:
@@ -186,9 +189,11 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, job_descriptor: dict, working_directory: str, status: StatusLogger) -> None:
+    def execute(self, job_id: str, task_descriptor: TaskDescriptor, working_directory: str, retain_job: bool,
+                status: StatusLogger) -> None:
         try:
             with self.get_docker_client() as client:
+                client: docker.DockerClient
                 full_working_directory = os.path.realpath(working_directory)
 
                 # REMOTE
@@ -219,28 +224,68 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                               })
 
                 self.container.start()
-                # Block and go through logs until container closes
-                for log in self.container.logs(stream=True):
-                    lines = log.decode('utf-8').splitlines()
 
-                    for line in lines:
-                        if line.startswith('trigger:output'):
-                            self._handle_trigger_output(line, status, job_id, job_descriptor, working_directory)
+            # store reconnect information
+            # set pid as container id
+            reconnect_info = ResumeDescriptor(job_id=job_id,
+                                              pid=self.container.id,
+                                              pid_paths={"working_directory": full_working_directory},
+                                              task_descriptor=task_descriptor)
+            reconnect_info_path = os.path.join(working_directory, 'job_reconnect.json')
+            write_json_to_file(reconnect_info, reconnect_info_path)
 
-                        if line.startswith('trigger:progress'):
-                            self._handle_trigger_progress(line, status)
+            # try to monitor the job by (re)connecting to it
+            self.connect_and_monitor(reconnect_info, status)
 
+        except SaaSException:
+            raise
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
                 'job_id': job_id,
-                'job_descriptor': job_descriptor,
+                'job_descriptor': task_descriptor,
                 'working_directory': working_directory,
                 'trace': trace
             })
         finally:
-            if self.container:
+            if self.container is not None:
                 self.container.remove()
+
+    def connect_and_monitor(self, reconnect_info: ResumeDescriptor, status: StatusLogger) -> None:
+        # Retrieve container from descriptor if not found
+        if self.container is None:
+            with self.get_docker_client() as client:
+                client: docker.DockerClient
+                self.container = client.containers.get(reconnect_info.pid)
+
+        # Will only continue monitoring if container is still running.
+        # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
+        if self.container.status == "exited":
+            info = self.container.wait()
+            if info.get('StatusCode') is not 0:
+                raise SaaSException(info)
+
+        # Block and go through logs until container closes
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            for log in self.container.logs(stream=True):
+                lines = log.decode('utf-8').splitlines()
+
+                for line in lines:
+                    if line.startswith('trigger:output'):
+                        executor.submit(self._handle_trigger_output,
+                                        line, status,
+                                        reconnect_info.job_id,
+                                        reconnect_info.task_descriptor,
+                                        reconnect_info.pid_paths["working_directory"]
+                                        )
+
+                    if line.startswith('trigger:progress'):
+                        self._handle_trigger_progress(line, status)
+
+        # Remove container after job is done
+        self.container.wait()
+        self.container.remove()
+        self.container = None
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
@@ -249,19 +294,21 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             remove_host_from_ssh_config(self._proc_id)
 
     def _handle_trigger_output(self, line: str, status: StatusLogger, job_id: str,
-                               task_descriptor: dict, working_directory: str) -> None:
+                               task_descriptor: TaskDescriptor, working_directory: str) -> None:
         obj_name = line.split(':')[2]
         try:
-            status.update(f"process_output:{obj_name}", 'push')
+            status.update(f"process_output:{obj_name}", 'started')
 
             if self.using_remote:
                 # Fetch object from remote container
+                status.update(f"process_output:{obj_name}", 'retrieve')
                 remote_obj = f"{self.container_working_directory}/{obj_name}"
                 data, stat = self.container.get_archive(remote_obj)
                 datastream = generator_to_stream(data)
                 with tarfile.open(fileobj=datastream, mode='r|*') as tf:
                     tf.extractall(working_directory)
 
+            status.update(f"process_output:{obj_name}", 'push')
             self._push_data_object(job_id, obj_name, task_descriptor, working_directory, status)
             status.update(f"process_output:{obj_name}", 'done')
         except SaaSException as e:

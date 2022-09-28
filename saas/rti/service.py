@@ -21,6 +21,7 @@ from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentia
 
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
+import saas.rti.adapters.docker as docker_rti
 from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
@@ -202,17 +203,9 @@ class RTIService:
 
             elif p.deployment == 'docker':
                 # create a Docker RTI adapter instance
-                processor = None
-                # self._deployed[proc_id] = \
-                #     docker_rti.RTIDockerProcessorAdapter(proc_id, gpp, content_path, self._jobs_path,
-                #                                          self._node)
-                #
-                # # start the processor
-                # processor = self._deployed[proc_id]
-                # processor.start()
-                #
-                # # return the descriptor
-                # return meta['gpp']['proc_descriptor']
+                processor = docker_rti.RTIDockerProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
+                                                                 ssh_credentials=ssh_credentials,
+                                                                 github_credentials=github_credentials)
 
         # register and start the instance as deployed
         self._deployed[proc_id] = processor
