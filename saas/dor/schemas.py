@@ -70,8 +70,16 @@ class GPPDataObject(DataObject):
     gpp: GitProcessorPointer
 
 
+class DataObjectLicense(BaseModel):
+    by: bool  # if True -> must credit creators
+    sa: bool  # if True -> adaptations (derivatives) must use same terms
+    nc: bool  # if True -> must not be used for commercial purposes
+    nd: bool  # if True -> not allowed to create derivatives
+
+
 class CDataObject(DataObject):
     content_encrypted: bool
+    license: DataObjectLicense
     recipe: Optional[DataObjectRecipe]
 
 
@@ -93,6 +101,7 @@ class AddCDataObjectParameters(AddDataObjectParameters):
     data_format: str
     access_restricted: bool
     content_encrypted: bool
+    license: DataObjectLicense
     recipe: Optional[DataObjectRecipe]
 
 

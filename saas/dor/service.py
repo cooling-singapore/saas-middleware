@@ -395,7 +395,8 @@ class DORService:
                                          access=[owner.id], tags={},
                                          details={
                                              'content_encrypted': p.content_encrypted,
-                                             'recipe': p.recipe.dict() if p.recipe else None
+                                             'license': p.license.dict(),
+                                             'recipe': p.recipe.dict() if p.recipe else None,
                                          }))
             session.commit()
             logger.info(f"database record for data object '{obj_id}' added with c_hash={c_hash}.")
@@ -583,6 +584,7 @@ class DORService:
                     'tags': record.tags,
 
                     'content_encrypted': details['content_encrypted'],
+                    'license': details['license'],
                     'recipe': details['recipe'] if 'recipe' in details else None
                 })
 

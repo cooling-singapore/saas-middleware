@@ -98,6 +98,25 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         assert(len(result['created']['creators_iid']) == 1)
         assert(owner.id in result['created']['creators_iid'])
 
+    def test_add_c_license(self):
+        owner = self._node.identity
+
+        # create content
+        content_path = os.path.join(self.wd_path, 'test.json')
+        with open(content_path, 'w') as f:
+            f.write(json.dumps({
+                'a': random.randint(0, 9999)
+            }))
+
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', license_by=True)
+
+        print(result)
+        assert(result is not None)
+        assert(result['license']['by'])
+        assert(not result['license']['sa'])
+        assert(not result['license']['nc'])
+        assert(not result['license']['nd'])
+
     def test_add_c(self):
         owner = self._node.identity
 
