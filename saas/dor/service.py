@@ -12,7 +12,7 @@ from saascore.api.sdk.proxies import DORProxy
 from saascore.cryptography.helpers import hash_file_content, hash_json_object, hash_string_object
 from saascore.log import Logging
 from saascore.helpers import read_json_from_file, validate_json, generate_random_string, get_timestamp_now
-from sqlalchemy import Column, String, Integer, Boolean
+from sqlalchemy import Column, String, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
@@ -38,10 +38,10 @@ DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
 
 
-def _generate_object_id(c_hash: str, data_type: str, data_format: str, created_iid: str, created_t: int) -> str:
+def _generate_object_id(c_hash: str, data_type: str, data_format: str, creators_iid: List[str], created_t: int) -> str:
     # TODO: since timestamp is included the resulting object id is very much random -> consider replacing deriving
     #  object id based on hashing with generating actual random ids instead.
-    return hash_string_object(f"{c_hash}{data_type}{data_format}{created_iid}{created_t}").hex()
+    return hash_string_object(f"{c_hash}{data_type}{data_format}{''.join(creators_iid)}{created_t}").hex()
 
 
 def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_config: str, proc_descriptor: dict) -> str:
@@ -95,8 +95,7 @@ class DataObjectRecord(Base):
     c_hash = Column(String(64), nullable=False)
     data_type = Column(String(64), nullable=False)
     data_format = Column(String(64), nullable=False)
-    creator_iid = Column(String(64), nullable=False)
-    created_t = Column(Integer, nullable=False)
+    created = Column(NestedMutableJson, nullable=False)
 
     # mutable part of the meta information
     owner_iid = Column(String(64), nullable=False)
@@ -341,9 +340,14 @@ class DORService:
         # create parameters object
         p = AddCDataObjectParameters.parse_obj(json.loads(body))
 
-        # get the owner and creator identity
+        # get the owner identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
-        creator = self._node.db.get_identity(p.creator_iid, raise_if_unknown=True)
+
+        # check if we know the creator identities
+        # TODO: decide whether or not to remove this check. removing it allows to use creator ids that the
+        #  node isn't aware of.
+        for creator_iid in p.creators_iid:
+            self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
         # write contents to file
         temp = NamedTemporaryFile(delete=False)
@@ -377,13 +381,16 @@ class DORService:
 
         # determine the object id
         created_t = get_timestamp_now()
-        obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, creator.id, created_t)
+        obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, p.creators_iid, created_t)
 
         with self._Session() as session:
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
                                          data_type=p.data_type, data_format=p.data_format,
-                                         creator_iid=creator.id, created_t=created_t,
+                                         created={
+                                             'timestamp': created_t,
+                                             'creators_iid': p.creators_iid
+                                         },
                                          owner_iid=owner.id, access_restricted=p.access_restricted,
                                          access=[owner.id], tags={},
                                          details={
@@ -409,7 +416,12 @@ class DORService:
     def add_gpp(self, p: AddGPPDataObjectParameters) -> GPPDataObject:
         # get the owner and creator identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
-        creator = self._node.db.get_identity(p.creator_iid, raise_if_unknown=True)
+
+        # check if we know the creator identities
+        # TODO: decide whether or not to remove this check. removing it allows to use creator ids that the
+        #  node isn't aware of.
+        for creator_iid in p.creators_iid:
+            self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
         # determine URL including credentials (if any)
         url = p.source
@@ -475,12 +487,15 @@ class DORService:
         with self._Session() as session:
             # determine the object id
             created_t = get_timestamp_now()
-            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, creator.id, created_t)
+            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, p.creators_iid, created_t)
 
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
                                          data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
-                                         creator_iid=creator.id, created_t=created_t,
+                                         created={
+                                             'timestamp': created_t,
+                                             'creators_iid': p.creators_iid
+                                         },
                                          owner_iid=owner.id, access_restricted=False, access=[owner.id],
                                          tags={},
                                          details={
@@ -533,14 +548,14 @@ class DORService:
 
             # is it a GPP data object?
             details = dict(record.details)
+            created = dict(record.created)
             if record.data_type == GPP_DATA_TYPE:
                 return GPPDataObject.parse_obj({
                     'obj_id': record.obj_id,
                     'c_hash': record.c_hash,
                     'data_type': record.data_type,
                     'data_format': record.data_format,
-                    'creator_iid': record.creator_iid,
-                    'created_t': record.created_t,
+                    'created': created,
                     'owner_iid': record.owner_iid,
                     'access_restricted': record.access_restricted,
                     'access': record.access,
@@ -561,8 +576,7 @@ class DORService:
                     'c_hash': record.c_hash,
                     'data_type': record.data_type,
                     'data_format': record.data_format,
-                    'creator_iid': record.creator_iid,
-                    'created_t': record.created_t,
+                    'created': created,
                     'owner_iid': record.owner_iid,
                     'access_restricted': record.access_restricted,
                     'access': record.access,

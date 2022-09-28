@@ -51,12 +51,15 @@ class DataObjectProvenance(BaseModel):
 
 
 class DataObject(BaseModel):
+    class CreationDetails(BaseModel):
+        timestamp: int
+        creators_iid: List[str]
+
     obj_id: str
     c_hash: str
     data_type: str
     data_format: str
-    creator_iid: str
-    created_t: int
+    created: CreationDetails
     owner_iid: str
     access_restricted: bool
     access: List[str]
@@ -74,7 +77,7 @@ class CDataObject(DataObject):
 
 class AddDataObjectParameters(BaseModel):
     owner_iid: str
-    creator_iid: str
+    creators_iid: List[str]
 
 
 class AddGPPDataObjectParameters(AddDataObjectParameters):
