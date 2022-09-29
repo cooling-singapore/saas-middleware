@@ -7,13 +7,13 @@ from threading import Thread
 from typing import Optional
 
 from pydantic import BaseModel
-from saascore.cryptography.helpers import hash_file_content
-from saascore.keystore.identity import Identity
-from saascore.log import Logging
 
+from saas.cryptography.helpers import hash_file_content
+from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
+from saas.log import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage
-from saascore.keystore.keystore import Keystore
 from saas.node import Node
 from saas.p2p.protocol import P2PProtocol, BroadcastResponse
 from tests.base_testcase import TestCaseBase, PortMaster

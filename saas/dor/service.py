@@ -8,18 +8,18 @@ from typing import Optional, List, Union
 
 from fastapi import UploadFile, Form, File
 from fastapi.responses import FileResponse, Response
-from saascore.api.sdk.proxies import DORProxy
-from saascore.cryptography.helpers import hash_file_content, hash_json_object, hash_string_object
-from saascore.log import Logging
-from saascore.helpers import read_json_from_file, validate_json, generate_random_string, get_timestamp_now
-from sqlalchemy import Column, String, Integer, Boolean
+from sqlalchemy import Column, String, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
 
+from saas.cryptography.helpers import hash_string_object, hash_json_object, hash_file_content
 from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
     InvalidProcessorDescriptorError, DataObjectContentNotFoundError, DataObjectNotFoundError, \
     DORException
+from saas.dor.proxy import DORProxy, DOR_ENDPOINT_PREFIX
+from saas.helpers import get_timestamp_now, generate_random_string, read_json_from_file, validate_json
+from saas.log import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.dor.schemas import DataObject, SearchParameters, AddGPPDataObjectParameters, Tag, CDataObject, \
@@ -38,10 +38,10 @@ DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
 
 
-def _generate_object_id(c_hash: str, data_type: str, data_format: str, created_iid: str, created_t: int) -> str:
+def _generate_object_id(c_hash: str, data_type: str, data_format: str, creators_iid: List[str], created_t: int) -> str:
     # TODO: since timestamp is included the resulting object id is very much random -> consider replacing deriving
     #  object id based on hashing with generating actual random ids instead.
-    return hash_string_object(f"{c_hash}{data_type}{data_format}{created_iid}{created_t}").hex()
+    return hash_string_object(f"{c_hash}{data_type}{data_format}{''.join(creators_iid)}{created_t}").hex()
 
 
 def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_config: str, proc_descriptor: dict) -> str:
@@ -95,8 +95,7 @@ class DataObjectRecord(Base):
     c_hash = Column(String(64), nullable=False)
     data_type = Column(String(64), nullable=False)
     data_format = Column(String(64), nullable=False)
-    creator_iid = Column(String(64), nullable=False)
-    created_t = Column(Integer, nullable=False)
+    created = Column(NestedMutableJson, nullable=False)
 
     # mutable part of the meta information
     owner_iid = Column(String(64), nullable=False)
@@ -116,10 +115,9 @@ class DataObjectProvenanceRecord(Base):
 
 
 class DORService:
-    def __init__(self, node, endpoint_prefix: str, db_path: str):
+    def __init__(self, node, db_path: str):
         # initialise properties
         self._node = node
-        self._endpoint_prefix = endpoint_prefix
         self._protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise database things
@@ -248,44 +246,44 @@ class DORService:
 
     def endpoints(self) -> List[EndpointDefinition]:
         return [
-            EndpointDefinition('GET', self._endpoint_prefix, '',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '',
                                self.search, List[DataObject], None),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'statistics',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, 'statistics',
                                self.statistics, DORStatistics, None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'add-c',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-c',
                                self.add_c, CDataObject, None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'add-gpp',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-gpp',
                                self.add_gpp, GPPDataObject, None),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}',
                                self.remove, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{obj_id}/meta',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/meta',
                                self.get_meta, Optional[Union[CDataObject, GPPDataObject]], None),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{obj_id}/content',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/content',
                                self.get_content, None, [VerifyUserHasAccess]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{c_hash}/provenance',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{c_hash}/provenance',
                                self.get_provenance, Optional[DataObjectProvenance], None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, '{obj_id}/access/{user_iid}',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
                                self.grant_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}/access/{user_iid}',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
                                self.revoke_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('PUT', self._endpoint_prefix, '{obj_id}/owner/{new_owner_iid}',
+            EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/owner/{new_owner_iid}',
                                self.transfer_ownership, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('PUT', self._endpoint_prefix, '{obj_id}/tags',
+            EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
                                self.update_tags, Union[CDataObject, GPPDataObject],
                                [VerifyIsOwner]),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}/tags',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
                                self.remove_tags, Union[CDataObject, GPPDataObject], [VerifyIsOwner])
         ]
 
@@ -341,9 +339,14 @@ class DORService:
         # create parameters object
         p = AddCDataObjectParameters.parse_obj(json.loads(body))
 
-        # get the owner and creator identity
+        # get the owner identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
-        creator = self._node.db.get_identity(p.creator_iid, raise_if_unknown=True)
+
+        # check if we know the creator identities
+        # TODO: decide whether or not to remove this check. removing it allows to use creator ids that the
+        #  node isn't aware of.
+        for creator_iid in p.creators_iid:
+            self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
         # write contents to file
         temp = NamedTemporaryFile(delete=False)
@@ -377,18 +380,22 @@ class DORService:
 
         # determine the object id
         created_t = get_timestamp_now()
-        obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, creator.id, created_t)
+        obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, p.creators_iid, created_t)
 
         with self._Session() as session:
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
                                          data_type=p.data_type, data_format=p.data_format,
-                                         creator_iid=creator.id, created_t=created_t,
+                                         created={
+                                             'timestamp': created_t,
+                                             'creators_iid': p.creators_iid
+                                         },
                                          owner_iid=owner.id, access_restricted=p.access_restricted,
                                          access=[owner.id], tags={},
                                          details={
                                              'content_encrypted': p.content_encrypted,
-                                             'recipe': p.recipe.dict() if p.recipe else None
+                                             'license': p.license.dict(),
+                                             'recipe': p.recipe.dict() if p.recipe else None,
                                          }))
             session.commit()
             logger.info(f"database record for data object '{obj_id}' added with c_hash={c_hash}.")
@@ -409,7 +416,12 @@ class DORService:
     def add_gpp(self, p: AddGPPDataObjectParameters) -> GPPDataObject:
         # get the owner and creator identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
-        creator = self._node.db.get_identity(p.creator_iid, raise_if_unknown=True)
+
+        # check if we know the creator identities
+        # TODO: decide whether or not to remove this check. removing it allows to use creator ids that the
+        #  node isn't aware of.
+        for creator_iid in p.creators_iid:
+            self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
         # determine URL including credentials (if any)
         url = p.source
@@ -475,12 +487,15 @@ class DORService:
         with self._Session() as session:
             # determine the object id
             created_t = get_timestamp_now()
-            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, creator.id, created_t)
+            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, p.creators_iid, created_t)
 
             # add a new data object record
             session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
                                          data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
-                                         creator_iid=creator.id, created_t=created_t,
+                                         created={
+                                             'timestamp': created_t,
+                                             'creators_iid': p.creators_iid
+                                         },
                                          owner_iid=owner.id, access_restricted=False, access=[owner.id],
                                          tags={},
                                          details={
@@ -533,14 +548,14 @@ class DORService:
 
             # is it a GPP data object?
             details = dict(record.details)
+            created = dict(record.created)
             if record.data_type == GPP_DATA_TYPE:
                 return GPPDataObject.parse_obj({
                     'obj_id': record.obj_id,
                     'c_hash': record.c_hash,
                     'data_type': record.data_type,
                     'data_format': record.data_format,
-                    'creator_iid': record.creator_iid,
-                    'created_t': record.created_t,
+                    'created': created,
                     'owner_iid': record.owner_iid,
                     'access_restricted': record.access_restricted,
                     'access': record.access,
@@ -561,14 +576,14 @@ class DORService:
                     'c_hash': record.c_hash,
                     'data_type': record.data_type,
                     'data_format': record.data_format,
-                    'creator_iid': record.creator_iid,
-                    'created_t': record.created_t,
+                    'created': created,
                     'owner_iid': record.owner_iid,
                     'access_restricted': record.access_restricted,
                     'access': record.access,
                     'tags': record.tags,
 
                     'content_encrypted': details['content_encrypted'],
+                    'license': details['license'],
                     'recipe': details['recipe'] if 'recipe' in details else None
                 })
 

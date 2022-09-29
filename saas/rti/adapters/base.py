@@ -11,16 +11,15 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional, List, Tuple, Union
 
-from saascore.api.sdk.proxies import DORProxy
-from saascore.log import Logging
-from saascore.cryptography.helpers import encrypt_file, decrypt_file, hash_json_object
-from saascore.cryptography.keypair import KeyPair
-from saascore.cryptography.rsakeypair import RSAKeyPair
-from saascore.exceptions import SaaSException, RunCommandError
-from saascore.helpers import write_json_to_file, read_json_from_file, generate_random_string, validate_json, \
-    get_timestamp_now
-from saascore.keystore.assets.credentials import SSHCredentials
-
+from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_object
+from saas.cryptography.keypair import KeyPair
+from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.dor.proxy import DORProxy
+from saas.exceptions import RunCommandError, SaaSException
+from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
+    generate_random_string
+from saas.keystore.assets.credentials import SSHCredentials
+from saas.log import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.nodedb.schemas import NodeInfo
@@ -892,7 +891,7 @@ class RTIProcessorAdapter(Thread, ABC):
         proxy = DORProxy(target_address)
         meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
                                      proc_out.data_type, proc_out.data_format, recipe=recipe)
-        obj_id = meta['obj_id']
+        obj_id = meta.obj_id
 
         # update tags with information from the job
         proxy.update_tags(obj_id, self._node.keystore, {

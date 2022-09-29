@@ -2,12 +2,10 @@ import os
 import threading
 import time
 
-from saascore.exceptions import SaaSException
-from saascore.keystore.assets import credentials
-from saascore.log import Logging
-from saascore.helpers import write_json_to_file
-
 import saas.rti.adapters.base as base
+from saas.exceptions import SaaSException
+from saas.keystore.assets import credentials
+from saas.log import Logging
 from saas.rti.status import StatusLogger
 from saas.schemas import GitProcessorPointer, TaskDescriptor, ResumeDescriptor
 
@@ -40,7 +38,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             'remote_adapter': local_adapter_path.replace(os.environ['HOME'], '~')
         }
         self._paths['repo'] = self._paths['remote_repo'] if self._ssh_credentials else self._paths['local_repo']
-        self._paths['adapter'] = self._paths['remote_adapter'] if self._ssh_credentials else self._paths['local_adapter']
+        self._paths['adapter'] = \
+            self._paths['remote_adapter'] if self._ssh_credentials else self._paths['local_adapter']
         self._paths['install.sh'] = os.path.join(self._paths['adapter'], 'install.sh')
         self._paths['execute.sh'] = os.path.join(self._paths['adapter'], 'execute.sh')
 

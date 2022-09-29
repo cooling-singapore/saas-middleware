@@ -3,10 +3,10 @@ import uvicorn
 from threading import Thread
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from saascore.exceptions import SaaSException
-from saascore.log import Logging
 from starlette.responses import JSONResponse
 
+from saas.exceptions import SaaSException
+from saas.log import Logging
 from saas.rest.exceptions import UnsupportedRESTMethod
 from saas.rest.schemas import EndpointDefinition
 

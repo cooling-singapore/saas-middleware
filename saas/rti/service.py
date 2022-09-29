@@ -12,13 +12,12 @@ from typing import Optional, Dict, List, Union
 
 from fastapi import Request
 from fastapi.responses import FileResponse, Response
-from saascore.exceptions import RunCommandError
-from saascore.keystore.identity import Identity
 
-from saascore.log import Logging
-from saascore.helpers import write_json_to_file, generate_random_string
-from saascore.keystore.assets.credentials import SSHCredentials, GithubCredentials
-
+from saas.exceptions import RunCommandError
+from saas.helpers import generate_random_string, write_json_to_file
+from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
+from saas.keystore.identity import Identity
+from saas.log import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
@@ -26,6 +25,7 @@ from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProc
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, GPPDataObjectNotFound, RTIException
+from saas.rti.proxy import RTI_ENDPOINT_PREFIX
 from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
 from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer, ResumeDescriptor
@@ -54,11 +54,10 @@ class RTIService:
     def proc_meta_path(self, obj_id: str) -> str:
         return os.path.join(self._node.datastore, RTIService.infix_path, f"{obj_id}.meta")
 
-    def __init__(self, node, endpoint_prefix: str, retain_job_history: bool = False):
+    def __init__(self, node, retain_job_history: bool = False):
         # initialise properties
         self._mutex = Lock()
         self._node = node
-        self._endpoint_prefix = endpoint_prefix
         self._deployed: Dict[str, RTIProcessorAdapter] = {}
         self._ssh_credentials_paths = {}
         self._jobs_path = os.path.join(self._node.datastore, 'jobs')
@@ -111,37 +110,37 @@ class RTIService:
 
     def endpoints(self) -> List[EndpointDefinition]:
         return [
-            EndpointDefinition('GET', self._endpoint_prefix, '',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, '',
                                self.deployed, List[Processor], None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'proc/{proc_id}',
+            EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
                                self.deploy, Processor, None),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, 'proc/{proc_id}',
+            EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
                                self.undeploy, Processor, [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'proc/{proc_id}/gpp',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/gpp',
                                self.gpp, GitProcessorPointer, [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'proc/{proc_id}/status',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/status',
                                self.status, ProcessorStatus, [VerifyProcessorDeployed]),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'proc/{proc_id}/jobs',
+            EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.submit, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
-            EndpointDefinition('PUT', self._endpoint_prefix, 'proc/{proc_id}/jobs',
+            EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.resume, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'proc/{proc_id}/jobs',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.jobs, List[JobDescriptor], [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/info',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/info',
                                self.job_info, Job, [VerifyUserIsJobOwner]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'job/{job_id}/logs',
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/logs',
                                self.job_logs, None, [VerifyUserIsJobOwner]),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'permission/{req_id}',
+            EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'permission/{req_id}',
                                self.put_permission, None, None)
         ]
 

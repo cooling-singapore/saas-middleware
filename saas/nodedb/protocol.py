@@ -1,9 +1,9 @@
 from typing import Optional
 
 from pydantic import BaseModel
-from saascore.keystore.identity import Identity
-from saascore.log import Logging
 
+from saas.keystore.identity import Identity
+from saas.log import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
 from saas.nodedb.schemas import NodeInfo, NodeDBSnapshot
 from saas.p2p.exceptions import PeerUnavailableError
