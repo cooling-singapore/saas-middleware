@@ -2,116 +2,179 @@ from __future__ import annotations
 
 import os
 import string
-from threading import Lock
-from typing import Any
 
-import pydantic
+from threading import Lock
+from typing import Any, Literal, Dict
+from pydantic import BaseModel, ValidationError
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.dor.schemas import GithubCredentials, SSHCredentials
 from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
-from saas.keystore.asset import Asset
-from saas.keystore.assets.contentkeys import ContentKeysAsset
-from saas.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saas.keystore.assets.keypair import MasterKeyPairAsset, KeyPairAsset
+from saas.keystore.assets import MasterKeyPairAsset, KeyPairAsset, ContentKeysAsset, SSHCredentialsAsset, \
+    GithubCredentialsAsset
 from saas.keystore.exceptions import KeystoreException, KeystoreCredentialsException
-from saas.keystore.identity import Identity, generate_identity_token
-from saas.keystore.schemas import KeystoreObject, SerializedKeystore
+from saas.keystore.identity import generate_identity_token, Identity
 from saas.log import Logging
 
 logger = Logging.get('keystore.Keystore')
 
 
+# class MasterKeyPairAsset(KeystoreAsset):
+#     class Content(BaseModel):
+#         info: str
+#         pppk: str
+#
+#     type: Literal['MasterKeyPairAsset']
+#     content: Content
+#
+#
+# class KeyPairAsset(KeystoreAsset):
+#     class Content(BaseModel):
+#         info: str
+#         private_key: str
+#
+#     type: Literal['KeyPairAsset']
+#     content: Content
+#
+#
+# class ContentKeysAsset(KeystoreAsset):
+#     type: Literal['ContentKeysAsset']
+#     content: str
+#
+#
+# class CredentialsAsset(KeystoreAsset):
+#     class Content(BaseModel):
+#         ctype: str
+#         credentials: str
+#
+#     type: Literal['CredentialsAsset']
+#     content: Content
+
+class KeystoreProfile(BaseModel):
+    name: str
+    email: str
+
+
+class KeystoreContent(BaseModel):
+    iid: str
+    profile: KeystoreProfile
+    nonce: int
+    signature: str
+    assets: Dict[str, Any]
+
+
 class Keystore:
-    def __init__(self, path: str, password: str, keystore_object: KeystoreObject) -> None:
+
+    def __init__(self, path: str, password: str, content: KeystoreContent) -> None:
+        self._mutex = Lock()
         self._path = path
         self._password = password
-        self._mutex = Lock()
+        self._content = content
 
-        self._keystore = keystore_object
+        self._loaded = {
+            'master-key': MasterKeyPairAsset.load(content.assets['master-key'], password)
+        }
+        self._identity = None
 
-        # Keep references to essential keys
-        self._master = self._keystore.assets['master-key'].get()
-        self._s_key = self._keystore.assets['signing-key'].get()
-        self._e_key = self._keystore.assets['encryption-key'].get()
+        self._master = self._loaded['master-key'].get()
+
+        # load all other assets
+        for key, asset in content.assets.items():
+            if key != 'master-key':
+                if asset['type'] == KeyPairAsset.__name__:
+                    self._loaded[key] = KeyPairAsset.load(asset, self._master)
+
+                elif asset['type'] == ContentKeysAsset.__name__:
+                    self._loaded[key] = ContentKeysAsset.load(asset, self._master)
+
+                elif asset['type'] == GithubCredentialsAsset.__name__:
+                    self._loaded[key] = GithubCredentialsAsset.load(asset, self._master)
+
+                elif asset['type'] == SSHCredentialsAsset.__name__:
+                    self._loaded[key] = SSHCredentialsAsset.load(asset, self._master)
+
+        # keep references to essential keys
+        self._s_key = self._loaded['signing-key'].get()
+        self._e_key = self._loaded['encryption-key'].get()
+
+        # check if signature is valid
+        content_hash = hash_json_object(content.dict(), exclusions=['signature'])
+        if not self._s_key.verify(content_hash, content.signature):
+            raise KeystoreException(f"Invalid keystore content signature: "
+                                    f"content_hash={content_hash}, signature={content.signature}.")
 
         self._update_identity()
 
     @classmethod
     def create(cls, path: str, name: str, email: str, password: str) -> Keystore:
         # create random keystore id
-        keystore_id = generate_random_string(64, characters=string.ascii_lowercase+string.digits)
+        iid = generate_random_string(64, characters=string.ascii_lowercase+string.digits)
 
         # create required assets
-        assets = {
-            'master-key': MasterKeyPairAsset('master-key', RSAKeyPair.create_new()),
-            'signing-key': KeyPairAsset('signing-key', ECKeyPair.create_new()),
-            'encryption-key': KeyPairAsset('encryption-key', RSAKeyPair.create_new()),
-            'content-keys': ContentKeysAsset('content-keys')
+        master_key = MasterKeyPairAsset(RSAKeyPair.create_new())
+        signing_key = KeyPairAsset(ECKeyPair.create_new())
+        encryption_key = KeyPairAsset(RSAKeyPair.create_new())
+        content_keys = ContentKeysAsset()
+        ssh_credentials = SSHCredentialsAsset()
+        github_credentials = GithubCredentialsAsset()
+
+        # create the keystore content
+        content = {
+            'iid': iid,
+            'profile': {
+                'name': name,
+                'email': email
+            },
+            'nonce': 0,
+            'assets': {
+                'master-key': master_key.store(password),
+                'signing-key': signing_key.store(master_key.get()),
+                'encryption-key': encryption_key.store(master_key.get()),
+                'content-keys': content_keys.store(master_key.get()),
+                'ssh-credentials': ssh_credentials.store(master_key.get()),
+                'github-credentials': github_credentials.store(master_key.get())
+            }
         }
 
+        # sign the contents of the keystore
+        content_hash = hash_json_object(content)
+        content['signature'] = signing_key.get().sign(content_hash)
+
         # create keystore
-        keystore_path = os.path.join(path, f"{keystore_id}.json")
-        keystore = cls(keystore_path, password,
-                       KeystoreObject(iid=keystore_id, assets=assets, nonce=0,
-                                      profile=KeystoreObject.KeystoreProfile(name="", email="", notes="")))
+        keystore_path = os.path.join(path, f"{iid}.json")
+        keystore = Keystore(keystore_path, password, KeystoreContent.parse_obj(content))
+        keystore.sync()
 
-        # update profile (which will also sync it to disk for the first time)
-        keystore.update_profile(name=name, email=email)
-
-        logger.info(f"keystore created: iid={keystore.identity.id} "
+        logger.info(f"keystore created: id={keystore.identity.id} "
                     f"s_key={keystore._s_key.public_as_string()} "
                     f"e_key={keystore._e_key.public_as_string()}")
 
         return keystore
 
     @classmethod
-    def load(cls, path: str, keystore_id: str, password: str) -> Keystore:
+    def load(cls, path: str, keystore_iid: str, password: str) -> Keystore:
         # check if keystore file exists
-        keystore_path = os.path.join(path, f"{keystore_id}.json")
+        keystore_path = os.path.join(path, f"{keystore_iid}.json")
         if not os.path.isfile(keystore_path):
             raise FileNotFoundError(f"Keystore content not found at {keystore_path}")
 
         # load content and validate
         try:
-            content = SerializedKeystore.parse_file(keystore_path)
-        except pydantic.ValidationError:
+            content = KeystoreContent.parse_file(keystore_path)
+        except ValidationError:
             raise KeystoreException("Keystore content not compliant with json schema.")
 
-        # create dict of assets
-        assets = {serialised_asset.key: serialised_asset for serialised_asset in content.assets}
-
-        # deserialise the master key and make shortcut
-        assets['master-key'] = MasterKeyPairAsset.deserialise(
-            'master-key', assets['master-key'].content, password
-        )
-        master = assets['master-key'].get()
-
-        # deserialise all other assets
-        for key, serialised_asset in assets.items():
-            if key != 'master-key':
-                if serialised_asset.type == KeyPairAsset.__name__:
-                    assets[key] = KeyPairAsset.deserialise(key, serialised_asset.content, master)
-
-                elif serialised_asset.type == ContentKeysAsset.__name__:
-                    assets[key] = ContentKeysAsset.deserialise(key, serialised_asset.content, master)
-
-                elif serialised_asset.type == CredentialsAsset.__name__:
-                    assets[key] = CredentialsAsset.deserialise(key, serialised_asset.content, master)
-
-        # check if signature is valid
-        s_key = assets['signing-key'].get()
-        content_hash = hash_json_object(content.dict(), exclusions=['signature'])
-        content_signature = content.signature
-        if not s_key.verify(content_hash, content_signature):
-            raise KeystoreException(f"Invalid keystore content signature: "
-                                    f"content_hash={content_hash}, signature={content_signature}.")
+        # check if we have required assets
+        for required in ['master-key', 'signing-key', 'encryption-key', 'content-keys', 'ssh-credentials',
+                         'github-credentials']:
+            if required not in content.assets:
+                raise KeystoreException(f"Keystore invalid: {required} found.")
 
         # create keystore
-        keystore = cls(keystore_path, password,
-                       KeystoreObject(iid=keystore_id, assets=assets, profile=content.profile, nonce=content.nonce))
+        keystore = Keystore(keystore_path, password, content)
         logger.info(f"keystore loaded: iid={keystore.identity.id} "
                     f"s_key={keystore._s_key.public_as_string()} "
                     f"e_key={keystore._e_key.public_as_string()}")
@@ -136,15 +199,15 @@ class Keystore:
     def update_profile(self, name: str = None, email: str = None) -> Identity:
         with self._mutex:
             if name is not None:
-                self._keystore.profile.name = name
+                self._content.profile.name = name
 
             if email is not None:
-                self._keystore.profile.email = email
+                self._content.profile.email = email
 
-            if name or email:
-                self._sync_to_disk()
+        if name or email:
+            self.sync()
 
-            return self._identity
+        return self._identity
 
     def encrypt(self, content: bytes) -> bytes:
         with self._mutex:
@@ -162,41 +225,53 @@ class Keystore:
         with self._mutex:
             return self._s_key.verify(message, signature)
 
-    def has_asset(self, key: str) -> bool:
+    @property
+    def content_keys(self) -> ContentKeysAsset:
         with self._mutex:
-            return key in self._keystore.assets
+            return self._loaded['content-keys']
 
-    def get_asset(self, key: str) -> Any:
+    @property
+    def ssh_credentials(self) -> SSHCredentialsAsset:
         with self._mutex:
-            return self._keystore.assets.get(key)
+            return self._loaded['ssh-credentials']
 
-    def update_asset(self, asset: Asset) -> None:
+    @property
+    def github_credentials(self) -> GithubCredentialsAsset:
         with self._mutex:
-            self._keystore.assets[asset.key] = asset
-            self._sync_to_disk()
+            return self._loaded['github-credentials']
+
+
+    # def has_asset(self, key: str) -> bool:
+    #     with self._mutex:
+    #         return key in self._loaded
+    #
+    # def get_asset(self, key: str) -> Any:
+    #     with self._mutex:
+    #         return self._loaded.get(key)
+
+    # def update_asset(self, asset: Any) -> None:
+    #     with self._mutex:
+    #         self._loaded[asset.__name__] = asset
+    #         self._sync_to_disk()
 
     def _update_identity(self) -> None:
-        iid = self._keystore.iid
-        name = self._keystore.profile.name
-        email = self._keystore.profile.email
-        s_public_key = self._s_key.public_as_string()
-        e_public_key = self._e_key.public_as_string()
-        nonce = self._keystore.nonce
-
         # generate valid signature for the identity
-        token = generate_identity_token(iid, name, email, nonce, s_public_key, e_public_key)
+        token = generate_identity_token(iid=self._content.iid,
+                                        name=self._content.profile.name,
+                                        email=self._content.profile.email,
+                                        s_public_key=self._s_key.public_as_string(),
+                                        e_public_key=self._e_key.public_as_string(),
+                                        nonce=self._content.nonce)
         signature = self._s_key.sign(token.encode('utf-8'))
 
         # update the signature
-        self._identity = Identity.parse_obj({
-            'id': iid,
-            'name': name,
-            'email': email,
-            's_public_key': s_public_key,
-            'e_public_key': e_public_key,
-            'nonce': nonce,
-            'signature': signature
-        })
+        self._identity = Identity(id=self._content.iid,
+                                  name=self._content.profile.name,
+                                  email=self._content.profile.email,
+                                  s_public_key=self._s_key.public_as_string(),
+                                  e_public_key=self._e_key.public_as_string(),
+                                  nonce=self._content.nonce,
+                                  signature=signature)
 
         # verify the identity's integrity
         if not self._identity.verify_integrity():
@@ -204,62 +279,26 @@ class Keystore:
                 'identity': self._identity
             })
 
-    def _sync_to_disk(self) -> None:
-        # increase the nonce
-        self._keystore.nonce += 1
+    def sync(self) -> None:
+        with self._mutex:
+            # increase the nonce
+            self._content.nonce += 1
 
-        # serialise all assets
-        serialised_assets = []
-        for key, asset in self._keystore.assets.items():
-            protection = self._password if key == 'master-key' else self._master
-            serialised_assets.append(asset.serialise(protect_with=protection))
-
-        # bootstrap the content
-        content = self._keystore.dict(exclude={"assets"})
-        content["assets"] = serialised_assets
-        # generate signature
-        content['signature'] = self._s_key.sign(hash_json_object(content))
-
-        # write contents to disk
-        write_json_to_file(content, self._path, schema=SerializedKeystore.schema())
-
-        # update identity
-        self._update_identity()
-
-
-credentials_schema = {
-    'type': 'object',
-    'properties': {
-        'name': {'type': 'string'},
-        'email': {'type': 'string'},
-        'ssh-credentials': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'name': {'type': 'string'},
-                    'login': {'type': 'string'},
-                    'host': {'type': 'string'},
-                    'password': {'type': 'string'},
-                    'key_path': {'type': 'string'}
-                },
-                'required': ['name', 'login', 'host']
+            # serialise all assets
+            self._content.assets = {
+                key: asset.store(protection=self._password if key == 'master-key' else self._master)
+                for key, asset in self._loaded.items()
             }
-        },
-        'github-credentials': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'repository': {'type': 'string'},
-                    'login': {'type': 'string'},
-                    'personal_access_token': {'type': 'string'}
-                },
-                'required': ['repository', 'login', 'personal_access_token']
-            }
-        }
-    }
-}
+
+            # sign the contents of the keystore
+            content_hash = hash_json_object(self._content.dict(), exclusions=['signature'])
+            self._content.signature = self._s_key.sign(content_hash)
+
+            # write contents to disk
+            write_json_to_file(self._content.dict(), self._path)
+
+            # update identity
+            self._update_identity()
 
 
 def update_keystore_from_credentials(keystore: Keystore, credentials_path: str = None) -> None:
@@ -299,6 +338,40 @@ def update_keystore_from_credentials(keystore: Keystore, credentials_path: str =
     :return:
     """
 
+    credentials_schema = {
+        'type': 'object',
+        'properties': {
+            'name': {'type': 'string'},
+            'email': {'type': 'string'},
+            'ssh-credentials': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {'type': 'string'},
+                        'login': {'type': 'string'},
+                        'host': {'type': 'string'},
+                        'password': {'type': 'string'},
+                        'key_path': {'type': 'string'}
+                    },
+                    'required': ['name', 'login', 'host']
+                }
+            },
+            'github-credentials': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'repository': {'type': 'string'},
+                        'login': {'type': 'string'},
+                        'personal_access_token': {'type': 'string'}
+                    },
+                    'required': ['repository', 'login', 'personal_access_token']
+                }
+            }
+        }
+    }
+
     # load the credentials and validate
     path = credentials_path if credentials_path else os.path.join(os.environ['HOME'], '.saas-credentials.json')
     credentials = read_json_from_file(path)
@@ -311,37 +384,29 @@ def update_keystore_from_credentials(keystore: Keystore, credentials_path: str =
 
     # do we have SSH credentials?
     if 'ssh-credentials' in credentials:
-        ssh_cred = CredentialsAsset[SSHCredentials].create('ssh-credentials', SSHCredentials)
         for item in credentials['ssh-credentials']:
             # password or key path?
             if 'password' in item:
-                ssh_cred.update(item['name'], SSHCredentials(
-                    item['host'],
-                    item['login'],
-                    item['password'],
-                    True
-                ))
+                keystore.ssh_credentials.update(item['name'],
+                                                SSHCredentials(host=item['host'], login=item['login'],
+                                                               key=item['password'], key_is_password=True))
+
             elif 'key_path' in item:
                 # read the ssh key from file
                 with open(item['key_path'], 'r') as f:
                     ssh_key = f.read()
-                ssh_cred.update(item['name'], SSHCredentials(
-                    item['host'],
-                    item['login'],
-                    ssh_key,
-                    False
-                ))
+
+                keystore.ssh_credentials.update(item['name'],
+                                                SSHCredentials(host=item['host'], login=item['login'],
+                                                               key=ssh_key, key_is_password=False))
+
             else:
                 raise RuntimeError(f"Unexpected SSH credentials format: {item}")
 
-        keystore.update_asset(ssh_cred)
+        keystore.sync()
 
     # do we have Github credentials?
     if 'github-credentials' in credentials:
-        github_cred = CredentialsAsset[GithubCredentials].create('github-credentials', GithubCredentials)
         for item in credentials['github-credentials']:
-            github_cred.update(item['repository'], GithubCredentials(
-                item['login'],
-                item['personal_access_token']
-            ))
-        keystore.update_asset(github_cred)
+            keystore.github_credentials.update(item['repository'], GithubCredentials.parse_obj(item))
+        keystore.sync()
