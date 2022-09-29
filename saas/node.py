@@ -4,17 +4,15 @@ import os
 from threading import Lock
 from typing import Optional
 
-from saascore.api.sdk.proxies import dor_endpoint_prefix, db_endpoint_prefix, rti_endpoint_prefix
-from saascore.helpers import get_timestamp_now
-from saascore.keystore.identity import Identity
-from saascore.keystore.keystore import Keystore
-from saascore.log import Logging
-
 import saas.p2p.service as p2p_service
 import saas.dor.service as dor_service
 import saas.rest.service as rest_service
 import saas.rti.service as rti_service
 import saas.nodedb.service as db_service
+from saas.helpers import get_timestamp_now
+from saas.keystore.identity import Identity
+from saas.keystore.keystore import Keystore
+from saas.log import Logging
 from saas.nodedb.schemas import NodeInfo
 
 logger = Logging.get('node')
@@ -57,19 +55,19 @@ class Node:
         if enable_db:
             db_path = f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}"
             logger.info(f"enabling NodeDB service using {db_path}.")
-            self.db = db_service.NodeDBService(self, db_endpoint_prefix, db_path)
+            self.db = db_service.NodeDBService(self, db_path)
             self.p2p.add(self.db.protocol)
             endpoints += self.db.endpoints()
 
         if enable_dor:
             db_path = f"sqlite:///{os.path.join(self._datastore_path, 'dor.db')}"
             logger.info(f"enabling DOR service using {db_path}.")
-            self.dor = dor_service.DORService(self, dor_endpoint_prefix, db_path)
+            self.dor = dor_service.DORService(self, db_path)
             self.p2p.add(self.dor.protocol)
             endpoints += self.dor.endpoints()
 
         if enable_rti:
-            self.rti = rti_service.RTIService(self, rti_endpoint_prefix, retain_job_history)
+            self.rti = rti_service.RTIService(self, retain_job_history)
             logger.info("enabling RTI service.")
             endpoints += self.rti.endpoints()
 

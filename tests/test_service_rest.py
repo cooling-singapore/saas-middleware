@@ -7,14 +7,13 @@ import unittest
 import logging
 
 from pydantic import BaseModel
-from saascore.api.sdk.exceptions import UnsuccessfulRequestError
-from saascore.api.sdk.proxies import EndpointProxy
-from saascore.exceptions import SaaSException
-from saascore.helpers import get_timestamp_now
-from saascore.keystore.keystore import Keystore
-from saascore.log import Logging
 
+from saas.exceptions import SaaSException, UnsuccessfulRequestError
+from saas.helpers import get_timestamp_now
+from saas.keystore.keystore import Keystore
+from saas.log import Logging
 from saas.rest.auth import VerifyAuthorisation
+from saas.rest.proxy import EndpointProxy
 from saas.rest.schemas import EndpointDefinition
 from tests.base_testcase import TestCaseBase
 

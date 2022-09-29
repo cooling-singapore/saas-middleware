@@ -6,15 +6,15 @@ import unittest
 import logging
 import os
 
-from saascore.api.sdk.exceptions import UnsuccessfulRequestError
-from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
-from saascore.cryptography.helpers import symmetric_encrypt, symmetric_decrypt, hash_json_object
-from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
-from saascore.log import Logging
-
+from saas.cryptography.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
 from saas.dor.exceptions import FetchDataObjectFailedError
+from saas.dor.proxy import DORProxy
+from saas.exceptions import UnsuccessfulRequestError
+from saas.helpers import get_timestamp_now, generate_random_string
+from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
+from saas.log import Logging
+from saas.nodedb.proxy import NodeDBProxy
 from tests.base_testcase import TestCaseBase
-from saascore.helpers import generate_random_string, get_timestamp_now
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
 Logging.initialise(level=logging.DEBUG)
@@ -88,15 +88,15 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                                            [c0.identity, c1.identity])
         print(result)
         assert(result is not None)
-        assert(len(result['created']['creators_iid']) == 2)
-        assert(c0.identity.id in result['created']['creators_iid'])
-        assert(c1.identity.id in result['created']['creators_iid'])
+        assert(len(result.created.creators_iid) == 2)
+        assert(c0.identity.id in result.created.creators_iid)
+        assert(c1.identity.id in result.created.creators_iid)
 
         result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
         print(result)
         assert(result is not None)
-        assert(len(result['created']['creators_iid']) == 1)
-        assert(owner.id in result['created']['creators_iid'])
+        assert(len(result.created.creators_iid) == 1)
+        assert(owner.id in result.created.creators_iid)
 
     def test_add_c_license(self):
         owner = self._node.identity
@@ -112,10 +112,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         print(result)
         assert(result is not None)
-        assert(result['license']['by'])
-        assert(not result['license']['sa'])
-        assert(not result['license']['nc'])
-        assert(not result['license']['nd'])
+        assert result.license.by
+        assert(not result.license.sa)
+        assert(not result.license.nc)
+        assert(not result.license.nd)
 
     def test_add_c(self):
         owner = self._node.identity
@@ -146,7 +146,6 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', [owner])
         print(result)
         assert(result is not None)
-        assert('obj_id' in result)
 
     def test_add_gpp(self):
         owner = self._node.identity
@@ -164,7 +163,6 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         print(result)
         assert(result is not None)
-        assert('obj_id' in result)
 
     def test_remove(self):
         # create content
@@ -176,7 +174,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         result = self._dor.add_data_object(content_path, self._known_user0.identity, False, False, 'JSON', 'json')
         print(result)
-        obj_id = result['obj_id']
+        obj_id = result.obj_id
 
         # try to delete non-existent object
         try:
@@ -199,7 +197,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             result = self._dor.delete_data_object(obj_id, with_authorisation_by=self._known_user0)
             print(result)
             assert(result is not None)
-            assert(result['obj_id'] == obj_id)
+            assert(result.obj_id == obj_id)
 
         except UnsuccessfulRequestError as e:
             assert ('' in e.reason)
@@ -219,7 +217,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             }))
 
         result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
-        valid_obj_id = result['obj_id']
+        valid_obj_id = result.obj_id
         invalid_obj_id = 'invalid_obj_id'
 
         result = self._dor.get_meta(invalid_obj_id)
@@ -227,7 +225,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         result = self._dor.get_meta(valid_obj_id)
         assert(result is not None)
-        assert(result['obj_id'] == valid_obj_id)
+        assert(result.obj_id == valid_obj_id)
 
     def test_get_content(self):
         owner = self._node.identity
@@ -240,7 +238,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             }))
 
         result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
-        valid_obj_id = result['obj_id']
+        valid_obj_id = result.obj_id
         invalid_obj_id = 'invalid_obj_id'
 
         download_path = os.path.join(self.wd_path, 'downloaded.json')
@@ -315,17 +313,17 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         b_c_hash = hash_json_object({'v': 2}).hex()
 
         meta_a = self._dor.add_data_object(content_path_a, owner, False, False, 'JSON', 'json', recipe=None)
-        result = self._dor.get_provenance(meta_a['c_hash'])
+        result = self._dor.get_provenance(meta_a.c_hash)
         print(result)
         assert(result is not None)
-        assert(meta_a['c_hash'] in result['data_nodes'])
-        assert(meta_a['c_hash'] in result['missing'])
+        assert(meta_a.c_hash in result.data_nodes)
+        assert(meta_a.c_hash in result.missing)
 
         meta_c = self._dor.add_data_object(content_path_c, owner, False, False, 'JSON', 'json', recipe={
             'processor': processor,
             'consumes': {
                 'a': {
-                    'c_hash': meta_a['c_hash'],
+                    'c_hash': meta_a.c_hash,
                     'data_type': 'JSON',
                     'data_format': 'json'
                 },
@@ -348,15 +346,15 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         print(result)
         assert(result is not None)
 
-        result = self._dor.get_provenance(meta_c['c_hash'])
+        result = self._dor.get_provenance(meta_c.c_hash)
         print(result)
         assert(result is not None)
-        assert(len(result['steps']) == 1)
-        step = result['steps'][0]
-        assert(step['processor'] == '5e4871029fd3a88f72f43377223e7efc37aa5a579ad464c59c593695a40c79aa')
-        assert(step['consumes']['a'] == '9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1')
-        assert(step['consumes']['b'] == '2b5442799fccc3af2e7e790017697373913b7afcac933d72fb5876de994f659a')
-        assert(step['produces']['c'] == 'b460644a73d5df6998c57c4eaf43ebc3e595bd06930af6e42d0008f84d91c849')
+        assert(len(result.steps) == 1)
+        step = result.steps[0]
+        assert(step.processor == '5e4871029fd3a88f72f43377223e7efc37aa5a579ad464c59c593695a40c79aa')
+        assert(step.consumes['a'] == '9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1')
+        assert(step.consumes['b'] == '2b5442799fccc3af2e7e790017697373913b7afcac933d72fb5876de994f659a')
+        assert(step.produces['c'] == 'b460644a73d5df6998c57c4eaf43ebc3e595bd06930af6e42d0008f84d91c849')
 
     def test_grant_revoke_access(self):
         owner = self._node.keystore
@@ -369,16 +367,16 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             }))
 
         result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
-        obj_id = result['obj_id']
+        obj_id = result.obj_id
 
         user0 = self._known_user0
         user1 = self._known_user1
 
         meta = self._dor.get_meta(obj_id)
-        assert(owner.identity.id == meta['owner_iid'])
-        assert(owner.identity.id in meta['access'])
-        assert(user0.identity.id not in meta['access'])
-        assert(user1.identity.id not in meta['access'])
+        assert(owner.identity.id == meta.owner_iid)
+        assert(owner.identity.id in meta.access)
+        assert(user0.identity.id not in meta.access)
+        assert(user1.identity.id not in meta.access)
 
         # try to grant access to a user that doesn't have access yet without being the owner
         try:
@@ -391,10 +389,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to grant access to a user that doesn't have access yet
         try:
             meta = self._dor.grant_access(obj_id, owner, user1.identity)
-            assert (owner.identity.id == meta['owner_iid'])
-            assert (owner.identity.id in meta['access'])
-            assert (user0.identity.id not in meta['access'])
-            assert (user1.identity.id in meta['access'])
+            assert (owner.identity.id == meta.owner_iid)
+            assert (owner.identity.id in meta.access)
+            assert (user0.identity.id not in meta.access)
+            assert (user1.identity.id in meta.access)
 
         except UnsuccessfulRequestError:
             assert False
@@ -402,10 +400,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to grant access to a user that already has access
         try:
             meta = self._dor.grant_access(obj_id, owner, user1.identity)
-            assert (owner.identity.id == meta['owner_iid'])
-            assert (owner.identity.id in meta['access'])
-            assert (user0.identity.id not in meta['access'])
-            assert (user1.identity.id in meta['access'])
+            assert (owner.identity.id == meta.owner_iid)
+            assert (owner.identity.id in meta.access)
+            assert (user0.identity.id not in meta.access)
+            assert (user1.identity.id in meta.access)
 
         except UnsuccessfulRequestError:
             assert False
@@ -421,10 +419,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to revoke access from a user that has access
         try:
             meta = self._dor.revoke_access(obj_id, owner, user1.identity)
-            assert (owner.identity.id == meta['owner_iid'])
-            assert (owner.identity.id in meta['access'])
-            assert (user0.identity.id not in meta['access'])
-            assert (user1.identity.id not in meta['access'])
+            assert (owner.identity.id == meta.owner_iid)
+            assert (owner.identity.id in meta.access)
+            assert (user0.identity.id not in meta.access)
+            assert (user1.identity.id not in meta.access)
 
         except UnsuccessfulRequestError:
             assert False
@@ -432,10 +430,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to revoke access from a user that doesn't have access
         try:
             meta = self._dor.revoke_access(obj_id, owner, user0.identity)
-            assert (owner.identity.id == meta['owner_iid'])
-            assert (owner.identity.id in meta['access'])
-            assert (user0.identity.id not in meta['access'])
-            assert (user1.identity.id not in meta['access'])
+            assert (owner.identity.id == meta.owner_iid)
+            assert (owner.identity.id in meta.access)
+            assert (user0.identity.id not in meta.access)
+            assert (user1.identity.id not in meta.access)
 
         except UnsuccessfulRequestError:
             assert False
@@ -450,15 +448,15 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
-        obj_id = result['obj_id']
+        meta = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
+        obj_id = meta.obj_id
 
         user0 = self._known_user0
         user1 = self._known_user1
         user2 = self._unknown_user
 
         meta = self._dor.get_meta(obj_id)
-        assert(owner.identity.id == meta['owner_iid'])
+        assert(owner.identity.id == meta.owner_iid)
 
         # try to transfer ownership without being the owner
         try:
@@ -479,7 +477,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to transfer ownership to a known user
         try:
             meta = self._dor.transfer_ownership(obj_id, owner, user0.identity)
-            assert (user0.identity.id == meta['owner_iid'])
+            assert (user0.identity.id == meta.owner_iid)
 
         except UnsuccessfulRequestError:
             assert False
@@ -495,13 +493,13 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             }))
 
         result = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
-        obj_id = result['obj_id']
+        obj_id = result.obj_id
 
         wrong_user = self._known_user0
 
         meta = self._dor.get_meta(obj_id)
-        assert(owner.identity.id == meta['owner_iid'])
-        assert(len(meta['tags']) == 0)
+        assert(owner.identity.id == meta.owner_iid)
+        assert(len(meta.tags) == 0)
 
         # try to set tags by non-owner
         try:
@@ -513,9 +511,9 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to set tags by owner
         try:
             meta = self._dor.update_tags(obj_id, owner, {'name': 'abc'})
-            assert(len(meta['tags']) == 1)
-            assert('name' in meta['tags'])
-            assert(meta['tags']['name'] == 'abc')
+            assert(len(meta.tags) == 1)
+            assert('name' in meta.tags)
+            assert(meta.tags['name'] == 'abc')
 
         except UnsuccessfulRequestError:
             assert False
@@ -523,9 +521,9 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to set tags by owner
         try:
             meta = self._dor.update_tags(obj_id, owner, {'name': 'bcd'})
-            assert(len(meta['tags']) == 1)
-            assert('name' in meta['tags'])
-            assert(meta['tags']['name'] == 'bcd')
+            assert(len(meta.tags) == 1)
+            assert('name' in meta.tags)
+            assert(meta.tags['name'] == 'bcd')
 
         except UnsuccessfulRequestError:
             assert False
@@ -548,7 +546,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # try to remove existing tag by owner
         try:
             meta = self._dor.remove_tags(obj_id, owner, ['name'])
-            assert (len(meta['tags']) == 0)
+            assert (len(meta.tags) == 0)
 
         except UnsuccessfulRequestError:
             assert False
@@ -559,10 +557,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                 'name': 'mr a',
                 'email': 'somewhere@internet.com'
             }})
-            assert(len(meta['tags']) == 1)
-            assert('profile' in meta['tags'])
-            assert('name' in meta['tags']['profile'])
-            assert('email' in meta['tags']['profile'])
+            assert(len(meta.tags) == 1)
+            assert('profile' in meta.tags)
+            assert('name' in meta.tags['profile'])
+            assert('email' in meta.tags['profile'])
 
         except UnsuccessfulRequestError:
             assert False
@@ -582,7 +580,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         # add data object with the encrypted content
         protected_content_key1 = owner1.encrypt(content_key).decode('utf-8')
         meta = self._dor.add_data_object(content_enc_path, owner1.identity, False, True, 'map', 'json')
-        obj_id = meta['obj_id']
+        obj_id = meta.obj_id
 
         # transfer ownership now
         protected_content_key2 = owner2.encrypt(content_key).decode('utf-8')
@@ -599,7 +597,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         owner = self._known_user0
         meta = self._dor.add_data_object(self.generate_zero_file('test000.dat', 1024*1024),
                                          owner.identity, True, False, 'map', 'json')
-        obj_id = meta['obj_id']
+        obj_id = meta.obj_id
 
         # create the receiving node
         receiver = self.get_node('receiver')
@@ -635,7 +633,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # grant permission
         meta = self._dor.grant_access(obj_id, owner, receiver_identity)
-        assert receiver_identity.id in meta['access']
+        assert receiver_identity.id in meta.access
 
         # create user signature to delegate access rights
         token = f"{receiver_identity.id}:{obj_id}"
@@ -661,18 +659,18 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                                           owner.identity, False, False, 'map', 'json')
         meta2 = self._dor.add_data_object(self.generate_random_file(generate_random_string(4), 1024*1024),
                                           owner.identity, False, False, 'map', 'json')
-        obj_id0 = meta0['obj_id']
-        obj_id1 = meta1['obj_id']
-        obj_id2 = meta2['obj_id']
-        c_hash0 = meta0['c_hash']
-        c_hash1 = meta1['c_hash']
-        c_hash2 = meta2['c_hash']
+        obj_id0 = meta0.obj_id
+        obj_id1 = meta1.obj_id
+        obj_id2 = meta2.obj_id
+        c_hash0 = meta0.c_hash
+        c_hash1 = meta1.c_hash
+        c_hash2 = meta2.c_hash
 
         # search for data objects
         result = self._dor.search(c_hashes=[c_hash0, c_hash1])
         logger.info(f"result={result}")
         assert len(result) == 2
-        result = {i['obj_id']: i['tags'] for i in result}
+        result = {i.obj_id: i.tags for i in result}
         assert obj_id0 in result
         assert obj_id1 in result
 
@@ -680,7 +678,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         result = self._dor.search(c_hashes=[c_hash2])
         logger.info(f"result={result}")
         assert len(result) == 1
-        result = {i['obj_id']: i['tags'] for i in result}
+        result = {i.obj_id: i.tags for i in result}
         assert obj_id2 in result
 
         self._dor.delete_data_object(obj_id0, owner)

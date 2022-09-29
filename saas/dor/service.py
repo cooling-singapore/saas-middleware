@@ -8,18 +8,18 @@ from typing import Optional, List, Union
 
 from fastapi import UploadFile, Form, File
 from fastapi.responses import FileResponse, Response
-from saascore.api.sdk.proxies import DORProxy
-from saascore.cryptography.helpers import hash_file_content, hash_json_object, hash_string_object
-from saascore.log import Logging
-from saascore.helpers import read_json_from_file, validate_json, generate_random_string, get_timestamp_now
 from sqlalchemy import Column, String, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
 
+from saas.cryptography.helpers import hash_string_object, hash_json_object, hash_file_content
 from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
     InvalidProcessorDescriptorError, DataObjectContentNotFoundError, DataObjectNotFoundError, \
     DORException
+from saas.dor.proxy import DORProxy, DOR_ENDPOINT_PREFIX
+from saas.helpers import get_timestamp_now, generate_random_string, read_json_from_file, validate_json
+from saas.log import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.dor.schemas import DataObject, SearchParameters, AddGPPDataObjectParameters, Tag, CDataObject, \
@@ -115,10 +115,9 @@ class DataObjectProvenanceRecord(Base):
 
 
 class DORService:
-    def __init__(self, node, endpoint_prefix: str, db_path: str):
+    def __init__(self, node, db_path: str):
         # initialise properties
         self._node = node
-        self._endpoint_prefix = endpoint_prefix
         self._protocol = DataObjectRepositoryP2PProtocol(node)
 
         # initialise database things
@@ -247,44 +246,44 @@ class DORService:
 
     def endpoints(self) -> List[EndpointDefinition]:
         return [
-            EndpointDefinition('GET', self._endpoint_prefix, '',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '',
                                self.search, List[DataObject], None),
 
-            EndpointDefinition('GET', self._endpoint_prefix, 'statistics',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, 'statistics',
                                self.statistics, DORStatistics, None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'add-c',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-c',
                                self.add_c, CDataObject, None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, 'add-gpp',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-gpp',
                                self.add_gpp, GPPDataObject, None),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}',
                                self.remove, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{obj_id}/meta',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/meta',
                                self.get_meta, Optional[Union[CDataObject, GPPDataObject]], None),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{obj_id}/content',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/content',
                                self.get_content, None, [VerifyUserHasAccess]),
 
-            EndpointDefinition('GET', self._endpoint_prefix, '{c_hash}/provenance',
+            EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{c_hash}/provenance',
                                self.get_provenance, Optional[DataObjectProvenance], None),
 
-            EndpointDefinition('POST', self._endpoint_prefix, '{obj_id}/access/{user_iid}',
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
                                self.grant_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}/access/{user_iid}',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
                                self.revoke_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('PUT', self._endpoint_prefix, '{obj_id}/owner/{new_owner_iid}',
+            EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/owner/{new_owner_iid}',
                                self.transfer_ownership, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
 
-            EndpointDefinition('PUT', self._endpoint_prefix, '{obj_id}/tags',
+            EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
                                self.update_tags, Union[CDataObject, GPPDataObject],
                                [VerifyIsOwner]),
 
-            EndpointDefinition('DELETE', self._endpoint_prefix, '{obj_id}/tags',
+            EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
                                self.remove_tags, Union[CDataObject, GPPDataObject], [VerifyIsOwner])
         ]
 

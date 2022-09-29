@@ -1,4 +1,4 @@
-from saascore.exceptions import SaaSException
+from saas.exceptions import SaaSException
 
 
 class RTIException(SaaSException):
@@ -34,7 +34,8 @@ class GPPDataObjectNotFound(RTIException):
 
 class ProcessorNotAcceptingJobsError(RTIException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Processor is not accepting job submissions (probably because it is shutting down)', details=details)
+        super().__init__('Processor is not accepting job submissions (probably because it is shutting down)',
+                         details=details)
 
 
 class UnresolvedInputDataObjectsError(RTIException):
@@ -95,4 +96,3 @@ class BuildDockerImageError(RTIException):
 class UnexpectedObjectName(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Unexpected object name encountered when processing push triggers', details=details)
-

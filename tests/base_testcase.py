@@ -4,11 +4,10 @@ import time
 
 from multiprocessing import Lock
 
-from saascore.keystore.keystore import Keystore, update_keystore_from_credentials
-from saascore.log import Logging
-
+from saas.helpers import get_timestamp_now
+from saas.keystore.keystore import Keystore, update_keystore_from_credentials
+from saas.log import Logging
 from saas.node import Node
-from saascore.helpers import get_timestamp_now
 
 logger = Logging.get('tests.base_testcase')
 
@@ -37,6 +36,7 @@ class PortMaster:
             address = (host, cls._next_rest[host])
             cls._next_rest[host] += 1
             return address
+
 
 class TestCaseBase:
     def __init__(self):

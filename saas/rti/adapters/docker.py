@@ -2,11 +2,10 @@ import json
 import os
 import traceback
 
-from saascore.log import Logging
-
 import docker
 
 import saas.rti.adapters.base as base
+from saas.log import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.status import StatusLogger
 

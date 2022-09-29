@@ -4,12 +4,11 @@ import unittest
 import logging
 import time
 
-from saascore.api.sdk.proxies import NodeDBProxy
-from saascore.helpers import get_timestamp_now
-from saascore.keystore.keystore import Keystore
-from saascore.log import Logging
-
+from saas.helpers import get_timestamp_now
+from saas.keystore.keystore import Keystore
+from saas.log import Logging
 from saas.node import Node
+from saas.nodedb.proxy import NodeDBProxy
 from tests.base_testcase import TestCaseBase, PortMaster
 
 Logging.initialise(level=logging.DEBUG)
@@ -119,7 +118,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # the self.node should know of 2 nodes now
         network = self._db.get_network()
-        network = [item['identity']['id'] for item in network]
+        network = [item.identity.id for item in network]
         assert(len(network) == 2)
         assert(self._node.identity.id in network)
         assert(node0.identity.id in network)
@@ -130,7 +129,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # the self.node should still know 2 nodes
         network = self._db.get_network()
-        network = [item['identity']['id'] for item in network]
+        network = [item.identity.id for item in network]
         assert(len(network) == 2)
         assert(self._node.identity.id in network)
         assert(node0.identity.id in network)
@@ -150,7 +149,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # the self.node should now still only know of 2 nodes now (the first node should be replaced)
         network = self._db.get_network()
-        network = [item['identity']['id'] for item in network]
+        network = [item.identity.id for item in network]
         assert(len(network) == 2)
         assert(self._node.identity.id in network)
         assert(node1.identity.id in network)
@@ -261,7 +260,7 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         result = proxy0.get_node()
         print(result)
         assert(result is not None)
-        assert(result['identity']['id'] == iid0)
+        assert(result.identity.id == iid0)
 
         result = proxy0.get_network()
         print(result)
@@ -300,13 +299,13 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
 
         result_s = proxy_s.get_node()
         print(result_s)
-        assert (result_s['dor_service'] is True)
-        assert (result_s['rti_service'] is False)
+        assert (result_s.dor_service is True)
+        assert (result_s.rti_service is False)
 
         result_e = proxy_e.get_node()
         print(result_e)
-        assert (result_e['dor_service'] is False)
-        assert (result_e['rti_service'] is True)
+        assert (result_e.dor_service is False)
+        assert (result_e.rti_service is True)
 
 
 if __name__ == '__main__':
