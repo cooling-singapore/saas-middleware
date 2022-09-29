@@ -33,7 +33,7 @@ class KeystoreTestCase(unittest.TestCase):
         keystore_path = os.path.join(self.wd_path, f"{keystore_id}.json")
         assert(os.path.isfile(keystore_path))
 
-        keystore = Keystore.load(self.wd_path, keystore_id, 'password')
+        keystore = Keystore.load(keystore_path, 'password')
         assert(keystore is not None)
         assert(keystore.identity.id == keystore_id)
         assert(keystore.identity.name == 'name')
@@ -59,7 +59,7 @@ class KeystoreTestCase(unittest.TestCase):
         # verify authenticity
         assert(identity.verify_integrity())
 
-        keystore = Keystore.load(self.wd_path, keystore_id, 'password')
+        keystore = Keystore.load(os.path.join(self.wd_path, f"{keystore_id}.json"), 'password')
         assert(keystore is not None)
         assert(keystore.identity.id == keystore_id)
         assert(keystore.identity.name == name)
@@ -79,7 +79,7 @@ class KeystoreTestCase(unittest.TestCase):
 
         keystore.sync()
 
-        keystore = Keystore.load(self.wd_path, keystore.identity.id, 'password')
+        keystore = Keystore.load(os.path.join(self.wd_path, f"{keystore.identity.id}.json"), 'password')
         assert(keystore.identity.name == 'name')
         assert(keystore.identity.email == 'email')
 
@@ -103,7 +103,7 @@ class KeystoreTestCase(unittest.TestCase):
                                                                             key_is_password=True))
         keystore.sync()
 
-        keystore = Keystore.load(self.wd_path, keystore.identity.id, 'password')
+        keystore = Keystore.load(os.path.join(self.wd_path, f"{keystore.identity.id}.json"), 'password')
         c = keystore.github_credentials.get(url)
         print(c)
         assert(c is not None)

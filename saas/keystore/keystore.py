@@ -123,9 +123,8 @@ class Keystore:
         return keystore
 
     @classmethod
-    def load(cls, path: str, keystore_iid: str, password: str) -> Keystore:
+    def load(cls, keystore_path: str, password: str) -> Keystore:
         # check if keystore file exists
-        keystore_path = os.path.join(path, f"{keystore_iid}.json")
         if not os.path.isfile(keystore_path):
             raise FileNotFoundError(f"Keystore content not found at {keystore_path}")
 
