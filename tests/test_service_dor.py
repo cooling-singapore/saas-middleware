@@ -71,6 +71,52 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         print(result)
         assert(result is not None)
 
+    def test_add_c_multiple_creators(self):
+        owner = self._node.identity
+
+        c0 = self._known_user0
+        c1 = self._known_user1
+
+        # create content
+        content_path = os.path.join(self.wd_path, 'test.json')
+        with open(content_path, 'w') as f:
+            f.write(json.dumps({
+                'a': random.randint(0, 9999)
+            }))
+
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json',
+                                           [c0.identity, c1.identity])
+        print(result)
+        assert(result is not None)
+        assert(len(result['created']['creators_iid']) == 2)
+        assert(c0.identity.id in result['created']['creators_iid'])
+        assert(c1.identity.id in result['created']['creators_iid'])
+
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
+        print(result)
+        assert(result is not None)
+        assert(len(result['created']['creators_iid']) == 1)
+        assert(owner.id in result['created']['creators_iid'])
+
+    def test_add_c_license(self):
+        owner = self._node.identity
+
+        # create content
+        content_path = os.path.join(self.wd_path, 'test.json')
+        with open(content_path, 'w') as f:
+            f.write(json.dumps({
+                'a': random.randint(0, 9999)
+            }))
+
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', license_by=True)
+
+        print(result)
+        assert(result is not None)
+        assert(result['license']['by'])
+        assert(not result['license']['sa'])
+        assert(not result['license']['nc'])
+        assert(not result['license']['nd'])
+
     def test_add_c(self):
         owner = self._node.identity
 
@@ -83,7 +129,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # unknown owner
         try:
-            self._dor.add_data_object(content_path, self._unknown_user.identity, False, False, 'JSON', 'json', owner)
+            self._dor.add_data_object(content_path, self._unknown_user.identity, False, False, 'JSON', 'json', [owner])
             assert False
 
         except UnsuccessfulRequestError as e:
@@ -91,13 +137,13 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # unknown creator
         try:
-            self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', self._unknown_user.identity)
+            self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', [self._unknown_user.identity])
             assert False
 
         except UnsuccessfulRequestError as e:
             assert('Identity not found' in e.reason)
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', owner)
+        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', [owner])
         print(result)
         assert(result is not None)
         assert('obj_id' in result)
