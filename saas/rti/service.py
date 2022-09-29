@@ -312,8 +312,7 @@ class RTIService:
             # do we have re-connect information?
             reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
             if os.path.isfile(reconnect_info_path):
-                with open(reconnect_info_path, 'r') as f:
-                    reconnect_info = json.load(f)
+                reconnect_info = _try_load_json(reconnect_info_path)
             else:
                 reconnect_info = {}
 

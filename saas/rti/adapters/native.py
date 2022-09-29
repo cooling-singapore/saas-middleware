@@ -4,6 +4,7 @@ import time
 
 import saas.rti.adapters.base as base
 from saas.exceptions import SaaSException
+from saas.helpers import write_json_to_file
 from saas.keystore.assets import credentials
 from saas.log import Logging
 from saas.rti.status import StatusLogger
@@ -136,7 +137,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # store reconnect information
         reconnect_info_path = os.path.join(local_working_directory, 'job_reconnect.json')
-        write_json_to_file(reconnect_info, reconnect_info_path)
+        write_json_to_file(reconnect_info.dict(), reconnect_info_path)
 
         # try to monitor the job by (re)connecting to it
         self.connect_and_monitor(reconnect_info, status)

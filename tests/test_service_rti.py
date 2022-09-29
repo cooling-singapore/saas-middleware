@@ -759,7 +759,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # wait for processor to be deployed
         while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -781,7 +781,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # wait for processor to be deployed
         while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -814,7 +814,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # wait for processor to be deployed
         while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -824,7 +824,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
                                                                        json.dumps({'v': 1})),
                                          owner.identity, False, False, 'JSONObject', 'json')
-        a_obj_id = meta['obj_id']
+        a_obj_id = meta.obj_id
 
         task_input = [
             {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id},
