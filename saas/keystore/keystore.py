@@ -4,7 +4,7 @@ import os
 import string
 
 from threading import Lock
-from typing import Any, Literal, Dict
+from typing import Any, Dict
 from pydantic import BaseModel, ValidationError
 
 from saas.cryptography.eckeypair import ECKeyPair
@@ -22,37 +22,6 @@ from saas.log import Logging
 logger = Logging.get('keystore.Keystore')
 
 
-# class MasterKeyPairAsset(KeystoreAsset):
-#     class Content(BaseModel):
-#         info: str
-#         pppk: str
-#
-#     type: Literal['MasterKeyPairAsset']
-#     content: Content
-#
-#
-# class KeyPairAsset(KeystoreAsset):
-#     class Content(BaseModel):
-#         info: str
-#         private_key: str
-#
-#     type: Literal['KeyPairAsset']
-#     content: Content
-#
-#
-# class ContentKeysAsset(KeystoreAsset):
-#     type: Literal['ContentKeysAsset']
-#     content: str
-#
-#
-# class CredentialsAsset(KeystoreAsset):
-#     class Content(BaseModel):
-#         ctype: str
-#         credentials: str
-#
-#     type: Literal['CredentialsAsset']
-#     content: Content
-
 class KeystoreProfile(BaseModel):
     name: str
     email: str
@@ -67,7 +36,6 @@ class KeystoreContent(BaseModel):
 
 
 class Keystore:
-
     def __init__(self, path: str, password: str, content: KeystoreContent) -> None:
         self._mutex = Lock()
         self._path = path
@@ -239,20 +207,6 @@ class Keystore:
     def github_credentials(self) -> GithubCredentialsAsset:
         with self._mutex:
             return self._loaded['github-credentials']
-
-
-    # def has_asset(self, key: str) -> bool:
-    #     with self._mutex:
-    #         return key in self._loaded
-    #
-    # def get_asset(self, key: str) -> Any:
-    #     with self._mutex:
-    #         return self._loaded.get(key)
-
-    # def update_asset(self, asset: Any) -> None:
-    #     with self._mutex:
-    #         self._loaded[asset.__name__] = asset
-    #         self._sync_to_disk()
 
     def _update_identity(self) -> None:
         # generate valid signature for the identity

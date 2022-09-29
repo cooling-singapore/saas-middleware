@@ -102,7 +102,7 @@ class ContentKeysAsset:
 
     @classmethod
     def load(cls, asset: dict, master: KeyPair) -> ContentKeysAsset:
-        asset = ContentKeysAsset.Content.parse_obj(asset )
+        asset = ContentKeysAsset.Content.parse_obj(asset)
 
         keys = json.loads(_decrypt(asset.content_keys, master))
         return ContentKeysAsset(keys)
@@ -178,4 +178,3 @@ class SSHCredentialsAsset:
 
     def update(self, name: str, credentials: SSHCredentials) -> None:
         self._credentials[name] = credentials
-
