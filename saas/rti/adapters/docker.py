@@ -232,7 +232,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                               pid_paths={"working_directory": full_working_directory},
                                               task_descriptor=task_descriptor)
             reconnect_info_path = os.path.join(working_directory, 'job_reconnect.json')
-            write_json_to_file(reconnect_info, reconnect_info_path)
+            write_json_to_file(reconnect_info.dict(), reconnect_info_path)
 
             # try to monitor the job by (re)connecting to it
             self.connect_and_monitor(reconnect_info, status)
@@ -262,8 +262,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
         if self.container.status == "exited":
             info = self.container.wait()
-            if info.get('StatusCode') is not 0:
-                raise SaaSException(info)
+            if info.get('StatusCode') != 0:
+                raise SaaSException
 
         # Block and go through logs until container closes
         with ThreadPoolExecutor(max_workers=3) as executor:
