@@ -11,7 +11,7 @@ from typing import Optional
 
 import paramiko
 from saas.exceptions import SaaSException
-from saas.keystore.assets.credentials import GithubCredentials, SSHCredentials
+from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.helpers import write_json_to_file
 
 import docker

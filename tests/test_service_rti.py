@@ -684,8 +684,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         Requires test credentials to have one ssh credential named `docker`
         """
         keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
-        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
-        ssh_credentials: SSHCredentials = asset.get('docker')
+        ssh_credentials = keystore.ssh_credentials.get('docker')
 
         # Undeploy current processor
         logger.info(f"Undeploying processor")
