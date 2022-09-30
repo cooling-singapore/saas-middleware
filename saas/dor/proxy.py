@@ -1,7 +1,7 @@
 from typing import Union, Optional, List
 
-from saas.dor.schemas import GPPDataObject, CDataObject, DataObjectProvenance, DataObject, DORStatistics
-from saas.keystore.assets.credentials import GithubCredentials
+from saas.dor.schemas import GPPDataObject, CDataObject, DataObjectProvenance, DataObject, DORStatistics, \
+    GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.rest.proxy import EndpointProxy

@@ -10,9 +10,9 @@ from threading import Thread
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
+from saas.dor.schemas import GithubCredentials
 from saas.exceptions import SaaSException, RunCommandError, UnsuccessfulRequestError
 from saas.helpers import get_timestamp_now, read_json_from_file, generate_random_string
-from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials, SSHCredentials
 from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
@@ -32,8 +32,7 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     commit_id = '9bf18c3'
     proc_path = 'saasadapters/example'
 
-    asset: CredentialsAsset = owner.get_asset('github-credentials')
-    github_credentials: GithubCredentials = asset.get(source)
+    github_credentials = owner.github_credentials.get(source)
 
     meta = dor.add_gpp_data_object(source, commit_id, proc_path, config, owner.identity,
                                    github_credentials=github_credentials)
@@ -826,8 +825,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
             # extract the NSCC SSH credentials
             authority = RTIServiceTestCaseNSCC._node.keystore
-            asset: CredentialsAsset = authority.get_asset('ssh-credentials')
-            RTIServiceTestCaseNSCC._nscc_ssh_cred = asset.get('nscc')
+            RTIServiceTestCaseNSCC._nscc_ssh_cred = authority.ssh_credentials.get('nscc')
 
             RTIServiceTestCaseNSCC._test_proc_id, RTIServiceTestCaseNSCC._test_proc_gh_cred = add_test_processor(
                 RTIServiceTestCaseNSCC._dor, RTIServiceTestCaseNSCC._node.keystore, 'nscc')
@@ -968,8 +966,7 @@ class RTIServiceTestCaseManual(unittest.TestCase, TestCaseBase):
     def test_command_monitoring(self):
         # load keystore with credentials and extract SSH credentials
         keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
-        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
-        ssh_credentials: SSHCredentials = asset.get('nscc')
+        ssh_credentials = keystore.ssh_credentials.get('nscc')
 
         wd_path = self.wd_path
         command_ok = "ls"
@@ -1014,8 +1011,7 @@ class RTIServiceTestCaseManual(unittest.TestCase, TestCaseBase):
     def test_simulate_vpn_disconnect(self):
         # load keystore with credentials and extract SSH credentials
         keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
-        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
-        ssh_credentials: SSHCredentials = asset.get('nscc')
+        ssh_credentials = keystore.ssh_credentials.get('nscc')
 
         wd_path = self.wd_path
         command = "sleep 60"

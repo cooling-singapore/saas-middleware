@@ -9,9 +9,9 @@ import os
 from saas.cryptography.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.proxy import DORProxy
+from saas.dor.schemas import GithubCredentials
 from saas.exceptions import UnsuccessfulRequestError
 from saas.helpers import get_timestamp_now, generate_random_string
-from saas.keystore.assets.credentials import CredentialsAsset, GithubCredentials
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from tests.base_testcase import TestCaseBase
@@ -155,8 +155,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         proc_path = 'saasadapters/example'
         proc_config = 'default'
 
-        asset: CredentialsAsset = self._node.keystore.get_asset('github-credentials')
-        github_credentials: GithubCredentials = asset.get(source)
+        github_credentials: GithubCredentials = self._node.keystore.github_credentials.get(source)
 
         result = self._dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
                                                github_credentials=github_credentials)

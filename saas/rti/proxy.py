@@ -1,7 +1,7 @@
 import json
 from typing import List
 
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
+from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy

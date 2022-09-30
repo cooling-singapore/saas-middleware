@@ -3,9 +3,10 @@ import threading
 import time
 
 import saas.rti.adapters.base as base
+from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.exceptions import SaaSException
 from saas.helpers import write_json_to_file
-from saas.keystore.assets import credentials
+
 from saas.log import Logging
 from saas.rti.status import StatusLogger
 from saas.schemas import GitProcessorPointer, TaskDescriptor, ResumeDescriptor
@@ -15,8 +16,8 @@ logger = Logging.get('rti.adapters.native')
 
 class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
-                 ssh_credentials: credentials.SSHCredentials = None,
-                 github_credentials: credentials.GithubCredentials = None,
+                 ssh_credentials: SSHCredentials = None,
+                 github_credentials: GithubCredentials = None,
                  retain_remote_wdirs: bool = False) -> None:
         super().__init__(proc_id, gpp, jobs_path, node)
 

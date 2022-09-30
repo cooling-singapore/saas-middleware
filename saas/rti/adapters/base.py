@@ -15,10 +15,10 @@ from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_obje
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
+from saas.dor.schemas import SSHCredentials
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
     generate_random_string
-from saas.keystore.assets.credentials import SSHCredentials
 from saas.log import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -73,14 +73,14 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
             'wrapped_command': wrapped_command,
             'stdout': e.stdout.decode('utf-8'),
             'stderr': e.stderr.decode('utf-8'),
-            'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
+            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
         })
 
     except subprocess.TimeoutExpired:
         raise RunCommandError({
             'reason': 'timeout',
             'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.record if ssh_credentials else None,
+            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
         })
 
 
@@ -96,7 +96,7 @@ def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHC
     if result.returncode != 0:
         raise RunCommandError({
             'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.record,
+            'ssh_credentials': ssh_credentials.dict(),
             'result': result
         })
 
@@ -113,7 +113,7 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
     if result.returncode != 0:
         raise RunCommandError({
             'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.record,
+            'ssh_credentials': ssh_credentials.dict(),
             'result': result
         })
 
