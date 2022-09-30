@@ -17,6 +17,7 @@ from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
+from saas.rti.adapters.docker import prune_image
 from saas.rti.proxy import RTIProxy
 from saas.rti.status import State
 
@@ -641,7 +642,89 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('c' in output)
 
     def test_docker_processor_execution_value(self):
-        pass
+        # Undeploy current processor
+        logger.info(f"Undeploying processor")
+        time.sleep(3)
+        self._rti.undeploy(self._test_proc_id)
+        logger.info(f"Processor undeployed. {self._test_proc_id}")
+
+        # instruct the RTI to deploy the processor using docker
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id)
+        prune_image(self._test_proc_id)
+
+    def test_remote_docker_processor_execution_value(self):
+        """
+        Requires test credentials to have one ssh credential named `docker`
+        """
+        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
+        asset: CredentialsAsset = keystore.get_asset('ssh-credentials')
+        ssh_credentials: SSHCredentials = asset.get('docker')
+
+        # Undeploy current processor
+        logger.info(f"Undeploying processor")
+        time.sleep(3)
+        self._rti.undeploy(self._test_proc_id)
+        logger.info(f"Processor undeployed. {self._test_proc_id}")
+
+        # instruct the RTI to deploy the processor remotely using the SSH credentials
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred,
+                         ssh_credentials=ssh_credentials)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id)
 
     def test_retain_job_history_false(self):
         # create target node and join with the default node
