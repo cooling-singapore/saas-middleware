@@ -678,8 +678,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # Perform cleanup
         self._rti.undeploy(self._test_proc_id)
         prune_image(self._test_proc_id)
+        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
 
-    def test_remote_docker_processor_execution_value(self):
+    def test_docker_remote_processor_execution_value(self):
         """
         Requires test credentials to have one ssh credential named `docker`
         """
@@ -723,6 +724,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # Perform cleanup
         self._rti.undeploy(self._test_proc_id)
+        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
 
     def test_retain_job_history_false(self):
         # create target node and join with the default node
