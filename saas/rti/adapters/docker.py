@@ -229,8 +229,10 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             # set pid as container id
             reconnect_info = ResumeDescriptor(job_id=job_id,
                                               pid=self.container.id,
-                                              pid_paths={"working_directory": full_working_directory},
-                                              task_descriptor=task_descriptor)
+                                              pid_paths=dict(),
+                                              paths={"working_directory": full_working_directory},
+                                              task_descriptor=task_descriptor,
+                                              retain_job=False)
             reconnect_info_path = os.path.join(working_directory, 'job_reconnect.json')
             write_json_to_file(reconnect_info.dict(), reconnect_info_path)
 
@@ -256,36 +258,46 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         if self.container is None:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
+                # FIXME: What happens if the job has completed successfully and container has already been removed.
                 self.container = client.containers.get(reconnect_info.pid)
+        try:
+            # Will only continue monitoring if container is still running.
+            # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
+            if self.container.status == "exited":
+                info = self.container.wait()
+                if info.get('StatusCode') != 0:
+                    raise SaaSException
 
-        # Will only continue monitoring if container is still running.
-        # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
-        if self.container.status == "exited":
-            info = self.container.wait()
-            if info.get('StatusCode') != 0:
-                raise SaaSException
+            # Block and go through logs until container closes
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                for log in self.container.logs(stream=True):
+                    lines = log.decode('utf-8').splitlines()
 
-        # Block and go through logs until container closes
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            for log in self.container.logs(stream=True):
-                lines = log.decode('utf-8').splitlines()
+                    for line in lines:
+                        if line.startswith('trigger:output'):
+                            executor.submit(self._handle_trigger_output,
+                                            line, status,
+                                            reconnect_info.job_id,
+                                            reconnect_info.task_descriptor,
+                                            reconnect_info.paths["working_directory"]
+                                            )
 
-                for line in lines:
-                    if line.startswith('trigger:output'):
-                        executor.submit(self._handle_trigger_output,
-                                        line, status,
-                                        reconnect_info.job_id,
-                                        reconnect_info.task_descriptor,
-                                        reconnect_info.pid_paths["working_directory"]
-                                        )
+                        if line.startswith('trigger:progress'):
+                            self._handle_trigger_progress(line, status)
 
-                    if line.startswith('trigger:progress'):
-                        self._handle_trigger_progress(line, status)
-
-        # Remove container after job is done
-        self.container.wait()
-        self.container.remove()
-        self.container = None
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            raise DockerRuntimeError({
+                'job_id': reconnect_info.job_id,
+                'job_descriptor': reconnect_info.task_descriptor,
+                'working_directory': reconnect_info.paths["working_directory"],
+                'trace': trace
+            })
+        finally:
+            # Remove container after job is done
+            self.container.wait()
+            self.container.remove()
+            self.container = None
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
