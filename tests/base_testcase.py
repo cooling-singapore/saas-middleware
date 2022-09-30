@@ -168,13 +168,11 @@ class TestCaseBase:
                 raise RuntimeError(f"no storage path found to resume node at {storage_path}")
 
             # infer the keystore id
-            keystore_id = None
+            keystore = None
             for filename in os.listdir(storage_path):
                 if filename.endswith('.json') and len(filename) == 69:
-                    keystore_id = filename.split('.')[0]
+                    keystore = Keystore.load(os.path.join(storage_path, filename), 'password')
                     break
-
-            keystore = Keystore.load(storage_path, keystore_id, 'password')
 
             # create node and startup services
             node = Node(keystore, storage_path)

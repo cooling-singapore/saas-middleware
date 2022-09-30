@@ -13,9 +13,9 @@ from typing import Optional, Dict, List, Union
 from fastapi import Request
 from fastapi.responses import FileResponse, Response
 
+from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.exceptions import RunCommandError
 from saas.helpers import generate_random_string, write_json_to_file
-from saas.keystore.assets.credentials import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.p2p.exceptions import PeerUnavailableError
@@ -172,7 +172,8 @@ class RTIService:
                 # if the credentials are NOT password-based, store the key to disk
                 if not ssh_credentials.key_is_password:
                     key_path = self._store_ssh_credentials_key(proc_id, ssh_credentials)
-                    ssh_credentials = SSHCredentials(ssh_credentials.host, ssh_credentials.login, key_path, False)
+                    ssh_credentials = SSHCredentials(host=ssh_credentials.host, login=ssh_credentials.login,
+                                                     key=key_path, key_is_password=False)
 
             else:
                 ssh_credentials = None

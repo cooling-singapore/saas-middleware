@@ -24,6 +24,13 @@ class GithubCredentials(BaseModel):
     personal_access_token: str
 
 
+class SSHCredentials(BaseModel):
+    host: str
+    login: str
+    key: str
+    key_is_password: bool
+
+
 class CObjectNode(BaseModel):
     c_hash: str
     data_type: str
