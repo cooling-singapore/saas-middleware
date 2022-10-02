@@ -76,8 +76,8 @@ class JobStatus(BaseModel):
 
 class ProcessorStatus(BaseModel):
     state: str
-    pending: List[dict]
-    active: Optional[dict]
+    pending: List[JobStatus]
+    active: Optional[JobStatus]
 
 
 class GitProcessorPointer(BaseModel):
@@ -85,4 +85,4 @@ class GitProcessorPointer(BaseModel):
     commit_id: str
     proc_path: str
     proc_config: str
-    proc_descriptor: Optional[ProcessorDescriptor]
+    proc_descriptor: ProcessorDescriptor
