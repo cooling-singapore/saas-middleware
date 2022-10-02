@@ -9,7 +9,7 @@ import os
 from saas.cryptography.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import GithubCredentials
+from saas.dor.schemas import GithubCredentials, Tag
 from saas.exceptions import UnsuccessfulRequestError
 from saas.helpers import get_timestamp_now, generate_random_string
 from saas.log import Logging
@@ -502,14 +502,14 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # try to set tags by non-owner
         try:
-            self._dor.update_tags(obj_id, wrong_user, {'name': 'abc'})
+            self._dor.update_tags(obj_id, wrong_user, [Tag(key='name', value='abc')])
 
         except UnsuccessfulRequestError as e:
             assert (e.details['reason'] == 'user is not the data object owner')
 
         # try to set tags by owner
         try:
-            meta = self._dor.update_tags(obj_id, owner, {'name': 'abc'})
+            meta = self._dor.update_tags(obj_id, owner, [Tag(key='name', value='abc')])
             assert(len(meta.tags) == 1)
             assert('name' in meta.tags)
             assert(meta.tags['name'] == 'abc')
@@ -519,7 +519,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # try to set tags by owner
         try:
-            meta = self._dor.update_tags(obj_id, owner, {'name': 'bcd'})
+            meta = self._dor.update_tags(obj_id, owner, [Tag(key='name', value='bcd')])
             assert(len(meta.tags) == 1)
             assert('name' in meta.tags)
             assert(meta.tags['name'] == 'bcd')
@@ -552,10 +552,10 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         # try to set a complex tag by owner
         try:
-            meta = self._dor.update_tags(obj_id, owner, {'profile': {
+            meta = self._dor.update_tags(obj_id, owner, [Tag(key='profile', value={
                 'name': 'mr a',
                 'email': 'somewhere@internet.com'
-            }})
+            })])
             assert(len(meta.tags) == 1)
             assert('profile' in meta.tags)
             assert('name' in meta.tags['profile'])

@@ -15,7 +15,7 @@ from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_obje
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import SSHCredentials
+from saas.dor.schemas import SSHCredentials, Tag
 from saas.exceptions import RunCommandError, SaaSException
 from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
     generate_random_string
@@ -867,10 +867,10 @@ class RTIProcessorAdapter(Thread, ABC):
         obj_id = meta.obj_id
 
         # update tags with information from the job
-        proxy.update_tags(obj_id, self._node.keystore, {
-            'name': f"{obj_name}",
-            'job_id': job_id
-        })
+        proxy.update_tags(obj_id, self._node.keystore, [
+            Tag(key='name', value=obj_name),
+            Tag(key='job_id', value=job_id)
+        ])
 
         # transfer ownership to the new owner
         proxy.transfer_ownership(obj_id, self._node.keystore, owner)

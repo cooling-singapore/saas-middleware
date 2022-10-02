@@ -114,4 +114,4 @@ class AddCDataObjectParameters(AddDataObjectParameters):
 
 class Tag(BaseModel):
     key: str
-    value: Union[str, int, float, List, Dict]
+    value: Optional[Union[str, int, float, bool, List, Dict]]

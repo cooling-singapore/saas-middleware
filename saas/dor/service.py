@@ -311,7 +311,9 @@ class DORService:
             result = []
             for record in object_records:
                 # flatten all tags (keys values) into a single string for search purposes
-                flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in record.tags)
+                flattened = ' '.\
+                    join(f"{key} {json.dumps(value) if isinstance(value, (list, dict)) else value}"
+                         for key, value in record.tags.items())
 
                 # # TODO: decide if this information should be searchable via patterns. seems odd to do this here.
                 # # add meta information to make them searchable
@@ -674,7 +676,7 @@ class DORService:
 
             # update tags
             for tag in tags:
-                record.tags[tag.key] = tag.value
+                record.tags[tag.key] = tag.value if tag.value else None
             session.commit()
 
         return self.get_meta(obj_id)

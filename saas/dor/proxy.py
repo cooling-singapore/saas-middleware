@@ -1,7 +1,7 @@
 from typing import Union, Optional, List
 
 from saas.dor.schemas import GPPDataObject, CDataObject, DataObjectProvenance, DataObject, DORStatistics, \
-    GithubCredentials
+    GithubCredentials, Tag
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.rest.proxy import EndpointProxy
@@ -134,15 +134,10 @@ class DORProxy(EndpointProxy):
         else:
             return CDataObject.parse_obj(result)
 
-    def update_tags(self, obj_id: str, authority: Keystore, tags: dict) -> Union[CDataObject, GPPDataObject]:
-        body = []
-        for key, value in tags.items():
-            body.append({
-                'key': key,
-                'value': value
-            })
+    def update_tags(self, obj_id: str, authority: Keystore, tags: List[Tag]) -> Union[CDataObject, GPPDataObject]:
+        tags = [{'key': tag.key, 'value': tag.value} for tag in tags]
 
-        result = self.put(f"/{obj_id}/tags", body=body, with_authorisation_by=authority)
+        result = self.put(f"/{obj_id}/tags", body=tags, with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:

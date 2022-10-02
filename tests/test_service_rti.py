@@ -6,6 +6,7 @@ import time
 import unittest
 from json import JSONDecodeError
 from threading import Thread
+from typing import Union, List
 
 from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
@@ -19,6 +20,7 @@ from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.adapters.base import monitor_command, run_command_async, ProcessorState
 from saas.rti.proxy import RTIProxy
 from saas.rti.status import State
+from saas.schemas import TaskInputValue, TaskOutput, TaskInputReference
 
 from tests.base_testcase import TestCaseBase
 
@@ -133,12 +135,13 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         owner = self._node.keystore
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
+                                  'restricted_access': False, 'content_encrypted': False})
         ]
 
         # submit the job
@@ -207,12 +210,13 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         owner = self._node.keystore
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
+                                  'restricted_access': False, 'content_encrypted': False})
         ]
 
         # submit the job
@@ -262,7 +266,8 @@ class UnsuccessfulJob(SaaSException):
         super().__init__(f"Unsuccessful job: {reason}", details=details)
 
 
-def submit_job(rti: RTIProxy, proc_id: str, task_input: list[dict], task_output: list[dict], owner: Keystore) -> str:
+def submit_job(rti: RTIProxy, proc_id: str, task_input: List[Union[TaskInputValue, TaskInputReference]],
+               task_output: List[TaskOutput], owner: Keystore) -> str:
     result = rti.submit_job(proc_id, task_input, task_output, owner)
     job_id = result.id
     return job_id
@@ -318,7 +323,8 @@ def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
         time.sleep(1)
 
 
-def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: list[dict], task_output: list[dict],
+def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: List[Union[TaskInputValue, TaskInputReference]],
+                    task_output: List[TaskOutput],
                     owner: Keystore) -> (str, dict):
     job_id = submit_job(rti, proc_id, task_input, task_output, owner)
     output = wait_for_job(rti, job_id, owner)
@@ -396,12 +402,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         owner = self._node.keystore
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
@@ -419,13 +426,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         owner = self._node.keystore
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False,
-             'target_node_iid': target_node.identity.id}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False, 'target_node_iid': target_node.identity.id})
         ]
 
         # submit and wait
@@ -453,12 +460,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         a_obj_id = meta.obj_id
 
         task_input = [
-            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
@@ -484,12 +492,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         log = []
         for i in range(3):
             task_input = [
-                {'name': 'a', 'type': 'reference', 'obj_id': obj_id_a},
-                {'name': 'b', 'type': 'value', 'value': {'v': 5}}
+                TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': obj_id_a}),
+                TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
             ]
 
             task_output = [
-                {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+                TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                      'content_encrypted': False})
             ]
 
             # submit and wait
@@ -529,12 +538,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         a_obj_id = meta.obj_id
 
         task_input = [
-            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id},
-            {'name': 'b', 'type': 'reference', 'obj_id': a_obj_id},
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+            TaskInputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id}),
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
@@ -563,12 +573,15 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         invalid_signature = user.sign(f"invalid content".encode('utf-8'))
         task_input_invalid = [
-            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': invalid_signature},
-            {'name': 'b', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': invalid_signature}
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
+                                          'user_signature': invalid_signature}),
+            TaskInputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
+                                          'user_signature': invalid_signature})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # no access rights and no valid signature
@@ -593,8 +606,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         # create valid and invalid task input
         valid_signature = user.sign(f"{rti_node_info.identity.id}:{a_obj_id}".encode('utf-8'))
         task_input_valid = [
-            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature},
-            {'name': 'b', 'type': 'reference', 'obj_id': a_obj_id, 'user_signature': valid_signature}
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
+                                          'user_signature': valid_signature}),
+            TaskInputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
+                                          'user_signature': valid_signature})
         ]
 
         # access rights and valid signature
@@ -616,12 +631,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         obj_id = meta.obj_id
 
         task_input = [
-            {'name': 'a', 'type': 'reference', 'obj_id': obj_id},
-            {'name': 'b', 'type': 'reference', 'obj_id': obj_id},
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': obj_id}),
+            TaskInputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': obj_id})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit the job
@@ -656,12 +672,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         deploy_and_wait(target_rti, proc_id, gh_cred)
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
@@ -690,12 +707,13 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         deploy_and_wait(target_rti, proc_id, gh_cred)
 
         task_input = [
-            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
@@ -792,12 +810,13 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         a_obj_id = meta.obj_id
 
         task_input = [
-            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id},
-            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+            TaskInputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+            TaskInputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
         ]
 
         task_output = [
-            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+            TaskOutput.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
         ]
 
         # submit and wait
