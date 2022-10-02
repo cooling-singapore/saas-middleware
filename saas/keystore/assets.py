@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from pydantic import BaseModel
 
@@ -143,11 +143,17 @@ class GithubCredentialsAsset:
             'credentials': _encrypt(json.dumps(credentials), protection)
         }
 
-    def get(self, repository: str) -> Optional[GithubCredentials]:
-        return self._credentials.get(repository, None)
+    def list(self) -> List[str]:
+        return list(self._credentials.keys())
 
-    def update(self, repository: str, credentials: GithubCredentials) -> None:
-        self._credentials[repository] = credentials
+    def get(self, name: str) -> Optional[GithubCredentials]:
+        return self._credentials.get(name, None)
+
+    def update(self, name: str, credentials: GithubCredentials) -> None:
+        self._credentials[name] = credentials
+
+    def remove(self, name: str) -> Optional[GithubCredentials]:
+        return self._credentials.pop(name, None)
 
 
 class SSHCredentialsAsset:
@@ -173,8 +179,14 @@ class SSHCredentialsAsset:
             'credentials': _encrypt(json.dumps(credentials), protection)
         }
 
+    def list(self) -> List[str]:
+        return list(self._credentials.keys())
+
     def get(self, name: str) -> Optional[SSHCredentials]:
         return self._credentials.get(name, None)
 
     def update(self, name: str, credentials: SSHCredentials) -> None:
         self._credentials[name] = credentials
+
+    def remove(self, name: str) -> Optional[SSHCredentials]:
+        return self._credentials.pop(name, None)
