@@ -1,9 +1,10 @@
 import os
 
-from saascore.log import Logging
+from InquirerPy.base import Choice
 
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
-    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore
+    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore, extract_address
+from saas.log import Logging
 from saas.node import Node
 
 logger = Logging.get('cli.service')
@@ -63,11 +64,13 @@ class Service(CLICommand):
             prompt_if_missing(args, 'boot-node', prompt_for_string,
                               message="Enter address for boot node:",
                               default=self.default_boot_node_address)
-            prompt_if_missing(args, 'type', prompt_for_selection, items=[
-                {'type': 'full', 'label': 'Full node (i.e., DOR + RTI services)'},
-                {'type': 'storage', 'label': 'Storage node (i.e., DOR service only)'},
-                {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
-            ], message="Select the type of service:")
+
+            if args['type'] is None:
+                args['type'] = prompt_for_selection([
+                    Choice('full', 'Full node (i.e., DOR + RTI services)'),
+                    Choice('storage', 'Storage node (i.e., DOR service only)'),
+                    Choice('execution', 'Execution node (i.e., RTI service only)')
+                ], "Select the type of service:")
 
             if args['type'] == 'full' or args['type'] == 'execution':
                 prompt_if_missing(args, 'retain-job-history', prompt_for_confirmation,
@@ -79,12 +82,9 @@ class Service(CLICommand):
         initialise_storage_folder(args['datastore'], 'datastore')
 
         # extract host/ports
-        rest_service_address = args['rest-address'].split(':')
-        p2p_service_address = args['p2p-address'].split(':')
-        boot_node_address = args['boot-node'].split(':')
-        rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
-        p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
-        boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
+        rest_service_address = extract_address(args['rest-address'])
+        p2p_service_address = extract_address(args['p2p-address'])
+        boot_node_address = extract_address(args['boot-node'])
 
         # create a node instance
         node = Node.create(keystore, args['datastore'],
