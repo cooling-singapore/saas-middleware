@@ -17,7 +17,8 @@ from saas.helpers import get_timestamp_now, read_json_from_file, generate_random
 from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
-from saas.rti.adapters.base import monitor_command, run_command_async, ProcessorState
+from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
+from saas.rti.adapters.docker import prune_image
 from saas.rti.proxy import RTIProxy
 from saas.rti.status import State
 from saas.schemas import TaskInputValue, TaskOutput, TaskInputReference
@@ -656,7 +657,90 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('c' in output)
 
     def test_docker_processor_execution_value(self):
-        pass
+        # Undeploy current processor
+        logger.info(f"Undeploying processor")
+        time.sleep(3)
+        self._rti.undeploy(self._test_proc_id)
+        logger.info(f"Processor undeployed. {self._test_proc_id}")
+
+        # instruct the RTI to deploy the processor using docker
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id)
+        prune_image(self._test_proc_id)
+        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
+
+    def test_docker_remote_processor_execution_value(self):
+        """
+        Requires test credentials to have one ssh credential named `docker`
+        """
+        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
+        ssh_credentials = keystore.ssh_credentials.get('docker')
+
+        # Undeploy current processor
+        logger.info(f"Undeploying processor")
+        time.sleep(3)
+        self._rti.undeploy(self._test_proc_id)
+        logger.info(f"Processor undeployed. {self._test_proc_id}")
+
+        # instruct the RTI to deploy the processor remotely using the SSH credentials
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred,
+                         ssh_credentials=ssh_credentials)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            {'name': 'a', 'type': 'value', 'value': {'v': 1}},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id)
+        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
 
     def test_retain_job_history_false(self):
         # create target node and join with the default node
@@ -775,7 +859,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # wait for processor to be deployed
         while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -797,7 +881,7 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # wait for processor to be deployed
         while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).get('state'))) == ProcessorState.STARTING:
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
             logger.info(f"Waiting for processor to deploy. {state.name=}")
             time.sleep(5)
         logger.info(f"Processor to deployed. {state.name=}")
@@ -823,6 +907,69 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
         job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
         assert(output is not None)
         assert('c' in output)
+
+    def test_processor_resume_execution(self):
+        # instruct the RTI to deploy the processor remotely using the SSH credentials
+        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred,
+                         ssh_credentials=self._nscc_ssh_cred)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+        meta = self._dor.add_data_object(self.create_file_with_content(f"{generate_random_string(4)}.json",
+                                                                       json.dumps({'v': 1})),
+                                         owner.identity, False, False, 'JSONObject', 'json')
+        a_obj_id = meta.obj_id
+
+        task_input = [
+            {'name': 'a', 'type': 'reference', 'obj_id': a_obj_id},
+            {'name': 'b', 'type': 'value', 'value': {'v': 2}}
+        ]
+
+        task_output = [
+            {'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False, 'content_encrypted': False}
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # attempt to resume the job. note: this should work even though the job has already finished. we just
+        # need to provide valid reconnect info.
+        descriptor, status, reconnect_info = self._rti.get_job_info(job_id)
+        assert(reconnect_info is not None)
+
+        # manually delete the remote exitcode file (we want to pretend the process hasn't finished yet)
+        exitcode_path = reconnect_info['pid_paths']['exitcode']
+        run_command(f"mv {exitcode_path} {exitcode_path}.backup", ssh_credentials=self._nscc_ssh_cred)
+
+        job_descriptor = self._rti.resume_job(self._test_proc_id, reconnect_info)
+        job_id = job_descriptor.id
+        logger.info(f"job_id={job_id}")
+        assert (job_id is not None)
+
+        def recreate_exitcode_file():
+            # wait 10 seconds until pretending for the process to have completed
+            time.sleep(10)
+            print('finishing now!!!')
+            run_command(f"mv {exitcode_path}.backup {exitcode_path}", ssh_credentials=self._nscc_ssh_cred)
+
+        # the following wait would never return because the process didn't really get timed-out. it actually finished
+        # and we just 'resumed' it after renaming the exitcode file. unless the exitcode file is renamed back to what
+        # it was, the wait will not return. so we start a thread which will wait for some time and then move the file
+        # back to where it was.
+        Thread(target=recreate_exitcode_file).start()
+        wait_for_job(self._rti, job_id, owner)
+
+        output_path = os.path.join(self.wd_path, self._node.datastore, 'jobs', str(job_id), 'c')
+        assert os.path.isfile(output_path)
 
 
 class RTIServiceTestCaseManual(unittest.TestCase, TestCaseBase):
