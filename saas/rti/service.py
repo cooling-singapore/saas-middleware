@@ -8,29 +8,34 @@ from _stat import S_IWRITE
 from json import JSONDecodeError
 from stat import S_IREAD
 from threading import Lock
-from typing import Optional, Dict, List, Union
+from typing import Optional, Dict, List, Union, Literal
 
 from fastapi import Request
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
 
-from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.exceptions import RunCommandError
 from saas.helpers import generate_random_string, write_json_to_file
-from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
 from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
-from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
-from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
-from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer, ResumeDescriptor
+from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, ResumableJob, JobStatus
+from saas.dor.schemas import GitProcessorPointer
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
+from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('rti.service')
+
+
+class Permission(BaseModel):
+    req_id: str
+    content_key: str
 
 
 def _try_load_json(path: str, max_attempts: int = 10, delay: float = 0.5) -> Union[List, Dict]:
@@ -43,6 +48,13 @@ def _try_load_json(path: str, max_attempts: int = 10, delay: float = 0.5) -> Uni
             logger.warning(f"could not parse JSON content in {path} (attempt: {i + 1}) "
                            f"-> trying again in {delay} seconds...")
             time.sleep(delay)
+
+
+class DeployParameters(BaseModel):
+    deployment: Union[Literal['native', 'docker']]
+    ssh_credentials: Optional[str]
+    github_credentials: Optional[str]
+    gpp_custodian: Optional[str]
 
 
 class RTIService:
@@ -126,16 +138,16 @@ class RTIService:
                                self.status, ProcessorStatus, [VerifyProcessorDeployed]),
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-                               self.submit, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
+                               self.submit, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-                               self.resume, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
+                               self.resume, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-                               self.jobs, List[JobDescriptor], [VerifyProcessorDeployed]),
+                               self.jobs, List[Job], [VerifyProcessorDeployed]),
 
-            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/info',
-                               self.job_info, Job, [VerifyUserIsJobOwner]),
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/status',
+                               self.job_status, JobStatus, [VerifyUserIsJobOwner]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/logs',
                                self.job_logs, None, [VerifyUserIsJobOwner]),
@@ -244,25 +256,28 @@ class RTIService:
         with self._mutex:
             return self._deployed[proc_id].status()
 
-    def submit(self, proc_id: str, task_descriptor: dict, request: Request) -> JobDescriptor:
+    def submit(self, proc_id: str, task: Task, request: Request) -> Job:
         with self._mutex:
-            # get the user's identity
+            # get the user's identity and check if it's identical with that's indicated in the task
             iid = request.headers['saasauth-iid']
-            owner: Identity = self._node.db.get_identity(iid)
+            if iid != task.user_iid:
+                raise RTIException(f"Mismatching between user indicated in task and user making request", details={
+                    'iid': iid,
+                    'task': task
+                })
 
             # create job descriptor with a generated job id
-            job_descriptor = JobDescriptor(id=generate_random_string(8), proc_id=proc_id, owner_iid=owner.id,
-                                           task=task_descriptor, retain=self._retain_job_history)
+            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history)
 
             # create working directory or log a warning if it already exists
-            wd_path = os.path.join(self._jobs_path, str(job_descriptor.id))
+            wd_path = os.path.join(self._jobs_path, job.id)
             if os.path.isdir(wd_path):
                 logger.warning(f"job working directory path '{wd_path}' already exists.")
             os.makedirs(wd_path, exist_ok=True)
 
             # write the job descriptor
             job_descriptor_path = os.path.join(wd_path, 'job_descriptor.json')
-            write_json_to_file(job_descriptor.dict(), job_descriptor_path)
+            write_json_to_file(job.dict(), job_descriptor_path)
 
             # create status logger
             status_path = os.path.join(wd_path, 'job_status.json')
@@ -270,31 +285,37 @@ class RTIService:
             status.update_state(State.INITIALISED)
 
             # add the job to the processor queue and return the job descriptor
-            self._deployed[proc_id].add(job_descriptor, status)
-            return job_descriptor
+            self._deployed[proc_id].add(job, status)
+            return job
 
-    def resume(self, proc_id: str, resume_descriptor: ResumeDescriptor) -> JobDescriptor:
+    def resume(self, proc_id: str, job: ResumableJob, request: Request) -> Job:
         with self._mutex:
-            paths = resume_descriptor.paths
+            # get the user's identity and check if it's identical with that's indicated in the task
+            iid = request.headers['saasauth-iid']
+            if iid != job.task.user_iid:
+                raise RTIException(f"Mismatching between user indicated in task and user making request", details={
+                    'iid': iid,
+                    'task': job.task
+                })
 
-            # read the job descriptor
-            job_descriptor_path = os.path.join(paths['local_wd'], 'job_descriptor.json')
-            job_descriptor = JobDescriptor.parse_obj(_try_load_json(job_descriptor_path))
+            # # read the job descriptor
+            # job_descriptor_path = os.path.join(job.paths['local_wd'], 'job_descriptor.json')
+            # job_descriptor = JobDescriptor.parse_obj(_try_load_json(job_descriptor_path))
 
             # create status logger
-            status_path = os.path.join(paths['local_wd'], 'job_status.json')
+            status_path = os.path.join(job.paths['local_wd'], 'job_status.json')
             status = StatusLogger(status_path)
             status.update_state(State.INITIALISED)
 
             # add the job to the processor queue and return the job descriptor
-            self._deployed[proc_id].resume(resume_descriptor, status)
-            return job_descriptor
+            self._deployed[proc_id].resume(job, status)
+            return job
 
-    def jobs(self, proc_id: str) -> List[JobDescriptor]:
+    def jobs(self, proc_id: str) -> List[Job]:
         with self._mutex:
             return self._deployed[proc_id].pending_jobs()
 
-    def job_info(self, job_id: str) -> Job:
+    def job_status(self, job_id: str) -> JobStatus:
         with self._mutex:
             # does the descriptor exist?
             descriptor_path = self.job_descriptor_path(job_id)
@@ -310,18 +331,26 @@ class RTIService:
                     'job_id': job_id
                 })
 
-            # do we have re-connect information?
-            reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
-            if os.path.isfile(reconnect_info_path):
-                reconnect_info = _try_load_json(reconnect_info_path)
-            else:
-                reconnect_info = {}
+            # # do we have re-connect information?
+            # reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
+            # if os.path.isfile(reconnect_info_path):
+            #     reconnect_info = _try_load_json(reconnect_info_path)
+            # else:
+            #     reconnect_info = {}
 
-            # try to load the descriptor and status
-            descriptor = _try_load_json(descriptor_path)
+            # try to load the descriptor and parse it
+            job_content = _try_load_json(descriptor_path)
+            job = ResumableJob.parse_obj(job_content) if 'pid' in job_content else Job.parse_obj(job_content)
+
+            # try to load the status and extract the state
             status = _try_load_json(status_path)
+            if 'state' not in status:
+                raise RTIException("Invalid job status: no state information found", details={
+                    'status': status
+                })
+            state = status['state']
 
-            return Job(descriptor=descriptor, status=status, reconnect_info=reconnect_info)
+            return JobStatus(state=state, status=status, job=job)
 
     def job_logs(self, job_id: str) -> Response:
         # collect log files (if they exist)

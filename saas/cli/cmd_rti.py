@@ -11,16 +11,13 @@ from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import GPPDataObject
 from saas.dor.service import GPP_DATA_TYPE
 from saas.exceptions import UnsuccessfulRequestError
-from saas.helpers import read_json_from_file, validate_json
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
-from saas.rti.schemas import Processor
-from saas.schemas import TaskDescriptor, ProcessorDescriptor, JobDescriptor, TaskOutput, TaskInputReference, \
-    TaskInputValue
+from saas.rti.schemas import Processor, ProcessorStatus, Task, Job
+from saas.dor.schemas import GPPDataObject, ProcessorDescriptor
 
 logger = Logging.get('cli.rti')
 
@@ -221,10 +218,10 @@ class RTIProcStatus(CLICommand):
             for item in deployed:
                 proc_id = item.proc_id
 
-                status = rti.get_status(proc_id)
+                status: ProcessorStatus = rti.get_status(proc_id)
                 print(f"{proc_id}:{item.gpp.proc_descriptor.name} [{status.state.upper()}] "
-                      f"pending={[s.job_id for s in status.pending]} "
-                      f"active={status.active.job_id if status.active else '(none)'}")
+                      f"pending={[s.job.id for s in status.pending]} "
+                      f"active={status.active.job.id if status.active else '(none)'}")
 
 
 class RTIJobSubmit(CLICommand):
@@ -276,8 +273,8 @@ class RTIJobSubmit(CLICommand):
         if not self._proc_choices:
             raise CLIRuntimeError(f"No processors deployed at {self._address[0]}:{self._address[1]}. Aborting.")
 
-    def _create_job_input(self, proc_descriptor: ProcessorDescriptor) -> List[Union[TaskInputReference,
-                                                                                    TaskInputValue]]:
+    def _create_job_input(self, proc_descriptor: ProcessorDescriptor) -> List[Union[Task.InputReference,
+                                                                                    Task.InputValue]]:
         job_input = []
         for item in proc_descriptor.input:
             selection = prompt_for_selection([Choice('value', 'by-value'), Choice('reference', 'by-reference')],
@@ -312,7 +309,7 @@ class RTIJobSubmit(CLICommand):
                                 'schema': item.data_schema
                             })
 
-                    job_input.append(TaskInputValue(name=item.name, type='value', value=content))
+                    job_input.append(Task.InputValue(name=item.name, type='value', value=content))
                     break
 
             else:
@@ -331,11 +328,11 @@ class RTIJobSubmit(CLICommand):
                                               message=f"Select the data object to be used for input '{item.name}':",
                                               allow_multiple=False)
 
-                job_input.append(TaskInputReference(name=item.name, type='reference', obj_id=obj_id))
+                job_input.append(Task.InputReference(name=item.name, type='reference', obj_id=obj_id))
 
         return job_input
 
-    def _create_job_output(self, proc_descriptor: ProcessorDescriptor) -> List[TaskOutput]:
+    def _create_job_output(self, proc_descriptor: ProcessorDescriptor) -> List[Task.Output]:
         # select the owner for the output data objects
         owner = prompt_for_selection(list(self._identity_choices.values()),
                                      message="Select the owner for the output data objects:",
@@ -353,7 +350,7 @@ class RTIJobSubmit(CLICommand):
         # create the job output
         job_output = []
         for item in proc_descriptor.output:
-            job_output.append(TaskOutput(
+            job_output.append(Task.Output(
                 name=item.name, owner_iid=owner.id, restricted_access=restricted_access, content_encrypted=False,
                 target_node_iid=target.identity.id
             ))
@@ -374,7 +371,7 @@ class RTIJobSubmit(CLICommand):
 
             try:
                 # read the job descriptor
-                job_descriptor = JobDescriptor.parse_file(args['job'])
+                job_descriptor = Job.parse_file(args['job'])
             except ValidationError:
                 raise CLIRuntimeError(f"Invalid job descriptor. Aborting.")
 
@@ -421,10 +418,9 @@ class RTIJobStatus(CLICommand):
         prompt_if_missing(args, 'job-id', prompt_for_string, message='Enter the job id:')
 
         try:
-            job = rti.get_job_info(args['job-id'], with_authorisation_by=keystore)
-            print(f"Job descriptor: {json.dumps(job.descriptor.dict(), indent=4)}")
-            print(f"Status: {json.dumps(job.status, indent=4)}")
-            print(f"Reconnect: {json.dumps(job.reconnect_info, indent=4)}")
+            info = rti.get_job_status(args['job-id'], with_authorisation_by=keystore)
+            print(f"Job descriptor: {json.dumps(info.job.dict(), indent=4)}")
+            print(f"Status: {json.dumps(info.status, indent=4)}")
 
         except UnsuccessfulRequestError:
             print(f"Job {args['job-id']} not found.")

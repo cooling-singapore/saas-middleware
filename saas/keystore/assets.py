@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.dor.schemas import GithubCredentials, SSHCredentials
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
 from saas.keystore.exceptions import KeystoreException
 
 

@@ -8,7 +8,7 @@ import sys
 from abc import abstractmethod, ABC
 from argparse import ArgumentParser
 from json import JSONDecodeError
-from typing import Optional, Union, List, Any, Dict
+from typing import Optional, Union, List, Any
 
 from InquirerPy import inquirer
 from InquirerPy.base import Choice
@@ -16,15 +16,15 @@ from pydantic import ValidationError
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import Tag, CDataObject, GPPDataObject, DataObject
 from saas.dor.service import GPP_DATA_TYPE
 from saas.exceptions import UnsuccessfulRequestError, SaaSException
-from saas.keystore.exceptions import KeystoreException
 from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore, KeystoreContent
+from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.dor.schemas import DataObject, GPPDataObject
 from saas.nodedb.schemas import NodeInfo
+from saas.keystore.schemas import KeystoreContent
 
 logger = Logging.get('cli.helpers')
 
@@ -226,7 +226,7 @@ def prompt_for_confirmation(message: str, default: bool) -> bool:
     return inquirer.confirm(message=message, default=default).execute()
 
 
-def deserialise_tag_value(tag: Tag) -> Tag:
+def deserialise_tag_value(tag: DataObject.Tag) -> DataObject.Tag:
     if tag.value.isdigit():
         tag.value = int(tag.value)
 
@@ -245,7 +245,7 @@ def deserialise_tag_value(tag: Tag) -> Tag:
     return tag
 
 
-def prompt_for_tags(message: str) -> List[Tag]:
+def prompt_for_tags(message: str) -> List[DataObject.Tag]:
     answers = []
     while True:
         answer = prompt_for_string(message, allow_empty=True)
@@ -256,11 +256,11 @@ def prompt_for_tags(message: str) -> List[Tag]:
             print(f"Invalid tag. Use key=value form. Must not contain more than one '=' character. Try again...")
 
         elif answer.count('=') == 0:
-            answers.append(Tag(key=answer))
+            answers.append(DataObject.Tag(key=answer))
 
         else:
             answer = answer.split('=')
-            answers.append(deserialise_tag_value(Tag(key=answer[0], value=answer[1])))
+            answers.append(deserialise_tag_value(DataObject.Tag(key=answer[0], value=answer[1])))
 
 
 def prompt_for_data_objects(address: (str, int), message: str, filter_by_owner: Identity = None,

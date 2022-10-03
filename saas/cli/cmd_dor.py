@@ -14,11 +14,11 @@ from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for
     deserialise_tag_value
 from saas.cryptography.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import GithubCredentials, Tag
 from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
-from saas.schemas import ProcessorDescriptor
+from saas.dor.schemas import ProcessorDescriptor, DataObject
+from saas.keystore.schemas import GithubCredentials
 
 logger = Logging.get('cli.dor')
 
@@ -95,7 +95,7 @@ class DORAdd(CLICommand):
 
         # do some simple tagging
         dor.update_tags(obj_id, keystore, [
-            Tag(key='name', value=os.path.basename(args['file'][0]))
+            DataObject.Tag(key='name', value=os.path.basename(args['file'][0]))
         ])
 
         # if we used encryption, store the content key
@@ -369,10 +369,10 @@ class DORTag(CLICommand):
                 if tag.count('=') > 1:
                     print(f"Invalid tag '{tag}'. Ignoring.")
                 elif tag.count('=') == 0:
-                    valid_tags.append(Tag(key=tag))
+                    valid_tags.append(DataObject.Tag(key=tag))
                 else:
                     tag = tag.split("=")
-                    valid_tags.append(deserialise_tag_value(Tag(key=tag[0], value=tag[1])))
+                    valid_tags.append(deserialise_tag_value(DataObject.Tag(key=tag[0], value=tag[1])))
 
         else:
             valid_tags = prompt_for_tags("Enter a tag (key=value) or press return if done:")

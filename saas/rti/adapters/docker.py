@@ -11,7 +11,6 @@ from typing import Optional
 
 import paramiko
 from saas.exceptions import SaaSException
-from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.helpers import write_json_to_file
 
 import docker
@@ -22,7 +21,9 @@ import saas.rti.adapters.base as base
 from saas.log import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.status import StatusLogger
-from saas.schemas import GitProcessorPointer, ResumeDescriptor, TaskDescriptor
+from saas.rti.schemas import Task, ResumableJob
+from saas.dor.schemas import GitProcessorPointer
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
 logger = Logging.get('rti.adapters.docker')
 
@@ -189,7 +190,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, task_descriptor: TaskDescriptor, working_directory: str, retain_job: bool,
+    def execute(self, job_id: str, task_descriptor: Task, working_directory: str, retain_job: bool,
                 status: StatusLogger) -> None:
         try:
             with self.get_docker_client() as client:
@@ -227,17 +228,14 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
             # store reconnect information
             # set pid as container id
-            reconnect_info = ResumeDescriptor(job_id=job_id,
-                                              pid=self.container.id,
-                                              pid_paths=dict(),
-                                              paths={"working_directory": full_working_directory},
-                                              task_descriptor=task_descriptor,
-                                              retain_job=False)
+            resuamble = ResumableJob(id=job_id, task=task_descriptor, retain_job=False,
+                                     paths={"working_directory": full_working_directory},
+                                     pid=self.container.id, pid_paths=dict())
             reconnect_info_path = os.path.join(working_directory, 'job_reconnect.json')
-            write_json_to_file(reconnect_info.dict(), reconnect_info_path)
+            write_json_to_file(resuamble.dict(), reconnect_info_path)
 
             # try to monitor the job by (re)connecting to it
-            self.connect_and_monitor(reconnect_info, status)
+            self.connect_and_monitor(resuamble, status)
 
         except SaaSException:
             raise
@@ -253,13 +251,13 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             if self.container is not None:
                 self.container.remove()
 
-    def connect_and_monitor(self, reconnect_info: ResumeDescriptor, status: StatusLogger) -> None:
+    def connect_and_monitor(self, job: ResumableJob, status: StatusLogger) -> None:
         # Retrieve container from descriptor if not found
         if self.container is None:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
                 # FIXME: What happens if the job has completed successfully and container has already been removed.
-                self.container = client.containers.get(reconnect_info.pid)
+                self.container = client.containers.get(job.pid)
         try:
             # Will only continue monitoring if container is still running.
             # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
@@ -277,9 +275,9 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                         if line.startswith('trigger:output'):
                             executor.submit(self._handle_trigger_output,
                                             line, status,
-                                            reconnect_info.job_id,
-                                            reconnect_info.task_descriptor,
-                                            reconnect_info.paths["working_directory"]
+                                            job.id,
+                                            job.task,
+                                            job.paths["working_directory"]
                                             )
 
                         if line.startswith('trigger:progress'):
@@ -288,9 +286,9 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
-                'job_id': reconnect_info.job_id,
-                'job_descriptor': reconnect_info.task_descriptor,
-                'working_directory': reconnect_info.paths["working_directory"],
+                'job_id': job.id,
+                'task': job.task.dict(),
+                'working_directory': job.paths["working_directory"],
                 'trace': trace
             })
         finally:
@@ -306,7 +304,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             remove_host_from_ssh_config(self._proc_id)
 
     def _handle_trigger_output(self, line: str, status: StatusLogger, job_id: str,
-                               task_descriptor: TaskDescriptor, working_directory: str) -> None:
+                               task_descriptor: Task, working_directory: str) -> None:
         obj_name = line.split(':')[2]
         try:
             status.update(f"process_output:{obj_name}", 'started')

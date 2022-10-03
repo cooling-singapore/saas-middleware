@@ -4,7 +4,7 @@ import unittest
 import logging
 import os
 
-from saas.dor.schemas import GithubCredentials, SSHCredentials
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
 from saas.keystore.keystore import Keystore
 from saas.log import Logging
 

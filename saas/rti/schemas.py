@@ -1,21 +1,52 @@
-from enum import Enum, unique
-from typing import Optional
+from typing import Literal, Optional, List, Union, Dict
 
 from pydantic import BaseModel
 
-from saas.schemas import JobDescriptor, GitProcessorPointer
+from saas.dor.schemas import GitProcessorPointer
 
 
-class DeployParameters(BaseModel):
-    @unique
-    class ProcessorDeploymentType(str, Enum):
-        native = 'native'
-        docker = 'docker'
+class Task(BaseModel):
+    class InputReference(BaseModel):
+        name: str
+        type: Literal["reference"]
+        obj_id: str
+        user_signature: Optional[str]
+        c_hash: Optional[str]
 
-    deployment: ProcessorDeploymentType
-    ssh_credentials: Optional[str]
-    github_credentials: Optional[str]
-    gpp_custodian: Optional[str]
+    class InputValue(BaseModel):
+        name: str
+        type: Literal["value"]
+        value: dict
+
+    class Output(BaseModel):
+        name: str
+        owner_iid: str
+        restricted_access: bool
+        content_encrypted: bool
+        target_node_iid: Optional[str]
+
+    proc_id: str
+    user_iid: str
+    input: List[Union[InputReference, InputValue]]
+    output: List[Output]
+
+
+class Job(BaseModel):
+    id: str
+    task: Task
+    retain: bool
+
+
+class ResumableJob(Job):
+    paths: Dict[str, str]
+    pid: str
+    pid_paths: Dict[str, str]
+
+
+class JobStatus(BaseModel):
+    state: str
+    status: dict
+    job: Union[Job, ResumableJob]
 
 
 class Processor(BaseModel):
@@ -23,12 +54,7 @@ class Processor(BaseModel):
     gpp: GitProcessorPointer
 
 
-class Job(BaseModel):
-    descriptor: JobDescriptor
-    status: dict
-    reconnect_info: Optional[dict]
-
-
-class Permission(BaseModel):
-    req_id: str
-    content_key: str
+class ProcessorStatus(BaseModel):
+    state: str
+    pending: List[JobStatus]
+    active: Optional[JobStatus]

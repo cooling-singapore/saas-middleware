@@ -4,14 +4,13 @@ import os
 import string
 
 from threading import Lock
-from typing import Any, Dict
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from saas.cryptography.eckeypair import ECKeyPair
 from saas.cryptography.helpers import hash_json_object
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.dor.schemas import GithubCredentials, SSHCredentials
+from saas.keystore.schemas import GithubCredentials, SSHCredentials, KeystoreContent
 from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
 from saas.keystore.assets import MasterKeyPairAsset, KeyPairAsset, ContentKeysAsset, SSHCredentialsAsset, \
     GithubCredentialsAsset
@@ -20,19 +19,6 @@ from saas.keystore.identity import generate_identity_token, Identity
 from saas.log import Logging
 
 logger = Logging.get('keystore.Keystore')
-
-
-class KeystoreProfile(BaseModel):
-    name: str
-    email: str
-
-
-class KeystoreContent(BaseModel):
-    iid: str
-    profile: KeystoreProfile
-    nonce: int
-    signature: str
-    assets: Dict[str, Any]
 
 
 class Keystore:

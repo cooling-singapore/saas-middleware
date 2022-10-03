@@ -1,16 +1,6 @@
-from typing import Optional, List, Dict, Union
+from typing import List, Optional, Dict, Union
 
 from pydantic import BaseModel
-
-from saas.schemas import GitProcessorPointer
-
-
-class SearchParameters(BaseModel):
-    patterns: Optional[List[str]]
-    owner_iid: Optional[str]
-    data_type: Optional[str]
-    data_format: Optional[str]
-    c_hashes: Optional[List[str]]
 
 
 class DORStatistics(BaseModel):
@@ -19,16 +9,25 @@ class DORStatistics(BaseModel):
     tag_keys: List[str]
 
 
-class GithubCredentials(BaseModel):
-    login: str
-    personal_access_token: str
+class ProcessorDescriptor(BaseModel):
+    class IODataObject(BaseModel):
+        name: str
+        data_type: str
+        data_format: str
+        data_schema: Optional[dict]
+
+    name: str
+    input: List[IODataObject]
+    output: List[IODataObject]
+    configurations: List[str]
 
 
-class SSHCredentials(BaseModel):
-    host: str
-    login: str
-    key: str
-    key_is_password: bool
+class GitProcessorPointer(BaseModel):
+    source: str
+    commit_id: str
+    proc_path: str
+    proc_config: str
+    proc_descriptor: ProcessorDescriptor
 
 
 class CObjectNode(BaseModel):
@@ -62,6 +61,10 @@ class DataObject(BaseModel):
         timestamp: int
         creators_iid: List[str]
 
+    class Tag(BaseModel):
+        key: str
+        value: Optional[Union[str, int, float, bool, List, Dict]]
+
     obj_id: str
     c_hash: str
     data_type: str
@@ -70,48 +73,20 @@ class DataObject(BaseModel):
     owner_iid: str
     access_restricted: bool
     access: List[str]
-    tags: dict
+    tags: Dict[str, Union[str, int, float, bool, List, Dict]]
 
 
 class GPPDataObject(DataObject):
     gpp: GitProcessorPointer
 
 
-class DataObjectLicense(BaseModel):
-    by: bool  # if True -> must credit creators
-    sa: bool  # if True -> adaptations (derivatives) must use same terms
-    nc: bool  # if True -> must not be used for commercial purposes
-    nd: bool  # if True -> not allowed to create derivatives
-
-
 class CDataObject(DataObject):
+    class License(BaseModel):
+        by: bool  # if True -> must credit creators
+        sa: bool  # if True -> adaptations (derivatives) must use same terms
+        nc: bool  # if True -> must not be used for commercial purposes
+        nd: bool  # if True -> not allowed to create derivatives
+
     content_encrypted: bool
-    license: DataObjectLicense
+    license: License
     recipe: Optional[DataObjectRecipe]
-
-
-class AddDataObjectParameters(BaseModel):
-    owner_iid: str
-    creators_iid: List[str]
-
-
-class AddGPPDataObjectParameters(AddDataObjectParameters):
-    source: str
-    commit_id: str
-    proc_path: str
-    proc_config: str
-    github_credentials: Optional[GithubCredentials]
-
-
-class AddCDataObjectParameters(AddDataObjectParameters):
-    data_type: str
-    data_format: str
-    access_restricted: bool
-    content_encrypted: bool
-    license: DataObjectLicense
-    recipe: Optional[DataObjectRecipe]
-
-
-class Tag(BaseModel):
-    key: str
-    value: Optional[Union[str, int, float, bool, List, Dict]]

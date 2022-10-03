@@ -7,8 +7,8 @@ from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, get_available_keystores, \
     prompt_for_confirmation, prompt_for_password, prompt_if_missing, prompt_for_keystore_selection, \
     prompt_for_selection, load_keystore, extract_address
-from saas.dor.schemas import SSHCredentials, GithubCredentials
-from saas.keystore.keystore import Keystore, KeystoreContent
+from saas.keystore.schemas import GithubCredentials, SSHCredentials, KeystoreContent
+from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
 
