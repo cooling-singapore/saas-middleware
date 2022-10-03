@@ -9,7 +9,7 @@ import traceback
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, List
+from typing import Optional, List, Tuple, Union
 
 from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_object
 from saas.cryptography.keypair import KeyPair
@@ -29,7 +29,8 @@ from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputD
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException
 
 from saas.rti.status import State, StatusLogger
-from saas.schemas import GitProcessorPointer, ProcessorStatus, JobStatus, JobDescriptor, TaskDescriptor
+from saas.schemas import GitProcessorPointer, ProcessorStatus, JobStatus, JobDescriptor, TaskDescriptor, \
+    ResumeDescriptor
 
 logger = Logging.get('rti.adapters')
 
@@ -338,8 +339,8 @@ class RTIProcessorAdapter(Thread, ABC):
 
         self._input_interface = {item.name: item for item in gpp.proc_descriptor.input}
         self._output_interface = {item.name: item for item in gpp.proc_descriptor.output}
-        self._pending = []
-        self._active = None
+        self._pending: List[Tuple[str, Union[JobDescriptor, ResumeDescriptor], StatusLogger]] = []
+        self._active: Optional[Union[JobDescriptor, ResumeDescriptor]] = None
         self._state = ProcessorState.UNINITIALISED
 
     @property
@@ -363,8 +364,12 @@ class RTIProcessorAdapter(Thread, ABC):
         pass
 
     @abstractmethod
-    def execute(self, job_id: str, task_descriptor: TaskDescriptor, working_directory: str,
+    def execute(self, job_id: str, task_descriptor: TaskDescriptor, working_directory: str, retain_job: bool,
                 status: StatusLogger) -> None:
+        pass
+
+    @abstractmethod
+    def connect_and_monitor(self, reconnect_info: ResumeDescriptor, status: StatusLogger) -> None:
         pass
 
     def stop(self) -> None:
@@ -379,8 +384,8 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             return ProcessorStatus(
                 state=self._state.value,
-                pending=[JobStatus(job_id=item[0]['id'], task=item[0]['task']) for item in self._pending],
-                active=JobStatus(job_id=self._active['id'], task=self._active['task']) if self._active else None
+                pending=[JobStatus(job_id=job.id, task=job.task) for _, job, _ in self._pending],
+                active=JobStatus(job_id=self._active.id, task=self._active.task) if self._active else None
             )
 
     def pre_execute(self, job_id: str, task_descriptor: TaskDescriptor, working_directory: str,
@@ -420,11 +425,22 @@ class RTIProcessorAdapter(Thread, ABC):
                     'job_descriptor': job_descriptor.dict()
                 })
 
-            self._pending.append((job_descriptor, status))
+            self._pending.append(("new", job_descriptor, status))
+
+    def resume(self, reconnect_info: ResumeDescriptor, status: StatusLogger) -> None:
+        with self._mutex:
+            # are we accepting jobs?
+            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+                raise ProcessorNotAcceptingJobsError({
+                    'proc_id': self._proc_id,
+                    'reconnect_info': reconnect_info
+                })
+
+            self._pending.append(('resume', reconnect_info, status))
 
     def pending_jobs(self) -> List[JobDescriptor]:
         with self._mutex:
-            return [job_descriptor for job_descriptor, _ in self._pending]
+            return [job_descriptor for _, job_descriptor, _ in self._pending]
 
     def run(self) -> None:
         try:
@@ -454,28 +470,40 @@ class RTIProcessorAdapter(Thread, ABC):
                 break
 
             # process a job
-            job_descriptor: JobDescriptor = pending_job[0]
-            status: StatusLogger = pending_job[1]
+            job_type, job_descriptor, status = pending_job
             self._active = job_descriptor
             self._state = ProcessorState.BUSY
 
             # set job state
             status.update_state(State.RUNNING)
-
             job_id = str(job_descriptor.id)
-            task_descriptor = job_descriptor.task
             wd_path = os.path.join(self._job_wd_path, job_id)
 
             try:
-                # perform pre-execute routine
-                self.pre_execute(job_id, task_descriptor, wd_path, status)
+                if job_type == 'new':
+                    # perform pre-execute routine
+                    task_descriptor = job_descriptor.task
+                    self.pre_execute(job_id, task_descriptor, wd_path, status)
 
-                # instruct processor adapter to execute the job
-                self.execute(job_id, task_descriptor, wd_path, status)
+                    # instruct processor adapter to execute the job
+                    self.execute(job_id, task_descriptor, wd_path, job_descriptor.retain, status)
+
+                elif job_type == 'resume':
+                    # instruct processor adapter to resume the job
+                    self.connect_and_monitor(job_descriptor, status)
+
+                else:
+                    raise SaaSException(f"unexpected job type '{pending_job[0]}'")
 
                 # perform post-execute routine
                 self.post_execute(job_id)
 
+            except RunCommandError as e:
+                status.update('error', f"timeout while running job:\n"
+                                       f"id: {e.id}\n"
+                                       f"reason: {e.reason}\n"
+                                       f"details: {e.details}")
+                status.update_state(State.TIMEOUT)
             except SaaSException as e:
                 status.update('error', f"error while running job:\n"
                                        f"id: {e.id}\n"
@@ -522,7 +550,7 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] shut down.")
         self._state = ProcessorState.STOPPED
 
-    def _wait_for_pending_job(self) -> Optional[tuple[JobDescriptor, StatusLogger]]:
+    def _wait_for_pending_job(self) -> Optional[tuple[str, Union[JobDescriptor, ResumeDescriptor], StatusLogger]]:
         while True:
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
@@ -531,16 +559,15 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 # if there is a job, return it
                 elif len(self._pending) > 0:
-                    job_descriptor, status = self._pending.pop(0)
-                    return job_descriptor, status
+                    return self._pending.pop(0)
 
             time.sleep(0.1)
 
     def _purge_pending_jobs(self) -> None:
         with self._mutex:
             while len(self._pending) > 0:
-                job_descriptor, status = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_descriptor}")
+                job_type, job_descriptor, _ = self._pending.pop(0)
+                logger.info(f"purged pending job: {job_type} {job_descriptor}")
 
     def _lookup_reference_input_data_objects(self, task_descriptor: TaskDescriptor, status: StatusLogger) -> dict:
         status.update('step', f"lookup by-reference input data objects")

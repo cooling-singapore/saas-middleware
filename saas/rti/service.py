@@ -20,6 +20,7 @@ from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
+import saas.rti.adapters.docker as docker_rti
 from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
 from saas.rest.schemas import EndpointDefinition
 from saas.rti.adapters.base import RTIProcessorAdapter
@@ -27,7 +28,7 @@ from saas.rti.exceptions import JobStatusNotFoundError, JobDescriptorNotFoundErr
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
 from saas.rti.schemas import Permission, DeployParameters, Job, Processor
 from saas.rti.status import StatusLogger, State
-from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer
+from saas.schemas import ProcessorStatus, JobDescriptor, GitProcessorPointer, ResumeDescriptor
 
 logger = Logging.get('rti.service')
 
@@ -127,6 +128,9 @@ class RTIService:
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.submit, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
+            EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
+                               self.resume, JobDescriptor, [VerifyProcessorDeployed, VerifyAuthorisation]),
+
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.jobs, List[JobDescriptor], [VerifyProcessorDeployed]),
 
@@ -199,17 +203,9 @@ class RTIService:
 
             elif p.deployment == 'docker':
                 # create a Docker RTI adapter instance
-                processor = None
-                # self._deployed[proc_id] = \
-                #     docker_rti.RTIDockerProcessorAdapter(proc_id, gpp, content_path, self._jobs_path,
-                #                                          self._node)
-                #
-                # # start the processor
-                # processor = self._deployed[proc_id]
-                # processor.start()
-                #
-                # # return the descriptor
-                # return meta['gpp']['proc_descriptor']
+                processor = docker_rti.RTIDockerProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
+                                                                 ssh_credentials=ssh_credentials,
+                                                                 github_credentials=github_credentials)
 
         # register and start the instance as deployed
         self._deployed[proc_id] = processor
@@ -277,6 +273,23 @@ class RTIService:
             self._deployed[proc_id].add(job_descriptor, status)
             return job_descriptor
 
+    def resume(self, proc_id: str, resume_descriptor: ResumeDescriptor) -> JobDescriptor:
+        with self._mutex:
+            paths = resume_descriptor.paths
+
+            # read the job descriptor
+            job_descriptor_path = os.path.join(paths['local_wd'], 'job_descriptor.json')
+            job_descriptor = JobDescriptor.parse_obj(_try_load_json(job_descriptor_path))
+
+            # create status logger
+            status_path = os.path.join(paths['local_wd'], 'job_status.json')
+            status = StatusLogger(status_path)
+            status.update_state(State.INITIALISED)
+
+            # add the job to the processor queue and return the job descriptor
+            self._deployed[proc_id].resume(resume_descriptor, status)
+            return job_descriptor
+
     def jobs(self, proc_id: str) -> List[JobDescriptor]:
         with self._mutex:
             return self._deployed[proc_id].pending_jobs()
@@ -297,10 +310,18 @@ class RTIService:
                     'job_id': job_id
                 })
 
+            # do we have re-connect information?
+            reconnect_info_path = os.path.join(self._jobs_path, job_id, 'job_reconnect.json')
+            if os.path.isfile(reconnect_info_path):
+                reconnect_info = _try_load_json(reconnect_info_path)
+            else:
+                reconnect_info = {}
+
             # try to load the descriptor and status
             descriptor = _try_load_json(descriptor_path)
             status = _try_load_json(status_path)
-            return Job(descriptor=descriptor, status=status)
+
+            return Job(descriptor=descriptor, status=status, reconnect_info=reconnect_info)
 
     def job_logs(self, job_id: str) -> Response:
         # collect log files (if they exist)
