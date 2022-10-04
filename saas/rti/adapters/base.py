@@ -9,13 +9,13 @@ import traceback
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple
 
 from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_object
 from saas.cryptography.keypair import KeyPair
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.exceptions import RunCommandError, SaaSException
+from saas.exceptions import RunCommandError, SaaSException, ExceptionContent
 from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
     generate_random_string
 from saas.log import Logging
@@ -25,9 +25,9 @@ from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException
+from saas.rti.helpers import JobContext
 
-from saas.rti.status import State, StatusLogger
-from saas.rti.schemas import Task, JobStatus, ProcessorStatus, Job, ResumableJob
+from saas.rti.schemas import JobStatus, ProcessorStatus, Job
 from saas.dor.schemas import GitProcessorPointer, DataObject
 from saas.nodedb.schemas import NodeInfo
 from saas.keystore.schemas import SSHCredentials
@@ -339,8 +339,8 @@ class RTIProcessorAdapter(Thread, ABC):
 
         self._input_interface = {item.name: item for item in gpp.proc_descriptor.input}
         self._output_interface = {item.name: item for item in gpp.proc_descriptor.output}
-        self._pending: List[Tuple[str, Union[Job, ResumableJob], StatusLogger]] = []
-        self._active: Optional[Union[Job, ResumableJob]] = None
+        self._pending: List[Tuple[str, JobContext]] = []
+        self._active: Optional[JobContext] = None
         self._state = ProcessorState.UNINITIALISED
 
     @property
@@ -364,12 +364,11 @@ class RTIProcessorAdapter(Thread, ABC):
         pass
 
     @abstractmethod
-    def execute(self, job_id: str, task_descriptor: Task, working_directory: str, retain_job: bool,
-                status: StatusLogger) -> None:
+    def execute(self, working_directory: str, context: JobContext) -> None:
         pass
 
     @abstractmethod
-    def connect_and_monitor(self, job: ResumableJob, status: StatusLogger) -> None:
+    def connect_and_monitor(self, context: JobContext) -> None:
         pass
 
     def stop(self) -> None:
@@ -384,63 +383,66 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             return ProcessorStatus(
                 state=self._state.value,
-                pending=[JobStatus(job_id=job.id, task=job.task) for _, job, _ in self._pending],
-                active=JobStatus(job_id=self._active.id, task=self._active.task) if self._active else None
+                pending=[context.job for _, context in self._pending],
+                active=self._active.job if self._active else None
             )
 
-    def pre_execute(self, job_id: str, task_descriptor: Task, working_directory: str,
-                    status: StatusLogger) -> None:
+    def pre_execute(self, working_directory: str, context: JobContext) -> None:
 
-        logger.info(f"[adapter:{self._proc_id}][{job_id}] perform pre-execute routine...")
+        logger.info(f"[adapter:{self._proc_id}][{context.job.id}] perform pre-execute routine...")
 
         # store by-value input data objects (if any)
-        self._store_value_input_data_objects(task_descriptor, working_directory, status)
+        self._store_value_input_data_objects(working_directory, context)
 
         # lookup by-reference input data objects (if any)
-        obj_records = self._lookup_reference_input_data_objects(task_descriptor, status)
+        obj_records = self._lookup_reference_input_data_objects(context)
 
         # fetch by-reference input data objects (if any)
         ephemeral_key = RSAKeyPair.create_new()
-        pending_content_keys = self._fetch_reference_input_data_objects(ephemeral_key, task_descriptor, obj_records,
-                                                                        working_directory, status)
+        pending_content_keys = self._fetch_reference_input_data_objects(ephemeral_key, obj_records,
+                                                                        working_directory, context)
 
         # decrypt by-reference input data objects (if any)
-        self._decrypt_reference_input_data_objects(ephemeral_key, pending_content_keys, status)
+        self._decrypt_reference_input_data_objects(ephemeral_key, pending_content_keys, context)
 
         # verify that data types of input data objects match
-        self._verify_inputs(task_descriptor, working_directory, status)
+        self._verify_inputs(working_directory, context)
 
         # verify the output owner identities
-        self._verify_outputs(task_descriptor, status)
+        self._verify_outputs(context)
 
     def post_execute(self, job_id: str) -> None:
         logger.info(f"[adapter:{self._proc_id}][{job_id}] perform post-execute routine...")
 
-    def add(self, job: Job, status: StatusLogger) -> None:
+    def add(self, context: JobContext) -> None:
         with self._mutex:
             # are we accepting jobs?
             if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
                 raise ProcessorNotAcceptingJobsError({
                     'proc_id': self._proc_id,
-                    'job': job.dict()
+                    'job': context.job.dict()
                 })
 
-            self._pending.append(("new", job, status))
+            self._pending.append(("new", context))
 
-    def resume(self, job: ResumableJob, status: StatusLogger) -> None:
+    def resume(self, context: JobContext) -> None:
         with self._mutex:
             # are we accepting jobs?
             if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
                 raise ProcessorNotAcceptingJobsError({
                     'proc_id': self._proc_id,
-                    'job': job.dict()
+                    'job': context.job.dict()
                 })
 
-            self._pending.append(('resume', job, status))
+            self._pending.append(('resume', context))
 
-    def pending_jobs(self) -> List[Union[Job, ResumableJob]]:
+    def pending_jobs(self) -> List[Job]:
         with self._mutex:
-            return [job for _, job, _ in self._pending]
+            return [context.job for _, context in self._pending]
+
+    def active_job(self) -> Optional[Job]:
+        with self._mutex:
+            return self._active.job if self._active else None
 
     def run(self) -> None:
         try:
@@ -470,61 +472,57 @@ class RTIProcessorAdapter(Thread, ABC):
                 break
 
             # process a job
-            job_type, job, status = pending_job
-            self._active = job
+            job_type, context = pending_job
+            self._active = context
             self._state = ProcessorState.BUSY
 
             # set job state
-            status.update_state(State.RUNNING)
-            wd_path = os.path.join(self._job_wd_path, job.id)
+            context.state = JobStatus.State.RUNNING
+            wd_path = os.path.join(self._job_wd_path, context.job.id)
 
             try:
                 if job_type == 'new':
                     # perform pre-execute routine
-                    task_descriptor = job.task
-                    self.pre_execute(job.id, task_descriptor, wd_path, status)
+                    self.pre_execute(wd_path, context)
 
                     # instruct processor adapter to execute the job
-                    self.execute(job.id, task_descriptor, wd_path, job.retain, status)
+                    self.execute(wd_path, context)
 
                 elif job_type == 'resume':
                     # instruct processor adapter to resume the job
-                    self.connect_and_monitor(job, status)
+                    self.connect_and_monitor(context)
 
                 else:
                     raise SaaSException(f"unexpected job type '{pending_job[0]}'")
 
                 # perform post-execute routine
-                self.post_execute(job.id)
+                self.post_execute(context.job.id)
 
             except RunCommandError as e:
-                status.update('error', f"timeout while running job:\n"
-                                       f"id: {e.id}\n"
-                                       f"reason: {e.reason}\n"
-                                       f"details: {e.details}")
-                status.update_state(State.TIMEOUT)
+                context.add_error('timeout while running job', e.content())
+                context.state = JobStatus.State.TIMEOUT
+
             except SaaSException as e:
-                status.update('error', f"error while running job:\n"
-                                       f"id: {e.id}\n"
-                                       f"reason: {e.reason}\n"
-                                       f"details: {e.details}")
-                status.update_state(State.FAILED)
+                context.add_error('error while running job', e.content())
+                context.state = JobStatus.State.FAILED
 
             except Exception as e:
                 trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                status.update('error', f"unexpected exception while running job:\n"
-                                       f"exception: {e} {trace}")
-                status.update_state(State.FAILED)
+                context.add_error('unexpected exception while running job',
+                                  ExceptionContent(id='none', reason=f"{e}", details={
+                                      'trace': trace
+                                  }))
+                context.state = JobStatus.State.FAILED
 
             else:
-                status.update_state(State.SUCCESSFUL)
+                context.state = JobStatus.State.SUCCESSFUL
 
             # if the job history is not to be retained, delete its contents (with exception of the status and
             # the job descriptor)
-            if not job.retain:
+            if not context.job.retain:
                 exclusions = ['job_descriptor.json', 'job_status.json', '.sh.stderr', '.sh.stdout']
-                logger.info(f"[adapter:{self._proc_id}][{job.id}] delete working directory contents at {wd_path} "
-                            f"(exclusions: {exclusions})...")
+                logger.info(f"[adapter:{self._proc_id}][{context.job.id}] delete working directory contents "
+                            f"at {wd_path} (exclusions: {exclusions})...")
 
                 # collect all files in the directory
                 files = os.listdir(wd_path)
@@ -549,7 +547,7 @@ class RTIProcessorAdapter(Thread, ABC):
         logger.info(f"[adapter:{self._proc_id}] shut down.")
         self._state = ProcessorState.STOPPED
 
-    def _wait_for_pending_job(self) -> Optional[tuple[str, Union[Job, ResumableJob], StatusLogger]]:
+    def _wait_for_pending_job(self) -> Optional[tuple[str, JobContext]]:
         while True:
             with self._mutex:
                 # if the adapter has become inactive, return immediately.
@@ -565,22 +563,22 @@ class RTIProcessorAdapter(Thread, ABC):
     def _purge_pending_jobs(self) -> None:
         with self._mutex:
             while len(self._pending) > 0:
-                job_type, job, _ = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_type} {job}")
+                job_type, status_logger = self._pending.pop(0)
+                logger.info(f"purged pending job: {job_type} {status_logger.content().job}")
 
-    def _lookup_reference_input_data_objects(self, task_descriptor: Task, status: StatusLogger) -> dict:
-        status.update('step', f"lookup by-reference input data objects")
+    def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
+        context.make_note('step', f"lookup by-reference input data objects")
 
         # do we have any by-reference input data objects in the first place?
         pending = {item.obj_id: item.user_signature if item.user_signature else None
-                   for item in task_descriptor.input if item.type == 'reference'}
+                   for item in context.job.task.input if item.type == 'reference'}
         if len(pending) == 0:
             return {}
 
         # get the user identity
-        user = self._node.db.get_identity(task_descriptor.user_iid)
+        user = self._node.db.get_identity(context.job.task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(task_descriptor.user_iid)
+            raise IdentityNotFoundError(context.job.task.user_iid)
 
         # lookup all referenced data objects using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -627,24 +625,23 @@ class RTIProcessorAdapter(Thread, ABC):
                         'user_iid': user.id
                     })
 
-        status.remove('step')
+        context.remove_note('step')
         return found
 
-    def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, task_descriptor: Task,
-                                            obj_records: dict, working_directory: str,
-                                            status: StatusLogger) -> list[dict]:
+    def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, obj_records: dict, working_directory: str,
+                                            context: JobContext) -> list[dict]:
 
-        status.update('step', f"fetch by-reference input data objects")
+        context.make_note('step', f"fetch by-reference input data objects")
 
         # do we have any data objects to fetch to begin with?
         if len(obj_records) == 0:
-            status.remove('step')
+            context.remove_note('step')
             return []
 
         # get the user identity
-        user = self._node.db.get_identity(task_descriptor.user_iid)
+        user = self._node.db.get_identity(context.job.task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(task_descriptor.user_iid)
+            raise IdentityNotFoundError(context.job.task.user_iid)
 
         # fetch input data objects one by one using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -657,7 +654,7 @@ class RTIProcessorAdapter(Thread, ABC):
             # fetch the data object
             custodian: NodeInfo = record['custodian']
             protocol.fetch(custodian.p2p_address, obj_id, meta_path, content_path,
-                           task_descriptor.user_iid if record['access_restricted'] else None,
+                           context.job.task.user_iid if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
             # obtain the content hash for this data object
@@ -685,13 +682,13 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 # publish the request
                 # TODO: this should eventually be replaced by a proper event notification interface
-                requests = status.get('requests', default=[])
+                requests = context.get_note('requests', default=[])
                 requests.append({
                     'req_id': req_id,
                     'receiver': user.id,
                     'request': request
                 })
-                status.update('requests', requests)
+                context.make_note('requests', requests)
 
                 # add on to the list of pending items
                 pending_content_keys.append({
@@ -701,7 +698,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
 
         # create symbolic links to the contents for every input AND update references with c_hash
-        for item in task_descriptor.input:
+        for item in context.job.task.input:
             if item.type == 'reference':
                 create_symbolic_link(item.name, f"{item.obj_id}.content",
                                      working_directory=working_directory)
@@ -711,12 +708,12 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 item.c_hash = c_hashes[item.obj_id]
 
-        status.remove('step')
+        context.remove_note('step')
         return pending_content_keys
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
-                                              status: StatusLogger) -> None:
-        status.update('step', f"decrypt by-reference input data objects")
+                                              context: JobContext) -> None:
+        context.make_note('step', f"decrypt by-reference input data objects")
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -736,12 +733,11 @@ class RTIProcessorAdapter(Thread, ABC):
 
             if need_sleep:
                 time.sleep(1)
-        status.remove('step')
+        context.remove_note('step')
 
-    def _store_value_input_data_objects(self, task_descriptor: Task, working_directory: str,
-                                        status: StatusLogger) -> None:
-        status.update('step', f"store by-value input data objects")
-        for item in task_descriptor.input:
+    def _store_value_input_data_objects(self, working_directory: str, context: JobContext) -> None:
+        context.make_note('step', f"store by-value input data objects")
+        for item in context.job.task.input:
             # if it is a 'value' input then store it to the working directory
             if item.type == 'value':
                 input_content_path = os.path.join(working_directory, item.name)
@@ -755,11 +751,11 @@ class RTIProcessorAdapter(Thread, ABC):
                     'data_type': self._input_interface[item.name].data_type,
                     'data_format': 'json'
                 }, f"{input_content_path}.meta")
-        status.remove('step')
+        context.remove_note('step')
 
-    def _verify_inputs(self, task_descriptor: Task, working_directory: str, status: StatusLogger) -> None:
-        status.update('step', 'verify inputs: data object types and formats')
-        for item in task_descriptor.input:
+    def _verify_inputs(self, working_directory: str, context: JobContext) -> None:
+        context.make_note('step', 'verify inputs: data object types and formats')
+        for item in context.job.task.input:
             obj_name = item.name
 
             # check if data type/format indicated in processor descriptor and data object descriptor match
@@ -787,24 +783,22 @@ class RTIProcessorAdapter(Thread, ABC):
                         'content': content,
                         'schema': d1['schema']
                     })
-        status.remove('step')
+        context.remove_note('step')
 
-    def _verify_outputs(self, task_descriptor: Task, status: StatusLogger) -> None:
-        status.update('step', 'verify outputs: data object owner identities')
-        for item in task_descriptor.output:
+    def _verify_outputs(self, context: JobContext) -> None:
+        context.make_note('step', 'verify outputs: data object owner identities')
+        for item in context.job.task.output:
             owner = self._node.db.get_identity(item.owner_iid)
             if owner is None:
                 raise DataObjectOwnerNotFoundError({
                     'output_name': item.name,
                     'owner_iid': item.owner_iid
                 })
-        status.remove('step')
+        context.remove_note('step')
 
-    def _push_data_object(self, job_id: str, obj_name: str, task_descriptor: Task, working_directory: str,
-                          status: StatusLogger) -> None:
-
+    def _push_data_object(self, obj_name: str, working_directory: str, context: JobContext) -> None:
         # convenience variables
-        task_out_items = {item.name: item for item in task_descriptor.output}
+        task_out_items = {item.name: item for item in context.job.task.output}
         task_out = task_out_items[obj_name]
         proc_out = self._output_interface[obj_name]
 
@@ -869,7 +863,7 @@ class RTIProcessorAdapter(Thread, ABC):
         }
 
         # update recipe inputs
-        for item0 in task_descriptor.input:
+        for item0 in context.job.task.input:
             spec = self._input_interface[item0.name]
             if item0.type == 'value':
                 recipe['consumes'][item0.name] = {
@@ -890,21 +884,15 @@ class RTIProcessorAdapter(Thread, ABC):
         proxy = DORProxy(target_address)
         meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
                                      proc_out.data_type, proc_out.data_format, recipe=recipe)
-        obj_id = meta.obj_id
 
         # update tags with information from the job
-        proxy.update_tags(obj_id, self._node.keystore, [
+        proxy.update_tags(meta.obj_id, self._node.keystore, [
             DataObject.Tag(key='name', value=obj_name),
-            DataObject.Tag(key='job_id', value=job_id)
+            DataObject.Tag(key='job_id', value=context.job.id)
         ])
 
         # transfer ownership to the new owner
-        proxy.transfer_ownership(obj_id, self._node.keystore, owner)
+        proxy.transfer_ownership(meta.obj_id, self._node.keystore, owner)
 
         # set the output data object ids in the status
-        output = status.get('output', default=[])
-        output.append({
-            'name': obj_name,
-            'obj_id': obj_id
-        })
-        status.update('output', output)
+        context.set_output(obj_name, meta.obj_id)

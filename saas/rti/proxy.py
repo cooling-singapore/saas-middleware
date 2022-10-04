@@ -5,7 +5,7 @@ from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.proxy import EndpointProxy
-from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus
+from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
 from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
@@ -79,8 +79,12 @@ class RTIProxy(EndpointProxy):
 
         return Job.parse_obj(result)
 
-    # def resume_job(self, proc_id: str, reconnect_info: dict) -> dict:
-    #     return self.put(f"/proc/{proc_id}/jobs", body=reconnect_info)
+    def resume_job(self, proc_id: str, job: Job, reconnect: ReconnectInfo, with_authorisation_by: Keystore) -> Job:
+        result = self.put(f"/proc/{proc_id}/jobs", body={
+            'job': job.dict(),
+            'reconnect': reconnect.dict()
+        }, with_authorisation_by=with_authorisation_by)
+        return Job.parse_obj(result)
 
     def get_jobs(self, proc_id: str) -> List[Job]:
         results = self.get(f"/proc/{proc_id}/jobs")
