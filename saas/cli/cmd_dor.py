@@ -3,36 +3,37 @@ import os
 import shutil
 import subprocess
 
-import jsonschema
-from saascore.api.sdk.proxies import DORProxy, NodeDBProxy
-from saascore.cryptography.helpers import encrypt_file
-from saascore.helpers import read_json_from_file, validate_json
-from saascore.keystore.assets.contentkeys import ContentKeysAsset
-from saascore.keystore.assets.credentials import CredentialsAsset, GithubCredentials
-from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
-from saascore.log import Logging
+from InquirerPy.base import Choice
+from pydantic import ValidationError
 from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
-from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_keystore_selection, \
-    prompt_for_confirmation, prompt_for_selection, prompt_for_data_object_selection, prompt_for_tags, load_keystore, \
-    get_nodes_by_service
+from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, \
+    prompt_for_keystore_selection, prompt_for_confirmation, prompt_for_selection, prompt_for_tags, load_keystore, \
+    get_nodes_by_service, extract_address, prompt_for_identity_selection, prompt_for_data_objects, \
+    deserialise_tag_value
+from saas.cryptography.helpers import encrypt_file
+from saas.dor.proxy import DORProxy
+from saas.dor.schemas import GithubCredentials, Tag
+from saas.keystore.identity import Identity
+from saas.log import Logging
+from saas.nodedb.proxy import NodeDBProxy
 from saas.schemas import ProcessorDescriptor
 
 logger = Logging.get('cli.dor')
 
 
-def require_dor(args: dict) -> DORProxy:
+def _require_dor(args: dict) -> DORProxy:
     prompt_if_missing(args, 'address', prompt_for_string,
                       message="Enter the node's REST address",
                       default='127.0.0.1:5001')
 
-    db = NodeDBProxy(args['address'].split(":"))
-    info = db.get_node()
-    if info['dor_service'] is False:
-        raise CLIRuntimeError(f"Node at {args['address']} does not have a DOR service. Aborting.")
+    db = NodeDBProxy(extract_address(args['address']))
+    if db.get_node().dor_service is False:
+        raise CLIRuntimeError(f"Node at {args['address'][0]}:{args['address'][1]} does "
+                              f"not provide a DOR service. Aborting.")
 
-    return DORProxy(args['address'].split(':'))
+    return DORProxy(extract_address(args['address']))
 
 
 class DORAdd(CLICommand):
@@ -42,6 +43,8 @@ class DORAdd(CLICommand):
                      help=f"indicates that access to this data object should be restricted"),
             Argument('--encrypt-content', dest="content_encrypted", action='store_const', const=True,
                      help=f"indicates that the content of the data object should be encrypted"),
+            Argument('--assume-creator', dest="assume_creator", action='store_const', const=True,
+                     help=f"assumes that the user uploading the data object is also the creator"),
             Argument('--data-type', dest='data-type', action='store',
                      help=f"the data type of the data object"),
             Argument('--data-format', dest='data-format', action='store',
@@ -51,7 +54,7 @@ class DORAdd(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        require_dor(args)
+        _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # get data type and format
@@ -75,26 +78,34 @@ class DORAdd(CLICommand):
             content_key = encrypt_file(obj_path, destination_path=obj_path_temp).decode('utf-8')
             obj_path = obj_path_temp
 
+        # determine creators
+        creators = [keystore.identity]
+        if not args['assume_creator']:
+            creators = prompt_for_identity_selection(
+                address=extract_address(args['address']),
+                message='Select all identities that are co-creators of this data object:',
+                allow_multiple=True
+            )
+
         # connect to the DOR and add the data object
-        dor = DORProxy(args['address'].split(':'))
+        dor = DORProxy(extract_address(args['address']))
         meta = dor.add_data_object(obj_path, keystore.identity, restrict_access, content_encrypted,
-                                   args['data-type'], args['data-format'], keystore.identity.name)
-        obj_id = meta['obj_id']
+                                   args['data-type'], args['data-format'], creators)
+        obj_id = meta.obj_id
 
         # do some simple tagging
-        dor.update_tags(obj_id, keystore, {
-            'name': os.path.basename(args['file'][0])
-        })
+        dor.update_tags(obj_id, keystore, [
+            Tag(key='name', value=os.path.basename(args['file'][0]))
+        ])
 
         # if we used encryption, store the content key
         if content_encrypted:
-            asset: ContentKeysAsset = keystore.get_asset('content-keys')
-            asset.update(obj_id, content_key)
+            keystore.content_keys.update(obj_id, content_key)
             print(f"Content key for object {obj_id} added to keystore.")
 
             os.remove(obj_path)
 
-        print(f"Data object added: {json.dumps(meta, indent=4)}")
+        print(f"Data object added: {json.dumps(meta.dict(), indent=4)}")
 
 
 class DORAddGPP(CLICommand):
@@ -117,7 +128,7 @@ class DORAddGPP(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        require_dor(args)
+        _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # get the URL of the repo (if missing)
@@ -137,8 +148,7 @@ class DORAddGPP(CLICommand):
 
                 # get the URL
                 url = args['url']
-                asset: CredentialsAsset = keystore.get_asset('github-credentials')
-                credentials: GithubCredentials = asset.get(url) if asset else None
+                credentials: GithubCredentials = keystore.github_credentials.get(url)
                 if credentials is not None:
                     insert = f"{credentials.login}:{credentials.personal_access_token}@"
                     index = url.find('github.com')
@@ -174,7 +184,7 @@ class DORAddGPP(CLICommand):
 
                 # do we have a processor path?
                 if not args['path']:
-                    # analyse all sub directories to find 'descriptor.json' files
+                    # analyse all subdirectories to find 'descriptor.json' files
                     print(f"Searching for processor descriptors...", end='')
                     pending = [repo_path]
                     found = []
@@ -201,51 +211,46 @@ class DORAddGPP(CLICommand):
                     print(f"Done: found {len(found)} descriptors.")
 
                     # verify processor descriptors
-                    descriptors = []
+                    choices = []
                     for item in found:
                         print(f"Analysing descriptor file '{item['file-path']}'...", end='')
                         try:
-                            descriptor = read_json_from_file(item['file-path'], schema=ProcessorDescriptor.schema())
-                            descriptors.append({
-                                'descriptor': descriptor,
-                                'proc-path': item['proc-path'],
-                                'label': f"{descriptor['name']} in {item['proc-path']}"
-                            })
+                            descriptor = ProcessorDescriptor.parse_file(item['file-path'])
+                            choices.append(Choice(item['proc-path'], f"{descriptor.name} in {item['proc-path']}"))
                             print("Done")
 
-                        except jsonschema.exceptions.ValidationError:
+                        except ValidationError:
                             print("Done: invalid processor descriptor -> ignoring")
 
                     # any valid processors found?
-                    if len(descriptors) == 0:
+                    if len(choices) == 0:
                         raise CLIRuntimeError("No valid processor descriptors. Aborting.")
 
-                    # select the processor
-                    selection = prompt_for_selection(descriptors, f"Select a processor:")
-                    args['path'] = selection['proc-path']
+                    # select the processor path
+                    args['path'] = prompt_for_selection(choices, f"Select a processor:", allow_multiple=False)
 
-                # does the descriptor file exist? load it
+                # does the descriptor file exist?
                 descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
-                print(f"Load processor descriptor at '{args['path']}'...", end='')
                 if not os.path.isfile(descriptor_path):
                     raise CLIRuntimeError("No processor descriptor found. Aborting.")
 
+                # try to load the processor descriptor
+                print(f"Load processor descriptor at '{args['path']}'...", end='')
                 try:
-                    descriptor = read_json_from_file(descriptor_path, schema=ProcessorDescriptor.schema())
+                    descriptor = ProcessorDescriptor.parse_file(descriptor_path)
                     print("Done")
 
-                except jsonschema.exceptions.ValidationError:
+                except ValidationError:
                     raise CLIRuntimeError("Invalid processor descriptor. Aborting.")
 
                 # do we have a configuration?
                 if not args['config']:
-                    profiles = [{'label': c, 'config': c} for c in descriptor['configurations']]
-                    selection = prompt_for_selection(profiles, f"Select the configuration profile:")
-                    args['config'] = selection['config']
+                    choices = [Choice(c, c) for c in descriptor.configurations]
+                    args['config'] = prompt_for_selection(choices, f"Select the configuration profile:")
 
                 # do we have a name?
                 if not args['name']:
-                    args['name'] = descriptor['name']
+                    args['name'] = descriptor.name
 
                 # clean up
                 shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
@@ -262,30 +267,18 @@ class DORAddGPP(CLICommand):
 
         # get Github credentials (if any)
         url = args['url']
-        asset: CredentialsAsset = keystore.get_asset('github-credentials')
-        github_credentials: GithubCredentials = asset.get(url) if asset else None
+        github_credentials: GithubCredentials = keystore.github_credentials.get(url)
         if github_credentials is not None:
             print(f"Using Github credentials for {url}: {github_credentials.login}")
 
         # connect to the DOR and add the data object
-        dor = DORProxy(args['address'].split(':'))
+        dor = DORProxy(extract_address(args['address']))
         meta = dor.add_gpp_data_object(
-            args['url'], args['commit-id'], args['path'], args['config'],
-            keystore.identity, keystore.identity.name,
+            args['url'], args['commit-id'], args['path'], args['config'], keystore.identity,
             github_credentials=github_credentials
         )
-        obj_id = meta['obj_id']
 
-        # set some tags
-        dor.update_tags(obj_id, keystore, {
-            'name': args['name'],
-            'repository': args['url'],
-            'commit-id': args['commit-id'],
-            'path': args['path'],
-            'config': args['config']
-        })
-
-        print(f"GPP Data object added: {json.dumps(meta, indent=4)}")
+        print(f"GPP Data object added: {json.dumps(meta.dict(), indent=4)}")
 
 
 class DORRemove(CLICommand):
@@ -296,18 +289,18 @@ class DORRemove(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        require_dor(args)
+        _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have object ids?
         if len(args['obj-ids']) == 0:
-            args['obj-ids'] = prompt_for_data_object_selection(args['address'], keystore.identity,
-                                                               "Select data objects to be removed:",
-                                                               allow_multiple=True)
+            args['obj-ids'] = prompt_for_data_objects(extract_address(args['address']),
+                                                      message="Select data objects to be removed:",
+                                                      filter_by_owner=keystore.identity, allow_multiple=True)
 
         else:
             # check if the object ids exist/owned by this entity
-            dor = DORProxy(args['address'].split(':'))
+            dor = DORProxy(extract_address(args['address']))
             result = dor.search(owner_iid=keystore.identity.id)
             removable = []
             for obj_id in args['obj-ids']:
@@ -323,7 +316,7 @@ class DORRemove(CLICommand):
             raise CLIRuntimeError("No removable data objects. Aborting.")
 
         # remove data objects
-        dor = DORProxy(args['address'].split(':'))
+        dor = DORProxy(extract_address(args['address']))
         for obj_id in args['obj-ids']:
             print(f"Deleting {obj_id}...", end='')
             dor.delete_data_object(obj_id, keystore)
@@ -341,20 +334,21 @@ class DORTag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        dor = require_dor(args)
+        dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have an object id?
         if args['obj-id'] is None:
-            args['obj-id'] = prompt_for_data_object_selection(args['address'], keystore.identity,
-                                                              "Select data objects for tagging:",
-                                                              allow_multiple=True)
+            args['obj-id'] = prompt_for_data_objects(extract_address(args['address']),
+                                                     message="Select data objects for tagging:",
+                                                     filter_by_owner=keystore.identity,
+                                                     allow_multiple=True)
         else:
             args['obj-id'] = [args['obj-id']]
 
         # check if the object ids exist/owned by this entity
         result = dor.search(owner_iid=keystore.identity.id)
-        result = [item['obj_id'] for item in result]
+        result = [item.obj_id for item in result]
         found = []
         for obj_id in args['obj-id']:
             if obj_id not in result:
@@ -367,20 +361,21 @@ class DORTag(CLICommand):
         if len(found) == 0:
             raise CLIRuntimeError("No data objects found. Aborting.")
 
-        # do we have tags?
-        if len(args['tags']) == 0:
-            args['tags'] = prompt_for_tags("Enter a tag (key=value) or press return if done:")
+        # do we have valid tags?
+        if args['tags']:
+            # check if the tags are valid
+            valid_tags = []
+            for tag in args['tags']:
+                if tag.count('=') > 1:
+                    print(f"Invalid tag '{tag}'. Ignoring.")
+                elif tag.count('=') == 0:
+                    valid_tags.append(Tag(key=tag))
+                else:
+                    tag = tag.split("=")
+                    valid_tags.append(deserialise_tag_value(Tag(key=tag[0], value=tag[1])))
 
-        # check if the tags are valid
-        valid_tags = {}
-        for tag in args['tags']:
-            if tag.count('=') > 1:
-                print(f"Invalid tag '{tag}'. Ignoring.")
-            else:
-                tag = tag.split("=")
-                if len(tag) == 1:
-                    tag.append('')
-                valid_tags[tag[0]] = tag[1]
+        else:
+            valid_tags = prompt_for_tags("Enter a tag (key=value) or press return if done:")
 
         # do we have valid tags?
         if len(valid_tags) == 0:
@@ -404,17 +399,20 @@ class DORUntag(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        dor = require_dor(args)
+        dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have an object id?
         if args['obj-id'] is None:
-            args['obj-id'] = prompt_for_data_object_selection(args['address'], keystore.identity,
-                                                              "Select data object for untagging:")
+            args['obj-id'] = prompt_for_data_objects(extract_address(args['address']),
+                                                     message="Select data object for untagging:",
+                                                     filter_by_owner=keystore.identity,
+                                                     allow_multiple=False)
 
         else:
             # check if the object ids exist/owned by this entity
             result = dor.search(owner_iid=keystore.identity.id)
+            result = {item.obj_id: item for item in result}
             if not args['obj-id'] in result:
                 raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by "
                                       f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. "
@@ -422,22 +420,22 @@ class DORUntag(CLICommand):
 
         # do we have tags?
         meta = dor.get_meta(args['obj-id'])
-        if len(args['keys']) == 0:
+        if not args['keys']:
             choices = []
-            for tag in meta['tags']:
-                choices.append({
-                    'label': f"{tag['key']} : {tag['value']}",
-                    'key': tag['key']
-                })
+            for key, value in meta. tags.items():
+                if value:
+                    choices.append(
+                        Choice(key, f"{key}: {value if isinstance(value, (str, bool, int, float)) else '...'}")
+                    )
+                else:
+                    choices.append(Choice(key, key))
 
-            for item in prompt_for_selection(choices, "Select tags to be removed:", allow_multiple=True):
-                args['keys'].append(item['key'])
+            args['keys'] = prompt_for_selection(choices, "Select tags to be removed:", allow_multiple=True)
 
         # check if the tags are valid
         valid_keys = []
-        tags = [tag['key'] for tag in meta['tags']]
         for key in args['keys']:
-            if key not in tags:
+            if key not in meta.tags:
                 print(f"Invalid key '{key}'. Ignoring.")
             else:
                 valid_keys.append(key)
@@ -478,65 +476,52 @@ class DORSearch(CLICommand):
         if args['own'] is not None:
             prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'],
                               message="Select the owner:")
-
-            # read the keystore content (we only need the public part)
-            keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
-            keystore_content = read_json_from_file(keystore_path)
-            if not validate_json(keystore_content, KeystoreSchema.schema()):
-                raise CLIRuntimeError(f"Invalid keystore. Aborting.")
-
-            owner_iid = keystore_content['iid']
+            owner_iid = args['keystore-id']
 
         # get a list of nodes in the network
-        search_result = []
-        nodes = get_nodes_by_service(args['address'].split(':'))
-        for node in nodes['dor'].values():
+        dor_nodes, _ = get_nodes_by_service(extract_address(args['address']))
+        for node in dor_nodes:
             # create proxies
-            node_dor = DORProxy(node['rest_address'].split(':'))
-            node_db = NodeDBProxy(node['rest_address'].split(':'))
+            node_dor = DORProxy(node.rest_address)
+            node_db = NodeDBProxy(node.rest_address)
 
             # perform the search
             result = node_dor.search(patterns=args['pattern'], data_type=args['data-type'],
                                      data_format=args['data-format'], owner_iid=owner_iid)
-            items = []
-            for item in result:
-                meta = node_dor.get_meta(item['obj_id'])
-                owner_iid = meta['owner_iid']
-                owner = node_db.get_identity(owner_iid)
 
-                # add an item
-                items.append({
-                    'obj_id': item['obj_id'],
-                    'data_type': item['data_type'],
-                    'data_format': item['data_format'],
-                    'owner': owner,
-                    'tags': item['tags']
-                })
+            # print search results
+            if result:
+                print(f"Found {len(result)} data objects at {node.identity.id}/"
+                      f"{node.rest_address[0]}:{node.rest_address[1]} that match the criteria:")
 
-            search_result.append({
-                'node': node,
-                'objects': items
-            })
+                # headers
+                lines = [
+                    ['OBJECT ID', 'OWNER', 'DATA TYPE', 'DATA FORMAT', 'TAGS'],
+                    ['---------', '-----', '---------', '-----------', '----']
+                ]
 
-        # do we have any search results?
-        if len(search_result) == 0:
-            raise CLIRuntimeError(f"No data objects found that match the criteria.")
+                for item in result:
+                    owner: Identity = node_db.get_identity(item.owner_iid)
+                    tags = [
+                        f"{key}: {value if isinstance(value, (str, bool, int, float)) else '...'}" if value else key
+                        for key, value in item.tags.items()
+                    ]
 
-        # print search results
-        print(f"Found the following data objects that match the criteria:")
-        for item in search_result:
-            count = len(item['objects'])
-            if count == 0:
-                continue
+                    lines.append([
+                        f"{item.obj_id[:4]}...{item.obj_id[-4:]}",
+                        f"{owner.name}/{owner.id[:4]}...{owner.id[-4:]}",
+                        item.data_type,
+                        item.data_format,
+                        tags
+                    ])
 
-            for obj in item['objects']:
+                print(tabulate(lines, tablefmt="plain"))
                 print()
-                print(f"{obj['obj_id']} [{obj['data_type']}/{obj['data_format']}]")
-                print(f"  - HOST: {item['node']['iid']}/{item['node']['rest_address']}/{item['node']['p2p_address']}")
-                print(f"  - OWNER: {obj['owner'].name}/{obj['owner'].email}/{obj['owner'].id}")
-                print(f"  - TAGS:")
-                for tag in obj['tags']:
-                    print(f"      {tag['key']}: {tag['value']}")
+
+            else:
+                print(
+                    f"No data objects found at {node.identity.id}/{node.rest_address[0]}:{node.rest_address[1]} "
+                    f"that match the criteria.")
 
 
 class DORAccessShow(CLICommand):
@@ -547,52 +532,59 @@ class DORAccessShow(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        dor = require_dor(args)
+        dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
-        # do we have object ids?
-        if not args['obj-id']:
-            obj_id = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object:",
-                                                      allow_multiple=False)
-            if obj_id is None:
-                raise CLIRuntimeError(f"No data objects found. Aborting.")
+        # get all data objects by this user
+        result = dor.search(owner_iid=keystore.identity.id)
+        if not result:
+            raise CLIRuntimeError(f"No data objects found. Aborting.")
 
-            args['obj-id'] = obj_id
+        # do we have object id?
+        if not args['obj-id']:
+            choices = []
+            for item in result:
+                tags = []
+                for key, value in item.tags.items():
+                    if value:
+                        tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
+                    else:
+                        tags.append(key)
+                choices.append(Choice(item.obj_id, f"{item.obj_id} [{item.data_type}:{item.data_format}] {tags}"))
+
+            args['obj-id'] = prompt_for_selection(choices, "Select data object:", allow_multiple=False)
+
+        # check if the object id exists
+        result = {item.obj_id: item for item in result}
+        if args['obj-id'] not in result:
+            raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by '"
+                                  f"{keystore.identity.name}/"
+                                  f"{keystore.identity.email}/"
+                                  f"{keystore.identity.id}"
+                                  f"'. Aborting.")
+
+        # get the meta information
+        meta = result[args['obj-id']]
+
+        if not meta.access_restricted:
+            print(f"Data object is not access restricted: everyone has access.")
 
         else:
-            # check if the object ids exist/owned by this entity
-            result = dor.search(owner_iid=keystore.identity.id)
-            result = [item['obj_id'] for item in result]
-            if args['obj-id'] not in result:
-                raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by '"
-                                      f"{keystore.identity.name}/"
-                                      f"{keystore.identity.email}/"
-                                      f"{keystore.identity.id}"
-                                      f"'. Aborting.")
+            print(f"The following identities have been granted access:")
+            db = NodeDBProxy(extract_address(args['address']))
+            identities = [db.get_identity(iid) for iid in meta.access]
+            # headers
+            lines = [
+                ['NAME', 'EMAIL', 'IDENTITY ID'],
+                ['----', '-----', '-----------']
+            ]
 
-        # get the ids of the identities that have access and resolve them
-        meta = dor.get_meta(args['obj-id'])
-        db = NodeDBProxy(args['address'].split(":"))
-        identities = db.get_identities()
-        identities = [identities[iid] for iid in meta['access']]
+            # list
+            lines += [
+                [item.name, item.email, item.id] for item in identities
+            ]
 
-        if len(identities) == 0:
-            raise CLIRuntimeError(f"No access granted to any identity. Aborting.")
-
-        print(f"Access granted to {len(identities)} identities:")
-
-        # headers
-        lines = [
-            ['NAME', 'EMAIL', 'IDENTITY ID'],
-            ['----', '-----', '-----------']
-        ]
-
-        # list
-        lines += [
-            [item.name, item.email, item.id] for item in identities
-        ]
-
-        print(tabulate(lines, tablefmt="plain"))
+            print(tabulate(lines, tablefmt="plain"))
 
 
 class DORAccessGrant(CLICommand):
@@ -606,20 +598,22 @@ class DORAccessGrant(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        dor = require_dor(args)
+        dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have object ids?
         if len(args['obj-ids']) == 0:
-            args['obj-ids'] = prompt_for_data_object_selection(args['address'], keystore.identity,
-                                                               "Select data objects:", allow_multiple=True)
+            args['obj-ids'] = prompt_for_data_objects(extract_address(args['address']),
+                                                      message="Select data objects:",
+                                                      filter_by_owner=keystore.identity,
+                                                      allow_multiple=True)
 
         else:
             # check if the object ids exist/owned by this entity
-            result = dor.search(owner_iid=keystore.identity.id)
             removable = []
             for obj_id in args['obj-ids']:
-                if obj_id not in result:
+                meta = dor.get_meta(obj_id)
+                if not meta or meta.owner_iid != keystore.identity.id:
                     raise CLIRuntimeError(f"Ignoring data object '{obj_id}': does not exist or is not owned by '"
                                           f"{keystore.identity.name}/"
                                           f"{keystore.identity.email}/"
@@ -634,18 +628,14 @@ class DORAccessGrant(CLICommand):
             raise CLIRuntimeError("No data objects. Aborting.")
 
         # get the identities known to the node
-        db = NodeDBProxy(args['address'].split(":"))
+        db = NodeDBProxy(extract_address(args['address']))
         identities = db.get_identities()
 
         # do we have an identity?
         if not args['iid']:
-            items = [{'label': f"{identity.name}/{identity.email}/{identity.id}", 'iid': iid}
-                     for iid, identity in identities.items()]
-
-            selected = prompt_for_selection(items,
-                                            "Select the identity who should be granted access:",
-                                            allow_multiple=False)
-            args['iid'] = selected['iid']
+            args['iid'] = prompt_for_selection([
+                Choice(iid, f"{identity.name}/{identity.email}/{identity.id}") for iid, identity in identities.items()
+            ], message="Select the identity who should be granted access:", allow_multiple=False)
 
         # is the identity known to the node?
         if args['iid'] not in identities:
@@ -655,7 +645,7 @@ class DORAccessGrant(CLICommand):
         for obj_id in args['obj-ids']:
             print(f"Granting access to data object {obj_id} for identity {args['iid']}...", end='')
             meta = dor.grant_access(obj_id, keystore, identities[args['iid']])
-            if args['iid'] not in meta['access']:
+            if args['iid'] not in meta.access:
                 print(f"Failed")
             else:
                 print(f"Done")
@@ -672,56 +662,57 @@ class DORAccessRevoke(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        dor = require_dor(args)
+        dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have object ids?
         if args['obj-id'] is None:
-            obj_id = prompt_for_data_object_selection(args['address'], keystore.identity, "Select data object:",
-                                                      allow_multiple=False)
-            if obj_id is None:
+            args['obj-id'] = prompt_for_data_objects(extract_address(args['address']),
+                                                     message="Select data object:",
+                                                     filter_by_owner=keystore.identity,
+                                                     allow_multiple=False)
+
+            if args['obj-id'] is None:
                 raise CLIRuntimeError(f"No data objects found. Aborting.")
 
-            args['obj-id'] = obj_id
-
         else:
-            # check if the object ids exist/owned by this entity
-            result = dor.search(owner_iid=keystore.identity.id)
-            result = [item['obj_id'] for item in result]
-            for obj_id in args['obj-id']:
-                if obj_id not in result:
-                    raise CLIRuntimeError(f"Data object {obj_id} does not exist or is not owned by '"
-                                          f"{keystore.identity.name}/"
-                                          f"{keystore.identity.email}/"
-                                          f"{keystore.identity.id}"
-                                          f"'")
-
-        # get the identities known to the node
-        db = NodeDBProxy(args['address'].split(":"))
-        identities = db.get_identities()
-
-        # do we have an identity?
-        if not args['iids']:
-            # get the identities that have currently access
-            choices = []
+            # check if the object id exists/owned by this entity
             meta = dor.get_meta(args['obj-id'])
-            access = meta['access']
-            for iid in access:
-                identity = identities[iid]
-                choices.append({
-                    'label': f"{identity.name}/{identity.email}/{identity.id}",
-                    'iid': iid
-                })
+            if not meta or meta.owner_iid != keystore.identity.id:
+                raise CLIRuntimeError(f"Ignoring data object '{args['obj-id']}': does not exist or is not owned by '"
+                                      f"{keystore.identity.name}/"
+                                      f"{keystore.identity.email}/"
+                                      f"{keystore.identity.id}"
+                                      f"'")
 
-            for selected in prompt_for_selection(choices, "Select the identities whose access should be removed:",
-                                                 allow_multiple=True):
-                args['iids'].append(selected['iid'])
+        # do we have removable identities?
+        db = NodeDBProxy(extract_address(args['address']))
+        removable = args['iids'] if args['iids'] else dor.get_meta(args['obj-id']).access
+
+        # collect the identity information of all those that have access
+        choices = []
+        identities = {}
+        for iid in removable:
+            identity = db.get_identity(iid)
+            if identity:
+                identities[identity.id] = identity
+                choices.append(Choice(identity.id, f"{identity.name}/{identity.email}/{identity.id}"))
+            else:
+                print(f"No identity with id={iid}. Ignoring.")
+
+        # do we have any choices?
+        if not choices:
+            raise CLIRuntimeError(f"No identities whose access could be revoked.")
+
+        # select the identities to be removed
+        args['iids'] = prompt_for_selection(
+            choices, message="Select the identities whose access should be removed:", allow_multiple=True)
 
         # revoke access
         for iid in args['iids']:
             print(f"Revoking access to data object {args['obj-id']} for identity {iid}...", end='')
             meta = dor.revoke_access(args['obj-id'], keystore, identities[iid])
-            if iid in meta['access']:
+            if iid in meta.access:
                 print(f"Failed")
             else:
                 print(f"Done")

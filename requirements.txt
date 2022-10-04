@@ -11,5 +11,7 @@ sqlalchemy-json~=0.5.0
 python-snappy~=0.6.1
 uvicorn~=0.18.3
 python-multipart~=0.0.5
+tabulate~=0.8.10
+inquirerpy~=0.3.4
 docker~=6.0.0
 paramiko~=2.11.0

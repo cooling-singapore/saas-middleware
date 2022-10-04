@@ -1,3 +1,4 @@
+import datetime
 import json
 import random
 import string
@@ -13,10 +14,10 @@ logger = Logging.get('helpers')
 
 def get_timestamp_now() -> int:
     """
-    Returns the current time in milliseconds since the beginning of the epoch
+    Returns the current time (UTC) in milliseconds since the beginning of the epoch
     :return: integer representing time in milliseconds
     """
-    return int(round(time.time() * 1000))
+    return int(datetime.datetime.utcnow().timestamp() * 1000)
 
 
 def validate_json(content: dict, schema: dict) -> bool:

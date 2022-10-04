@@ -1,16 +1,16 @@
 import os
 
-from saascore.api.sdk.proxies import NodeDBProxy
-from saascore.log import Logging
+from InquirerPy.base import Choice
 from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
-from saas.cli.helpers import CLICommand, Argument, prompt_for_string, get_available_keystores, prompt_for_confirmation, \
-    prompt_for_password, prompt_if_missing, prompt_for_keystore_selection, prompt_for_selection, load_keystore
-from saascore.helpers import read_json_from_file, validate_json
-from saascore.keystore.assets.credentials import CredentialsAsset, SSHCredentials, GithubCredentials
-from saascore.keystore.keystore import Keystore
-from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
+from saas.cli.helpers import CLICommand, Argument, prompt_for_string, get_available_keystores, \
+    prompt_for_confirmation, prompt_for_password, prompt_if_missing, prompt_for_keystore_selection, \
+    prompt_for_selection, load_keystore, extract_address
+from saas.dor.schemas import SSHCredentials, GithubCredentials
+from saas.keystore.keystore import Keystore, KeystoreContent
+from saas.log import Logging
+from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.identity')
 
@@ -70,22 +70,20 @@ class IdentityShow(CLICommand):
 
         # read the keystore file
         keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
-        content = read_json_from_file(keystore_path)
-        if not validate_json(content, KeystoreSchema.schema()):
-            raise CLIRuntimeError(f"Keystore {args['keystore-id']} content not compliant with json schema.")
+        content = KeystoreContent.parse_file(keystore_path)
 
         # show the public information
         print(f"Keystore details:")
-        print(f"- Id: {content['iid']}")
-        print(f"- Name: {content['profile']['name']}")
-        print(f"- Email: {content['profile']['email']}")
-        print(f"- Nonce: {content['nonce']}")
+        print(f"- Id: {content.iid}")
+        print(f"- Name: {content.profile.name}")
+        print(f"- Email: {content.profile.email}")
+        print(f"- Nonce: {content.nonce}")
         print(f"- Assets:")
-        for asset in content['assets']:
-            if asset['type'] in ['KeyPairAsset', 'MasterKeyPairAsset']:
-                print(f"    - {asset['key']}: {asset['content']['info']}")
+        for key, content in content.assets.items():
+            if content['type'] in ['KeyPairAsset', 'MasterKeyPairAsset']:
+                print(f"    - {key}: {content['info']}")
             else:
-                print(f"    - {asset['key']}")
+                print(f"    - {key}")
 
 
 class IdentityList(CLICommand):
@@ -105,7 +103,7 @@ class IdentityList(CLICommand):
 
             # list
             lines += [
-                [item['name'], item['email'], item['keystore-id']] for item in available
+                [item.profile.name, item.profile.email, item.iid] for item in available
             ]
 
             print(tabulate(lines, tablefmt="plain"))
@@ -128,7 +126,7 @@ class IdentityPublish(CLICommand):
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
 
-        proxy = NodeDBProxy(args['address'].split(":"))
+        proxy = NodeDBProxy(extract_address(args['address']))
         proxy.update_identity(keystore.identity)
         print(f"Published identity of keystore {args['keystore-id']}")
 
@@ -145,7 +143,7 @@ class IdentityDiscover(CLICommand):
                           message="Enter address of node for discovery:",
                           default="127.0.0.1:5001")
 
-        proxy = NodeDBProxy(args['address'].split(":"))
+        proxy = NodeDBProxy(extract_address(args['address']))
         identities = proxy.get_identities()
         if len(identities) == 0:
             print(f"No identities discovered.")
@@ -190,59 +188,67 @@ class IdentityUpdate(CLICommand):
             print(f"Nothing to update.")
 
 
-class CredentialsAdd(CLICommand):
+class CredentialsAddSSHCredentials(CLICommand):
     def __init__(self):
-        super().__init__('add', 'adds credentials to the keystore', arguments=[])
+        super().__init__('ssh', 'adds SSH credentials to the keystore', arguments=[
+            Argument('--name', dest='name', action='store', help=f"name used to identify this SSH credential"),
+            Argument('--host', dest='host', action='store', help=f"host used to connect the remote machine"),
+            Argument('--login', dest='login', action='store', help=f"login used for connecting to remote machine"),
+            Argument('--key-is-password', dest="key_is_password", action='store_const', const=True,
+                     help=f"indicates that the key of this credential is a password"),
+            Argument('--key', dest='key', action='store', help=f"key for this credentials items (or password in"
+                                                               f"case --key-is-password is set)")
+        ])
 
     def execute(self, args: dict) -> None:
         keystore = load_keystore(args, ensure_publication=False)
 
-        # define the items and select one
-        items = [
-            {
-                'label': 'SSH Credentials',
-                'asset-key': 'ssh-credentials',
-                'c-type': SSHCredentials,
-                'cred-key': 'SSH profile name',
-                'template': {
-                    'host': None,
-                    'login': None,
-                    'key': None,
-                    'key_is_password': None
-                },
-                'hide-when-prompt': []
-            },
-            {
-                'label': 'Github Credentials',
-                'asset-key': 'github-credentials',
-                'c-type': GithubCredentials,
-                'cred-key': 'repository URL',
-                'template': {
-                    'login': None,
-                    'personal_access_token': None
-                },
-                'hide-when-prompt': ['personal_access_token']
-            }
-        ]
-        item = prompt_for_selection(items, 'Select the type of credential to add:')
+        prompt_if_missing(args, 'name', prompt_for_string, message="Enter name:")
+        prompt_if_missing(args, 'host', prompt_for_string, message="Enter host:")
+        prompt_if_missing(args, 'login', prompt_for_string, message="Enter login:")
 
-        # do we already have credentials of that type? if no, create it
-        asset = keystore.get_asset(item['asset-key'])
-        if asset is None:
-            asset = CredentialsAsset.create(item['asset-key'], item['c-type'])
+        if args['key_is_password'] is None:
+            args['key_is_password'] = prompt_for_selection([
+                Choice(True, 'Password'),
+                Choice(False, 'Key')
+            ], f"Type of SSH credentials:")
 
-        # create a credential
-        cred_key = prompt_for_string(f"Enter the key/name for which this credential is for "
-                                     f"(hint: {item['cred-key']}):")
-        for key in item['template'].keys():
-            item['template'][key] = prompt_for_string(f"Enter value for '{key}':",
-                                                      hide=key in item['hide-when-prompt'])
+        if args['key'] is None:
+            if args['key_is_password']:
+                args['key'] = prompt_for_password()
 
-        # update the asset
-        asset.update(cred_key, item['c-type'].from_record(item['template']))
+            else:
+                args['key'] = prompt_for_string("Enter SSH key:")
 
         # update the keystore
-        keystore.update_asset(asset)
+        keystore.ssh_credentials.update(args['name'], SSHCredentials(host=args['host'], login=args['login'],
+                                                                     key_is_password=args['key_is_password'],
+                                                                     key=args['key']))
+        keystore.sync()
+        print(f"Credential successfully created.")
+
+
+class CredentialsAddGithubCredentials(CLICommand):
+    def __init__(self):
+        super().__init__('github', 'adds Github credentials to the keystore', arguments=[
+            Argument('--url', dest='url', action='store', help=f"URL of the repository (also used as identifier "
+                                                               f"for this Github credential)"),
+            Argument('--login', dest='login', action='store', help=f"login used to connect the remote machine"),
+            Argument('--personal-access-token', dest='personal_access_token', action='store',
+                     help=f"personal access token for the login"),
+        ])
+
+    def execute(self, args: dict) -> None:
+        keystore = load_keystore(args, ensure_publication=False)
+
+        prompt_if_missing(args, 'url', prompt_for_string, message="Enter repository URL:")
+        prompt_if_missing(args, 'login', prompt_for_string, message="Enter login:")
+        prompt_if_missing(args, 'personal_access_token', prompt_for_string, message="Enter personal access token:")
+
+        # update the keystore
+        keystore.github_credentials.update(
+            args['url'], GithubCredentials(login=args['login'], personal_access_token=args['personal_access_token']))
+        keystore.sync()
         print(f"Credential successfully created.")
 
 
@@ -255,18 +261,21 @@ class CredentialsRemove(CLICommand):
 
         # collect all the removable credentials
         removable = []
-        credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
-        for c_type in credential_types:
-            asset = keystore.get_asset(c_type)
-            if asset is not None:
-                index = asset.index()
-                for key in index:
-                    removable.append({
-                        'asset': asset,
-                        'c_type': c_type,
-                        'key': key,
-                        'label': f"[{c_type}] {key}"
-                    })
+        for name in keystore.ssh_credentials.list():
+            label = f"[SSH] {name}"
+            removable.append(Choice(value={
+                'asset': 'ssh',
+                'label': label,
+                'key': name
+            }, name=label))
+
+        for name in keystore.github_credentials.list():
+            label = f"[Github] {name}"
+            removable.append(Choice(value={
+                'asset': 'github',
+                'label': label,
+                'key': name
+            }, name=label))
 
         # prompt for selection
         if len(removable) == 0:
@@ -279,16 +288,15 @@ class CredentialsRemove(CLICommand):
 
         # confirm and remove
         if prompt_for_confirmation("Remove the selected credentials?", default=False):
-            modified_assets = []
             for item in items:
                 print(f"Removing {item['label']}...", end='')
-                item['asset'].remove(item['key'])
-                if item['asset'] not in modified_assets:
-                    modified_assets.append(item['asset'])
-                print("Done")
-
-            for asset in modified_assets:
-                keystore.update_asset(asset)
+                if item['asset'] == 'ssh':
+                    keystore.ssh_credentials.remove(item['key'])
+                    print("Done")
+                elif item['asset'] == 'github':
+                    keystore.github_credentials.remove(item['key'])
+                    print("Done")
+            keystore.sync()
 
         else:
             print(f"Aborting.")
@@ -301,35 +309,22 @@ class CredentialsList(CLICommand):
     def execute(self, args: dict) -> None:
         keystore = load_keystore(args, ensure_publication=False)
 
-        # collect all credentials
-        credential_types = ['ssh-credentials', 'github-credentials', 'smtp-credentials']
-        credentials = []
-        for c_type in credential_types:
-            # print the credentials for this type
-            asset: CredentialsAsset = keystore.get_asset(c_type)
-            if asset is not None:
-                index = asset.index()
-                for key in index:
-                    credentials.append({
-                        'type': c_type,
-                        'key': key
-                    })
-
-        # print the credentials
-        if len(credentials) == 0:
-            raise CLIRuntimeError("No credentials found in keystore.")
-
-        print(f"Found {len(credentials)} credentials in keystore:")
-
         # headers
         lines = [
-            ['TYPE', 'CREDENTIAL KEY'],
-            ['----', '--------------']
+            ['TYPE', 'CREDENTIAL NAME', 'DETAILS'],
+            ['----', '---------------', '-------']
         ]
 
-        # list
-        lines += [
-            [item['type'], item['key']] for item in credentials
-        ]
+        for name in keystore.ssh_credentials.list():
+            c = keystore.ssh_credentials.get(name)
+            lines.append(['SSH', name, f"{c.login}@{c.host}"])
 
+        for name in keystore.github_credentials.list():
+            c = keystore.github_credentials.get(name)
+            lines.append(['Github', name, c.login])
+
+        if len(lines) == 2:
+            raise CLIRuntimeError("No credentials found.")
+
+        print(f"Found {len(lines)-2} credentials:")
         print(tabulate(lines, tablefmt="plain"))

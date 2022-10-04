@@ -12,6 +12,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from saas.cryptography.exceptions import CryptographyException
 from saas.cryptography.keypair import KeyPair
 from saas.log import Logging
 
@@ -62,13 +63,17 @@ class RSAKeyPair(KeyPair):
                     '\n'.join(private_key_string[i:i + 64] for i in range(0, len(private_key_string), 64))
                 private_key_string = f"-----BEGIN PRIVATE KEY-----\n{private_key_string}\n-----END PRIVATE KEY-----"
 
-        private_key = serialization.load_pem_private_key(
-            data=private_key_string.encode('utf-8'),
-            password=password,
-            backend=default_backend()
-        )
-        public_key = private_key.public_key()
-        return RSAKeyPair(private_key, public_key)
+        try:
+            private_key = serialization.load_pem_private_key(
+                data=private_key_string.encode('utf-8'),
+                password=password,
+                backend=default_backend()
+            )
+            public_key = private_key.public_key()
+            return RSAKeyPair(private_key, public_key)
+
+        except Exception:
+            raise CryptographyException("Loading key failed. Password wrong?")
 
     @classmethod
     def from_private_key_file(cls, path: str, password: str) -> RSAKeyPair:

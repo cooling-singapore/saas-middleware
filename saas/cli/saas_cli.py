@@ -5,9 +5,11 @@ import traceback
 from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
-    IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
+    IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
+    CredentialsAddGithubCredentials
 from saas.cli.cmd_network import NetworkShow
-from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
+    RTIProcShow
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -47,7 +49,10 @@ def main():
                 IdentityDiscover(),
                 IdentityPublish(),
                 CLICommandGroup('credentials', 'manage credentials for a keystore', commands=[
-                    CredentialsAdd(),
+                    CLICommandGroup('add', 'add credentials to a keystore', commands=[
+                        CredentialsAddSSHCredentials(),
+                        CredentialsAddGithubCredentials(),
+                    ]),
                     CredentialsRemove(),
                     CredentialsList()
                 ]),
@@ -73,12 +78,17 @@ def main():
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                RTIProcDeploy(),
-                RTIProcUndeploy(),
-                RTIProcList(),
-                RTIProcStatus(),
-                RTIJobSubmit(),
-                RTIJobStatus()
+                CLICommandGroup('proc', 'manage processors', commands=[
+                    RTIProcDeploy(),
+                    RTIProcUndeploy(),
+                    RTIProcList(),
+                    RTIProcShow(),
+                    RTIProcStatus()
+                ]),
+                CLICommandGroup('job', 'manage job', commands=[
+                    RTIJobSubmit(),
+                    RTIJobStatus()
+                ])
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',

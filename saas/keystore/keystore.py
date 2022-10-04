@@ -126,7 +126,7 @@ class Keystore:
     def load(cls, keystore_path: str, password: str) -> Keystore:
         # check if keystore file exists
         if not os.path.isfile(keystore_path):
-            raise FileNotFoundError(f"Keystore content not found at {keystore_path}")
+            raise KeystoreException(f"Keystore content not found at {keystore_path}")
 
         # load content and validate
         try:

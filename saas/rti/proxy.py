@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import List, Union
 
 from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
@@ -7,7 +7,8 @@ from saas.keystore.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.proxy import EndpointProxy
 from saas.rti.schemas import Processor, Job
-from saas.schemas import GitProcessorPointer, ProcessorStatus, JobDescriptor
+from saas.schemas import GitProcessorPointer, ProcessorStatus, JobDescriptor, TaskInputReference, TaskInputValue, \
+    TaskOutput
 
 RTI_ENDPOINT_PREFIX = "/api/v1/rti"
 
@@ -68,12 +69,12 @@ class RTIProxy(EndpointProxy):
         result = self.get(f"/proc/{proc_id}/status")
         return ProcessorStatus.parse_obj(result)
 
-    def submit_job(self, proc_id: str, job_input: list, job_output: list,
-                   with_authorisation_by: Keystore) -> JobDescriptor:
+    def submit_job(self, proc_id: str, job_input: List[Union[TaskInputReference, TaskInputValue]],
+                   job_output: List[TaskOutput], with_authorisation_by: Keystore) -> JobDescriptor:
         result = self.post(f"/proc/{proc_id}/jobs", body={
             'processor_id': proc_id,
-            'input': job_input,
-            'output': job_output,
+            'input': [i.dict() for i in job_input],
+            'output': [o.dict() for o in job_output],
             'user_iid': with_authorisation_by.identity.id
         }, with_authorisation_by=with_authorisation_by)
 
