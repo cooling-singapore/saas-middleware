@@ -11,12 +11,11 @@ from saas.cryptography.helpers import encrypt_file
 from saas.cryptography.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
 from saas.exceptions import SaaSException, RunCommandError, UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now, read_json_from_file, generate_random_string
+from saas.helpers import get_timestamp_now, generate_random_string
 from saas.keystore.keystore import Keystore
 from saas.log import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
-from saas.rti.adapters.docker import prune_image
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.keystore.schemas import GithubCredentials
@@ -713,7 +712,7 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
 
         if RTIServiceDockerTestCase._node is None:
             RTIServiceDockerTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                     wd_path=RTIServiceDockerTestCase._wd_path)
+                                                           wd_path=RTIServiceDockerTestCase._wd_path)
             RTIServiceDockerTestCase._rti = RTIProxy(RTIServiceDockerTestCase._node.rest.address())
             RTIServiceDockerTestCase._dor = DORProxy(RTIServiceDockerTestCase._node.rest.address())
             RTIServiceDockerTestCase._db = NodeDBProxy(RTIServiceDockerTestCase._node.rest.address())
@@ -730,12 +729,6 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
         self.cleanup()
 
     def test_docker_processor_execution_value(self):
-        # # Undeploy current processor
-        # logger.info(f"Undeploying processor")
-        # time.sleep(3)
-        # self._rti.undeploy(self._test_proc_id)
-        # logger.info(f"Processor undeployed. {self._test_proc_id}")
-        #
         # instruct the RTI to deploy the processor using docker
         logger.info(f"Deploying processor using docker")
         self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred)
@@ -767,8 +760,6 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
 
         # Perform cleanup
         self._rti.undeploy(self._test_proc_id)
-        # prune_image(self._test_proc_id)
-        # self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
 
     def test_docker_remote_processor_execution_value(self):
         """
@@ -776,12 +767,6 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
         """
         keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
         ssh_credentials = keystore.ssh_credentials.get('docker')
-
-        # Undeploy current processor
-        # logger.info(f"Undeploying processor")
-        # time.sleep(3)
-        # self._rti.undeploy(self._test_proc_id)
-        # logger.info(f"Processor undeployed. {self._test_proc_id}")
 
         # instruct the RTI to deploy the processor remotely using the SSH credentials
         logger.info(f"Deploying processor using docker")
@@ -815,7 +800,6 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
 
         # Perform cleanup
         self._rti.undeploy(self._test_proc_id)
-        # self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
 
 
 class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
