@@ -20,7 +20,7 @@ class ProcessorDescriptor(BaseModel):
         name: str = Field(..., title="Data Object Name", description="The name of the data object.", example="parameters")
         data_type: str = Field(..., title="Data Type", description="The data type that is expected or produced in case of an input or output data objects, respectively.", example="JSONObject")
         data_format: str = Field(..., title="Data Format", description="The data format that is expected or produced in case of an input or output data objects, respectively.", example="json")
-        data_schema: Optional[dict] = Field(..., title="Data Schema", description="The scheme that can be used for validating the content of this data object. Note: this is only applicable in case the data type and format is `JSONObject` and `json`, respectively.")
+        data_schema: Optional[dict] = Field(title="Data Schema", description="The scheme that can be used for validating the content of this data object. Note: this is only applicable in case the data type and format is `JSONObject` and `json`, respectively.")
 
     name: str = Field(..., title="Processor Name", description="The name of the processor", example="urban-climate-sim")
     input: List[IODataObject] = Field(..., title="Input Data Objects", description="A list of data objects that are consumed by the processor when executing a job.")
@@ -49,7 +49,7 @@ class CObjectNode(BaseModel):
     c_hash: str = Field(..., title="Content Hash", description="The content hash used to uniquely identify a specific content.", example="9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1")
     data_type: str = Field(..., title="Data Type", description="The data type of the data object.", example="JSONObject")
     data_format: str = Field(..., title="Data Type", description="The data format of the data object.", example="json")
-    content: Optional[dict] = Field(..., title="Content", description="The content of the data object (only used in case of 'by-value' data objects).", example="")
+    content: Optional[dict] = Field(title="Content", description="The content of the data object (only used in case of 'by-value' data objects).", example="")
 
 
 class DataObjectRecipe(BaseModel):
@@ -110,7 +110,7 @@ class DataObject(BaseModel):
         and JSON-compatible complex types (`List` and `Dict`).
         """
         key: str = Field(..., title="Key", description="The key of the tag.", example="module")
-        value: Optional[Union[str, int, float, bool, List, Dict]] = Field(..., title="Value", description="The value of the tag", example="D1.2")
+        value: Optional[Union[str, int, float, bool, List, Dict]] = Field(title="Value", description="The value of the tag", example="D1.2")
 
     obj_id: str = Field(..., title="Object Id", description="The id of the data object.", example="f25c8b96679aaf74eb41b17fbf7951d790423b6208a5d0efb1cd2a124c1f9cb4")
     c_hash: str = Field(..., title="Content Hash", description="The content hash of the data object.", example="9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1")
@@ -147,4 +147,4 @@ class CDataObject(DataObject):
 
     content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content of the data object is encrypted.", example=False)
     license: License = Field(..., title="License", description="The license information for this data object.")
-    recipe: Optional[DataObjectRecipe] = Field(..., title="Recipe", description="If this data object has been produced by a processor, a recipe is provided. Data objects that are uploaded by users typically do not come with a recipe unless the user provides one manually when uploading the content to the DOR.")
+    recipe: Optional[DataObjectRecipe] = Field(title="Recipe", description="If this data object has been produced by a processor, a recipe is provided. Data objects that are uploaded by users typically do not come with a recipe unless the user provides one manually when uploading the content to the DOR.")

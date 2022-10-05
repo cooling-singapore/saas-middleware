@@ -14,4 +14,4 @@ class NodeInfo(BaseModel):
     dor_service: bool = Field(..., title="DOR Service", description="Indicates if the node provides a DOR service.", example=True)
     rti_service: bool = Field(..., title="RTI Service", description="Indicates if the node provides a RTI service.", example=True)
     p2p_address: Tuple[str, int] = Field(..., title="P2P Address", description="The address of the P2P service.", example=('127.0.0.1', 4001))
-    rest_address: Optional[Tuple[str, int]] = Field(..., title="REST Address", description="The address of the REST service (if applicable - not all nodes have the REST interface enabled).", example=('127.0.0.1', 5001))
+    rest_address: Optional[Tuple[str, int]] = Field(title="REST Address", description="The address of the REST service (if applicable - not all nodes have the REST interface enabled).", example=('127.0.0.1', 5001))

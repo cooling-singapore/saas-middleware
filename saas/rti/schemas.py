@@ -16,8 +16,8 @@ class Task(BaseModel):
         name: str = Field(..., title="Name", description="The name of the input (needs to exactly match the input as defined by the processor).")
         type: Literal["reference"] = Field(..., title="Type", description="Must be 'reference' for by-reference inputs.", example="reference")
         obj_id: str = Field(..., title="Object Id", description="The id of the object to be used for this input.")
-        user_signature: Optional[str] = Field(..., title="User Signature", description="A valid signature by the identity who owns the task. The RTI will use this signature to verify the user has access to the data object. User signature is only relevant and needed in case the referenced data object has restricted access.")
-        c_hash: Optional[str] = Field(..., title="Content Hash", description="The content hash of this input.")
+        user_signature: Optional[str] = Field(title="User Signature", description="A valid signature by the identity who owns the task. The RTI will use this signature to verify the user has access to the data object. User signature is only relevant and needed in case the referenced data object has restricted access.")
+        c_hash: Optional[str] = Field(title="Content Hash", description="The content hash of this input.")
 
     class InputValue(BaseModel):
         name: str = Field(..., title="Name", description="The name of the input (needs to exactly match the input as defined by the processor).")
@@ -29,7 +29,7 @@ class Task(BaseModel):
         owner_iid: str = Field(..., title="", description="The id of the identity who will be the owner of this output data object once it has been created as part of this task.")
         restricted_access: bool = Field(..., title="Access Restricted", description="Indicates if access to the data object content should be restricted.", example=False)
         content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content of this data object should be encrypted using the owner's public encryption key.", example=False)
-        target_node_iid: Optional[str] = Field(..., title="", description="", example="")
+        target_node_iid: Optional[str] = Field(title="", description="", example="")
 
     proc_id: str = Field(..., title="Processor Id", description="The id of the processor to be used for this task.")
     user_iid: str = Field(..., title="User IId", description="The id of the user's identity who owns this task.")
@@ -81,8 +81,8 @@ class JobStatus(BaseModel):
     output: Dict[str, str] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object ids.", example={'heatmap': '2b3f0ceba8a3cdd1fce97947fe2a21e77033798f99bf2a8df0d9f2f3aa567c30'})
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
     job: Job = Field(..., title="Job", description="The job information.")
-    reconnect: Optional[ReconnectInfo] = Field(..., title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
-    errors: Optional[List[Error]] = Field(..., title="Errors", description="A list of errors that occurred during job execution (if any)")
+    reconnect: Optional[ReconnectInfo] = Field(title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
+    errors: Optional[List[Error]] = Field(title="Errors", description="A list of errors that occurred during job execution (if any)")
 
 
 class Processor(BaseModel):
@@ -99,4 +99,4 @@ class ProcessorStatus(BaseModel):
     """
     state: str = Field(..., title="State", description="The state of the processor.", example="initialised")
     pending: List[Job] = Field(..., title="Pending Jobs", description="A list of pending jobs that are queued for execution.")
-    active: Optional[Job] = Field(..., title="Active Job", description="The job that is currently being executed by the processor (if any).")
+    active: Optional[Job] = Field(title="Active Job", description="The job that is currently being executed by the processor (if any).")
