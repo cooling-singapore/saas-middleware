@@ -1,14 +1,13 @@
 import json
 from typing import List, Union
 
-from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.keystore.identity import Identity
 from saas.keystore.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.proxy import EndpointProxy
-from saas.rti.schemas import Processor, Job
-from saas.schemas import GitProcessorPointer, ProcessorStatus, JobDescriptor, TaskInputReference, TaskInputValue, \
-    TaskOutput
+from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus
+from saas.dor.schemas import GitProcessorPointer
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
 RTI_ENDPOINT_PREFIX = "/api/v1/rti"
 
@@ -69,27 +68,27 @@ class RTIProxy(EndpointProxy):
         result = self.get(f"/proc/{proc_id}/status")
         return ProcessorStatus.parse_obj(result)
 
-    def submit_job(self, proc_id: str, job_input: List[Union[TaskInputReference, TaskInputValue]],
-                   job_output: List[TaskOutput], with_authorisation_by: Keystore) -> JobDescriptor:
+    def submit_job(self, proc_id: str, job_input: List[Union[Task.InputReference, Task.InputValue]],
+                   job_output: List[Task.Output], with_authorisation_by: Keystore) -> Job:
         result = self.post(f"/proc/{proc_id}/jobs", body={
-            'processor_id': proc_id,
+            'proc_id': proc_id,
             'input': [i.dict() for i in job_input],
             'output': [o.dict() for o in job_output],
             'user_iid': with_authorisation_by.identity.id
         }, with_authorisation_by=with_authorisation_by)
 
-        return JobDescriptor.parse_obj(result)
+        return Job.parse_obj(result)
 
     # def resume_job(self, proc_id: str, reconnect_info: dict) -> dict:
     #     return self.put(f"/proc/{proc_id}/jobs", body=reconnect_info)
 
-    def get_jobs(self, proc_id: str) -> List[JobDescriptor]:
+    def get_jobs(self, proc_id: str) -> List[Job]:
         results = self.get(f"/proc/{proc_id}/jobs")
-        return [JobDescriptor.parse_obj(result) for result in results]
+        return [Job.parse_obj(result) for result in results]
 
-    def get_job_info(self, job_id: str, with_authorisation_by: Keystore) -> Job:
-        result = self.get(f"/job/{job_id}/info", with_authorisation_by=with_authorisation_by)
-        return Job.parse_obj(result)
+    def get_job_status(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
+        result = self.get(f"/job/{job_id}/status", with_authorisation_by=with_authorisation_by)
+        return JobStatus.parse_obj(result)
 
     def get_job_logs(self, job_id: str, with_authorisation_by: Keystore, download_path: str) -> None:
         self.get(f"/job/{job_id}/logs", download_path=download_path, with_authorisation_by=with_authorisation_by)

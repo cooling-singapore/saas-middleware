@@ -2,7 +2,6 @@ import datetime
 import json
 import random
 import string
-import time
 import jsonschema
 
 from typing import Union

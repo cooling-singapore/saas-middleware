@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import Tuple, Optional
 
 from pydantic import BaseModel
 
@@ -12,8 +12,3 @@ class NodeInfo(BaseModel):
     rti_service: bool
     p2p_address: Tuple[str, int]
     rest_address: Optional[Tuple[str, int]]
-
-
-class NodeDBSnapshot(BaseModel):
-    update_identity: Optional[List[Identity]]
-    update_network: Optional[List[NodeInfo]]

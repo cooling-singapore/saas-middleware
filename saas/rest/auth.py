@@ -8,10 +8,11 @@ from saas.cryptography.helpers import hash_string_object, hash_json_object, hash
 from saas.exceptions import AuthorisationFailedError
 from saas.keystore.identity import Identity
 from saas.rti.exceptions import JobDescriptorNotFoundError, ProcessorNotDeployedError
-from saas.schemas import JobDescriptor
+from saas.rti.schemas import Job
 
 
-def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None, precision: int = 5) -> bool:
+def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None,
+                               precision: int = 5) -> bool:
     # determine time slots (we allow for some variation before and after)
     ref = int(time.time() / precision)
     slots = [ref - 1, ref, ref + 1]
@@ -156,12 +157,12 @@ class VerifyUserIsJobOwner:
             })
 
         with open(descriptor_path, 'r') as f:
-            descriptor = JobDescriptor.parse_obj(json.load(f))
+            job = Job.parse_obj(json.load(f))
 
-            if descriptor.owner_iid != identity.id:
+            if job.task.user_iid != identity.id:
                 raise AuthorisationFailedError({
                     'reason': 'user is not the job owner',
                     'job_id': job_id,
                     'user_iid': identity.id,
-                    'owner_iid': descriptor.owner_iid
+                    'owner_iid': job.task.user_iid
                 })

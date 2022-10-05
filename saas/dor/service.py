@@ -8,6 +8,7 @@ from typing import Optional, List, Union
 
 from fastapi import UploadFile, Form, File
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -22,11 +23,11 @@ from saas.helpers import get_timestamp_now, generate_random_string, read_json_fr
 from saas.log import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from saas.dor.schemas import DataObject, SearchParameters, AddGPPDataObjectParameters, Tag, CDataObject, \
-    GPPDataObject, AddCDataObjectParameters, DataObjectProvenance, DORStatistics, CObjectNode, DataObjectRecipe
 from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
+from saas.dor.schemas import DORStatistics, CObjectNode, DataObjectRecipe, DataObjectProvenance, DataObject, \
+    GPPDataObject, CDataObject, ProcessorDescriptor
+from saas.keystore.schemas import GithubCredentials
 from saas.rest.schemas import EndpointDefinition
-from saas.schemas import ProcessorDescriptor
 
 logger = Logging.get('dor.service')
 
@@ -36,6 +37,36 @@ GPP_DATA_TYPE = 'GitProcessorPointer'
 GPP_DATA_FORMAT = 'json'
 DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
+
+
+class SearchParameters(BaseModel):
+    patterns: Optional[List[str]]
+    owner_iid: Optional[str]
+    data_type: Optional[str]
+    data_format: Optional[str]
+    c_hashes: Optional[List[str]]
+
+
+class AddDataObjectParameters(BaseModel):
+    owner_iid: str
+    creators_iid: List[str]
+
+
+class AddGPPDataObjectParameters(AddDataObjectParameters):
+    source: str
+    commit_id: str
+    proc_path: str
+    proc_config: str
+    github_credentials: Optional[GithubCredentials]
+
+
+class AddCDataObjectParameters(AddDataObjectParameters):
+    data_type: str
+    data_format: str
+    access_restricted: bool
+    content_encrypted: bool
+    license: CDataObject.License
+    recipe: Optional[DataObjectRecipe]
 
 
 def _generate_object_id(c_hash: str, data_type: str, data_format: str, creators_iid: List[str], created_t: int) -> str:
@@ -667,7 +698,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def update_tags(self, obj_id: str, tags: List[Tag]) -> Union[CDataObject, GPPDataObject]:
+    def update_tags(self, obj_id: str, tags: List[DataObject.Tag]) -> Union[CDataObject, GPPDataObject]:
         with self._Session() as session:
             # do we have an object with this id?
             record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)

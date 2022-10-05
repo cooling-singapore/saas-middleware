@@ -7,9 +7,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.nodedb.exceptions import InvalidIdentityError, IdentityNotFoundError
-from saas.nodedb.protocol import NodeDBP2PProtocol
+from saas.nodedb.protocol import NodeDBP2PProtocol, NodeDBSnapshot
 from saas.nodedb.proxy import DB_ENDPOINT_PREFIX
-from saas.nodedb.schemas import NodeInfo, NodeDBSnapshot
+from saas.nodedb.schemas import NodeInfo
 from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('nodedb.service')

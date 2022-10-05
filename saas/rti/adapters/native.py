@@ -3,13 +3,14 @@ import threading
 import time
 
 import saas.rti.adapters.base as base
-from saas.dor.schemas import SSHCredentials, GithubCredentials
 from saas.exceptions import SaaSException
 from saas.helpers import write_json_to_file
 
 from saas.log import Logging
 from saas.rti.status import StatusLogger
-from saas.schemas import GitProcessorPointer, TaskDescriptor, ResumeDescriptor
+from saas.rti.schemas import Task, ResumableJob
+from saas.dor.schemas import GitProcessorPointer
+from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
 logger = Logging.get('rti.adapters.native')
 
@@ -97,7 +98,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, task_descriptor: TaskDescriptor, local_working_directory: str, retain_job: bool,
+    def execute(self, job_id: str, task_descriptor: Task, local_working_directory: str, retain_job: bool,
                 status: StatusLogger) -> None:
 
         _home = base.get_home_directory(self._ssh_credentials)
@@ -133,8 +134,8 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                                                 ssh_credentials=self._ssh_credentials)
 
         # create the context information for this job
-        reconnect_info = ResumeDescriptor(job_id=job_id, task_descriptor=task_descriptor, paths=paths,
-                                          pid=pid, pid_paths=pid_paths, retain_job=retain_job)
+        reconnect_info = ResumableJob(id=job_id, task=task_descriptor, retain=retain_job,
+                                      paths=paths, pid=pid, pid_paths=pid_paths)
 
         # store reconnect information
         reconnect_info_path = os.path.join(local_working_directory, 'job_reconnect.json')
@@ -143,17 +144,17 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         # try to monitor the job by (re)connecting to it
         self.connect_and_monitor(reconnect_info, status)
 
-    def connect_and_monitor(self, reconnect_info: ResumeDescriptor, status: StatusLogger) -> None:
+    def connect_and_monitor(self, job: ResumableJob, status: StatusLogger) -> None:
         # create the context information for this job
         context = {
-            'task_descriptor': reconnect_info.task_descriptor,
-            'paths': reconnect_info.paths,
-            'job_id': reconnect_info.job_id,
+            'task_descriptor': job.task,
+            'paths': job.paths,
+            'job_id': job.id,
             'status': status,
             'threads': {}
         }
 
-        base.monitor_command(reconnect_info.pid, reconnect_info.pid_paths,
+        base.monitor_command(job.pid, job.pid_paths,
                              ssh_credentials=self._ssh_credentials, triggers={
                                  'trigger:output': {'func': self._handle_trigger_output, 'context': context},
                                  'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
@@ -166,7 +167,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
-            paths = reconnect_info.paths
+            paths = job.paths
             status.update('task', f"delete working directory REMOTE:{paths['remote_wd']}")
             base.run_command(f"rm -rf {paths['remote_wd']}", ssh_credentials=self._ssh_credentials)
 
@@ -190,7 +191,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def _process_output(self, context: dict) -> None:
         obj_name = context['obj_name']
         job_id = context['job_id']
-        task_descriptor = TaskDescriptor.parse_obj(context['task_descriptor'])
+        task_descriptor = Task.parse_obj(context['task_descriptor'])
         paths = context['paths']
         status: StatusLogger = context['status']
 

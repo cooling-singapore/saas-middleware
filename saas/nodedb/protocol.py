@@ -1,15 +1,20 @@
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel
 
 from saas.keystore.identity import Identity
 from saas.log import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
-from saas.nodedb.schemas import NodeInfo, NodeDBSnapshot
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.protocol import P2PProtocol
+from saas.nodedb.schemas import NodeInfo
 
 logger = Logging.get('nodedb.protocol')
+
+
+class NodeDBSnapshot(BaseModel):
+    update_identity: Optional[List[Identity]]
+    update_network: Optional[List[NodeInfo]]
 
 
 class UpdateMessage(BaseModel):
