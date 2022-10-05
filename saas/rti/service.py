@@ -38,8 +38,8 @@ class Permission(BaseModel):
 
 class DeployParameters(BaseModel):
     deployment: Union[Literal['native', 'docker']]
-    ssh_credentials: Optional[str]
-    github_credentials: Optional[str]
+    encrypted_ssh_credentials: Optional[str]
+    encrypted_github_credentials: Optional[str]
     gpp_custodian: Optional[str]
 
 
@@ -156,8 +156,8 @@ class RTIService:
                 })
 
             # decrypt SSH credentials (if any)
-            if p.ssh_credentials is not None:
-                ssh_credentials = bytes.fromhex(p.ssh_credentials)
+            if p.encrypted_ssh_credentials is not None:
+                ssh_credentials = bytes.fromhex(p.encrypted_ssh_credentials)
                 ssh_credentials = self._node.keystore.decrypt(ssh_credentials)
                 ssh_credentials = ssh_credentials.decode('utf-8')
                 ssh_credentials = json.loads(ssh_credentials)
@@ -176,8 +176,8 @@ class RTIService:
                 ssh_credentials = None
 
             # decrypt Github credentials (if any)
-            if p.github_credentials is not None:
-                github_credentials = bytes.fromhex(p.github_credentials)
+            if p.encrypted_github_credentials is not None:
+                github_credentials = bytes.fromhex(p.encrypted_github_credentials)
                 github_credentials = self._node.keystore.decrypt(github_credentials)
                 github_credentials = github_credentials.decode('utf-8')
                 github_credentials = json.loads(github_credentials)
