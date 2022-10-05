@@ -3,10 +3,12 @@ import uvicorn
 from threading import Thread
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse
 
 from saas.exceptions import SaaSException
 from saas.log import Logging
+from saas._meta import __title__, __version__, __description__
 from saas.rest.exceptions import UnsupportedRESTMethod
 from saas.rest.schemas import EndpointDefinition
 
@@ -81,6 +83,14 @@ class RESTService:
                 endpoint.dependencies = [Depends(d(self._node)) for d in endpoint.dependencies]
 
             self._app.register(endpoint)
+
+        # update the openapi schema
+        self._app.api.openapi_schema = get_openapi(
+            title=__title__,
+            version=__version__,
+            description=__description__,
+            routes=self._app.api.routes
+        )
 
     def start_service(self) -> None:
         if self._thread is None:
