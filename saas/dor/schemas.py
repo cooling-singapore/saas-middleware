@@ -4,9 +4,8 @@ from pydantic import BaseModel
 
 
 class DORStatistics(BaseModel):
-    data_types: List[str]
-    data_formats: List[str]
-    tag_keys: List[str]
+    data_types: List[str] = Field(..., title="Data Types", description="A list of all unqiue data types that can be found in the DOR.", example=['JSONObject', 'Heatmap'])
+    data_formats: List[str] = Field(..., title="Data Formats", description="A list of all unqiue data formats that can be found in the DOR.", example=['json', 'tiff'])
 
 
 class ProcessorDescriptor(BaseModel):

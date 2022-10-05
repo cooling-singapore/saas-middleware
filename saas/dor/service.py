@@ -346,11 +346,6 @@ class DORService:
                     join(f"{key} {json.dumps(value) if isinstance(value, (list, dict)) else value}"
                          for key, value in record.tags.items())
 
-                # # TODO: decide if this information should be searchable via patterns. seems odd to do this here.
-                # # add meta information to make them searchable
-                # flattened += f" {obj_record.data_type}"
-                # flattened += f" {obj_record.data_format}"
-
                 # check if any of the patterns is a substring the flattened string.
                 # if we don't have patterns then always add the object.
                 if p.patterns is None or any(pattern in flattened for pattern in p.patterns):
