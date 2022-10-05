@@ -46,19 +46,23 @@ class RESTApp:
         if endpoint.method == 'POST':
             self.api.post(route,
                           response_model=endpoint.response_model,
-                          dependencies=endpoint.dependencies)(endpoint.function)
+                          dependencies=endpoint.dependencies,
+                          description=endpoint.function.__doc__)(endpoint.function)
         elif endpoint.method == 'GET':
             self.api.get(route,
                          response_model=endpoint.response_model,
-                         dependencies=endpoint.dependencies)(endpoint.function)
+                         dependencies=endpoint.dependencies,
+                         description=endpoint.function.__doc__)(endpoint.function)
         elif endpoint.method == 'PUT':
             self.api.put(route,
                          response_model=endpoint.response_model,
-                         dependencies=endpoint.dependencies)(endpoint.function)
+                         dependencies=endpoint.dependencies,
+                         description=endpoint.function.__doc__)(endpoint.function)
         elif endpoint.method == 'DELETE':
             self.api.delete(route,
                             response_model=endpoint.response_model,
-                            dependencies=endpoint.dependencies)(endpoint.function)
+                            dependencies=endpoint.dependencies,
+                            description=endpoint.function.__doc__)(endpoint.function)
         else:
             raise UnsupportedRESTMethod(endpoint.method, route)
 

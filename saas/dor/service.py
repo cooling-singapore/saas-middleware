@@ -319,6 +319,15 @@ class DORService:
         ]
 
     def search(self, p: SearchParameters) -> List[DataObject]:
+        """
+        Searches a DOR for data objects that match the search criteria. There are two kinds of criteria: constraints
+        and patterns. Search constraints are conjunctive, i.e., all constraints have to be matched in order for a data
+        objective to be considered for inclusion in the search result. Constraints include: `owner_iid`, `data_type`,
+        `data_format` or list of `c_hashes`. After applying the search constraints, the result set is further filtered
+        by the search patterns. Unlike constraints, search patterns are disjunctive, i.e., so long as any of the
+        patterns is matched, the data object is included in the final result set. Search patterns are applied to the
+        data object tags only. A search pattern is considered matched if it is a substring of either tag key or value.
+        """
         with self._Session() as session:
             # build the query and get the results
             q = session.query(DataObjectRecord).filter()
@@ -356,6 +365,9 @@ class DORService:
             return result
 
     def statistics(self) -> DORStatistics:
+        """
+        Retrieves some statistics from the DOR. This includes a list of all data types and formats found in the DOR.
+        """
         with self._Session() as session:
             return DORStatistics(
                 data_types=[value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
@@ -363,6 +375,11 @@ class DORService:
             )
 
     def add_c(self, body: str = Form(...), attachment: UploadFile = File(...)) -> CDataObject:
+        """
+        Adds a new content data object to the DOR and returns the meta information for this data object. The content
+        of the data object itself is uploaded as an attachment (binary). There is no restriction as to the nature or
+        size of the content.
+        """
         # create parameters object
         p = AddCDataObjectParameters.parse_obj(json.loads(body))
 
@@ -441,6 +458,12 @@ class DORService:
             return self.get_meta(obj_id)
 
     def add_gpp(self, p: AddGPPDataObjectParameters) -> GPPDataObject:
+        """
+        Adds a Git-Processor-Pointer (GPP) data object to the DOR and returns the meta information for this data object.
+        If the repository specified in the GPP information is private, valid  credentials need to be provided. The DOR
+        will use these credentials to access (i.e., clone) the repository. Note that the credentials information will
+        not be stored by the DOR.
+        """
         # get the owner and creator identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
 
@@ -538,6 +561,10 @@ class DORService:
             return self.get_meta(obj_id)
 
     def remove(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
+        """
+        Deletes a data object from the DOR and returns the meta information of that data object. Authorisation by the
+        data object owner is required.
+        """
         # get the meta information for this object (if it exists in the first place)
         meta = self.get_meta(obj_id)
         if meta is None:
@@ -567,6 +594,11 @@ class DORService:
         return meta
 
     def get_meta(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
+        """
+        Retrieves the meta information of a data object. Depending on the type of the data object, either a
+        `CDataObject` or a `GPPDataObject` is returned, providing meta information for content and GPP data objects,
+        respectively.
+        """
         with self._Session() as session:
             # do we have an object with this id?
             record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
@@ -615,6 +647,10 @@ class DORService:
                 })
 
     def get_content(self, obj_id: str) -> Response:
+        """
+        Retrieves the content of a data object. Authorisation required by a user who has been granted access to the
+        data object.
+        """
         # get the meta information for this object (if it exists in the first place)
         meta = self.get_meta(obj_id)
         if meta is None:
@@ -630,6 +666,14 @@ class DORService:
         return FileResponse(content_path, media_type='application/octet-stream')
 
     def get_provenance(self, c_hash: str) -> Optional[DataObjectProvenance]:
+        """
+        Retrieves the provenance information of a data object (identified by its content hash `c_hash`). Provenance
+        data includes detailed information how the content of a data object has been produced. In principle, this
+        information enables users to reproduce the contents by repeating the exact same steps. Note that it is possible
+        that there are multiple routes by which a content can be generated. Depending on the use case, this kind of
+        situation is likely to be rare. However, careful analysis of the provenance information might be needed to
+        understand how the content has been created.
+        """
         with self._Session() as session:
             # do we have an object with this id?
             records: DataObjectProvenanceRecord = session.query(DataObjectProvenanceRecord).filter(
@@ -637,6 +681,10 @@ class DORService:
             return DataObjectProvenance.parse_obj(records[0].provenance) if records else None
 
     def grant_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
+        """
+        Grants a user the right to access the contents of a restricted data object. Authorisation required by the owner
+        of the data object. Note that access rights only matter if the data object has access restrictions.
+        """
         # do we have an identity for this iid?
         user = self._node.db.get_identity(user_iid)
         if user is None:
@@ -656,6 +704,10 @@ class DORService:
         return self.get_meta(obj_id)
 
     def revoke_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
+        """
+        Revokes the right to access the contents of a restricted data object from a user. Authorisation required by the
+        owner of the data object. Note that access rights only matter if the data object has access restrictions.
+        """
         # do we have an identity for this iid?
         user = self._node.db.get_identity(user_iid)
         if user is None:
@@ -675,6 +727,10 @@ class DORService:
         return self.get_meta(obj_id)
 
     def transfer_ownership(self, obj_id: str, new_owner_iid: str) -> Union[CDataObject, GPPDataObject]:
+        """
+        Transfers the ownership of a data object to another user. Authorisation required by the current owner of the
+        data object.
+        """
         # do we have an identity for this iid?
         new_owner = self._node.db.get_identity(new_owner_iid)
         if new_owner is None:
@@ -693,6 +749,10 @@ class DORService:
         return self.get_meta(obj_id)
 
     def update_tags(self, obj_id: str, tags: List[DataObject.Tag]) -> Union[CDataObject, GPPDataObject]:
+        """
+        Adds tags to a data object or updates tags in case they already exist. Authorisation required by the owner of
+        the data object.
+        """
         with self._Session() as session:
             # do we have an object with this id?
             record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
@@ -707,6 +767,9 @@ class DORService:
         return self.get_meta(obj_id)
 
     def remove_tags(self, obj_id: str, keys: List[str]) -> Union[CDataObject, GPPDataObject]:
+        """
+        Removes tags from a data object. Authorisation required by the owner of the data object.
+        """
         with self._Session() as session:
             # do we have an object with this id?
             record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
