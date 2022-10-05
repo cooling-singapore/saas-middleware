@@ -359,8 +359,7 @@ class DORService:
         with self._Session() as session:
             return DORStatistics(
                 data_types=[value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
-                data_formats=[value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
-                tag_keys=[]  # sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
+                data_formats=[value[0] for value in session.query(DataObjectRecord.data_format).distinct()]
             )
 
     def add_c(self, body: str = Form(...), attachment: UploadFile = File(...)) -> CDataObject:
