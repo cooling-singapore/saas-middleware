@@ -2,7 +2,7 @@ from typing import Tuple, Optional
 
 from pydantic import BaseModel, Field
 
-from saas.keystore.identity import Identity
+from saas.core.identity import Identity
 
 
 class NodeInfo(BaseModel):

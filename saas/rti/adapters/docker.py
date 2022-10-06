@@ -10,18 +10,18 @@ from contextlib import contextmanager
 from typing import Optional
 
 import paramiko
-from saas.exceptions import SaaSException, ExceptionContent
 
 import docker
 from docker.errors import BuildError
 from docker.models.containers import Container
 
 import saas.rti.adapters.base as base
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
+from saas.core.logging import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.helpers import JobContext
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
+from saas.core.schemas import GithubCredentials, SSHCredentials
 
 logger = Logging.get('rti.adapters.docker')
 
@@ -230,7 +230,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             # try to monitor the job by (re)connecting to it
             self.connect_and_monitor(context)
 
-        except SaaSException:
+        except SaaSRuntimeException:
             raise
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
@@ -256,7 +256,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             if self.container.status == "exited":
                 info = self.container.wait()
                 if info.get('StatusCode') != 0:
-                    raise SaaSException
+                    raise SaaSRuntimeException
 
             # Block and go through logs until container closes
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -308,7 +308,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             self._push_data_object(obj_name, working_directory, context)
             context.make_note(f"process_output:{obj_name}", 'done')
 
-        except SaaSException as e:
+        except SaaSRuntimeException as e:
             context.make_note(f"process_output:{obj_name}", 'failed')
             context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
                                                                                     details=e.details))

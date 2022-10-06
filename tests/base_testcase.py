@@ -4,12 +4,128 @@ import time
 
 from multiprocessing import Lock
 
-from saas.helpers import get_timestamp_now
-from saas.keystore.keystore import Keystore, update_keystore_from_credentials
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import get_timestamp_now, read_json_from_file, validate_json
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
+from saas.core.schemas import SSHCredentials, GithubCredentials
 from saas.node import Node
 
 logger = Logging.get('tests.base_testcase')
+
+
+def update_keystore_from_credentials(keystore: Keystore, credentials_path: str = None) -> None:
+    """
+    Updates a keystore with credentials loaded from credentials file. This is a convenience function useful for
+    testing purposes. A valid example content may look something like this:
+    {
+        "name": "John Doe",
+        "email": "john.doe@internet.com",
+        "ssh-credentials": [
+            {
+            "name": "my-remote-machine-A",
+            "login": "johnd",
+            "host": "10.8.0.1",
+            "password": "super-secure-password-123"
+            },
+            {
+            "name": "my-remote-machine-B",
+            "login": "johnd",
+            "host": "10.8.0.2",
+            "key_path": "/home/johndoe/machine-b-key"
+            }
+        ],
+        "github-credentials": [
+            {
+                "repository": "https://github.com/my-repo",
+                "login": "JohnDoe",
+                "personal_access_token": "ghp_xyz..."
+            }
+        ]
+    }
+
+    For SSH credentials note that you can either indicate a password or a path to a key file.
+
+    :param keystore: the keystore that is to be updated
+    :param credentials_path: the optional path to the credentials file (default is $HOME/.saas-credentials.json)
+    :return:
+    """
+
+    credentials_schema = {
+        'type': 'object',
+        'properties': {
+            'name': {'type': 'string'},
+            'email': {'type': 'string'},
+            'ssh-credentials': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'name': {'type': 'string'},
+                        'login': {'type': 'string'},
+                        'host': {'type': 'string'},
+                        'password': {'type': 'string'},
+                        'key_path': {'type': 'string'}
+                    },
+                    'required': ['name', 'login', 'host']
+                }
+            },
+            'github-credentials': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'repository': {'type': 'string'},
+                        'login': {'type': 'string'},
+                        'personal_access_token': {'type': 'string'}
+                    },
+                    'required': ['repository', 'login', 'personal_access_token']
+                }
+            }
+        }
+    }
+
+    # load the credentials and validate
+    path = credentials_path if credentials_path else os.path.join(os.environ['HOME'], '.saas-credentials.json')
+    credentials = read_json_from_file(path)
+    if not validate_json(content=credentials, schema=credentials_schema):
+        raise SaaSRuntimeException("JSON validation failed", details={
+            'instance': credentials,
+            'schema': credentials_schema
+        })
+
+    # update profile (if applicable)
+    keystore.update_profile(name=credentials['name'] if 'name' in credentials else None,
+                            email=credentials['email'] if 'email' in credentials else None)
+
+    # do we have SSH credentials?
+    if 'ssh-credentials' in credentials:
+        for item in credentials['ssh-credentials']:
+            # password or key path?
+            if 'password' in item:
+                keystore.ssh_credentials.update(item['name'],
+                                                SSHCredentials(host=item['host'], login=item['login'],
+                                                               key=item['password'], key_is_password=True))
+
+            elif 'key_path' in item:
+                # read the ssh key from file
+                with open(item['key_path'], 'r') as f:
+                    ssh_key = f.read()
+
+                keystore.ssh_credentials.update(item['name'],
+                                                SSHCredentials(host=item['host'], login=item['login'],
+                                                               key=ssh_key, key_is_password=False))
+
+            else:
+                raise RuntimeError(f"Unexpected SSH credentials format: {item}")
+
+        keystore.sync()
+
+    # do we have Github credentials?
+    if 'github-credentials' in credentials:
+        for item in credentials['github-credentials']:
+            keystore.github_credentials.update(item['repository'], GithubCredentials.parse_obj(item))
+        keystore.sync()
 
 
 class PortMaster:

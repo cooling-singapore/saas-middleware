@@ -6,15 +6,15 @@ import unittest
 import logging
 import os
 
-from saas.cryptography.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
+from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import DataObject
-from saas.keystore.schemas import GithubCredentials
-from saas.exceptions import UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now, generate_random_string
-from saas.log import Logging
+from saas.core.schemas import GithubCredentials
+from saas.core.helpers import get_timestamp_now, generate_random_string
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 

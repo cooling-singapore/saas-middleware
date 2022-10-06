@@ -12,9 +12,9 @@ from fastapi import Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from saas.exceptions import RunCommandError
-from saas.helpers import generate_random_string, write_json_to_file
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import generate_random_string, write_json_to_file
+from saas.core.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
@@ -25,7 +25,7 @@ from saas.rti.helpers import JobContext
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
+from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('rti.service')
@@ -393,8 +393,7 @@ class RTIService:
             return FileResponse(archive_path, media_type='application/octet-stream')
 
         except subprocess.CalledProcessError as e:
-            raise RunCommandError({
-                'reason': 'archiving execute logs failed',
+            raise SaaSRuntimeException('Archiving execute logs failed', details={
                 'returncode': e.returncode,
                 'command': command,
                 'stdout': e.stdout.decode('utf-8'),

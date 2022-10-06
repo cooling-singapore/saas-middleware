@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse
 
-from saas.exceptions import SaaSException
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.logging import Logging
 from saas._meta import __title__, __version__, __description__
 from saas.rest.exceptions import UnsupportedRESTMethod
 from saas.rest.schemas import EndpointDefinition
@@ -20,8 +20,8 @@ class RESTApp:
         self.api = FastAPI()
         self.api.on_event("shutdown")(self.close)
 
-        @self.api.exception_handler(SaaSException)
-        async def saas_exception_handler(_: Request, exception: SaaSException):
+        @self.api.exception_handler(SaaSRuntimeException)
+        async def saas_exception_handler(_: Request, exception: SaaSRuntimeException):
             return JSONResponse(
                 status_code=500,
                 content={

@@ -10,11 +10,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-from saas.cryptography.exceptions import CryptographyException
-from saas.cryptography.keypair import KeyPair
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.keypair import KeyPair
+from saas.core.logging import Logging
 
-logger = Logging.get('cryptography.ECKeyPair')
+logger = Logging.get('saas.core')
 
 
 class ECKeyPair(KeyPair):
@@ -86,7 +86,7 @@ class ECKeyPair(KeyPair):
             return ECKeyPair(private_key, public_key)
 
         except Exception:
-            raise CryptographyException("Loading key failed. Password wrong?")
+            raise SaaSRuntimeException("Loading key failed. Password wrong?")
 
     @classmethod
     def from_private_key_file(cls, path: str, password: str) -> ECKeyPair:

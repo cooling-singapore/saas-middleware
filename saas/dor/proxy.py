@@ -1,9 +1,9 @@
 from typing import Union, Optional, List
 
 from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject
-from saas.keystore.schemas import GithubCredentials
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
+from saas.core.schemas import GithubCredentials
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
 from saas.rest.proxy import EndpointProxy
 
 DOR_ENDPOINT_PREFIX = "/api/v1/dor"
