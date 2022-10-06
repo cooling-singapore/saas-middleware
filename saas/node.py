@@ -46,9 +46,10 @@ class Node:
 
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
-                retain_job_history: bool = False) -> None:
+                retain_job_history: bool = False, bind_all_address: bool = False) -> None:
+        # TODO: Address should be the same except for port
         logger.info("starting P2P service.")
-        self.p2p = p2p_service.P2PService(self, server_address)
+        self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
 
         endpoints = []
@@ -73,7 +74,7 @@ class Node:
 
         if rest_address is not None:
             logger.info("starting REST service.")
-            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1])
+            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1], bind_all_address)
             self.rest.start_service()
             self.rest.add(endpoints)
 
@@ -128,11 +129,11 @@ class Node:
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False, retain_job_history=False) -> Node:
+               enable_dor=False, enable_rti=False, retain_job_history=False, bind_all_address=False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address,
-                     retain_job_history=retain_job_history)
+                     retain_job_history=retain_job_history, bind_all_address=bind_all_address)
 
         return node
