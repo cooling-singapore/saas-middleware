@@ -1,4 +1,5 @@
 import os
+import sys
 
 from InquirerPy.base import Choice
 
@@ -102,10 +103,16 @@ class Service(CLICommand):
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-        # wait for confirmation to terminate the server
-        terminate = False
-        while not terminate:
-            terminate = prompt_for_confirmation("Terminate the server?", default=False)
+        try:
+            # wait for confirmation to terminate the server
+            terminate = False
+            while not terminate:
+                # only show prompt if shell is interactive
+                if sys.stdin.isatty():
+                    terminate = prompt_for_confirmation("Terminate the server?", default=False)
+        except KeyboardInterrupt:
+            print("Received stop signal")
+        finally:
+            print("Shutting down the node...")
+            node.shutdown()
 
-        print(f"Shutting down the node...")
-        node.shutdown()
