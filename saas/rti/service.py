@@ -359,23 +359,29 @@ class RTIService:
             user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
 
             # collect all jobs
-            result = []
+            result = {}
             for proc in self._deployed.values():
-                result += [*proc.pending_jobs()]
+                for pending in proc.pending_jobs():
+                    result[pending.id] = pending
+
                 active = proc.active_job()
                 if active:
-                    result.append(active)
+                    result[active.id] = active
+
+            # also check the live job status loggers
+            for context in self._jobs_context.values():
+                result[context.job.id] = context.job
 
             # if the user is NOT the node owner, only return the jobs owned by the user
             if self._node.identity.id != user.id:
                 filtered = []
-                for job in result:
+                for job in result.values():
                     if job.task.user_iid == user.id:
                         filtered.append(job)
 
                 return filtered
 
-            return result
+            return list(result.values())
 
     def job_status(self, job_id: str) -> JobStatus:
         """

@@ -11,6 +11,7 @@ from tabulate import tabulate
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object
+from saas.core.helpers import get_timestamp_now
 from saas.dor.proxy import DORProxy
 from saas.dor.service import GPP_DATA_TYPE
 from saas.core.logging import Logging
@@ -469,7 +470,23 @@ class RTIJobStatus(CLICommand):
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
 
-        prompt_if_missing(args, 'job-id', prompt_for_string, message='Enter the job id:')
+        # do we have a job id?
+        if not args['job-id']:
+            # get all deployed procs
+            deployed: list[Processor] = rti.get_deployed()
+            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+
+            # get all jobs by this user and select
+            choices = []
+            for job in rti.get_jobs_by_user(keystore):
+                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                    if job.task.proc_id in deployed else 'unknown'
+                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+
+            if not choices:
+                raise CLIRuntimeError(f"No jobs found.")
+
+            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
 
         try:
             status = rti.get_job_status(args['job-id'], with_authorisation_by=keystore)
@@ -477,3 +494,48 @@ class RTIJobStatus(CLICommand):
 
         except UnsuccessfulRequestError:
             print(f"Job {args['job-id']} not found.")
+
+
+class RTIJobLogs(CLICommand):
+    def __init__(self):
+        super().__init__('logs', 'retrieve the logs of a job', arguments=[
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help=f"the id of the job"),
+            Argument('destination', metavar='destination', type=str, nargs=1, help="directory where to store the logs")
+
+        ])
+
+    def execute(self, args: dict) -> None:
+        rti = _require_rti(args)
+        keystore = load_keystore(args, ensure_publication=True)
+
+        # do we have a valid destination directory?
+        if not args['destination']:
+            raise CLIRuntimeError(f"No download path provided")
+        elif not os.path.isdir(args['destination'][0]):
+            raise CLIRuntimeError(f"Destination path provided is not a directory")
+
+        # do we have a job id?
+        if not args['job-id']:
+            # get all deployed procs
+            deployed: list[Processor] = rti.get_deployed()
+            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+
+            # get all jobs by this user and select
+            choices = []
+            for job in rti.get_jobs_by_user(keystore):
+                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                    if job.task.proc_id in deployed else 'unknown'
+                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+
+            if not choices:
+                raise CLIRuntimeError(f"No jobs found.")
+
+            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
+
+        try:
+            download_path = os.path.join(args['destination'][0], f"{args['job-id']}.{get_timestamp_now()}.tar.gz")
+            rti.get_job_logs(args['job-id'], keystore, download_path)
+            print(f"Done. Logs downloaded to {download_path}")
+
+        except UnsuccessfulRequestError as e:
+            print(f"{e.reason} details={e.details}")

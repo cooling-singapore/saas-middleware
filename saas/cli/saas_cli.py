@@ -9,7 +9,7 @@ from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, 
     CredentialsAddGithubCredentials
 from saas.cli.cmd_network import NetworkShow
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
-    RTIProcShow, RTIJobList
+    RTIProcShow, RTIJobList, RTIJobLogs
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -88,7 +88,8 @@ def main():
                 CLICommandGroup('job', 'manage job', commands=[
                     RTIJobList(),
                     RTIJobSubmit(),
-                    RTIJobStatus()
+                    RTIJobStatus(),
+                    RTIJobLogs()
                 ])
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
