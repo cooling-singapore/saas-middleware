@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  node:
+    build: .
+    # network_mode "host" does not work on mac, need to map ports manually
+    # network_mode: "host"
+    ports:
+      - "5001:5001"
+      - "4001:4001"
+    environment:
+      # TODO: Use docker secrets for password
+      PASSWORD: 1234
+      KEYSTORE_ID: ueifsu2dqsnh7dkana2yc8f3hf8cigg8d0mskxdu61sjw63hbc81gyhcldy2hoam
+      REST_ADDRESS: 127.0.0.1:5001
+      P2P_ADDRESS: 127.0.0.1:4001
+      BOOT_NODE: 127.0.0.1:4001
+    # keystore and datastore are found in /keystore and /datastore of the container
+    volumes:
+      - ${HOME}/.keystore:/keystore
+      - ${HOME}/.datastore:/datastore
