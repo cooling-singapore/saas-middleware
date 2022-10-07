@@ -7,7 +7,7 @@ from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DO
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
     CredentialsAddGithubCredentials
-from saas.cli.cmd_network import NetworkShow
+from saas.cli.cmd_network import NetworkList
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
     RTIProcShow, RTIJobList, RTIJobLogs
 from saas.cli.cmd_service import Service
@@ -97,7 +97,7 @@ def main():
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                NetworkShow()
+                NetworkList()
             ])
         ])
 
