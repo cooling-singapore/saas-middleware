@@ -419,7 +419,7 @@ class CLIParser(CLICommandGroup):
 
             console_enabled = args['log-console'] is not None
             log_path = args['log-path']
-            print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
+            # print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
             Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 
