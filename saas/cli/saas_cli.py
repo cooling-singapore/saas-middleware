@@ -108,10 +108,14 @@ def main():
         print(e.reason)
         sys.exit(-1)
 
+    except KeyboardInterrupt:
+        print("Interrupted by user.")
+        sys.exit(-2)
+
     except Exception as e:
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
         print(f"Unrefined exception:\n{trace}")
-        sys.exit(-2)
+        sys.exit(-3)
 
 
 if __name__ == "__main__":
