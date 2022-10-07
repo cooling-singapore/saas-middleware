@@ -9,9 +9,9 @@ from saas.nodedb.proxy import NodeDBProxy
 logger = Logging.get('cli.network')
 
 
-class NetworkShow(CLICommand):
+class NetworkList(CLICommand):
     def __init__(self) -> None:
-        super().__init__('show', 'shows the known nodes in the network', arguments=[])
+        super().__init__('show', 'retrieves a list of all known nodes in the network', arguments=[])
 
     def execute(self, args: dict) -> None:
         prompt_if_missing(args, 'address', prompt_for_string,
