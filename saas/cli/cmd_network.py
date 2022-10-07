@@ -3,7 +3,7 @@ import datetime
 from tabulate import tabulate
 
 from saas.cli.helpers import CLICommand, prompt_for_string, prompt_if_missing, extract_address
-from saas.log import Logging
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.network')

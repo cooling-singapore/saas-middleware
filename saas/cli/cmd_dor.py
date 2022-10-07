@@ -12,13 +12,13 @@ from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for
     prompt_for_keystore_selection, prompt_for_confirmation, prompt_for_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service, extract_address, prompt_for_identity_selection, prompt_for_data_objects, \
     deserialise_tag_value
-from saas.cryptography.helpers import encrypt_file
+from saas.core.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import ProcessorDescriptor, DataObject
-from saas.keystore.schemas import GithubCredentials
+from saas.core.schemas import GithubCredentials
 
 logger = Logging.get('cli.dor')
 
