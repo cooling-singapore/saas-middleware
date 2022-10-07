@@ -15,16 +15,17 @@ from InquirerPy.base import Choice
 from pydantic import ValidationError
 
 from saas.cli.exceptions import CLIRuntimeError
+from saas.core.exceptions import SaaSRuntimeException
 from saas.dor.proxy import DORProxy
 from saas.dor.service import GPP_DATA_TYPE
-from saas.exceptions import UnsuccessfulRequestError, SaaSException
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import DataObject, GPPDataObject
 from saas.nodedb.schemas import NodeInfo
-from saas.keystore.schemas import KeystoreContent
+from saas.core.schemas import KeystoreContent
+from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = Logging.get('cli.helpers')
 
@@ -138,7 +139,7 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
     try:
         keystore = Keystore.load(os.path.join(args['keystore'], f"{args['keystore-id']}.json"), args['password'])
 
-    except SaaSException as e:
+    except SaaSRuntimeException as e:
         raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']} because '{e.reason}'. Aborting.")
 
     if ensure_publication:
