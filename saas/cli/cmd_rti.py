@@ -6,6 +6,7 @@ from typing import List, Union
 import jsonschema
 from InquirerPy.base import Choice
 from pydantic import ValidationError
+from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
@@ -412,6 +413,49 @@ class RTIJobSubmit(CLICommand):
         # submit the job
         new_job_descriptor = self._rti.submit_job(proc_id, job_input, job_output, with_authorisation_by=keystore)
         print(f"Job submitted: job-id={new_job_descriptor.id}")
+
+
+class RTIJobList(CLICommand):
+    def __init__(self):
+        super().__init__('list', 'retrieve a list of all jobs by the user (or all jobs if the user is the node owner)',
+                         arguments=[])
+
+    def execute(self, args: dict) -> None:
+        rti = _require_rti(args)
+        keystore = load_keystore(args, ensure_publication=True)
+
+        try:
+            jobs = rti.get_jobs_by_user(keystore)
+
+            if jobs:
+                print(f"Found {len(jobs)} jobs:")
+
+                # get all deployed procs
+                deployed: list[Processor] = rti.get_deployed()
+                deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+
+                # headers
+                lines = [
+                    ['JOB ID', 'OWNER', 'PROC NAME', 'STATE'],
+                    ['------', '-----', '---------', '-----']
+                ]
+
+                for job in jobs:
+                    proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                        if job.task.proc_id in deployed else 'unknown'
+
+                    status = rti.get_job_status(job.id, with_authorisation_by=keystore)
+
+                    lines.append([job.id, job.task.user_iid, proc_name, status.state])
+
+                print(tabulate(lines, tablefmt="plain"))
+                print()
+
+            else:
+                print("No jobs found.")
+
+        except UnsuccessfulRequestError as e:
+            print(e.reason)
 
 
 class RTIJobStatus(CLICommand):

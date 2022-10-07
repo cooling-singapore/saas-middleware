@@ -14,11 +14,13 @@ from pydantic import BaseModel, Field
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import generate_random_string, write_json_to_file
+from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
-from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed, VerifyUserIsNodeOwner
+from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyUserIsNodeOwner, \
+    VerifyUserIsJobOwnerOrNodeOwner
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.helpers import JobContext
@@ -131,13 +133,16 @@ class RTIService:
                                self.resume, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-                               self.jobs, List[Job], [VerifyProcessorDeployed]),
+                               self.jobs_by_proc, List[Job], [VerifyProcessorDeployed]),
+
+            EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job',
+                               self.jobs_by_user, List[Job], [VerifyAuthorisation]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/status',
-                               self.job_status, JobStatus, [VerifyUserIsJobOwner]),
+                               self.job_status, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/logs',
-                               self.job_logs, None, [VerifyUserIsJobOwner]),
+                               self.job_logs, None, [VerifyUserIsJobOwnerOrNodeOwner]),
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'permission/{req_id}',
                                self.put_permission, None, None)
@@ -326,17 +331,50 @@ class RTIService:
             self._deployed[proc_id].resume(context)
             return job
 
-    def jobs(self, proc_id: str) -> List[Job]:
+    def jobs_by_proc(self, proc_id: str) -> List[Job]:
         """
         Retrieves a list of jobs processed by a processor. Any job that is pending execution or actively executed will
         be included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
         included in this list.
         """
+
         with self._mutex:
+            # collect all jobs
             result = [*self._deployed[proc_id].pending_jobs()]
             active = self._deployed[proc_id].active_job()
             if active:
                 result.append(active)
+
+            return result
+
+    def jobs_by_user(self, request: Request) -> List[Job]:
+        """
+        Retrieves a list of jobs owned by a user. Any job that is pending execution or actively executed will be
+        included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
+        included in this list.
+        """
+
+        with self._mutex:
+            # get the identity
+            user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
+
+            # collect all jobs
+            result = []
+            for proc in self._deployed.values():
+                result += [*proc.pending_jobs()]
+                active = proc.active_job()
+                if active:
+                    result.append(active)
+
+            # if the user is NOT the node owner, only return the jobs owned by the user
+            if self._node.identity.id != user.id:
+                filtered = []
+                for job in result:
+                    if job.task.user_iid == user.id:
+                        filtered.append(job)
+
+                return filtered
+
             return result
 
     def job_status(self, job_id: str) -> JobStatus:
