@@ -42,7 +42,7 @@ class JobContext:
     def add_thread(self, obj_name: str, target, args=()) -> None:
         with self._mutex:
             thread = threading.Thread(target=target, args=args)
-            self._threads[obj_name] = threading.Thread(target=target, args=args)
+            self._threads[obj_name] = thread
 
         thread.start()
 
