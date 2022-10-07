@@ -116,9 +116,15 @@ class RTIProcDeploy(CLICommand):
 
         # deploy the processor
         print(f"Deploying processor {args['proc-id']}...", end='')
-        rti.deploy(args['proc-id'], deployment=args['type'], gpp_custodian=custodian[args['proc-id']].identity.id,
-                   ssh_credentials=ssh_credentials, github_credentials=github_credentials)
-        print(f"Done")
+        try:
+            rti.deploy(args['proc-id'], keystore,
+                       deployment=args['type'],
+                       gpp_custodian=custodian[args['proc-id']].identity.id,
+                       ssh_credentials=ssh_credentials,
+                       github_credentials=github_credentials)
+            print(f"Done")
+        except UnsuccessfulRequestError as e:
+            print(f"{e.reason} details: {e.details}")
 
 
 class RTIProcUndeploy(CLICommand):
@@ -130,6 +136,7 @@ class RTIProcUndeploy(CLICommand):
 
     def execute(self, args: dict) -> None:
         rti = _require_rti(args)
+        keystore = load_keystore(args, ensure_publication=False)
 
         # get the deployed processors
         deployed = {proc.proc_id: proc for proc in rti.get_deployed()}
@@ -157,8 +164,11 @@ class RTIProcUndeploy(CLICommand):
 
             # undeploy the processor
             print(f"Undeploy processor {proc_id}...", end='')
-            rti.undeploy(proc_id)
-            print(f"Done")
+            try:
+                rti.undeploy(proc_id, keystore)
+                print(f"Done")
+            except UnsuccessfulRequestError as e:
+                print(f"{e.reason} details: {e.details}")
 
 
 class RTIProcList(CLICommand):
@@ -220,8 +230,8 @@ class RTIProcStatus(CLICommand):
 
                 status: ProcessorStatus = rti.get_status(proc_id)
                 print(f"{proc_id}:{item.gpp.proc_descriptor.name} [{status.state.upper()}] "
-                      f"pending={[s.job.id for s in status.pending]} "
-                      f"active={status.active.job.id if status.active else '(none)'}")
+                      f"pending={[job.id for job in status.pending]} "
+                      f"active={status.active.id if status.active else '(none)'}")
 
 
 class RTIJobSubmit(CLICommand):
