@@ -302,6 +302,7 @@ class DORRemove(CLICommand):
             # check if the object ids exist/owned by this entity
             dor = DORProxy(extract_address(args['address']))
             result = dor.search(owner_iid=keystore.identity.id)
+            result = {obj.obj_id: obj for obj in result}
             removable = []
             for obj_id in args['obj-ids']:
                 if obj_id not in result:
