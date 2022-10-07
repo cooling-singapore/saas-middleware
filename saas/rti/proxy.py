@@ -44,14 +44,14 @@ class RTIProxy(EndpointProxy):
                     'key': ssh_credentials.key,
                     'key_is_password': ssh_credentials.key_is_password
                 })
-                body['ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
+                body['encrypted_ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
 
             if github_credentials:
                 github_credentials_serialised = json.dumps({
                     'login': github_credentials.login,
                     'personal_access_token': github_credentials.personal_access_token
                 })
-                body['github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
+                body['encrypted_github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
 
         result = self.post(f"/proc/{proc_id}", body=body)
         return Processor.parse_obj(result)

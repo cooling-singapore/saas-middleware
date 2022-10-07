@@ -72,6 +72,9 @@ class NodeDBService:
         ]
 
     def get_node(self) -> NodeInfo:
+        """
+        Retrieves information about the node.
+        """
         with self._Session() as session:
             record = session.query(NodeRecord).get(self._node.identity.id)
             return NodeInfo(
@@ -84,6 +87,9 @@ class NodeDBService:
             )
 
     def get_network(self) -> List[NodeInfo]:
+        """
+        Retrieves information about all peers known to the node.
+        """
         with self._Session() as session:
             return [NodeInfo(
                 identity=self.get_identity(record.iid, raise_if_unknown=True),
@@ -95,6 +101,10 @@ class NodeDBService:
             ) for record in session.query(NodeRecord).all()]
 
     def update_network(self, node: NodeInfo) -> None:
+        """
+        Adds information about a node to the db. If there is already information about this node in the database, the
+        db is updated accordingly.
+        """
         with self._Session() as session:
             # find all conflicting records, i.e., records of a node with a different iid but on the same P2P/REST
             # address but different (if any).
@@ -150,21 +160,33 @@ class NodeDBService:
                              f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
 
     def remove_node_by_id(self, identity: Identity) -> None:
+        """
+        Removes a node from the db, given its identity.
+        """
         with self._Session() as session:
             session.query(NodeRecord).filter_by(iid=identity.id).delete()
             session.commit()
 
     def remove_node_by_address(self, address: (str, int)) -> None:
+        """
+        Removes a node from the db, given its address (host, port).
+        """
         with self._Session() as session:
             session.query(NodeRecord).filter_by(p2p_address=f"{address[0]}:{address[1]}").delete()
             session.commit()
 
     def reset_network(self) -> None:
+        """
+        Resets the db, i.e., removes the information of all nodes in the db.
+        """
         with self._Session() as session:
             session.query(NodeRecord).filter(NodeRecord.iid != self._node.identity.id).delete()
             session.commit()
 
     def get_identity(self, iid: str, raise_if_unknown: bool = False) -> Optional[Identity]:
+        """
+        Retrieves the identity given its id (if the node db knows about it).
+        """
         with self._Session() as session:
             record = session.query(IdentityRecord).filter_by(iid=iid).first()
 
@@ -182,6 +204,9 @@ class NodeDBService:
             ) if record else None
 
     def get_identities(self) -> List[Identity]:
+        """
+        Retrieves a list of all identities known to the node.
+        """
         with self._Session() as session:
             records = session.query(IdentityRecord).all()
             return [
@@ -197,6 +222,9 @@ class NodeDBService:
             ]
 
     def update_identity(self, identity: Identity) -> Identity:
+        """
+        Updates an existing identity or adds a new one in case an identity with the id does not exist yet.
+        """
         # verify the integrity of the identity
         if not identity.verify_integrity():
             raise InvalidIdentityError({
@@ -230,6 +258,9 @@ class NodeDBService:
         return self.get_identity(identity.id, raise_if_unknown=True)
 
     def get_snapshot(self, exclude: List[str] = None) -> NodeDBSnapshot:
+        """
+        Retrieves a snapshot of the contents stored in the db.
+        """
         # get all nodes we know of (minus the ones to exclude)
         nodes = []
         for node in self.get_network():
