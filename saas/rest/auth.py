@@ -180,5 +180,5 @@ class VerifyUserIsNodeOwner:
             raise AuthorisationFailedError({
                 'reason': 'User is not the node owner',
                 'user_iid': identity.id,
-                'noder_iid': self.node.identity.id
+                'node_iid': self.node.identity.id
             })
