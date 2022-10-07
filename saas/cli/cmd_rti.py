@@ -505,14 +505,14 @@ class RTIJobLogs(CLICommand):
         ])
 
     def execute(self, args: dict) -> None:
-        rti = _require_rti(args)
-        keystore = load_keystore(args, ensure_publication=True)
-
         # do we have a valid destination directory?
         if not args['destination']:
             raise CLIRuntimeError(f"No download path provided")
         elif not os.path.isdir(args['destination'][0]):
             raise CLIRuntimeError(f"Destination path provided is not a directory")
+
+        rti = _require_rti(args)
+        keystore = load_keystore(args, ensure_publication=True)
 
         # do we have a job id?
         if not args['job-id']:
