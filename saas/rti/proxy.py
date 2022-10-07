@@ -86,8 +86,12 @@ class RTIProxy(EndpointProxy):
         }, with_authorisation_by=with_authorisation_by)
         return Job.parse_obj(result)
 
-    def get_jobs(self, proc_id: str) -> List[Job]:
+    def get_jobs_by_proc(self, proc_id: str) -> List[Job]:
         results = self.get(f"/proc/{proc_id}/jobs")
+        return [Job.parse_obj(result) for result in results]
+
+    def get_jobs_by_user(self, authority: Keystore) -> List[Job]:
+        results = self.get(f"/job", with_authorisation_by=authority)
         return [Job.parse_obj(result) for result in results]
 
     def get_job_status(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:

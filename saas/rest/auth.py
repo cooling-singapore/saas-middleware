@@ -142,7 +142,7 @@ class VerifyProcessorDeployed:
         })
 
 
-class VerifyUserIsJobOwner:
+class VerifyUserIsJobOwnerOrNodeOwner:
     def __init__(self, node):
         self.node = node
 
@@ -159,12 +159,13 @@ class VerifyUserIsJobOwner:
         with open(descriptor_path, 'r') as f:
             job = Job.parse_obj(json.load(f))
 
-            if job.task.user_iid != identity.id:
+            if job.task.user_iid != identity.id and identity.id != self.node.identity.id:
                 raise AuthorisationFailedError({
-                    'reason': 'user is not the job owner',
+                    'reason': 'user is not the job owner or the node owner',
                     'job_id': job_id,
                     'user_iid': identity.id,
-                    'owner_iid': job.task.user_iid
+                    'owner_iid': job.task.user_iid,
+                    'node_iid': self.node.identity.id
                 })
 
 
