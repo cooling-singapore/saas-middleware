@@ -117,9 +117,9 @@ class DataObject(BaseModel):
     data_type: str = Field(..., title="Data Type", description="The data type of the data object.", example="JSONObject")
     data_format: str = Field(..., title="Data Format", description="The data format of the data object.", example="json")
     created: CreationDetails = Field(..., title="Creation Details", description="Information about the creation of this data object.")
-    owner_iid: str = Field(..., title="", description="Owner IId", example="vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2")
+    owner_iid: str = Field(..., title="Owner IId", description="Owner IId", example="vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2")
     access_restricted: bool = Field(..., title="Access Restriction", description="Indicates if this data object has restricted access to its content.", example=False)
-    access: List[str] = Field(..., title="", description="Access", example=["vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2"])
+    access: List[str] = Field(..., title="Access", description="A list of ids of identities that have access to the contents of the data object.", example=["vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2"])
     tags: Dict[str, Union[str, int, float, bool, List, Dict]] = Field(..., title="Tags", description="The tags of this data object.")
 
 
