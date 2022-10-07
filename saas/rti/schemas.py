@@ -1,8 +1,10 @@
+from enum import Enum
 from typing import Literal, Optional, List, Union, Dict
 
 from pydantic import BaseModel
 
 from saas.dor.schemas import GitProcessorPointer
+from saas.exceptions import ExceptionContent
 
 
 class Task(BaseModel):
@@ -37,16 +39,31 @@ class Job(BaseModel):
     retain: bool
 
 
-class ResumableJob(Job):
+class ReconnectInfo(BaseModel):
     paths: Dict[str, str]
     pid: str
     pid_paths: Dict[str, str]
 
 
 class JobStatus(BaseModel):
-    state: str
-    status: dict
-    job: Union[Job, ResumableJob]
+    class State(str, Enum):
+        INITIALISED = 'initialised'
+        RUNNING = 'running'
+        FAILED = 'failed'
+        TIMEOUT = 'timeout'
+        SUCCESSFUL = 'successful'
+
+    class Error(BaseModel):
+        message: str
+        exception: ExceptionContent
+
+    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL]
+    progress: int
+    output: Dict[str, str]
+    notes: dict
+    job: Job
+    reconnect: Optional[ReconnectInfo]
+    errors: Optional[List[Error]]
 
 
 class Processor(BaseModel):
@@ -56,5 +73,5 @@ class Processor(BaseModel):
 
 class ProcessorStatus(BaseModel):
     state: str
-    pending: List[JobStatus]
-    active: Optional[JobStatus]
+    pending: List[Job]
+    active: Optional[Job]

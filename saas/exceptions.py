@@ -1,4 +1,14 @@
+from typing import Optional
+
+from pydantic import BaseModel
+
 from saas import helpers
+
+
+class ExceptionContent(BaseModel):
+    id: str
+    reason: str
+    details: Optional[dict]
 
 
 class SaaSException(Exception):
@@ -18,6 +28,9 @@ class SaaSException(Exception):
     @property
     def id(self):
         return self._id
+
+    def content(self) -> ExceptionContent:
+        return ExceptionContent(id=self._id, reason=self._reason, details=self._details)
 
 
 class DORServiceNotSupportedError(SaaSException):
