@@ -9,7 +9,7 @@ from typing import Optional, List, Union
 from fastapi import UploadFile, Form, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, String, Boolean
+from sqlalchemy import Column, String, Boolean, BigInteger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
@@ -145,6 +145,7 @@ class DataObjectRecord(Base):
     access_restricted = Column(Boolean, nullable=False)
     access = Column(NestedMutableJson, nullable=False)
     tags = Column(NestedMutableJson, nullable=False)
+    last_accessed = Column(BigInteger, nullable=False)
 
     # type-specific meta information
     details = Column(NestedMutableJson, nullable=False)
@@ -452,7 +453,8 @@ class DORService:
                                              'content_encrypted': p.content_encrypted,
                                              'license': p.license.dict(),
                                              'recipe': p.recipe.dict() if p.recipe else None,
-                                         }))
+                                         },
+                                         last_accessed=created_t))
             session.commit()
             logger.info(f"database record for data object '{obj_id}' added with c_hash={c_hash}.")
 
@@ -566,7 +568,8 @@ class DORService:
                                              'proc_path': p.proc_path,
                                              'proc_config': p.proc_config,
                                              'proc_descriptor': proc_descriptor.dict()
-                                         }))
+                                         },
+                                         last_accessed=created_t))
 
             session.commit()
 
@@ -631,6 +634,7 @@ class DORService:
                     'access_restricted': record.access_restricted,
                     'access': record.access,
                     'tags': record.tags,
+                    'last_accessed': record.last_accessed,
 
                     'gpp': {
                         'source': details['source'],
@@ -652,6 +656,7 @@ class DORService:
                     'access_restricted': record.access_restricted,
                     'access': record.access,
                     'tags': record.tags,
+                    'last_accessed': record.last_accessed,
 
                     'content_encrypted': details['content_encrypted'],
                     'license': details['license'],
@@ -674,6 +679,9 @@ class DORService:
             raise DataObjectContentNotFoundError({
                 'path': content_path
             })
+
+        # touch data object
+        self.touch_data_object(obj_id)
 
         return FileResponse(content_path, media_type='application/octet-stream')
 
@@ -713,6 +721,9 @@ class DORService:
                 record.access.append(user_iid)
                 session.commit()
 
+        # touch data object
+        self.touch_data_object(obj_id)
+
         return self.get_meta(obj_id)
 
     def revoke_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
@@ -736,6 +747,9 @@ class DORService:
                 record.access.remove(user_iid)
             session.commit()
 
+        # touch data object
+        self.touch_data_object(obj_id)
+
         return self.get_meta(obj_id)
 
     def transfer_ownership(self, obj_id: str, new_owner_iid: str) -> Union[CDataObject, GPPDataObject]:
@@ -758,6 +772,9 @@ class DORService:
             record.owner_iid = new_owner_iid
             session.commit()
 
+        # touch data object
+        self.touch_data_object(obj_id)
+
         return self.get_meta(obj_id)
 
     def update_tags(self, obj_id: str, tags: List[DataObject.Tag]) -> Union[CDataObject, GPPDataObject]:
@@ -776,6 +793,9 @@ class DORService:
                 record.tags[tag.key] = tag.value if tag.value else None
             session.commit()
 
+        # touch data object
+        self.touch_data_object(obj_id)
+
         return self.get_meta(obj_id)
 
     def remove_tags(self, obj_id: str, keys: List[str]) -> Union[CDataObject, GPPDataObject]:
@@ -793,4 +813,19 @@ class DORService:
                 record.tags.pop(key, None)
             session.commit()
 
+        # touch data object
+        self.touch_data_object(obj_id)
+
         return self.get_meta(obj_id)
+
+    def touch_data_object(self, obj_id) -> None:
+        with self._Session() as session:
+            # do we have an object with this id?
+            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+            if record is None:
+                raise DataObjectNotFoundError(obj_id)
+
+            # update the last accessed timestamp of this data object
+            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+            record.last_accessed = get_timestamp_now()
+            session.commit()
