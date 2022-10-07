@@ -3,8 +3,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.core.eckeypair import ECKeyPair
+from saas.core.rsakeypair import RSAKeyPair
 
 
 def generate_identity_token(iid: str, name: str, email: str, nonce: int, s_public_key: str, e_public_key: str) -> str:

@@ -11,26 +11,26 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional, List, Tuple
 
-from saas.cryptography.helpers import decrypt_file, encrypt_file, hash_json_object
-from saas.cryptography.keypair import KeyPair
-from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
+from saas.core.helpers import decrypt_file, encrypt_file, hash_json_object
+from saas.core.keypair import KeyPair
+from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.exceptions import RunCommandError, SaaSException, ExceptionContent
-from saas.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
+from saas.core.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
     generate_random_string
-from saas.log import Logging
+from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
-    DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException
+    DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException, RunCommandError
 from saas.rti.helpers import JobContext
 
 from saas.rti.schemas import JobStatus, ProcessorStatus, Job
 from saas.dor.schemas import GitProcessorPointer, DataObject
 from saas.nodedb.schemas import NodeInfo
-from saas.keystore.schemas import SSHCredentials
+from saas.core.schemas import SSHCredentials
 
 logger = Logging.get('rti.adapters')
 
@@ -450,7 +450,7 @@ class RTIProcessorAdapter(Thread, ABC):
             self._state = ProcessorState.STARTING
             self.startup()
 
-        except SaaSException as e:
+        except SaaSRuntimeException as e:
             logger.error(f"[adapter:{self._proc_id}] starting up failed: [{e.id}] {e.reason} {e.details}")
             self._state = ProcessorState.FAILED
 
@@ -493,17 +493,17 @@ class RTIProcessorAdapter(Thread, ABC):
                     self.connect_and_monitor(context)
 
                 else:
-                    raise SaaSException(f"unexpected job type '{pending_job[0]}'")
+                    raise SaaSRuntimeException(f"unexpected job type '{pending_job[0]}'")
 
                 # perform post-execute routine
                 self.post_execute(context.job.id)
 
             except RunCommandError as e:
-                context.add_error('timeout while running job', e.content())
+                context.add_error('timeout while running job', e.content)
                 context.state = JobStatus.State.TIMEOUT
 
-            except SaaSException as e:
-                context.add_error('error while running job', e.content())
+            except SaaSRuntimeException as e:
+                context.add_error('error while running job', e.content)
                 context.state = JobStatus.State.FAILED
 
             except Exception as e:

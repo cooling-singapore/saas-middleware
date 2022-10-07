@@ -6,19 +6,19 @@ import string
 from threading import Lock
 from pydantic import ValidationError
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.helpers import hash_json_object
-from saas.cryptography.keypair import KeyPair
-from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.keystore.schemas import GithubCredentials, SSHCredentials, KeystoreContent
-from saas.helpers import generate_random_string, write_json_to_file, read_json_from_file, validate_json
-from saas.keystore.assets import MasterKeyPairAsset, KeyPairAsset, ContentKeysAsset, SSHCredentialsAsset, \
+from saas.core.eckeypair import ECKeyPair
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import hash_json_object
+from saas.core.keypair import KeyPair
+from saas.core.logging import Logging
+from saas.core.rsakeypair import RSAKeyPair
+from saas.core.schemas import KeystoreContent
+from saas.core.helpers import generate_random_string, write_json_to_file
+from saas.core.assets import MasterKeyPairAsset, KeyPairAsset, ContentKeysAsset, SSHCredentialsAsset, \
     GithubCredentialsAsset
-from saas.keystore.exceptions import KeystoreException, KeystoreCredentialsException
-from saas.keystore.identity import generate_identity_token, Identity
-from saas.log import Logging
+from saas.core.identity import generate_identity_token, Identity
 
-logger = Logging.get('keystore.Keystore')
+logger = Logging.get('saas.core')
 
 
 class Keystore:
@@ -57,8 +57,8 @@ class Keystore:
         # check if signature is valid
         content_hash = hash_json_object(content.dict(), exclusions=['signature'])
         if not self._s_key.verify(content_hash, content.signature):
-            raise KeystoreException(f"Invalid keystore content signature: "
-                                    f"content_hash={content_hash}, signature={content.signature}.")
+            raise SaaSRuntimeException(f"Invalid keystore content signature: "
+                                       f"content_hash={content_hash}, signature={content.signature}.")
 
         self._update_identity()
 
@@ -112,19 +112,19 @@ class Keystore:
     def load(cls, keystore_path: str, password: str) -> Keystore:
         # check if keystore file exists
         if not os.path.isfile(keystore_path):
-            raise KeystoreException(f"Keystore content not found at {keystore_path}")
+            raise SaaSRuntimeException(f"Keystore content not found at {keystore_path}")
 
         # load content and validate
         try:
             content = KeystoreContent.parse_file(keystore_path)
         except ValidationError:
-            raise KeystoreException("Keystore content not compliant with json schema.")
+            raise SaaSRuntimeException("Keystore content not compliant with json schema.")
 
         # check if we have required assets
         for required in ['master-key', 'signing-key', 'encryption-key', 'content-keys', 'ssh-credentials',
                          'github-credentials']:
             if required not in content.assets:
-                raise KeystoreException(f"Keystore invalid: {required} found.")
+                raise SaaSRuntimeException(f"Keystore invalid: {required} found.")
 
         # create keystore
         keystore = Keystore(keystore_path, password, content)
@@ -214,7 +214,7 @@ class Keystore:
 
         # verify the identity's integrity
         if not self._identity.verify_integrity():
-            raise KeystoreException(f"Keystore produced invalid identity", details={
+            raise SaaSRuntimeException(f"Keystore produced invalid identity", details={
                 'identity': self._identity
             })
 
@@ -238,114 +238,3 @@ class Keystore:
 
             # update identity
             self._update_identity()
-
-
-def update_keystore_from_credentials(keystore: Keystore, credentials_path: str = None) -> None:
-    """
-    Updates a keystore with credentials loaded from credentials file. This is a convenience function useful for
-    testing purposes. A valid example content may look something like this:
-    {
-        "name": "John Doe",
-        "email": "john.doe@internet.com",
-        "ssh-credentials": [
-            {
-            "name": "my-remote-machine-A",
-            "login": "johnd",
-            "host": "10.8.0.1",
-            "password": "super-secure-password-123"
-            },
-            {
-            "name": "my-remote-machine-B",
-            "login": "johnd",
-            "host": "10.8.0.2",
-            "key_path": "/home/johndoe/machine-b-key"
-            }
-        ],
-        "github-credentials": [
-            {
-                "repository": "https://github.com/my-repo",
-                "login": "JohnDoe",
-                "personal_access_token": "ghp_xyz..."
-            }
-        ]
-    }
-
-    For SSH credentials note that you can either indicate a password or a path to a key file.
-
-    :param keystore: the keystore that is to be updated
-    :param credentials_path: the optional path to the credentials file (default is $HOME/.saas-credentials.json)
-    :return:
-    """
-
-    credentials_schema = {
-        'type': 'object',
-        'properties': {
-            'name': {'type': 'string'},
-            'email': {'type': 'string'},
-            'ssh-credentials': {
-                'type': 'array',
-                'items': {
-                    'type': 'object',
-                    'properties': {
-                        'name': {'type': 'string'},
-                        'login': {'type': 'string'},
-                        'host': {'type': 'string'},
-                        'password': {'type': 'string'},
-                        'key_path': {'type': 'string'}
-                    },
-                    'required': ['name', 'login', 'host']
-                }
-            },
-            'github-credentials': {
-                'type': 'array',
-                'items': {
-                    'type': 'object',
-                    'properties': {
-                        'repository': {'type': 'string'},
-                        'login': {'type': 'string'},
-                        'personal_access_token': {'type': 'string'}
-                    },
-                    'required': ['repository', 'login', 'personal_access_token']
-                }
-            }
-        }
-    }
-
-    # load the credentials and validate
-    path = credentials_path if credentials_path else os.path.join(os.environ['HOME'], '.saas-credentials.json')
-    credentials = read_json_from_file(path)
-    if not validate_json(content=credentials, schema=credentials_schema):
-        raise KeystoreCredentialsException(path, credentials, credentials_schema)
-
-    # update profile (if applicable)
-    keystore.update_profile(name=credentials['name'] if 'name' in credentials else None,
-                            email=credentials['email'] if 'email' in credentials else None)
-
-    # do we have SSH credentials?
-    if 'ssh-credentials' in credentials:
-        for item in credentials['ssh-credentials']:
-            # password or key path?
-            if 'password' in item:
-                keystore.ssh_credentials.update(item['name'],
-                                                SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=item['password'], key_is_password=True))
-
-            elif 'key_path' in item:
-                # read the ssh key from file
-                with open(item['key_path'], 'r') as f:
-                    ssh_key = f.read()
-
-                keystore.ssh_credentials.update(item['name'],
-                                                SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=ssh_key, key_is_password=False))
-
-            else:
-                raise RuntimeError(f"Unexpected SSH credentials format: {item}")
-
-        keystore.sync()
-
-    # do we have Github credentials?
-    if 'github-credentials' in credentials:
-        for item in credentials['github-credentials']:
-            keystore.github_credentials.update(item['repository'], GithubCredentials.parse_obj(item))
-        keystore.sync()

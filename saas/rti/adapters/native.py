@@ -2,12 +2,12 @@ import os
 import time
 
 import saas.rti.adapters.base as base
-from saas.exceptions import SaaSException, ExceptionContent
+from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 
-from saas.log import Logging
+from saas.core.logging import Logging
+from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.rti.helpers import JobContext
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
 logger = Logging.get('rti.adapters.native')
 
@@ -190,7 +190,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             self._push_data_object(obj_name, paths['local_wd'], context)
             context.make_note(f"process_output:{obj_name}", 'done')
 
-        except SaaSException as e:
+        except SaaSRuntimeException as e:
             context.make_note(f"process_output:{obj_name}", 'failed')
             context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
                                                                                     details=e.details))

@@ -4,10 +4,10 @@ from typing import Union, Optional
 
 import requests
 
-from saas.cryptography.helpers import hash_string_object, hash_json_object, hash_bytes_object
-from saas.exceptions import UnsuccessfulRequestError, UnexpectedHTTPError, UnexpectedContentType, \
+from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
+from saas.core.keystore import Keystore
+from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
     UnsuccessfulConnectionError
-from saas.keystore.keystore import Keystore
 
 
 def extract_response(response: requests.Response) -> Optional[Union[dict, list]]:

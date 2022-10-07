@@ -4,8 +4,8 @@ from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.nodedb.exceptions import InvalidIdentityError, IdentityNotFoundError
 from saas.nodedb.protocol import NodeDBP2PProtocol, NodeDBSnapshot
 from saas.nodedb.proxy import DB_ENDPOINT_PREFIX

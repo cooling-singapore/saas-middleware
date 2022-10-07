@@ -4,9 +4,9 @@ import unittest
 import logging
 import time
 
-from saas.helpers import get_timestamp_now
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.helpers import get_timestamp_now
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from tests.base_testcase import TestCaseBase, PortMaster

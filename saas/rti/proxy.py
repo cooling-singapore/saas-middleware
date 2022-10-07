@@ -1,13 +1,13 @@
 import json
 from typing import List, Union
 
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.proxy import EndpointProxy
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
+from saas.core.schemas import GithubCredentials, SSHCredentials
 
 RTI_ENDPOINT_PREFIX = "/api/v1/rti"
 

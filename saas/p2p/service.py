@@ -6,8 +6,8 @@ import traceback
 from threading import Lock
 from typing import Optional
 
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.p2p.exceptions import P2PException, UnsupportedProtocolError, UnexpectedMessageTypeError
 from saas.p2p.protocol import SecureMessenger, P2PProtocol
 

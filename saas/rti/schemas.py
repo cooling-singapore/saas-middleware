@@ -3,8 +3,8 @@ from typing import Literal, Optional, List, Union, Dict
 
 from pydantic import BaseModel, Field
 
+from saas.core.exceptions import ExceptionContent
 from saas.dor.schemas import GitProcessorPointer
-from saas.exceptions import ExceptionContent
 
 
 class Task(BaseModel):

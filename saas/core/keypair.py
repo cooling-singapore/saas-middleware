@@ -2,11 +2,11 @@ from abc import abstractmethod, ABC
 
 import cryptography.hazmat.primitives.serialization as serialization
 
-from saas.cryptography.exceptions import NoPrivateKeyFoundError
-from saas.cryptography.helpers import hash_bytes_object
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import hash_bytes_object
+from saas.core.logging import Logging
 
-logger = Logging.get('cryptography.KeyPair')
+logger = Logging.get('saas.core')
 
 
 class KeyPair(ABC):
@@ -34,7 +34,7 @@ class KeyPair(ABC):
         :return: byte array representing the password-protected private key or None if no private key is available
         """
         if self.private_key is None:
-            raise NoPrivateKeyFoundError()
+            raise SaaSRuntimeException('No private key found')
 
         # encrypt with a password?
         key_encryption_algorithm = serialization.NoEncryption()
@@ -62,11 +62,11 @@ class KeyPair(ABC):
         Serialises the private key and returns it as string (or None in case this KeyPair instance does not
         have a private key).
         :param password: the password to protect the private key
-        :param truncate: indicates whether or not to create a truncated string (default: False)
+        :param truncate: indicates whether to create a truncated string (default: False)
         :return: string representing of the private key or None if no private key is available
         """
         if self.private_key is None:
-            raise NoPrivateKeyFoundError()
+            raise SaaSRuntimeException('No private key found')
 
         result = self.private_as_bytes(password).decode('utf-8')
         if truncate:
@@ -83,7 +83,7 @@ class KeyPair(ABC):
         """
         Serialises the public key and returns it as string. If truncate=True, the PEM prefix and suffix is removed
         as well as all white space characters.
-        :param truncate: indicates whether or not to create a truncated string (default: True)
+        :param truncate: indicates whether to create a truncated string (default: True)
         :return: string representing the public key
         """
         result = self.public_as_bytes().decode('utf-8')
@@ -96,7 +96,7 @@ class KeyPair(ABC):
         """
         Writes the private key into a file.
         :param path: the path where to store the private key
-        :param password: the password used to protected the private key
+        :param password: the password used to protect the private key
         :return: None
         """
         with open(path, 'wb') as f:

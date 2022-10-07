@@ -7,18 +7,20 @@ import unittest
 from threading import Thread
 from typing import Union, List
 
-from saas.cryptography.helpers import encrypt_file
-from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import encrypt_file
+from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.exceptions import SaaSException, RunCommandError, UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now, generate_random_string
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.helpers import get_timestamp_now, generate_random_string
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
+from saas.rti.exceptions import RunCommandError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
-from saas.keystore.schemas import GithubCredentials
+from saas.core.schemas import GithubCredentials
 
 from tests.base_testcase import TestCaseBase
 
@@ -253,7 +255,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         pass
 
 
-class UnsuccessfulJob(SaaSException):
+class UnsuccessfulJob(SaaSRuntimeException):
     def __init__(self, reason: str, details: dict) -> None:
         super().__init__(f"Unsuccessful job: {reason}", details=details)
 
