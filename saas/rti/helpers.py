@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from threading import Lock
 from typing import Union, Optional
 
@@ -38,9 +39,12 @@ class JobContext:
         with self._mutex:
             return self._content.reconnect
 
-    def add_thread(self, obj_name: str, thread) -> None:
+    def add_thread(self, obj_name: str, target, args=()) -> None:
         with self._mutex:
-            self._threads[obj_name] = thread
+            thread = threading.Thread(target=target, args=args)
+            self._threads[obj_name] = threading.Thread(target=target, args=args)
+
+        thread.start()
 
     def pop_thread(self, obj_name: str) -> None:
         with self._mutex:

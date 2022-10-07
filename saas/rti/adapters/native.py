@@ -1,5 +1,4 @@
 import os
-import threading
 import time
 
 import saas.rti.adapters.base as base
@@ -164,11 +163,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
     def _handle_trigger_output(self, line: str, context: JobContext) -> None:
         obj_name = line.split(':')[2]
-
-        thread = threading.Thread(target=self._process_output, args=(obj_name, context,))
-        context.add_thread(obj_name, thread)
-
-        thread.start()
+        context.add_thread(obj_name, target=self._process_output, args=(obj_name, context,))
 
     def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
         progress = line.split(':')[2]
