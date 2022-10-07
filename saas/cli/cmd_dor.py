@@ -282,6 +282,30 @@ class DORAddGPP(CLICommand):
         print(f"GPP Data object added: {json.dumps(meta.dict(), indent=4)}")
 
 
+class DORMeta(CLICommand):
+    def __init__(self):
+        super().__init__('meta', 'retrieves the meta information of a data object', arguments=[
+            Argument('--obj-id', dest='obj-id', action='store', help=f"the id of the data object")
+        ])
+
+    def execute(self, args: dict) -> None:
+        dor = _require_dor(args)
+
+        # do we have an object id?
+        if not args['obj-id']:
+            # determine object ids for downloading
+            args['obj-id'] = prompt_for_data_objects(extract_address(args['address']),
+                                                     message="Select data object:",
+                                                     allow_multiple=False)
+
+        # get the meta information
+        meta = dor.get_meta(args['obj-id'])
+        if not meta:
+            raise CLIRuntimeError(f"No data object with id={args['obj-id']}")
+
+        print(json.dumps(meta.dict(), indent=4))
+
+
 class DORDownload(CLICommand):
     def __init__(self):
         super().__init__('download', 'retrieves the contents of a data object', arguments=[

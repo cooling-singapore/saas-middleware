@@ -6,6 +6,7 @@ from fastapi import Request
 
 from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
 from saas.core.identity import Identity
+from saas.dor.schemas import DataObject
 from saas.rest.exceptions import AuthorisationFailedError
 from saas.rti.exceptions import JobDescriptorNotFoundError, ProcessorNotDeployedError
 from saas.rti.schemas import Job
@@ -114,7 +115,7 @@ class VerifyUserHasAccess:
         identity, body = await VerifyAuthorisation(self.node).__call__(request)
 
         # get the meta information of the object
-        meta = self.node.dor.get_meta(obj_id)
+        meta: DataObject = self.node.dor.get_meta(obj_id)
         if meta is None:
             raise AuthorisationFailedError({
                 'reason': 'data object does not exist',
@@ -122,7 +123,7 @@ class VerifyUserHasAccess:
             })
 
         # check if the identity has access to the data object content
-        if identity.id not in meta.access:
+        if meta.access_restricted and identity.id not in meta.access:
             raise AuthorisationFailedError({
                 'reason': 'user has no access to the data object content',
                 'obj_id': obj_id,
