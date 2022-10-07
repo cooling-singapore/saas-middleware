@@ -160,5 +160,8 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 'c_hash': meta.c_hash
             })
 
+        # touch data object
+        self.node.dor.touch_data_object(meta.obj_id)
+
         # if all is good, send a reply with the meta information followed by the data object content as attachment
         return FetchResponse(successful=True, meta=meta), content_path

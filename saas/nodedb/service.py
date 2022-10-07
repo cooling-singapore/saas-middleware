@@ -4,6 +4,7 @@ from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+from saas.core.helpers import get_timestamp_now
 from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import InvalidIdentityError, IdentityNotFoundError
@@ -36,6 +37,7 @@ class IdentityRecord(Base):
     e_public_key = Column(String, nullable=True)
     nonce = Column(Integer, nullable=False)
     signature = Column(String, nullable=True)
+    last_seen = Column(BigInteger, nullable=False)
 
 
 class NodeDBService:
@@ -200,7 +202,8 @@ class NodeDBService:
                 s_public_key=record.s_public_key,
                 e_public_key=record.e_public_key,
                 nonce=record.nonce,
-                signature=record.signature
+                signature=record.signature,
+                last_seen = record.last_seen
             ) if record else None
 
     def get_identities(self) -> List[Identity]:
@@ -217,7 +220,8 @@ class NodeDBService:
                     s_public_key=record.s_public_key,
                     e_public_key=record.e_public_key,
                     nonce=record.nonce,
-                    signature=record.signature
+                    signature=record.signature,
+                    last_seen=record.last_seen
                 ) for record in records
             ]
 
@@ -238,7 +242,8 @@ class NodeDBService:
             if record is None:
                 session.add(IdentityRecord(iid=identity.id, name=identity.name, email=identity.email,
                                            s_public_key=identity.s_public_key, e_public_key=identity.e_public_key,
-                                           nonce=identity.nonce, signature=identity.signature))
+                                           nonce=identity.nonce, signature=identity.signature,
+                                           last_seen=get_timestamp_now()))
                 session.commit()
 
             # only perform update if either the record does not exist yet OR if the information provided is valid
@@ -250,6 +255,7 @@ class NodeDBService:
                 record.s_key = identity.s_public_key
                 record.e_key = identity.e_public_key
                 record.signature = identity.signature
+                record.last_seen = get_timestamp_now()
                 session.commit()
 
             else:
@@ -274,3 +280,13 @@ class NodeDBService:
                 identities.append(identity)
 
         return NodeDBSnapshot(update_identity=identities, update_network=nodes)
+
+    def touch_identity(self, identity: Identity) -> None:
+        with self._Session() as session:
+            # do we have the identity already on record?
+            record = session.query(IdentityRecord).get(identity.id)
+            if record is None:
+                raise IdentityNotFoundError(identity.id)
+
+            record.last_accessed = get_timestamp_now()
+            session.commit()

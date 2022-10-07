@@ -76,6 +76,9 @@ class VerifyAuthorisation:
                 'signature': signature
             })
 
+        # touch the identity
+        self.node.db.touch_identity(identity)
+
         return identity, body
 
 
