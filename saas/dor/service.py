@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile
 from typing import Optional, List, Union
 
 from fastapi import UploadFile, Form, File
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Boolean, BigInteger
 from sqlalchemy import create_engine
@@ -673,17 +673,28 @@ class DORService:
         if meta is None:
             raise DataObjectNotFoundError(obj_id)
 
-        # check if we have the content
-        content_path = self.obj_content_path(meta.c_hash)
-        if not os.path.isfile(content_path):
-            raise DataObjectContentNotFoundError({
-                'path': content_path
-            })
+        # is it a GPP
+        if meta.data_type == GPP_DATA_TYPE:
+            async def gpp_streamer():
+                yield json.dumps(meta.gpp.dict(), indent=4).encode('utf-8')
 
-        # touch data object
-        self.touch_data_object(obj_id)
+            return StreamingResponse(
+                content=gpp_streamer(),
+                media_type='application/octet-stream'
+            )
 
-        return FileResponse(content_path, media_type='application/octet-stream')
+        else:
+            # check if we have the content
+            content_path = self.obj_content_path(meta.c_hash)
+            if not os.path.isfile(content_path):
+                raise DataObjectContentNotFoundError({
+                    'path': content_path
+                })
+
+            # touch data object
+            self.touch_data_object(obj_id)
+
+            return FileResponse(content_path, media_type='application/octet-stream')
 
     def get_provenance(self, c_hash: str) -> Optional[DataObjectProvenance]:
         """

@@ -3,7 +3,7 @@ import sys
 import traceback
 
 from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
-    DORAccessRevoke, DORAccessShow
+    DORAccessRevoke, DORAccessShow, DORDownload
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
     CredentialsAddGithubCredentials
@@ -65,6 +65,7 @@ def main():
                 DORSearch(),
                 DORAdd(),
                 DORAddGPP(),
+                DORDownload(),
                 DORRemove(),
                 DORTag(),
                 DORUntag(),
