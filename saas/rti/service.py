@@ -18,7 +18,7 @@ from saas.core.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
-from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed
+from saas.rest.auth import VerifyAuthorisation, VerifyUserIsJobOwner, VerifyProcessorDeployed, VerifyUserIsNodeOwner
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, GPPDataObjectNotFound, RTIException
 from saas.rti.helpers import JobContext
@@ -113,10 +113,10 @@ class RTIService:
                                self.deployed, List[Processor], None),
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
-                               self.deploy, Processor, None),
+                               self.deploy, Processor, [VerifyUserIsNodeOwner]),
 
             EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
-                               self.undeploy, Processor, [VerifyProcessorDeployed]),
+                               self.undeploy, Processor, [VerifyProcessorDeployed, VerifyUserIsNodeOwner]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/gpp',
                                self.gpp, GitProcessorPointer, [VerifyProcessorDeployed]),

@@ -40,8 +40,8 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     return meta.obj_id, github_credentials
 
 
-def deploy_and_wait(rti: RTIProxy, proc_id: str, github_credentials: GithubCredentials = None):
-    rti.deploy(proc_id, github_credentials=github_credentials)
+def deploy_and_wait(rti: RTIProxy, proc_id: str, authority: Keystore, github_credentials: GithubCredentials = None):
+    rti.deploy(proc_id, authority, github_credentials=github_credentials)
     while (state := rti.get_status(proc_id).state) == ProcessorState.STARTING:
         logger.info(f"Waiting for processor to deploy. {state}")
         time.sleep(1)
@@ -53,6 +53,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
     _node = None
     _rti = None
     _dor = None
+    _db = None
     _test_proc_id = None
     _test_proc_gh_cred = None
 
@@ -74,6 +75,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
                                                   wd_path=RTIRESTTestCase._wd_path)
             RTIRESTTestCase._rti = RTIProxy(RTIRESTTestCase._node.rest.address())
             RTIRESTTestCase._dor = DORProxy(RTIRESTTestCase._node.rest.address())
+            RTIRESTTestCase._db = NodeDBProxy(RTIRESTTestCase._node.rest.address())
             time.sleep(1)
 
             RTIRESTTestCase._test_proc_id, RTIRESTTestCase._test_proc_gh_cred = add_test_processor(
@@ -89,8 +91,23 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(len(result) == 0)
 
     def test_rest_deploy_descriptor_status_undeploy(self):
-        # deploy the test processor
-        result = self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
+        # node owners
+        wrong_user = self.create_keystores(1)[0]
+        node_owner = self._node.keystore
+
+        # make the wrong user identity known to the node
+        self._db.update_identity(wrong_user.identity)
+
+        # try to deploy the processor with the wrong user
+        try:
+            self._rti.deploy(self._test_proc_id, wrong_user, github_credentials=self._test_proc_gh_cred)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('User is not the node owner' in e.details['reason'])
+
+        # deploy the test processor with the correct user
+        result = self._rti.deploy(self._test_proc_id, node_owner, github_credentials=self._test_proc_gh_cred)
         print(result)
         assert(result is not None)
 
@@ -112,8 +129,16 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
             time.sleep(1)
 
+        # try to deploy the processor with the wrong user
+        try:
+            self._rti.undeploy(self._test_proc_id, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('User is not the node owner' in e.details['reason'])
+
         # undeploy the test processor
-        result = self._rti.undeploy(self._test_proc_id)
+        result = self._rti.undeploy(self._test_proc_id, node_owner)
         print(result)
         assert(result is not None)
 

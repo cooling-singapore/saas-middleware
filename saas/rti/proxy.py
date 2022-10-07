@@ -20,7 +20,7 @@ class RTIProxy(EndpointProxy):
         results = self.get(f"")
         return [Processor.parse_obj(result) for result in results]
 
-    def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
+    def deploy(self, proc_id: str, authority: Keystore, deployment: str = "native", gpp_custodian: str = None,
                ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> Processor:
 
         body = {
@@ -53,11 +53,11 @@ class RTIProxy(EndpointProxy):
                 })
                 body['encrypted_github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
 
-        result = self.post(f"/proc/{proc_id}", body=body)
+        result = self.post(f"/proc/{proc_id}", body=body, with_authorisation_by=authority)
         return Processor.parse_obj(result)
 
-    def undeploy(self, proc_id: str) -> Processor:
-        result = self.delete(f"/proc/{proc_id}")
+    def undeploy(self, proc_id: str, authority: Keystore) -> Processor:
+        result = self.delete(f"/proc/{proc_id}", with_authorisation_by=authority)
         return Processor.parse_obj(result)
 
     def get_gpp(self, proc_id: str) -> GitProcessorPointer:

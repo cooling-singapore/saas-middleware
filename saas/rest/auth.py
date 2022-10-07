@@ -166,3 +166,19 @@ class VerifyUserIsJobOwner:
                     'user_iid': identity.id,
                     'owner_iid': job.task.user_iid
                 })
+
+
+class VerifyUserIsNodeOwner:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, request: Request):
+        identity, _ = await VerifyAuthorisation(self.node).__call__(request)
+
+        # check if the user is the owner of the node
+        if self.node.identity.id != identity.id:
+            raise AuthorisationFailedError({
+                'reason': 'User is not the node owner',
+                'user_iid': identity.id,
+                'node_iid': self.node.identity.id
+            })
