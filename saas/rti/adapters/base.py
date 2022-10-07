@@ -520,7 +520,8 @@ class RTIProcessorAdapter(Thread, ABC):
             # if the job history is not to be retained, delete its contents (with exception of the status and
             # the job descriptor)
             if not context.job.retain:
-                exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout']
+                exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
+                              'execute_sh.pid', 'execute.sh']
                 logger.info(f"[adapter:{self._proc_id}][{context.job.id}] delete working directory contents "
                             f"at {wd_path} (exclusions: {exclusions})...")
 
