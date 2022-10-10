@@ -36,6 +36,7 @@ setup(
     entry_points={
         'console_scripts': [
             'saas-cli = saas.cli.saas_cli:main',
+            'saas-node = saas.service:main'
         ]
     },
     classifiers=[
