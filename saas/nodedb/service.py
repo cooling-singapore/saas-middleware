@@ -26,6 +26,8 @@ class NodeRecord(Base):
     rti_service = Column(Boolean, nullable=False)
     p2p_address = Column(String, nullable=False)
     rest_address = Column(String, nullable=True)
+    retain_job_history = Column(Boolean, nullable=True)
+    strict_deployment = Column(Boolean, nullable=True)
 
 
 class IdentityRecord(Base):
@@ -85,7 +87,9 @@ class NodeDBService:
                 dor_service=record.dor_service,
                 rti_service=record.rti_service,
                 p2p_address=record.p2p_address.split(':'),
-                rest_address=record.rest_address.split(':') if record.rest_address else None
+                rest_address=record.rest_address.split(':') if record.rest_address else None,
+                retain_job_history=record.retain_job_history if record.retain_job_history is not None else None,
+                strict_deployment=record.strict_deployment if record.strict_deployment is not None else None
             )
 
     def get_network(self) -> List[NodeInfo]:
@@ -99,7 +103,9 @@ class NodeDBService:
                 dor_service=record.dor_service,
                 rti_service=record.rti_service,
                 p2p_address=record.p2p_address.split(':'),
-                rest_address=record.rest_address.split(':') if record.rest_address else None
+                rest_address=record.rest_address.split(':') if record.rest_address else None,
+                retain_job_history=record.retain_job_history if record.retain_job_history is not None else None,
+                strict_deployment = record.strict_deployment if record.strict_deployment is not None else None
             ) for record in session.query(NodeRecord).all()]
 
     def update_network(self, node: NodeInfo) -> None:
@@ -143,7 +149,9 @@ class NodeDBService:
             if record is None:
                 session.add(NodeRecord(iid=node.identity.id, last_seen=node.last_seen,
                                        dor_service=node.dor_service, rti_service=node.rti_service,
-                                       p2p_address=p2p_address, rest_address=rest_address))
+                                       p2p_address=p2p_address, rest_address=rest_address,
+                                       retain_job_history=node.retain_job_history,
+                                       strict_deployment=node.strict_deployment))
                 session.commit()
 
             elif node.last_seen > record.last_seen:
@@ -152,6 +160,8 @@ class NodeDBService:
                 record.rti_service = node.rti_service
                 record.p2p_address = p2p_address
                 record.rest_address = rest_address
+                record.retain_job_history = node.retain_job_history
+                record.strict_deployment = node.strict_deployment
                 session.commit()
 
             else:

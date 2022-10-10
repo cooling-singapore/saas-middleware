@@ -19,6 +19,7 @@ class RunNode(CLICommand):
     default_boot_node_address = '127.0.0.1:4001'
     default_service = 'full'
     default_retain_job_history = False
+    default_strict_deployment = True
 
     def __init__(self):
         super().__init__('run', 'run a node as service provider', arguments=[
@@ -38,7 +39,10 @@ class RunNode(CLICommand):
             Argument('--retain-job-history', dest="retain-job-history", action='store_const', const=True,
                      help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default: "
                           f"disabled, i.e., delete information of completed jobs). This flag should only be used for "
-                          f"debug/testing purposes.")
+                          f"debug/testing purposes."),
+            Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
+                     help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
+                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -48,6 +52,7 @@ class RunNode(CLICommand):
         default_if_missing(args, 'boot-node', self.default_boot_node_address)
         default_if_missing(args, 'type', self.default_service)
         default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
+        default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
 
         # do we have keystore credentials?
         if not args['keystore-id'] or not args['password']:
@@ -77,7 +82,8 @@ class RunNode(CLICommand):
                                boot_node_address=boot_node_address,
                                enable_dor=args['type'] == 'full' or args['type'] == 'storage',
                                enable_rti=args['type'] == 'full' or args['type'] == 'execution',
-                               retain_job_history=args['retain-job-history'])
+                               retain_job_history=args['retain-job-history'],
+                               strict_deployment=args['strict-deployment'])
 
         except SaaSRuntimeException as e:
             raise CLIRuntimeError(f"Could not start node because '{e.reason}'. Aborting.")

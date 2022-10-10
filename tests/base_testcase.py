@@ -241,7 +241,7 @@ class TestCaseBase:
 
     def get_node(self, name: str, use_credentials: bool = True, enable_rest: bool = False,
                  use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True,
-                 keep_track: bool = True, wd_path: str = None) -> Node:
+                 strict_deployment: bool = False, keep_track: bool = True, wd_path: str = None) -> Node:
         if keep_track and name in self.nodes:
             return self.nodes[name]
 
@@ -263,7 +263,8 @@ class TestCaseBase:
             node = Node(keystore, storage_path)
             node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
                          rest_address=rest_address if enable_rest else None,
-                         retain_job_history=retain_job_history)
+                         retain_job_history=retain_job_history if use_rti else None,
+                         strict_deployment=strict_deployment if use_rti else None)
 
             if keep_track:
                 self.nodes[name] = node
@@ -271,7 +272,7 @@ class TestCaseBase:
             return node
 
     def resume_node(self, name: str, enable_rest: bool = False, use_dor: bool = True, use_rti: bool = True,
-                    retain_job_history: bool = True) -> Node:
+                    retain_job_history: bool = True, strict_deployment: bool = False) -> Node:
         if name in self.nodes:
             return self.nodes[name]
 
@@ -294,7 +295,8 @@ class TestCaseBase:
             node = Node(keystore, storage_path)
             node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
                          rest_address=rest_address if enable_rest else None,
-                         retain_job_history=retain_job_history)
+                         retain_job_history=retain_job_history if use_rti else None,
+                         strict_deployment=strict_deployment if use_rti else None)
 
             self.nodes[name] = node
             return node

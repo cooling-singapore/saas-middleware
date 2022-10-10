@@ -73,7 +73,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         if RTIRESTTestCase._node is None:
             RTIRESTTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                  wd_path=RTIRESTTestCase._wd_path)
+                                                  wd_path=RTIRESTTestCase._wd_path, strict_deployment=False)
             RTIRESTTestCase._rti = RTIProxy(RTIRESTTestCase._node.rest.address())
             RTIRESTTestCase._dor = DORProxy(RTIRESTTestCase._node.rest.address())
             RTIRESTTestCase._db = NodeDBProxy(RTIRESTTestCase._node.rest.address())
@@ -95,19 +95,91 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(result is not None)
         assert(len(result) == 0)
 
-    def test_rest_deploy_descriptor_status_undeploy(self):
-        # make the wrong user identity known to the node
-        wrong_user = self._known_user
-        self._db.update_identity(wrong_user.identity)
+    def test_rest_deploy_undeploy(self):
+        node0 = self.get_node('node0', enable_rest=True, keep_track=False, wd_path=os.path.join(self.wd_path, 'node0'),
+                              strict_deployment=False)
+        db0 = NodeDBProxy(node0.rest.address())
+        dor0 = DORProxy(node0.rest.address())
+        rti0 = RTIProxy(node0.rest.address())
 
-        # try to deploy the processor with the wrong user
+        node1 = self.get_node('node1', enable_rest=True, keep_track=False, wd_path=os.path.join(self.wd_path, 'node1'),
+                              strict_deployment=True)
+        db1 = NodeDBProxy(node1.rest.address())
+        dor1 = DORProxy(node1.rest.address())
+        rti1 = RTIProxy(node1.rest.address())
+
+        # check flags
+        info0 = db0.get_node()
+        info1 = db1.get_node()
+        assert(info0.strict_deployment is False)
+        assert(info1.strict_deployment is True)
+
+        # upload the test proc GCC
+        proc_id0, gh_cred0 = add_test_processor(dor0, node0.keystore, 'default')
+        proc_id1, gh_cred1 = add_test_processor(dor1, node1.keystore, 'default')
+
+        # make the wrong user identity known to the nodes
+        wrong_user = self._known_user
+        db0.update_identity(wrong_user.identity)
+        db1.update_identity(wrong_user.identity)
+
+        # try to deploy the processor with the wrong user on node0
         try:
-            self._rti.deploy(self._test_proc_id, wrong_user, github_credentials=self._test_proc_gh_cred)
+            rti0.deploy(proc_id0, wrong_user, github_credentials=gh_cred0)
+            assert True
+
+        except UnsuccessfulRequestError as e:
+            assert False
+
+        # try to deploy the processor with the wrong user on node1
+        try:
+            rti1.deploy(proc_id1, wrong_user, github_credentials=gh_cred1)
             assert False
 
         except UnsuccessfulRequestError as e:
             assert ('User is not the node owner' in e.details['reason'])
 
+        # try to deploy the processor with the correct user on node1
+        try:
+            rti1.deploy(proc_id1, node1.keystore, github_credentials=gh_cred1)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # wait for deployment to be done
+        while rti0.get_status(proc_id0).state != 'waiting':
+            time.sleep(0.5)
+
+        # wait for deployment to be done
+        while rti1.get_status(proc_id1).state != 'waiting':
+            time.sleep(0.5)
+
+        # try to undeploy the processor with the wrong user on node0
+        try:
+            rti0.undeploy(proc_id0, wrong_user)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # try to undeploy the processor with the wrong user on node1
+        try:
+            rti1.undeploy(proc_id1, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('User is not the node owner' in e.details['reason'])
+
+        # try to undeploy the processor with the correct user on node1
+        try:
+            rti1.undeploy(proc_id1, node1.keystore)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+    def test_rest_deploy_descriptor_status_undeploy(self):
         # deploy the test processor with the correct user
         node_owner = self._node.keystore
         result = self._rti.deploy(self._test_proc_id, node_owner, github_credentials=self._test_proc_gh_cred)
@@ -131,14 +203,6 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
                 break
 
             time.sleep(1)
-
-        # try to deploy the processor with the wrong user
-        try:
-            self._rti.undeploy(self._test_proc_id, wrong_user)
-            assert False
-
-        except UnsuccessfulRequestError as e:
-            assert ('User is not the node owner' in e.details['reason'])
 
         # undeploy the test processor
         result = self._rti.undeploy(self._test_proc_id, node_owner)
@@ -176,17 +240,19 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         job_id = result.id
 
+        # get list of all jobs by correct user
+        result = self._rti.get_jobs_by_user(owner)
+        print(result)
+        assert(result is not None)
+        result = {job.id: job for job in result}
+        assert(job_id in result)
+
         # get list of all jobs by wrong user
         result = self._rti.get_jobs_by_user(wrong_user)
         print(result)
         assert(result is not None)
         assert(len(result) == 0)
 
-        # get list of all jobs by correct user
-        result = self._rti.get_jobs_by_user(owner)
-        print(result)
-        assert(result is not None)
-        assert(len(result) == 1)
 
         # get list of all jobs by proc
         result = self._rti.get_jobs_by_proc(self._test_proc_id)
@@ -354,7 +420,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         if RTIServiceTestCase._node is None:
             RTIServiceTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                     wd_path=RTIServiceTestCase._wd_path)
+                                                     wd_path=RTIServiceTestCase._wd_path, strict_deployment=False)
             RTIServiceTestCase._rti = RTIProxy(RTIServiceTestCase._node.rest.address())
             RTIServiceTestCase._dor = DORProxy(RTIServiceTestCase._node.rest.address())
             RTIServiceTestCase._db = NodeDBProxy(RTIServiceTestCase._node.rest.address())
