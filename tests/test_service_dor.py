@@ -237,7 +237,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
+        result = self._dor.add_data_object(content_path, owner, True, False, 'JSON', 'json')
         valid_obj_id = result.obj_id
         invalid_obj_id = 'invalid_obj_id'
 
