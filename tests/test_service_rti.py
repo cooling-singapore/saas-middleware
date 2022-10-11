@@ -511,6 +511,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         meta = target_dor.get_meta(output['c'])
         assert(meta is not None)
+        assert(meta.custodian.identity.id == target_node.identity.id)
 
         target_node.shutdown()
         time.sleep(2)

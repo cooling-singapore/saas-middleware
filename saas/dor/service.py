@@ -372,6 +372,7 @@ class DORService:
                 # if we don't have patterns then always add the object.
                 if p.patterns is None or any(pattern in flattened for pattern in p.patterns):
                     record = dict((col, getattr(record, col)) for col in record.__table__.columns.keys())
+                    record['custodian'] = self._node.info
                     record = DataObject.parse_obj(record)
                     result.append(record)
 
@@ -635,6 +636,7 @@ class DORService:
                     'access': record.access,
                     'tags': record.tags,
                     'last_accessed': record.last_accessed,
+                    'custodian': self._node.info,
 
                     'gpp': {
                         'source': details['source'],
@@ -657,6 +659,7 @@ class DORService:
                     'access': record.access,
                     'tags': record.tags,
                     'last_accessed': record.last_accessed,
+                    'custodian': self._node.info,
 
                     'content_encrypted': details['content_encrypted'],
                     'license': details['license'],

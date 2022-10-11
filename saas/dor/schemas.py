@@ -2,6 +2,8 @@ from typing import List, Optional, Dict, Union
 
 from pydantic import BaseModel, Field
 
+from saas.nodedb.schemas import NodeInfo
+
 
 class DORStatistics(BaseModel):
     """
@@ -122,6 +124,7 @@ class DataObject(BaseModel):
     access: List[str] = Field(..., title="Access", description="A list of ids of identities that have access to the contents of the data object.", example=["vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2"])
     tags: Dict[str, Union[str, int, float, bool, List, Dict]] = Field(..., title="Tags", description="The tags of this data object.")
     last_accessed: int = Field(..., title="Last Accessed", description="The timestamp (in UTC milliseconds since the beginning of the epoch) when the data object has been accessed the last time.", example=1664849510076)
+    custodian: NodeInfo = Field(..., title='Custodian', description="Information about the node that hosts this data object.")
 
 
 class GPPDataObject(DataObject):
