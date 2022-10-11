@@ -7,6 +7,7 @@ from typing import Union, Optional
 
 from saas.core.exceptions import ExceptionContent
 from saas.core.logging import Logging
+from saas.dor.schemas import CDataObject
 from saas.rti.schemas import JobStatus, Job, ReconnectInfo
 
 logger = Logging.get('rti.helpers')
@@ -81,13 +82,13 @@ class JobContext:
             self._content.progress = new_progress
             self._sync()
 
-    def get_output(self, obj_name: str) -> str:
+    def get_output(self, obj_name: str) -> CDataObject:
         with self._mutex:
             return self._content.output[obj_name]
 
-    def set_output(self, obj_name: str, obj_id: str) -> None:
+    def set_output(self, obj_name: str, meta: CDataObject) -> None:
         with self._mutex:
-            self._content.output[obj_name] = obj_id
+            self._content.output[obj_name] = meta
             self._sync()
 
     def make_note(self, key: str, note: Union[str, int, float, bool, dict, list]) -> None:

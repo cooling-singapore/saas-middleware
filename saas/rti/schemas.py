@@ -4,7 +4,7 @@ from typing import Literal, Optional, List, Union, Dict
 from pydantic import BaseModel, Field
 
 from saas.core.exceptions import ExceptionContent
-from saas.dor.schemas import GitProcessorPointer
+from saas.dor.schemas import GitProcessorPointer, CDataObject
 
 
 class Task(BaseModel):
@@ -78,7 +78,7 @@ class JobStatus(BaseModel):
 
     state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL] = Field(..., title="State", description="The state of the job.")
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
-    output: Dict[str, str] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object ids.", example={'heatmap': '2b3f0ceba8a3cdd1fce97947fe2a21e77033798f99bf2a8df0d9f2f3aa567c30'})
+    output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
     job: Job = Field(..., title="Job", description="The job information.")
     reconnect: Optional[ReconnectInfo] = Field(title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
