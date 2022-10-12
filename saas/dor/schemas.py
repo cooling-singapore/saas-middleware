@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 from saas.nodedb.schemas import NodeInfo
 
 
+GPP_DATA_TYPE = 'GitProcessorPointer'
+GPP_DATA_FORMAT = 'json'
+
+
 class DORStatistics(BaseModel):
     """
     Provides information about contents in the DOR.

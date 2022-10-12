@@ -1,6 +1,6 @@
 from typing import Union, Optional, List
 
-from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject
+from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject, GPP_DATA_TYPE
 from saas.core.schemas import GithubCredentials
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore

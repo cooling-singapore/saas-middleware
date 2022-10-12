@@ -25,7 +25,7 @@ from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
 from saas.dor.schemas import DORStatistics, CObjectNode, DataObjectRecipe, DataObjectProvenance, DataObject, \
-    GPPDataObject, CDataObject, ProcessorDescriptor
+    GPPDataObject, CDataObject, ProcessorDescriptor, GPP_DATA_TYPE, GPP_DATA_FORMAT
 from saas.core.schemas import GithubCredentials
 from saas.rest.schemas import EndpointDefinition
 
@@ -33,8 +33,6 @@ logger = Logging.get('dor.service')
 
 Base = declarative_base()
 
-GPP_DATA_TYPE = 'GitProcessorPointer'
-GPP_DATA_FORMAT = 'json'
 DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
 
