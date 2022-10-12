@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 import shutil
@@ -23,6 +25,7 @@ from saas.core.helpers import get_timestamp_now, generate_random_string, read_js
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.nodedb.schemas import NodeInfo
 from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
 from saas.dor.schemas import DORStatistics, CObjectNode, DataObjectRecipe, DataObjectProvenance, DataObject, \
     GPPDataObject, CDataObject, ProcessorDescriptor, GPP_DATA_TYPE, GPP_DATA_FORMAT
@@ -126,6 +129,53 @@ def _generate_by_value_provenance(c_hash: str, data_type: str, data_format: str,
         'missing': []
     })
     return provenance
+
+
+def _extract_data_object(record: DataObjectRecord, custodian: NodeInfo) -> Union[CDataObject, GPPDataObject]:
+    # is it a GPP data object?
+    details = dict(record.details)
+    created = dict(record.created)
+    if record.data_type == GPP_DATA_TYPE:
+        return GPPDataObject.parse_obj({
+            'obj_id': record.obj_id,
+            'c_hash': record.c_hash,
+            'data_type': record.data_type,
+            'data_format': record.data_format,
+            'created': created,
+            'owner_iid': record.owner_iid,
+            'access_restricted': record.access_restricted,
+            'access': record.access,
+            'tags': record.tags,
+            'last_accessed': record.last_accessed,
+            'custodian': custodian,
+
+            'gpp': {
+                'source': details['source'],
+                'commit_id': details['commit_id'],
+                'proc_path': details['proc_path'],
+                'proc_config': details['proc_config'],
+                'proc_descriptor': details['proc_descriptor']
+            }
+        })
+
+    else:
+        return CDataObject.parse_obj({
+            'obj_id': record.obj_id,
+            'c_hash': record.c_hash,
+            'data_type': record.data_type,
+            'data_format': record.data_format,
+            'created': created,
+            'owner_iid': record.owner_iid,
+            'access_restricted': record.access_restricted,
+            'access': record.access,
+            'tags': record.tags,
+            'last_accessed': record.last_accessed,
+            'custodian': custodian,
+
+            'content_encrypted': details['content_encrypted'],
+            'license': details['license'],
+            'recipe': details['recipe'] if 'recipe' in details else None
+        })
 
 
 class DataObjectRecord(Base):
@@ -289,7 +339,7 @@ class DORService:
     def endpoints(self) -> List[EndpointDefinition]:
         return [
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '',
-                               self.search, List[DataObject], None),
+                               self.search, List[Union[CDataObject, GPPDataObject]], None),
 
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, 'statistics',
                                self.statistics, DORStatistics, None),
@@ -329,7 +379,7 @@ class DORService:
                                self.remove_tags, Union[CDataObject, GPPDataObject], [VerifyIsOwner])
         ]
 
-    def search(self, p: SearchParameters) -> List[DataObject]:
+    def search(self, p: SearchParameters) -> List[Union[CDataObject, GPPDataObject]]:
         """
         Searches a DOR for data objects that match the search criteria. There are two kinds of criteria: constraints
         and patterns. Search constraints are conjunctive, i.e., all constraints have to be matched in order for a data
@@ -369,10 +419,8 @@ class DORService:
                 # check if any of the patterns is a substring the flattened string.
                 # if we don't have patterns then always add the object.
                 if p.patterns is None or any(pattern in flattened for pattern in p.patterns):
-                    record = dict((col, getattr(record, col)) for col in record.__table__.columns.keys())
-                    record['custodian'] = self._node.info
-                    record = DataObject.parse_obj(record)
-                    result.append(record)
+                    # convert into an C/GPP data object and add to the result
+                    result.append(_extract_data_object(record, self._node.info))
 
             return result
 
@@ -620,49 +668,7 @@ class DORService:
                 return None
 
             # is it a GPP data object?
-            details = dict(record.details)
-            created = dict(record.created)
-            if record.data_type == GPP_DATA_TYPE:
-                return GPPDataObject.parse_obj({
-                    'obj_id': record.obj_id,
-                    'c_hash': record.c_hash,
-                    'data_type': record.data_type,
-                    'data_format': record.data_format,
-                    'created': created,
-                    'owner_iid': record.owner_iid,
-                    'access_restricted': record.access_restricted,
-                    'access': record.access,
-                    'tags': record.tags,
-                    'last_accessed': record.last_accessed,
-                    'custodian': self._node.info,
-
-                    'gpp': {
-                        'source': details['source'],
-                        'commit_id': details['commit_id'],
-                        'proc_path': details['proc_path'],
-                        'proc_config': details['proc_config'],
-                        'proc_descriptor': details['proc_descriptor']
-                    }
-                })
-
-            else:
-                return CDataObject.parse_obj({
-                    'obj_id': record.obj_id,
-                    'c_hash': record.c_hash,
-                    'data_type': record.data_type,
-                    'data_format': record.data_format,
-                    'created': created,
-                    'owner_iid': record.owner_iid,
-                    'access_restricted': record.access_restricted,
-                    'access': record.access,
-                    'tags': record.tags,
-                    'last_accessed': record.last_accessed,
-                    'custodian': self._node.info,
-
-                    'content_encrypted': details['content_encrypted'],
-                    'license': details['license'],
-                    'recipe': details['recipe'] if 'recipe' in details else None
-                })
+            return _extract_data_object(record, self._node.info)
 
     def get_content(self, obj_id: str) -> Response:
         """
