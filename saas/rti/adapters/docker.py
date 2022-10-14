@@ -19,7 +19,7 @@ import saas.rti.adapters.base as base
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.logging import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
 

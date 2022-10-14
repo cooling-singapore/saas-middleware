@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import threading
-from threading import Lock
+import time
+from threading import Lock, Thread
 from typing import Union, Optional
 
-from saas.core.exceptions import ExceptionContent
+from saas.core.exceptions import ExceptionContent, SaaSRuntimeException
 from saas.core.logging import Logging
 from saas.dor.schemas import CDataObject
 from saas.rti.schemas import JobStatus, Job, ReconnectInfo
@@ -13,15 +13,54 @@ from saas.rti.schemas import JobStatus, Job, ReconnectInfo
 logger = Logging.get('rti.helpers')
 
 
-class JobContext:
+class JobContext(Thread):
     def __init__(self, path: str, job: Job, reconnect: ReconnectInfo = None) -> None:
+        super().__init__()
+
         self._mutex = Lock()
         self._path = path
-        self._content = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={}, job=job,
-                                  reconnect=reconnect)
-        self._threads = {}
-        self._cancelled = False
+        self._status = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={}, job=job,
+                                 reconnect=reconnect)
+        self._tasks = []
         self._sync()
+
+    def run(self):
+        logger.debug(f"[{self._status.job.id}] context worker started")
+        while self._status.state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING] or len(self._tasks) > 0:
+            # get a task (if any)
+            with self._mutex:
+                task = self._tasks[0] if len(self._tasks) > 0 else None
+
+            # do we have a task?
+            if task:
+                # try to perform it
+                try:
+                    target = task['target']
+                    args = task['args']
+                    target(*args)
+
+                    # remove the task once it's done
+                    with self._mutex:
+                        self._tasks.remove(task)
+
+                except SaaSRuntimeException as e:
+                    logger.error(f"[{self._status.job.id}] context worker encountered an exception: {e.reason} "
+                                 f"{e.details}")
+
+                    # manually set the state to failed
+                    with self._mutex:
+                        self._status.state = JobStatus.State.FAILED
+                        self._status.errors.append(JobStatus.Error(
+                            message='context worker encountered exception',
+                            exception=e.content
+                        ))
+
+                    break
+
+            else:
+                time.sleep(0.25)
+
+        logger.debug(f"[{self._status.job.id}] context worker for terminated")
 
     def _sync(self):
         with open(self._path, 'w') as f:
@@ -29,7 +68,7 @@ class JobContext:
 
     def cancel(self) -> None:
         with self._mutex:
-            self._cancelled = True
+            self._status.state = JobStatus.State.CANCELLED
 
     @property
     def status(self) -> JobStatus:
@@ -37,36 +76,29 @@ class JobContext:
             return self._status.copy()
 
     @property
-    def cancelled(self) -> bool:
-        return self._cancelled
-
-    @property
     def job(self) -> Job:
         with self._mutex:
             return self._status.job
 
     @property
-
-    def add_thread(self, obj_name: str, target, args=()) -> None:
     def reconnect_info(self) -> Optional[ReconnectInfo]:
         with self._mutex:
-            thread = threading.Thread(target=target, args=args)
-            self._threads[obj_name] = thread
-
-        thread.start()
             return self._status.reconnect
 
-    def pop_thread(self, obj_name: str) -> None:
+    def add_task(self, target, args=()) -> None:
         with self._mutex:
-            self._threads.pop(obj_name, None)
+            self._tasks.append({
+                'target': target,
+                'args': args
+            })
 
-    def n_threads(self) -> int:
+    def n_tasks(self) -> int:
         with self._mutex:
-            return len(self._threads)
+            return len(self._tasks)
 
     def add_reconnect_info(self, paths: dict[str, str], pid: str, pid_paths: dict[str, str]) -> None:
         with self._mutex:
-            self._content.reconnect = ReconnectInfo(paths=paths, pid=pid, pid_paths=pid_paths)
+            self._status.reconnect = ReconnectInfo(paths=paths, pid=pid, pid_paths=pid_paths)
             self._sync()
 
     @property

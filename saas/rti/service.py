@@ -23,7 +23,7 @@ from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyU
     VerifyUserIsJobOwnerOrNodeOwner
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, GPPDataObjectNotFound, RTIException
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
@@ -312,9 +312,10 @@ class RTIService:
             job_descriptor_path = self.job_descriptor_path(job.id)
             write_json_to_file(job.dict(), job_descriptor_path)
 
-            # create status logger
+            # create job context logger
             context = JobContext(self.job_status_path(job.id), job)
             self._jobs_context[job.id] = context
+            context.start()
 
             # add the job to the processor queue and return the job descriptor
             self._deployed[proc_id].add(context)
@@ -336,10 +337,10 @@ class RTIService:
                     'task': job.task
                 })
 
-            # create status logger
-            # status_path = os.path.join(job.paths['local_wd'], 'job_status.json')
+            # create a job context
             context = JobContext(self.job_status_path(job.id), job, reconnect)
             self._jobs_context[job.id] = context
+            context.start()
 
             # add the job to the processor queue and return the job descriptor
             self._deployed[proc_id].resume(context)

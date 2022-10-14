@@ -79,7 +79,7 @@ class JobStatus(BaseModel):
         message: str = Field(..., title="Message", description="A simple message indicating the nature of the problem.")
         exception: ExceptionContent = Field(..., title="Exception", description="Detailed information about an exception that occured during job execution.")
 
-    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL] = Field(..., title="State", description="The state of the job.")
+    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
     output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
