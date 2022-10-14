@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from saas.core.exceptions import ExceptionContent
 from saas.dor.schemas import GitProcessorPointer, CDataObject
+from saas.nodedb.schemas import NodeInfo
 
 
 class Task(BaseModel):
@@ -44,6 +45,7 @@ class Job(BaseModel):
     id: str = Field(..., title="Id", description="The job id.", example="Ikn7dPv6")
     task: Task = Field(..., title="Task", description="The task of this job")
     retain: bool = Field(..., title="Retain", description="Indicates if the RTI should retain the working directory of this job. This is only used for debugging and testing purposes.", example=False)
+    custodian: NodeInfo = Field(..., title='Custodian', description="Information about the node that hosts this job.")
 
 
 class ReconnectInfo(BaseModel):

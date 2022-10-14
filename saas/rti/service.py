@@ -296,7 +296,8 @@ class RTIService:
                 })
 
             # create job descriptor with a generated job id
-            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history)
+            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history,
+                      custodian=self._node.info)
 
             # create working directory or log a warning if it already exists
             wd_path = os.path.join(self._jobs_path, job.id)
