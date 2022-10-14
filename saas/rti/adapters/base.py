@@ -565,7 +565,7 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             while len(self._pending) > 0:
                 job_type, status_logger = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_type} {status_logger.content().job}")
+                logger.info(f"purged pending job: {job_type} {status_logger.status.job}")
 
     def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
         context.make_note('step', f"lookup by-reference input data objects")

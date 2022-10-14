@@ -407,7 +407,7 @@ class RTIService:
             status_path = self.job_status_path(job_id)
             if job_id in self._jobs_context:
                 context: JobContext = self._jobs_context[job_id]
-                return context.content()
+                return context.status
 
             # does the job status file exist?
             elif os.path.isfile(status_path):

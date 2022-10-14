@@ -105,7 +105,7 @@ class NodeDBService:
                 p2p_address=record.p2p_address.split(':'),
                 rest_address=record.rest_address.split(':') if record.rest_address else None,
                 retain_job_history=record.retain_job_history if record.retain_job_history is not None else None,
-                strict_deployment = record.strict_deployment if record.strict_deployment is not None else None
+                strict_deployment=record.strict_deployment if record.strict_deployment is not None else None
             ) for record in session.query(NodeRecord).all()]
 
     def update_network(self, node: NodeInfo) -> None:
@@ -213,7 +213,7 @@ class NodeDBService:
                 e_public_key=record.e_public_key,
                 nonce=record.nonce,
                 signature=record.signature,
-                last_seen = record.last_seen
+                last_seen=record.last_seen
             ) if record else None
 
     def get_identities(self) -> List[Identity]:

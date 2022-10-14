@@ -388,11 +388,11 @@ class RTIJobSubmit(CLICommand):
                 raise CLIRuntimeError(f"Invalid job descriptor. Aborting.")
 
             # is the processor deployed?
-            if job_descriptor.proc_id not in self._proc_choices:
-                raise CLIRuntimeError(f"Processor {job_descriptor.proc_id} is not "
+            if job_descriptor.task.proc_id not in self._proc_choices:
+                raise CLIRuntimeError(f"Processor {job_descriptor.task.proc_id} is not "
                                       f"deployed at {self._address[0]}:{self._address[1]}. Aborting.")
 
-            proc_id = job_descriptor.proc_id
+            proc_id = job_descriptor.task.proc_id
             job_input = job_descriptor.task.input
             job_output = job_descriptor.task.output
 

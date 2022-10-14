@@ -174,7 +174,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # if ssh_auth IS present, then we perform a remote execution
         # -> copy output data to local working directory
-        paths = context.reconnect.paths
+        paths = context.reconnect_info.paths
         if self._ssh_credentials is not None:
             context.make_note(f"process_output:{obj_name}", 'retrieve')
 
