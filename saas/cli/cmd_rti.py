@@ -496,6 +496,42 @@ class RTIJobStatus(CLICommand):
             print(f"Job {args['job-id']} not found.")
 
 
+class RTIJobCancel(CLICommand):
+    def __init__(self):
+        super().__init__('cancel', 'attempts to cancel a job', arguments=[
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help=f"the id of the job")
+        ])
+
+    def execute(self, args: dict) -> None:
+        rti = _require_rti(args)
+        keystore = load_keystore(args, ensure_publication=True)
+
+        # do we have a job id?
+        if not args['job-id']:
+            # get all deployed procs
+            deployed: list[Processor] = rti.get_deployed()
+            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+
+            # get all jobs by this user and select
+            choices = []
+            for job in rti.get_jobs_by_user(keystore):
+                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                    if job.task.proc_id in deployed else 'unknown'
+                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+
+            if not choices:
+                raise CLIRuntimeError(f"No jobs found.")
+
+            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
+
+        try:
+            status = rti.cancel_job(args['job-id'], keystore)
+            print(f"Done. Status: {status}")
+
+        except UnsuccessfulRequestError as e:
+            print(f"{e.reason} details={e.details}")
+
+
 class RTIJobLogs(CLICommand):
     def __init__(self):
         super().__init__('logs', 'retrieve the logs of a job', arguments=[
