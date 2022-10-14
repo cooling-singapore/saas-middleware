@@ -70,6 +70,7 @@ class JobStatus(BaseModel):
         FAILED = 'failed'
         TIMEOUT = 'timeout'
         SUCCESSFUL = 'successful'
+        CANCELLED = 'cancelled'
 
     class Error(BaseModel):
         """

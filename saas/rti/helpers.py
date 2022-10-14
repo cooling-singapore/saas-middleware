@@ -20,15 +20,25 @@ class JobContext:
         self._content = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={}, job=job,
                                   reconnect=reconnect)
         self._threads = {}
+        self._cancelled = False
         self._sync()
 
     def _sync(self):
         with open(self._path, 'w') as f:
             json.dump(self._content.dict(), f, indent=4)
 
+    def cancel(self) -> None:
+        with self._mutex:
+            self._cancelled = True
+
+    @property
     def content(self) -> JobStatus:
         with self._mutex:
             return self._content.copy()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
 
     @property
     def job(self) -> Job:
