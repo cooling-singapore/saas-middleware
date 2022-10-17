@@ -132,6 +132,7 @@ class EndpointProxy:
         try:
             if attachment_path:
                 response = requests.post(url,
+                                         headers=headers,
                                          data={'body': json.dumps(body)},
                                          files={'attachment': open(attachment_path, 'rb')})
                 return extract_response(response)
@@ -164,6 +165,7 @@ class EndpointProxy:
             if attachment_path:
                 with open(attachment_path, 'rb') as f:
                     response = requests.post(url,
+                                             headers=headers,
                                              data={'body': json.dumps(body)},
                                              files={'attachment': f})
                     return extract_response(response)
