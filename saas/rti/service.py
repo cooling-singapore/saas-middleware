@@ -54,7 +54,7 @@ class DeployParameters(BaseModel):
 class RTIService:
     infix_path = 'rti'
 
-    def __init__(self, node, retain_job_history: bool = False):
+    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True):
         # initialise properties
         self._mutex = Lock()
         self._node = node
@@ -64,6 +64,7 @@ class RTIService:
         self._content_keys = {}
         self._jobs_context = {}
         self._retain_job_history = retain_job_history
+        self._strict_deployment = strict_deployment
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
@@ -115,10 +116,11 @@ class RTIService:
                                self.deployed, List[Processor], None),
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
-                               self.deploy, Processor, [VerifyUserIsNodeOwner]),
+                               self.deploy, Processor, [VerifyUserIsNodeOwner] if self._strict_deployment else None),
 
             EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
-                               self.undeploy, Processor, [VerifyProcessorDeployed, VerifyUserIsNodeOwner]),
+                               self.undeploy, Processor, [VerifyProcessorDeployed, VerifyUserIsNodeOwner] if
+                               self._strict_deployment else [VerifyProcessorDeployed]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/gpp',
                                self.gpp, GitProcessorPointer, [VerifyProcessorDeployed]),
