@@ -6,6 +6,7 @@ import traceback
 from threading import Lock
 from typing import Optional
 
+from saas.core.exceptions import SaaSRuntimeException
 from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.p2p.exceptions import P2PException, UnsupportedProtocolError, UnexpectedMessageTypeError
@@ -50,12 +51,17 @@ class P2PService:
         """
         with self._mutex:
             if not self._p2p_service_socket:
-                # create server socket
-                self._p2p_service_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self._p2p_service_socket.bind(self._address)
-                self._p2p_service_socket.listen(concurrency)
-                logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
+                try:
+                    # create server socket
+                    self._p2p_service_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    self._p2p_service_socket.bind(self._address)
+                    self._p2p_service_socket.listen(concurrency)
+                    logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
+                except Exception as e:
+                    raise SaaSRuntimeException("P2P server socket cannot be created", details={
+                        'exception': e
+                    })
 
                 # start the server thread
                 thread = threading.Thread(target=self._handle_incoming_connections)
