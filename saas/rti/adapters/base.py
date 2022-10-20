@@ -887,13 +887,13 @@ class RTIProcessorAdapter(Thread, ABC):
                                      proc_out.data_type, proc_out.data_format, recipe=recipe)
 
         # update tags with information from the job
-        proxy.update_tags(meta.obj_id, self._node.keystore, [
+        meta = proxy.update_tags(meta.obj_id, self._node.keystore, [
             DataObject.Tag(key='name', value=obj_name),
             DataObject.Tag(key='job_id', value=context.job.id)
         ])
 
         # transfer ownership to the new owner
-        proxy.transfer_ownership(meta.obj_id, self._node.keystore, owner)
+        meta = proxy.transfer_ownership(meta.obj_id, self._node.keystore, owner)
 
         # set the output data object ids in the status
-        context.set_output(obj_name, meta.obj_id)
+        context.set_output(obj_name, meta)

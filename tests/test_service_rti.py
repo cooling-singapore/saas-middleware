@@ -284,7 +284,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         # get the contents of the output data object
         download_path = os.path.join(self.wd_path, 'c.json')
-        self._dor.get_content(status.output['c'], owner, download_path)
+        self._dor.get_content(status.output['c'].obj_id, owner, download_path)
         assert(os.path.isfile(download_path))
 
         with open(download_path, 'r') as f:
@@ -347,7 +347,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         # get the contents of the output data object
         download_path = os.path.join(self.wd_path, 'c.json')
-        self._dor.get_content(status.output['c'], owner, download_path)
+        self._dor.get_content(status.output['c'].obj_id, owner, download_path)
         assert(os.path.isfile(download_path))
 
         with open(download_path, 'r') as f:
@@ -506,10 +506,10 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('c' in output)
 
         # the output data object should be with the target node
-        meta = self._dor.get_meta(output['c'])
+        meta = self._dor.get_meta(output['c'].obj_id)
         assert(meta is None)
 
-        meta = target_dor.get_meta(output['c'])
+        meta = target_dor.get_meta(output['c'].obj_id)
         assert(meta is not None)
         assert(meta.custodian.identity.id == target_node.identity.id)
 
@@ -571,7 +571,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
             assert (output is not None)
             assert ('c' in output)
-            obj_id = output['c']
+            obj_id = output['c'].obj_id
 
             # get the c_hash for output object 'c'
             meta = self._dor.get_meta(obj_id)
