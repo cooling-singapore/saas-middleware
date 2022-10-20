@@ -44,6 +44,19 @@ class Node:
     def datastore(self) -> str:
         return self._datastore_path
 
+    @property
+    def info(self) -> NodeInfo:
+        return NodeInfo(
+            identity=self.identity,
+            last_seen=get_timestamp_now(),
+            dor_service=self.dor is not None,
+            rti_service=self.rti is not None,
+            p2p_address=self.p2p.address(),
+            rest_address=self.rest.address() if self.rest else None,
+            retain_job_history=self.rti.retain_job_history if self.rti else None,
+            strict_deployment=self.rti.strict_deployment if self.rti else None
+        )
+
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
                 retain_job_history: bool = False, strict_deployment: bool = True) -> None:

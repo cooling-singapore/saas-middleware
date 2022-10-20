@@ -1,9 +1,11 @@
 import json
 import time
+import traceback
 from typing import Union, Optional
 
 import requests
 
+from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
 from saas.core.keystore import Keystore
 from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
@@ -23,7 +25,15 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
         return response.json()
 
     elif response.status_code == 500:
-        content = response.json()
+        try:
+            content = response.json()
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            raise SaaSRuntimeException("Unexpected error", details={
+                'exception': e,
+                'trace': trace
+            })
+
         raise UnsuccessfulRequestError(
             content['reason'], content['id'], content['details'] if 'details' in content else None
         )

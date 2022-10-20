@@ -104,6 +104,14 @@ class RTIService:
             except PeerUnavailableError:
                 continue
 
+    @property
+    def retain_job_history(self) -> bool:
+        return self._retain_job_history
+
+    @property
+    def strict_deployment(self) -> bool:
+        return self._strict_deployment
+
     def job_descriptor_path(self, job_id: str) -> str:
         return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
 
