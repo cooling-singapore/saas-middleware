@@ -9,7 +9,7 @@ from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, 
     CredentialsAddGithubCredentials
 from saas.cli.cmd_network import NetworkList
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
-    RTIProcShow, RTIJobList, RTIJobLogs
+    RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -91,6 +91,7 @@ def main():
                     RTIJobList(),
                     RTIJobSubmit(),
                     RTIJobStatus(),
+                    RTIJobCancel(),
                     RTIJobLogs()
                 ])
             ]),

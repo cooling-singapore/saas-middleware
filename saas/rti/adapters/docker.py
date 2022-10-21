@@ -19,7 +19,7 @@ import saas.rti.adapters.base as base
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.logging import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
 
@@ -249,7 +249,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with self.get_docker_client() as client:
                 client: docker.DockerClient
                 # FIXME: What happens if the job has completed successfully and container has already been removed.
-                self.container = client.containers.get(context.reconnect.pid)
+                self.container = client.containers.get(context.reconnect_info.pid)
         try:
             # Will only continue monitoring if container is still running.
             # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
@@ -274,7 +274,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
                 'job': context.job.dict(),
-                'working_directory': context.reconnect.paths["working_directory"],
+                'working_directory': context.reconnect_info.paths["working_directory"],
                 'trace': trace
             })
         finally:
@@ -291,7 +291,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
     def _handle_trigger_output(self, line: str, context: JobContext) -> None:
         obj_name = line.split(':')[2]
-        working_directory = context.reconnect.paths['working_directory']
+        working_directory = context.reconnect_info.paths['working_directory']
         try:
             context.make_note(f"process_output:{obj_name}", 'started')
 

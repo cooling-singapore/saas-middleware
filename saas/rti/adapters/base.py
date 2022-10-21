@@ -25,7 +25,7 @@ from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException, RunCommandError
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 
 from saas.rti.schemas import JobStatus, ProcessorStatus, Job
 from saas.dor.schemas import GitProcessorPointer, DataObject
@@ -203,8 +203,8 @@ def run_command_async(command: str, local_output_path: str, name: str,
     return pid, paths
 
 
-def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credentials: SSHCredentials = None,
-                    pace: int = 500, max_attempts: int = 60, retry_delay: int = 10) -> None:
+def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
+                    pace: int = 500, max_attempts: int = 60, retry_delay: int = 10, context: JobContext = None) -> None:
 
     logger.info(f"begin monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
     c_stdout_lines = 0
@@ -220,9 +220,30 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
     exitcode_found = False
     while True:
         try:
+            # if we have a job context, then check if the job has the job been cancelled?
+            if context and context.state == JobStatus.State.CANCELLED:
+                # send SIGTERM...
+                logger.debug(f"[{context.job.id}] send SIGTERM to {pid}")
+                run_command(f"kill {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
+
+                # check if the process still exists for at most ~30 seconds or so
+                for _ in range(30):
+                    result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
+                    if result.returncode != 0:
+                        logger.debug(f"[{context.job.id}] process {pid} terminated...")
+                        return
+
+                    # process still exists
+                    time.sleep(1)
+
+                # send SIGKILL
+                print(f"[{context.job.id}] send SIGKILL to {pid}")
+                run_command(f"kill -9 {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
+                return
+
             # get the number of lines in stdout and stderr
-            n_stdout_lines = get_line_count(paths['stdout'])
-            n_stderr_lines = get_line_count(paths['stderr'])
+            n_stdout_lines = get_line_count(pid_paths['stdout'])
+            n_stderr_lines = get_line_count(pid_paths['stderr'])
 
             # new line count
             d_stdout_lines = n_stdout_lines - c_stdout_lines
@@ -231,7 +252,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
             # no new lines at all? check if the process is still running
             if d_stdout_lines == 0 and d_stderr_lines == 0:
                 # do we have an exit code file? (it is only generated when the process has terminated)
-                if check_if_path_exists(paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
+                if check_if_path_exists(pid_paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
                     logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
 
                     if not exitcode_found:
@@ -244,7 +265,7 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
 
             # do we have new STDOUT lines to process?
             if d_stdout_lines > 0:
-                result = run_command(f"tail -n +{c_stdout_lines + 1} {paths['stdout']} | head -n {d_stdout_lines}",
+                result = run_command(f"tail -n +{c_stdout_lines + 1} {pid_paths['stdout']} | head -n {d_stdout_lines}",
                                      ssh_credentials=ssh_credentials, timeout=10)
                 lines = result.stdout.decode('utf-8').splitlines()
 
@@ -288,9 +309,9 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
     # if needed copy the stdout/stderr/exitcode files from remote to the local machine
     if ssh_credentials is not None:
         todo = {
-            paths['remote_stdout']: paths['local_stdout'],
-            paths['remote_stderr']: paths['local_stderr'],
-            paths['remote_exitcode']: paths['local_exitcode']
+            pid_paths['remote_stdout']: pid_paths['local_stdout'],
+            pid_paths['remote_stderr']: pid_paths['local_stderr'],
+            pid_paths['remote_exitcode']: pid_paths['local_exitcode']
         }
 
         for s, d in todo.items():
@@ -304,14 +325,14 @@ def monitor_command(pid: str, paths: dict, triggers: dict = None, ssh_credential
             scp_remote_to_local(s, d, ssh_credentials)
 
     # get the error code returned by the process and raise exception if the process did not finish successfully.
-    with open(paths['local_exitcode'], 'r') as f:
+    with open(pid_paths['local_exitcode'], 'r') as f:
         line = f.readline()
         exitcode = int(line)
         if exitcode != 0:
             raise RunCommandError({
                 'pid': pid,
                 'exitcode': exitcode,
-                'paths': paths
+                'pid_paths': pid_paths
             })
 
 
@@ -498,7 +519,17 @@ class RTIProcessorAdapter(Thread, ABC):
                 # perform post-execute routine
                 self.post_execute(context.job.id)
 
+                # if we reach here the job is either running or cancelled
+                assert(context.state in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED])
+                if context.state == JobStatus.State.RUNNING:
+                    context.state = JobStatus.State.SUCCESSFUL
+
             except RunCommandError as e:
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                print("!!!")
+                print(trace)
+                print("!!!")
+                print(trace)
                 context.add_error('timeout while running job', e.content)
                 context.state = JobStatus.State.TIMEOUT
 
@@ -513,9 +544,6 @@ class RTIProcessorAdapter(Thread, ABC):
                                       'trace': trace
                                   }))
                 context.state = JobStatus.State.FAILED
-
-            else:
-                context.state = JobStatus.State.SUCCESSFUL
 
             # if the job history is not to be retained, delete its contents (with exception of the status and
             # the job descriptor)
@@ -565,7 +593,7 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             while len(self._pending) > 0:
                 job_type, status_logger = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_type} {status_logger.content().job}")
+                logger.info(f"purged pending job: {job_type} {status_logger.status.job}")
 
     def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
         context.make_note('step', f"lookup by-reference input data objects")

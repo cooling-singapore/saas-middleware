@@ -2,11 +2,10 @@ import os
 import time
 
 import saas.rti.adapters.base as base
-from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 
 from saas.core.logging import Logging
 from saas.core.schemas import GithubCredentials, SSHCredentials
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 
 logger = Logging.get('rti.adapters.native')
@@ -137,20 +136,20 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
     def connect_and_monitor(self, context: JobContext) -> None:
         # monitor the output of a process
-        base.monitor_command(context.reconnect.pid, context.reconnect.pid_paths,
+        base.monitor_command(context.reconnect_info.pid, context.reconnect_info.pid_paths,
                              ssh_credentials=self._ssh_credentials, triggers={
                                  'trigger:output': {'func': self._handle_trigger_output, 'context': context},
                                  'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
-                             })
+                             }, context=context)
 
         # wait for all outputs to be processed
-        while context.n_threads() > 0:
-            context.make_note('task', f"wait for all outputs to be processed: remaining={context.n_threads()}")
+        while context.n_tasks() > 0:
+            context.make_note('task', f"wait for all outputs to be processed: remaining={context.n_tasks()}")
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
-            remote_wd = context.reconnect.paths['remote_wd']
+            remote_wd = context.reconnect_info.paths['remote_wd']
             context.make_note('task', f"delete working directory REMOTE:{remote_wd}")
             base.run_command(f"rm -rf {remote_wd}", ssh_credentials=self._ssh_credentials)
 
@@ -163,7 +162,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
     def _handle_trigger_output(self, line: str, context: JobContext) -> None:
         obj_name = line.split(':')[2]
-        context.add_thread(obj_name, target=self._process_output, args=(obj_name, context,))
+        context.add_task(target=self._process_output, args=(obj_name, context,))
 
     def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
         progress = line.split(':')[2]
@@ -174,7 +173,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # if ssh_auth IS present, then we perform a remote execution
         # -> copy output data to local working directory
-        paths = context.reconnect.paths
+        paths = context.reconnect_info.paths
         if self._ssh_credentials is not None:
             context.make_note(f"process_output:{obj_name}", 'retrieve')
 
@@ -185,15 +184,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
             context.remove_note('task')
 
         # upload the data object to the target DOR
-        try:
-            context.make_note(f"process_output:{obj_name}", 'push')
-            self._push_data_object(obj_name, paths['local_wd'], context)
-            context.make_note(f"process_output:{obj_name}", 'done')
-
-        except SaaSRuntimeException as e:
-            context.make_note(f"process_output:{obj_name}", 'failed')
-            context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
-                                                                                    details=e.details))
-
-        # remove this thread
-        context.pop_thread(obj_name)
+        context.make_note(f"process_output:{obj_name}", 'push')
+        self._push_data_object(obj_name, paths['local_wd'], context)
+        context.make_note(f"process_output:{obj_name}", 'done')

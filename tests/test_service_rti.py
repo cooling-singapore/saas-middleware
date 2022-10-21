@@ -30,7 +30,7 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '9bf18c3'
+    commit_id = 'cd97d60'
     proc_path = 'saasadapters/example'
 
     github_credentials = owner.github_credentials.get(source)
@@ -225,7 +225,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         task_input = [
             Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 1}})
         ]
 
         task_output = [
@@ -252,7 +252,6 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         print(result)
         assert(result is not None)
         assert(len(result) == 0)
-
 
         # get list of all jobs by proc
         result = self._rti.get_jobs_by_proc(self._test_proc_id)
@@ -290,7 +289,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         with open(download_path, 'r') as f:
             content = json.load(f)
             print(content)
-            assert(content['v'] == 3)
+            assert(content['v'] == 2)
 
         download_path = os.path.join(self.wd_path, 'log.tar.gz')
 
@@ -305,6 +304,53 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         self._rti.get_job_logs(job_id, owner, download_path)
         assert(os.path.isfile(download_path))
+
+    def test_rest_submit_cancel_job(self):
+        deploy_and_wait(self._rti, self._test_proc_id, self._node.keystore, self._test_proc_gh_cred)
+
+        wrong_user = self._known_user
+        owner = self._node.keystore
+
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
+                                  'restricted_access': False, 'content_encrypted': False})
+        ]
+
+        # submit the job
+        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner)
+        print(result)
+        assert(result is not None)
+
+        job_id = result.id
+
+        # try to cancel the job (wrong user)
+        try:
+            self._rti.cancel_job(job_id, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert('user is not the job owner' in e.details['reason'])
+
+        # wait until the job is running
+        while True:
+            status: JobStatus = self._rti.get_job_status(job_id, owner)
+            if status.state == JobStatus.State.RUNNING:
+                break
+            else:
+                time.sleep(0.5)
+
+        # cancel the job (correct user)
+        self._rti.cancel_job(job_id, owner)
+
+        # get information about the job
+        status: JobStatus = self._rti.get_job_status(job_id, owner)
+        print(json.dumps(status.dict(), indent=4))
+        assert(status.state == JobStatus.State.CANCELLED)
 
     def test_rest_job_logs(self):
         deploy_and_wait(self._rti, self._test_proc_id, self._node.keystore, self._test_proc_gh_cred)

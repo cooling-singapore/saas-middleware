@@ -23,7 +23,7 @@ from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyU
     VerifyUserIsJobOwnerOrNodeOwner
 from saas.rti.adapters.base import RTIProcessorAdapter
 from saas.rti.exceptions import JobStatusNotFoundError, GPPDataObjectNotFound, RTIException
-from saas.rti.helpers import JobContext
+from saas.rti.context import JobContext
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
@@ -153,6 +153,9 @@ class RTIService:
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'job/{job_id}/logs',
                                self.job_logs, None, [VerifyUserIsJobOwnerOrNodeOwner]),
+
+            EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'job/{job_id}',
+                               self.job_cancel, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'permission/{req_id}',
                                self.put_permission, None, None)
@@ -296,7 +299,8 @@ class RTIService:
                 })
 
             # create job descriptor with a generated job id
-            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history)
+            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history,
+                      custodian=self._node.info)
 
             # create working directory or log a warning if it already exists
             wd_path = os.path.join(self._jobs_path, job.id)
@@ -308,9 +312,10 @@ class RTIService:
             job_descriptor_path = self.job_descriptor_path(job.id)
             write_json_to_file(job.dict(), job_descriptor_path)
 
-            # create status logger
+            # create job context logger
             context = JobContext(self.job_status_path(job.id), job)
             self._jobs_context[job.id] = context
+            context.start()
 
             # add the job to the processor queue and return the job descriptor
             self._deployed[proc_id].add(context)
@@ -332,10 +337,10 @@ class RTIService:
                     'task': job.task
                 })
 
-            # create status logger
-            # status_path = os.path.join(job.paths['local_wd'], 'job_status.json')
+            # create a job context
             context = JobContext(self.job_status_path(job.id), job, reconnect)
             self._jobs_context[job.id] = context
+            context.start()
 
             # add the job to the processor queue and return the job descriptor
             self._deployed[proc_id].resume(context)
@@ -403,7 +408,7 @@ class RTIService:
             status_path = self.job_status_path(job_id)
             if job_id in self._jobs_context:
                 context: JobContext = self._jobs_context[job_id]
-                return context.content()
+                return context.status
 
             # does the job status file exist?
             elif os.path.isfile(status_path):
@@ -453,6 +458,23 @@ class RTIService:
                 'stdout': e.stdout.decode('utf-8'),
                 'stderr': e.stderr.decode('utf-8')
             })
+
+    def job_cancel(self, job_id: str) -> JobStatus:
+        """
+        Attempts to cancel a running job. Depending on the implementation of the processor, this may or may not be
+        possible.
+        """
+        with self._mutex:
+            # do we have a live job status logger?
+            if job_id in self._jobs_context:
+                context: JobContext = self._jobs_context[job_id]
+                context.cancel()
+
+                return context.status
+
+            else:
+                raise RTIException(f"Cannot cancel job: no job context found for {job_id} (either job was not found or "
+                                   f"the job is not running any longer)")
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
         """

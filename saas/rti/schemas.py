@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from saas.core.exceptions import ExceptionContent
 from saas.dor.schemas import GitProcessorPointer, CDataObject
+from saas.nodedb.schemas import NodeInfo
 
 
 class Task(BaseModel):
@@ -44,6 +45,7 @@ class Job(BaseModel):
     id: str = Field(..., title="Id", description="The job id.", example="Ikn7dPv6")
     task: Task = Field(..., title="Task", description="The task of this job")
     retain: bool = Field(..., title="Retain", description="Indicates if the RTI should retain the working directory of this job. This is only used for debugging and testing purposes.", example=False)
+    custodian: NodeInfo = Field(..., title='Custodian', description="Information about the node that hosts this job.")
 
 
 class ReconnectInfo(BaseModel):
@@ -68,6 +70,7 @@ class JobStatus(BaseModel):
         FAILED = 'failed'
         TIMEOUT = 'timeout'
         SUCCESSFUL = 'successful'
+        CANCELLED = 'cancelled'
 
     class Error(BaseModel):
         """
@@ -76,7 +79,7 @@ class JobStatus(BaseModel):
         message: str = Field(..., title="Message", description="A simple message indicating the nature of the problem.")
         exception: ExceptionContent = Field(..., title="Exception", description="Detailed information about an exception that occured during job execution.")
 
-    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL] = Field(..., title="State", description="The state of the job.")
+    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
     output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")

@@ -63,23 +63,7 @@ def write_json_to_file(content: Union[list, dict], path: str, schema: dict = Non
 
 
 def generate_random_string(length: int, characters: str = string.ascii_letters+string.digits):
-    return ''.join(random.choice(characters) for c in range(length))
-
-
-# def object_to_ordered_list(obj: Union[dict, list]) -> Union[dict, list]:
-#     """
-#     Recursively sort any lists (and convert dictionaries to lists of (key, value) pairs so that they can be sorted)
-#     and return the result as a sorted list.
-#     Source: https://stackoverflow.com/questions/25851183/how-to-compare-two-json-objects-with-the-same-elements-in-a-different-order-equa
-#     :param obj: a dictionary or list
-#     :return:
-#     """
-#     if isinstance(obj, dict):
-#         return sorted((k, object_to_ordered_list(v)) for k, v in obj.items())
-#     elif isinstance(obj, list):
-#         return sorted(object_to_ordered_list(x) for x in obj)
-#     else:
-#         return obj
+    return ''.join(random.choice(characters) for _ in range(length))
 
 
 def symmetric_encrypt(content: bytes) -> (bytes, bytes):

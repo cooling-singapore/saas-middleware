@@ -101,6 +101,10 @@ class RTIProxy(EndpointProxy):
     def get_job_logs(self, job_id: str, with_authorisation_by: Keystore, download_path: str) -> None:
         self.get(f"/job/{job_id}/logs", download_path=download_path, with_authorisation_by=with_authorisation_by)
 
+    def cancel_job(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
+        result = self.delete(f"/job/{job_id}", with_authorisation_by=with_authorisation_by)
+        return JobStatus.parse_obj(result)
+
     def put_permission(self, req_id: str, content_key: str) -> None:
         self.post(f"/permission/{req_id}", body={
             'req_id': req_id,
