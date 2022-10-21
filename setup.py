@@ -1,16 +1,26 @@
 #!/usr/bin/env python
+import os
+
 from setuptools import setup, find_packages
 
-long_description = open('README.md').read()
+package_name = 'saas'
 
+# read meta information without importing
+_locals = {}
+with open(os.path.join(package_name, "_meta.py")) as f:
+    exec(f.read(), None, _locals)
+
+# read the long description
+with open('README.md') as f:
+    long_description = f.read()
+
+# read the requirements
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
 
-version = '0.2.0-alpha'
-
 setup(
-    name='saas-middleware',
-    version=version,
+    name=package_name,
+    version=_locals["__version__"],
     install_requires=requirements,
     packages=find_packages(),
     include_package_data=True,
@@ -20,12 +30,13 @@ setup(
         'Tracker': 'https://github.com/cooling-singapore/saas-middleware/issues',
     },
     license='MIT',
-    description='Middleware for powering federation of digital twins',
+    description=_locals["__description__"],
     long_description=long_description,
     long_description_content_type='text/markdown',
     entry_points={
         'console_scripts': [
             'saas-cli = saas.cli.saas_cli:main',
+            'saas-node = saas.service:main'
         ]
     },
     classifiers=[

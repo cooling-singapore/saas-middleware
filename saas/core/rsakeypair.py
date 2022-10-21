@@ -12,11 +12,11 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from saas.cryptography.exceptions import CryptographyException
-from saas.cryptography.keypair import KeyPair
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.keypair import KeyPair
+from saas.core.logging import Logging
 
-logger = Logging.get('cryptography.RSAKeyPair')
+logger = Logging.get('saas.core')
 
 
 class RSAKeyPair(KeyPair):
@@ -73,7 +73,7 @@ class RSAKeyPair(KeyPair):
             return RSAKeyPair(private_key, public_key)
 
         except Exception:
-            raise CryptographyException("Loading key failed. Password wrong?")
+            raise SaaSRuntimeException("Loading key failed. Password wrong?")
 
     @classmethod
     def from_private_key_file(cls, path: str, password: str) -> RSAKeyPair:

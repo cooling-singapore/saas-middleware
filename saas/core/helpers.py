@@ -1,11 +1,69 @@
 import os
 import shutil
-from typing import Union
-
+import datetime
+import json
+import random
+import string
+import jsonschema
 import canonicaljson
+
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
+from typing import Union
+
+from saas.core.logging import Logging
+
+logger = Logging.get('saas.core')
+
+
+def get_timestamp_now() -> int:
+    """
+    Returns the current time (UTC) in milliseconds since the beginning of the epoch
+    :return: integer representing time in milliseconds
+    """
+    return int(datetime.datetime.utcnow().timestamp() * 1000)
+
+
+def validate_json(content: dict, schema: dict) -> bool:
+    try:
+        jsonschema.validate(instance=content, schema=schema)
+        return True
+
+    except jsonschema.exceptions.ValidationError as e:
+        logger.error(e.message)
+        return False
+
+    except jsonschema.exceptions.SchemaError as e:
+        logger.error(e.message)
+        return False
+
+
+def read_json_from_file(path: str, schema: dict = None) -> Union[list, dict]:
+    with open(path, 'r') as f:
+        content = json.load(f)
+
+        # do we have a schema to validate?
+        if schema is not None:
+            jsonschema.validate(instance=content, schema=schema)
+
+        return content
+
+
+def write_json_to_file(content: Union[list, dict], path: str, schema: dict = None, indent: int = 4,
+                       sort_keys: bool = False):
+    with open(path, 'w') as f:
+        json.dump(content, f, indent=indent, sort_keys=sort_keys)
+
+        # do we have a schema to validate?
+        if schema is not None:
+            jsonschema.validate(instance=content, schema=schema)
+
+        return content
+
+
+def generate_random_string(length: int, characters: str = string.ascii_letters+string.digits):
+    return ''.join(random.choice(characters) for _ in range(length))
 
 
 def symmetric_encrypt(content: bytes) -> (bytes, bytes):

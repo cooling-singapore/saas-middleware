@@ -1,7 +1,7 @@
-from saas.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class RTIException(SaaSException):
+class RTIException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the RTI subsystem.
     """
@@ -96,3 +96,13 @@ class BuildDockerImageError(RTIException):
 class UnexpectedObjectName(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Unexpected object name encountered when processing push triggers', details=details)
+
+
+class RunCommandError(RTIException):
+    def __init__(self, details: dict, reason: str = 'Error while running command') -> None:
+        super().__init__(reason, details=details)
+
+
+class RunCommandTimeoutError(RunCommandError):
+    def __init__(self, details: dict) -> None:
+        super().__init__(details=details, reason='Timeout while running command')

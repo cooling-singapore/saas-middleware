@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict
 
-from saas.keystore.identity import Identity
+from saas.core.identity import Identity
 from saas.nodedb.schemas import NodeInfo
 from saas.rest.proxy import EndpointProxy
 

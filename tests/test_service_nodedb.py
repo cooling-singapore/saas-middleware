@@ -4,9 +4,10 @@ import unittest
 import logging
 import time
 
-from saas.helpers import get_timestamp_now
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.helpers import get_timestamp_now
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from tests.base_testcase import TestCaseBase, PortMaster
@@ -306,6 +307,20 @@ class NodeDBServiceTestCase(unittest.TestCase, TestCaseBase):
         print(result_e)
         assert (result_e.dor_service is False)
         assert (result_e.rti_service is True)
+
+    def test_touch_data_object(self):
+        # get the identity last seen
+        identity: Identity = self._db.get_identity(self._node.identity.id)
+        print(identity)
+        last_seen = identity.last_seen
+
+        # update the identity
+        self._node.update_identity(name='new name')
+
+        # get the identity last seen
+        identity: Identity = self._db.get_identity(self._node.identity.id)
+        print(identity)
+        assert(identity.last_seen > last_seen)
 
 
 if __name__ == '__main__':

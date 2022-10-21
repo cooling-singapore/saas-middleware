@@ -12,13 +12,14 @@ from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for
     prompt_for_keystore_selection, prompt_for_confirmation, prompt_for_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service, extract_address, prompt_for_identity_selection, prompt_for_data_objects, \
     deserialise_tag_value
-from saas.cryptography.helpers import encrypt_file
+from saas.core.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import ProcessorDescriptor, DataObject
-from saas.keystore.schemas import GithubCredentials
+from saas.core.schemas import GithubCredentials
+from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = Logging.get('cli.dor')
 
@@ -281,6 +282,94 @@ class DORAddGPP(CLICommand):
         print(f"GPP Data object added: {json.dumps(meta.dict(), indent=4)}")
 
 
+class DORMeta(CLICommand):
+    def __init__(self):
+        super().__init__('meta', 'retrieves the meta information of a data object', arguments=[
+            Argument('--obj-id', dest='obj-id', action='store', help=f"the id of the data object")
+        ])
+
+    def execute(self, args: dict) -> None:
+        dor = _require_dor(args)
+
+        # do we have an object id?
+        if not args['obj-id']:
+            # determine object ids for downloading
+            args['obj-id'] = prompt_for_data_objects(extract_address(args['address']),
+                                                     message="Select data object:",
+                                                     allow_multiple=False)
+
+        # get the meta information
+        meta = dor.get_meta(args['obj-id'])
+        if not meta:
+            raise CLIRuntimeError(f"No data object with id={args['obj-id']}")
+
+        print(json.dumps(meta.dict(), indent=4))
+
+
+class DORDownload(CLICommand):
+    def __init__(self):
+        super().__init__('download', 'retrieves the contents of a data object', arguments=[
+            Argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
+                     help="the ids of the data object that are to be downloaded"),
+            Argument('destination', metavar='destination', type=str, nargs=1,
+                     help="directory where to store the data object content")
+
+        ])
+
+    def execute(self, args: dict) -> None:
+        # do we have a valid destination directory?
+        if not args['destination']:
+            raise CLIRuntimeError(f"No download path provided")
+        elif not os.path.isdir(args['destination'][0]):
+            raise CLIRuntimeError(f"Destination path provided is not a directory")
+
+        dor = _require_dor(args)
+        keystore = load_keystore(args, ensure_publication=True)
+
+        # do we have an object id?
+        if not args['obj-ids']:
+            # determine object ids for downloading
+            args['obj-ids'] = prompt_for_data_objects(extract_address(args['address']),
+                                                      message="Select data object to be downloaded:",
+                                                      filter_by_owner=keystore.identity, allow_multiple=True)
+
+            # get the meta information for the objects
+            downloadable = [dor.get_meta(obj_id) for obj_id in args['obj-ids']]
+
+        else:
+            # check if the object ids exist/owned by this entity or if the entity has access
+            result: list[DataObject] = dor.search(owner_iid=keystore.identity.id)
+            result: dict[str, DataObject] = {obj.obj_id: obj for obj in result}
+            downloadable = []
+            for obj_id in args['obj-ids']:
+                if obj_id not in result:
+                    print(f"Ignoring data object '{obj_id}': does not exist or is not owned by "
+                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+
+                elif result[obj_id].access_restricted and keystore.identity.id not in result[obj_id].access:
+                    print(f"Ignoring data object '{obj_id}': '{keystore.identity.name}/{keystore.identity.email}/"
+                          f"{keystore.identity.id}' does not have access.")
+
+                else:
+                    downloadable.append(result[obj_id])
+
+        # do we have removable data objects?
+        if len(downloadable) == 0:
+            raise CLIRuntimeError("No data objects available for download. Aborting.")
+
+        # download the data objects
+        dor = DORProxy(extract_address(args['address']))
+        for obj in downloadable:
+            download_path = os.path.join(args['destination'][0], f"{obj.obj_id}.{obj.data_format}")
+            print(f"Downloading {obj.obj_id} to {download_path}...", end='')
+            try:
+                dor.get_content(obj.obj_id, keystore, download_path)
+                print("Done")
+
+            except UnsuccessfulRequestError as e:
+                print(f"{e.reason} details: {e.details}")
+
+
 class DORRemove(CLICommand):
     def __init__(self) -> None:
         super().__init__('remove', 'removes a data object', arguments=[
@@ -302,6 +391,7 @@ class DORRemove(CLICommand):
             # check if the object ids exist/owned by this entity
             dor = DORProxy(extract_address(args['address']))
             result = dor.search(owner_iid=keystore.identity.id)
+            result = {obj.obj_id: obj for obj in result}
             removable = []
             for obj_id in args['obj-ids']:
                 if obj_id not in result:

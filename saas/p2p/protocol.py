@@ -4,8 +4,8 @@ from typing import Optional, Dict, List, Any, Tuple
 
 from pydantic import BaseModel
 
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.nodedb.schemas import NodeInfo
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage

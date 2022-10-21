@@ -1,9 +1,9 @@
 from typing import Union, Optional, List
 
-from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject
-from saas.keystore.schemas import GithubCredentials
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
+from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject, GPP_DATA_TYPE
+from saas.core.schemas import GithubCredentials
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
 from saas.rest.proxy import EndpointProxy
 
 DOR_ENDPOINT_PREFIX = "/api/v1/dor"
@@ -15,7 +15,7 @@ class DORProxy(EndpointProxy):
 
     def search(self, patterns: list[str] = None, owner_iid: str = None,
                data_type: str = None, data_format: str = None,
-               c_hashes: list[str] = None) -> List[DataObject]:
+               c_hashes: list[str] = None) -> List[Union[CDataObject, GPPDataObject]]:
         body = {}
 
         if patterns is not None and len(patterns) > 0:
@@ -34,7 +34,8 @@ class DORProxy(EndpointProxy):
             body['c_hashes'] = c_hashes
 
         results = self.get('', body=body)
-        return [DataObject.parse_obj(result) for result in results]
+        return [GPPDataObject.parse_obj(result)
+                if result['data_type'] == GPP_DATA_TYPE else CDataObject.parse_obj(result) for result in results]
 
     def statistics(self) -> DORStatistics:
         result = self.get('/statistics')

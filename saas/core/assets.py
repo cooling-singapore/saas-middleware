@@ -5,11 +5,11 @@ from typing import Dict, Optional, List
 
 from pydantic import BaseModel
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.cryptography.keypair import KeyPair
-from saas.cryptography.rsakeypair import RSAKeyPair
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
-from saas.keystore.exceptions import KeystoreException
+from saas.core.eckeypair import ECKeyPair
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.keypair import KeyPair
+from saas.core.rsakeypair import RSAKeyPair
+from saas.core.schemas import GithubCredentials, SSHCredentials
 
 
 def _decrypt(content: str, key: KeyPair) -> str:
@@ -43,7 +43,7 @@ class MasterKeyPairAsset:
             return MasterKeyPairAsset(keypair)
 
         else:
-            raise KeystoreException(f"Unrecognised key type '{asset.info}'")
+            raise SaaSRuntimeException(f"Unrecognised key type '{asset.info}'")
 
     def get(self) -> KeyPair:
         return self._keypair
@@ -79,7 +79,7 @@ class KeyPairAsset:
             return KeyPairAsset(keypair)
 
         else:
-            raise KeystoreException(f"Unrecognised keypair type '{asset.info}'")
+            raise SaaSRuntimeException(f"Unrecognised keypair type '{asset.info}'")
 
     def get(self) -> KeyPair:
         return self._keypair

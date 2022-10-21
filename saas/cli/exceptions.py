@@ -1,7 +1,7 @@
-from saas.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class CLIException(SaaSException):
+class CLIException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the CLI subsystem.
     """

@@ -3,15 +3,15 @@ import datetime
 from tabulate import tabulate
 
 from saas.cli.helpers import CLICommand, prompt_for_string, prompt_if_missing, extract_address
-from saas.log import Logging
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.network')
 
 
-class NetworkShow(CLICommand):
+class NetworkList(CLICommand):
     def __init__(self) -> None:
-        super().__init__('show', 'shows the known nodes in the network', arguments=[])
+        super().__init__('show', 'retrieves a list of all known nodes in the network', arguments=[])
 
     def execute(self, args: dict) -> None:
         prompt_if_missing(args, 'address', prompt_for_string,

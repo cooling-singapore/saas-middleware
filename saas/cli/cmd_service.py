@@ -5,7 +5,7 @@ from InquirerPy.base import Choice
 
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
     default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore, extract_address
-from saas.log import Logging
+from saas.core.logging import Logging
 from saas.node import Node
 
 logger = Logging.get('cli.service')
@@ -18,8 +18,10 @@ class Service(CLICommand):
     default_p2p_address = '127.0.0.1:4001'
     default_boot_node_address = '127.0.0.1:4001'
     default_service = 'full'
-    default_retain_job_history = True
+    default_retain_job_history = False
+    default_strict_deployment = True
     default_bind_all_address = False
+
 
     def __init__(self):
         super().__init__('service', 'start a node as service provider', arguments=[
@@ -42,6 +44,9 @@ class Service(CLICommand):
                      help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default "
                           f"behaviour is to delete information of completed jobs). This flag should only be used for "
                           f"debug/testing purposes."),
+            Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
+                     help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
+                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
                      help=f"allows REST and P2P service to bind and accept connections pointing to any address of the machine"
                           f"i.e. 0.0.0.0 (useful for docker)")
@@ -55,7 +60,9 @@ class Service(CLICommand):
             default_if_missing(args, 'boot-node', self.default_boot_node_address)
             default_if_missing(args, 'type', self.default_service)
             default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
+            default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
             default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
+
         else:
             prompt_if_missing(args, 'datastore', prompt_for_string,
                               message="Enter path to datastore:",
@@ -83,6 +90,9 @@ class Service(CLICommand):
                 prompt_if_missing(args, 'bind-all-address', prompt_for_confirmation,
                                   message='Bind service to all network addresses?', default=False)
 
+                prompt_if_missing(args, 'strict-deployment', prompt_for_confirmation,
+                                  message='Strict processor deployment?', default=True)
+
         keystore = load_keystore(args, ensure_publication=False)
 
         # initialise storage directory (if necessary)
@@ -101,6 +111,7 @@ class Service(CLICommand):
                            enable_dor=args['type'] == 'full' or args['type'] == 'storage',
                            enable_rti=args['type'] == 'full' or args['type'] == 'execution',
                            retain_job_history=args['retain-job-history'],
+                           strict_deployment=args['strict-deployment'],
                            bind_all_address=args['bind-all-address'])
 
         # print info message

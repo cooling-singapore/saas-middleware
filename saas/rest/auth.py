@@ -4,9 +4,10 @@ import time
 
 from fastapi import Request
 
-from saas.cryptography.helpers import hash_string_object, hash_json_object, hash_bytes_object
-from saas.exceptions import AuthorisationFailedError
-from saas.keystore.identity import Identity
+from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
+from saas.core.identity import Identity
+from saas.dor.schemas import DataObject
+from saas.rest.exceptions import AuthorisationFailedError
 from saas.rti.exceptions import JobDescriptorNotFoundError, ProcessorNotDeployedError
 from saas.rti.schemas import Job
 
@@ -76,6 +77,9 @@ class VerifyAuthorisation:
                 'signature': signature
             })
 
+        # touch the identity
+        self.node.db.touch_identity(identity)
+
         return identity, body
 
 
@@ -111,7 +115,7 @@ class VerifyUserHasAccess:
         identity, body = await VerifyAuthorisation(self.node).__call__(request)
 
         # get the meta information of the object
-        meta = self.node.dor.get_meta(obj_id)
+        meta: DataObject = self.node.dor.get_meta(obj_id)
         if meta is None:
             raise AuthorisationFailedError({
                 'reason': 'data object does not exist',
@@ -119,7 +123,7 @@ class VerifyUserHasAccess:
             })
 
         # check if the identity has access to the data object content
-        if identity.id not in meta.access:
+        if meta.access_restricted and identity.id not in meta.access:
             raise AuthorisationFailedError({
                 'reason': 'user has no access to the data object content',
                 'obj_id': obj_id,
@@ -142,7 +146,7 @@ class VerifyProcessorDeployed:
         })
 
 
-class VerifyUserIsJobOwner:
+class VerifyUserIsJobOwnerOrNodeOwner:
     def __init__(self, node):
         self.node = node
 
@@ -159,10 +163,27 @@ class VerifyUserIsJobOwner:
         with open(descriptor_path, 'r') as f:
             job = Job.parse_obj(json.load(f))
 
-            if job.task.user_iid != identity.id:
+            if job.task.user_iid != identity.id and identity.id != self.node.identity.id:
                 raise AuthorisationFailedError({
-                    'reason': 'user is not the job owner',
+                    'reason': 'user is not the job owner or the node owner',
                     'job_id': job_id,
                     'user_iid': identity.id,
-                    'owner_iid': job.task.user_iid
+                    'owner_iid': job.task.user_iid,
+                    'node_iid': self.node.identity.id
                 })
+
+
+class VerifyUserIsNodeOwner:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, request: Request):
+        identity, _ = await VerifyAuthorisation(self.node).__call__(request)
+
+        # check if the user is the owner of the node
+        if self.node.identity.id != identity.id:
+            raise AuthorisationFailedError({
+                'reason': 'User is not the node owner',
+                'user_iid': identity.id,
+                'node_iid': self.node.identity.id
+            })

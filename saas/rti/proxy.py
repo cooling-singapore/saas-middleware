@@ -1,13 +1,13 @@
 import json
 from typing import List, Union
 
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.proxy import EndpointProxy
-from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus
+from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
+from saas.core.schemas import GithubCredentials, SSHCredentials
 
 RTI_ENDPOINT_PREFIX = "/api/v1/rti"
 
@@ -20,7 +20,7 @@ class RTIProxy(EndpointProxy):
         results = self.get(f"")
         return [Processor.parse_obj(result) for result in results]
 
-    def deploy(self, proc_id: str, deployment: str = "native", gpp_custodian: str = None,
+    def deploy(self, proc_id: str, authority: Keystore, deployment: str = "native", gpp_custodian: str = None,
                ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> Processor:
 
         body = {
@@ -44,20 +44,20 @@ class RTIProxy(EndpointProxy):
                     'key': ssh_credentials.key,
                     'key_is_password': ssh_credentials.key_is_password
                 })
-                body['ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
+                body['encrypted_ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
 
             if github_credentials:
                 github_credentials_serialised = json.dumps({
                     'login': github_credentials.login,
                     'personal_access_token': github_credentials.personal_access_token
                 })
-                body['github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
+                body['encrypted_github_credentials'] = peer.encrypt(github_credentials_serialised.encode('utf-8')).hex()
 
-        result = self.post(f"/proc/{proc_id}", body=body)
+        result = self.post(f"/proc/{proc_id}", body=body, with_authorisation_by=authority)
         return Processor.parse_obj(result)
 
-    def undeploy(self, proc_id: str) -> Processor:
-        result = self.delete(f"/proc/{proc_id}")
+    def undeploy(self, proc_id: str, authority: Keystore) -> Processor:
+        result = self.delete(f"/proc/{proc_id}", with_authorisation_by=authority)
         return Processor.parse_obj(result)
 
     def get_gpp(self, proc_id: str) -> GitProcessorPointer:
@@ -79,11 +79,19 @@ class RTIProxy(EndpointProxy):
 
         return Job.parse_obj(result)
 
-    # def resume_job(self, proc_id: str, reconnect_info: dict) -> dict:
-    #     return self.put(f"/proc/{proc_id}/jobs", body=reconnect_info)
+    def resume_job(self, proc_id: str, job: Job, reconnect: ReconnectInfo, with_authorisation_by: Keystore) -> Job:
+        result = self.put(f"/proc/{proc_id}/jobs", body={
+            'job': job.dict(),
+            'reconnect': reconnect.dict()
+        }, with_authorisation_by=with_authorisation_by)
+        return Job.parse_obj(result)
 
-    def get_jobs(self, proc_id: str) -> List[Job]:
+    def get_jobs_by_proc(self, proc_id: str) -> List[Job]:
         results = self.get(f"/proc/{proc_id}/jobs")
+        return [Job.parse_obj(result) for result in results]
+
+    def get_jobs_by_user(self, authority: Keystore) -> List[Job]:
+        results = self.get(f"/job", with_authorisation_by=authority)
         return [Job.parse_obj(result) for result in results]
 
     def get_job_status(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
@@ -92,6 +100,10 @@ class RTIProxy(EndpointProxy):
 
     def get_job_logs(self, job_id: str, with_authorisation_by: Keystore, download_path: str) -> None:
         self.get(f"/job/{job_id}/logs", download_path=download_path, with_authorisation_by=with_authorisation_by)
+
+    def cancel_job(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
+        result = self.delete(f"/job/{job_id}", with_authorisation_by=with_authorisation_by)
+        return JobStatus.parse_obj(result)
 
     def put_permission(self, req_id: str, content_key: str) -> None:
         self.post(f"/permission/{req_id}", body={

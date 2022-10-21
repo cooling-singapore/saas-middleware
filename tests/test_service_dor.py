@@ -6,15 +6,15 @@ import unittest
 import logging
 import os
 
-from saas.cryptography.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
+from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import DataObject
-from saas.keystore.schemas import GithubCredentials
-from saas.exceptions import UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now, generate_random_string
-from saas.log import Logging
+from saas.core.schemas import GithubCredentials
+from saas.core.helpers import get_timestamp_now, generate_random_string
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from tests.base_testcase import TestCaseBase
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 
@@ -237,7 +237,7 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
                 'a': random.randint(0, 9999)
             }))
 
-        result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json')
+        result = self._dor.add_data_object(content_path, owner, True, False, 'JSON', 'json')
         valid_obj_id = result.obj_id
         invalid_obj_id = 'invalid_obj_id'
 
@@ -684,6 +684,66 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         self._dor.delete_data_object(obj_id0, owner)
         self._dor.delete_data_object(obj_id1, owner)
         self._dor.delete_data_object(obj_id2, owner)
+
+    def test_touch_data_object(self):
+        owner = self._known_user0
+
+        # create content
+        content_path = os.path.join(self.wd_path, 'test.json')
+        with open(content_path, 'w') as f:
+            f.write(json.dumps({
+                'a': random.randint(0, 9999)
+            }))
+
+        # create data object
+        meta: DataObject = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
+        obj_id = meta.obj_id
+        last_accessed = meta.last_accessed
+
+        # get the meta information (should not affect last accessed)
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed == last_accessed)
+
+        # get content (should affect last accessed)
+        self._dor.get_content(obj_id, owner, os.path.join(self.wd_path, 'fetched.json'))
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
+        last_accessed = meta.last_accessed
+
+        # get the provenance information (should not affect last accessed)
+        self._dor.get_provenance(meta.c_hash)
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed == last_accessed)
+
+        # grant access (should affect last accessed)
+        self._dor.revoke_access(obj_id, owner, self._known_user0.identity)
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
+        last_accessed = meta.last_accessed
+
+        # revoke access (should affect last accessed)
+        self._dor.revoke_access(obj_id, owner, self._known_user0.identity)
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
+        last_accessed = meta.last_accessed
+
+        # transfer ownership (should affect last accessed)
+        self._dor.transfer_ownership(obj_id, owner, self._known_user0.identity)
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
+        last_accessed = meta.last_accessed
+        owner = self._known_user0
+
+        # update tags (should affect last accessed)
+        self._dor.update_tags(obj_id, owner, [DataObject.Tag(key='name', value='value')])
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
+        last_accessed = meta.last_accessed
+
+        # remove tag (should affect last accessed)
+        self._dor.remove_tags(obj_id, owner, ['name'])
+        meta: DataObject = self._dor.get_meta(obj_id)
+        assert(meta.last_accessed > last_accessed)
 
 
 if __name__ == '__main__':

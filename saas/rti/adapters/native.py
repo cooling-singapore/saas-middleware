@@ -1,16 +1,12 @@
 import os
-import threading
 import time
 
 import saas.rti.adapters.base as base
-from saas.exceptions import SaaSException
-from saas.helpers import write_json_to_file
 
-from saas.log import Logging
-from saas.rti.status import StatusLogger
-from saas.rti.schemas import Task, ResumableJob
+from saas.core.logging import Logging
+from saas.core.schemas import GithubCredentials, SSHCredentials
+from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
-from saas.keystore.schemas import GithubCredentials, SSHCredentials
 
 logger = Logging.get('rti.adapters.native')
 
@@ -98,8 +94,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def shutdown(self) -> None:
         pass
 
-    def execute(self, job_id: str, task_descriptor: Task, local_working_directory: str, retain_job: bool,
-                status: StatusLogger) -> None:
+    def execute(self, local_working_directory: str, context: JobContext) -> None:
 
         _home = base.get_home_directory(self._ssh_credentials)
         paths = {
@@ -109,23 +104,23 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         paths['wd'] = paths['remote_wd'] if self._ssh_credentials else paths['local_wd']
 
         # make sure the wd path exists (locally and remotely, if applicable)
-        status.update('task', f"create working directory at LOCAL:{paths['local_wd']}")
+        context.make_note('task', f"create working directory at LOCAL:{paths['local_wd']}")
         os.makedirs(paths['local_wd'], exist_ok=True)
 
         # if ssh_auth IS present, then we perform a remote execution -> copy input data to remote working directory
         if self._ssh_credentials is not None:
-            status.update('task', f"create working directory at REMOTE:{paths['remote_wd']}")
+            context.make_note('task', f"create working directory at REMOTE:{paths['remote_wd']}")
             base.run_command(f"mkdir -p {paths['remote_wd']}", ssh_credentials=self._ssh_credentials, timeout=10)
 
             # copy the input data objects to the remote working directory
             for obj_name in self._input_interface:
                 local_path = os.path.join(local_working_directory, obj_name)
-                status.update('task', f"copy '{obj_name}': LOCAL:{local_path} -> REMOTE:{paths['remote_wd']}")
+                context.make_note('task', f"copy '{obj_name}': LOCAL:{local_path} -> REMOTE:{paths['remote_wd']}")
                 base.scp_local_to_remote(local_path, paths['remote_wd'], self._ssh_credentials)
 
         # run execute script
         task_msg = f"starting {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}"
-        status.update('task', task_msg)
+        context.make_note('task', task_msg)
         logger.debug(task_msg)
         pid, pid_paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['execute.sh']} "
                                                 f"{self._gpp.proc_config} {paths['wd']}",
@@ -133,89 +128,62 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                                                 name='execute_sh',
                                                 ssh_credentials=self._ssh_credentials)
 
-        # create the context information for this job
-        reconnect_info = ResumableJob(id=job_id, task=task_descriptor, retain=retain_job,
-                                      paths=paths, pid=pid, pid_paths=pid_paths)
-
-        # store reconnect information
-        reconnect_info_path = os.path.join(local_working_directory, 'job_reconnect.json')
-        write_json_to_file(reconnect_info.dict(), reconnect_info_path)
+        # make this job resumable
+        context.add_reconnect_info(paths, pid, pid_paths)
 
         # try to monitor the job by (re)connecting to it
-        self.connect_and_monitor(reconnect_info, status)
+        self.connect_and_monitor(context)
 
-    def connect_and_monitor(self, job: ResumableJob, status: StatusLogger) -> None:
-        # create the context information for this job
-        context = {
-            'task_descriptor': job.task,
-            'paths': job.paths,
-            'job_id': job.id,
-            'status': status,
-            'threads': {}
-        }
-
-        base.monitor_command(job.pid, job.pid_paths,
+    def connect_and_monitor(self, context: JobContext) -> None:
+        # monitor the output of a process
+        base.monitor_command(context.reconnect_info.pid, context.reconnect_info.pid_paths,
                              ssh_credentials=self._ssh_credentials, triggers={
                                  'trigger:output': {'func': self._handle_trigger_output, 'context': context},
                                  'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
-                             })
+                             }, context=context)
 
         # wait for all outputs to be processed
-        while len(context['threads']):
-            status.update('task', f"wait for all outputs to be processed: remaining={len(context['threads'])}")
+        while context.n_tasks() > 0:
+            context.make_note('task', f"wait for all outputs to be processed: remaining={context.n_tasks()}")
             time.sleep(1)
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if not self._retain_remote_wdirs and self._ssh_credentials is not None:
-            paths = job.paths
-            status.update('task', f"delete working directory REMOTE:{paths['remote_wd']}")
-            base.run_command(f"rm -rf {paths['remote_wd']}", ssh_credentials=self._ssh_credentials)
+            remote_wd = context.reconnect_info.paths['remote_wd']
+            context.make_note('task', f"delete working directory REMOTE:{remote_wd}")
+            base.run_command(f"rm -rf {remote_wd}", ssh_credentials=self._ssh_credentials)
 
-        status.remove('task')
+        context.remove_note('task')
 
     def delete(self) -> None:
         logger.info(f"[adapter:{self._proc_id}] deleting adapter contents at "
                     f"{'REMOTE' if self._ssh_credentials else 'LOCAL'}:{self._paths['repo']}.")
         base.run_command(f"rm -rf {self._paths['repo']}", ssh_credentials=self._ssh_credentials)
 
-    def _handle_trigger_output(self, line: str, context: dict) -> None:
+    def _handle_trigger_output(self, line: str, context: JobContext) -> None:
         obj_name = line.split(':')[2]
-        context['obj_name'] = obj_name
-        context['threads'][obj_name] = threading.Thread(target=self._process_output, args=(context,))
-        context['threads'][obj_name].start()
+        context.add_task(target=self._process_output, args=(obj_name, context,))
 
-    def _handle_trigger_progress(self, line: str, context: dict) -> None:
-        status: StatusLogger = context['status']
-        status.update('progress', line.split(':')[2])
+    def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
+        progress = line.split(':')[2]
+        context.progress = int(progress)
 
-    def _process_output(self, context: dict) -> None:
-        obj_name = context['obj_name']
-        job_id = context['job_id']
-        task_descriptor = Task.parse_obj(context['task_descriptor'])
-        paths = context['paths']
-        status: StatusLogger = context['status']
-
-        status.update(f"process_output:{obj_name}", 'started')
+    def _process_output(self, obj_name: str, context: JobContext) -> None:
+        context.make_note(f"process_output:{obj_name}", 'started')
 
         # if ssh_auth IS present, then we perform a remote execution
         # -> copy output data to local working directory
+        paths = context.reconnect_info.paths
         if self._ssh_credentials is not None:
-            status.update(f"process_output:{obj_name}", 'retrieve')
+            context.make_note(f"process_output:{obj_name}", 'retrieve')
 
             remote_path = os.path.join(paths['remote_wd'], obj_name)
-            status.update('task', f"copy data objects: {remote_path} -> {paths['local_wd']}")
+            context.make_note('task', f"copy data objects: {remote_path} -> {paths['local_wd']}")
 
             base.scp_remote_to_local(remote_path, paths['local_wd'], self._ssh_credentials)
-            status.remove('task')
+            context.remove_note('task')
 
         # upload the data object to the target DOR
-        try:
-            status.update(f"process_output:{obj_name}", 'push')
-            self._push_data_object(job_id, obj_name, task_descriptor, paths['local_wd'], status)
-            status.update(f"process_output:{obj_name}", 'done')
-
-        except SaaSException as e:
-            status.update(f"process_output:{obj_name}", f"failed: id={e.id} reason={e.reason}")
-
-        # remove this thread
-        context['threads'].pop(obj_name)
+        context.make_note(f"process_output:{obj_name}", 'push')
+        self._push_data_object(obj_name, paths['local_wd'], context)
+        context.make_note(f"process_output:{obj_name}", 'done')

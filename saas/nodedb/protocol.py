@@ -2,8 +2,8 @@ from typing import Optional, List
 
 from pydantic import BaseModel
 
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.nodedb.exceptions import UnexpectedIdentityError
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.protocol import P2PProtocol

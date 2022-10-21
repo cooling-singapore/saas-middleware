@@ -1,7 +1,7 @@
-from saas.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class NodeDBException(SaaSException):
+class NodeDBException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the NodeDB subsystem.
     """

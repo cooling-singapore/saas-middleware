@@ -4,24 +4,23 @@ import os
 import shutil
 import time
 import unittest
-from json import JSONDecodeError
 from threading import Thread
 from typing import Union, List
 
-from saas.cryptography.helpers import encrypt_file
-from saas.cryptography.rsakeypair import RSAKeyPair
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import encrypt_file
+from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.exceptions import SaaSException, RunCommandError, UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now, read_json_from_file, generate_random_string
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.helpers import get_timestamp_now, generate_random_string
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
-from saas.rti.adapters.docker import prune_image
+from saas.rti.exceptions import RunCommandError
 from saas.rti.proxy import RTIProxy
-from saas.rti.schemas import Task
-from saas.rti.status import State
-from saas.keystore.schemas import GithubCredentials
+from saas.rti.schemas import Task, JobStatus
+from saas.core.schemas import GithubCredentials
 
 from tests.base_testcase import TestCaseBase
 
@@ -31,7 +30,7 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '9bf18c3'
+    commit_id = 'cd97d60'
     proc_path = 'saasadapters/example'
 
     github_credentials = owner.github_credentials.get(source)
@@ -41,8 +40,8 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
     return meta.obj_id, github_credentials
 
 
-def deploy_and_wait(rti: RTIProxy, proc_id: str, github_credentials: GithubCredentials = None):
-    rti.deploy(proc_id, github_credentials=github_credentials)
+def deploy_and_wait(rti: RTIProxy, proc_id: str, authority: Keystore, github_credentials: GithubCredentials = None):
+    rti.deploy(proc_id, authority, github_credentials=github_credentials)
     while (state := rti.get_status(proc_id).state) == ProcessorState.STARTING:
         logger.info(f"Waiting for processor to deploy. {state}")
         time.sleep(1)
@@ -54,8 +53,10 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
     _node = None
     _rti = None
     _dor = None
+    _db = None
     _test_proc_id = None
     _test_proc_gh_cred = None
+    _known_user = None
 
     def __init__(self, method_name='runTest'):
         unittest.TestCase.__init__(self, method_name)
@@ -72,13 +73,18 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         if RTIRESTTestCase._node is None:
             RTIRESTTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                  wd_path=RTIRESTTestCase._wd_path)
+                                                  wd_path=RTIRESTTestCase._wd_path, strict_deployment=False)
             RTIRESTTestCase._rti = RTIProxy(RTIRESTTestCase._node.rest.address())
             RTIRESTTestCase._dor = DORProxy(RTIRESTTestCase._node.rest.address())
+            RTIRESTTestCase._db = NodeDBProxy(RTIRESTTestCase._node.rest.address())
             time.sleep(1)
 
             RTIRESTTestCase._test_proc_id, RTIRESTTestCase._test_proc_gh_cred = add_test_processor(
                 RTIRESTTestCase._dor, RTIRESTTestCase._node.keystore, 'default')
+
+            # create an extra identity
+            RTIRESTTestCase._known_user = self.create_keystores(1)[0]
+            RTIRESTTestCase._db.update_identity(RTIRESTTestCase._known_user.identity)
 
     def tearDown(self):
         self.cleanup()
@@ -89,9 +95,94 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         assert(result is not None)
         assert(len(result) == 0)
 
+    def test_rest_deploy_undeploy(self):
+        node0 = self.get_node('node0', enable_rest=True, keep_track=False, wd_path=os.path.join(self.wd_path, 'node0'),
+                              strict_deployment=False)
+        db0 = NodeDBProxy(node0.rest.address())
+        dor0 = DORProxy(node0.rest.address())
+        rti0 = RTIProxy(node0.rest.address())
+
+        node1 = self.get_node('node1', enable_rest=True, keep_track=False, wd_path=os.path.join(self.wd_path, 'node1'),
+                              strict_deployment=True)
+        db1 = NodeDBProxy(node1.rest.address())
+        dor1 = DORProxy(node1.rest.address())
+        rti1 = RTIProxy(node1.rest.address())
+
+        # check flags
+        info0 = db0.get_node()
+        info1 = db1.get_node()
+        assert(info0.strict_deployment is False)
+        assert(info1.strict_deployment is True)
+
+        # upload the test proc GCC
+        proc_id0, gh_cred0 = add_test_processor(dor0, node0.keystore, 'default')
+        proc_id1, gh_cred1 = add_test_processor(dor1, node1.keystore, 'default')
+
+        # make the wrong user identity known to the nodes
+        wrong_user = self._known_user
+        db0.update_identity(wrong_user.identity)
+        db1.update_identity(wrong_user.identity)
+
+        # try to deploy the processor with the wrong user on node0
+        try:
+            rti0.deploy(proc_id0, wrong_user, github_credentials=gh_cred0)
+            assert True
+
+        except UnsuccessfulRequestError as e:
+            assert False
+
+        # try to deploy the processor with the wrong user on node1
+        try:
+            rti1.deploy(proc_id1, wrong_user, github_credentials=gh_cred1)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('User is not the node owner' in e.details['reason'])
+
+        # try to deploy the processor with the correct user on node1
+        try:
+            rti1.deploy(proc_id1, node1.keystore, github_credentials=gh_cred1)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # wait for deployment to be done
+        while rti0.get_status(proc_id0).state != 'waiting':
+            time.sleep(0.5)
+
+        # wait for deployment to be done
+        while rti1.get_status(proc_id1).state != 'waiting':
+            time.sleep(0.5)
+
+        # try to undeploy the processor with the wrong user on node0
+        try:
+            rti0.undeploy(proc_id0, wrong_user)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
+        # try to undeploy the processor with the wrong user on node1
+        try:
+            rti1.undeploy(proc_id1, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert ('User is not the node owner' in e.details['reason'])
+
+        # try to undeploy the processor with the correct user on node1
+        try:
+            rti1.undeploy(proc_id1, node1.keystore)
+            assert True
+
+        except UnsuccessfulRequestError:
+            assert False
+
     def test_rest_deploy_descriptor_status_undeploy(self):
-        # deploy the test processor
-        result = self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
+        # deploy the test processor with the correct user
+        node_owner = self._node.keystore
+        result = self._rti.deploy(self._test_proc_id, node_owner, github_credentials=self._test_proc_gh_cred)
         print(result)
         assert(result is not None)
 
@@ -114,7 +205,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             time.sleep(1)
 
         # undeploy the test processor
-        result = self._rti.undeploy(self._test_proc_id)
+        result = self._rti.undeploy(self._test_proc_id, node_owner)
         print(result)
         assert(result is not None)
 
@@ -126,18 +217,15 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         except UnsuccessfulRequestError as e:
             assert('Processor not deployed' in e.reason)
 
-    def test_rest_submit_get_job(self):
-        # create an extra identity
-        wrong_user = self.create_keystores(1)[0]
-        self._node.db.update_identity(wrong_user.identity)
+    def test_rest_submit_list_get_job(self):
+        deploy_and_wait(self._rti, self._test_proc_id, self._node.keystore, self._test_proc_gh_cred)
 
-        deploy_and_wait(self._rti, self._test_proc_id, self._test_proc_gh_cred)
-
+        wrong_user = self._known_user
         owner = self._node.keystore
 
         task_input = [
             Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 1}})
         ]
 
         task_output = [
@@ -152,10 +240,24 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
 
         job_id = result.id
 
-        # get information about all jobs
-        result = self._rti.get_jobs(self._test_proc_id)
+        # get list of all jobs by correct user
+        result = self._rti.get_jobs_by_user(owner)
         print(result)
         assert(result is not None)
+        result = {job.id: job for job in result}
+        assert(job_id in result)
+
+        # get list of all jobs by wrong user
+        result = self._rti.get_jobs_by_user(wrong_user)
+        print(result)
+        assert(result is not None)
+        assert(len(result) == 0)
+
+        # get list of all jobs by proc
+        result = self._rti.get_jobs_by_proc(self._test_proc_id)
+        print(result)
+        assert(result is not None)
+        assert(len(result) == 1)
 
         # try to get the job info as the wrong user
         try:
@@ -163,33 +265,31 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulRequestError as e:
-            assert(e.details['reason'] == 'user is not the job owner')
+            assert(e.details['reason'] == 'user is not the job owner or the node owner')
 
         while True:
             # get information about the running job
-            job = self._rti.get_job_status(job_id, owner)
-            print(job)
-            assert(job is not None)
+            status: JobStatus = self._rti.get_job_status(job_id, owner)
+            print(status)
+            assert(status is not None)
 
-            state = State(job.status['state'])
-            if state == State.SUCCESSFUL or state == State.FAILED:
+            if status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
                 break
 
             time.sleep(1)
 
         # check if we have an object id for output object 'c'
-        output = {item['name']: item['obj_id'] for item in job.status['output']}
-        assert('c' in output)
+        assert('c' in status.output)
 
         # get the contents of the output data object
         download_path = os.path.join(self.wd_path, 'c.json')
-        self._dor.get_content(output['c'], owner, download_path)
+        self._dor.get_content(status.output['c'].obj_id, owner, download_path)
         assert(os.path.isfile(download_path))
 
         with open(download_path, 'r') as f:
             content = json.load(f)
             print(content)
-            assert(content['v'] == 3)
+            assert(content['v'] == 2)
 
         download_path = os.path.join(self.wd_path, 'log.tar.gz')
 
@@ -199,14 +299,61 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulRequestError as e:
-            assert(e.details['reason'] == 'user is not the job owner')
+            assert(e.details['reason'] == 'user is not the job owner or the node owner')
             assert(not os.path.isfile(download_path))
 
         self._rti.get_job_logs(job_id, owner, download_path)
         assert(os.path.isfile(download_path))
 
+    def test_rest_submit_cancel_job(self):
+        deploy_and_wait(self._rti, self._test_proc_id, self._node.keystore, self._test_proc_gh_cred)
+
+        wrong_user = self._known_user
+        owner = self._node.keystore
+
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
+                                  'restricted_access': False, 'content_encrypted': False})
+        ]
+
+        # submit the job
+        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner)
+        print(result)
+        assert(result is not None)
+
+        job_id = result.id
+
+        # try to cancel the job (wrong user)
+        try:
+            self._rti.cancel_job(job_id, wrong_user)
+            assert False
+
+        except UnsuccessfulRequestError as e:
+            assert('user is not the job owner' in e.details['reason'])
+
+        # wait until the job is running
+        while True:
+            status: JobStatus = self._rti.get_job_status(job_id, owner)
+            if status.state == JobStatus.State.RUNNING:
+                break
+            else:
+                time.sleep(0.5)
+
+        # cancel the job (correct user)
+        self._rti.cancel_job(job_id, owner)
+
+        # get information about the job
+        status: JobStatus = self._rti.get_job_status(job_id, owner)
+        print(json.dumps(status.dict(), indent=4))
+        assert(status.state == JobStatus.State.CANCELLED)
+
     def test_rest_job_logs(self):
-        deploy_and_wait(self._rti, self._test_proc_id, self._test_proc_gh_cred)
+        deploy_and_wait(self._rti, self._test_proc_id, self._node.keystore, self._test_proc_gh_cred)
 
         owner = self._node.keystore
 
@@ -228,29 +375,25 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         job_id = result.id
 
         # get information about all jobs
-        result = self._rti.get_jobs(self._test_proc_id)
+        result = self._rti.get_jobs_by_proc(self._test_proc_id)
         print(result)
         assert(result is not None)
 
         while True:
             # get information about the running job
-            job = self._rti.get_job_status(job_id, owner)
-            print(job.status)
-            assert(job.status is not None)
-
-            state = State(job.status['state'])
-            if state == State.SUCCESSFUL or state == State.FAILED:
+            status: JobStatus = self._rti.get_job_status(job_id, owner)
+            print(status)
+            if status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
                 break
 
             time.sleep(1)
 
         # check if we have an object id for output object 'c'
-        output = {item['name']: item['obj_id'] for item in job.status['output']}
-        assert('c' in output)
+        assert('c' in status.output)
 
         # get the contents of the output data object
         download_path = os.path.join(self.wd_path, 'c.json')
-        self._dor.get_content(output['c'], owner, download_path)
+        self._dor.get_content(status.output['c'].obj_id, owner, download_path)
         assert(os.path.isfile(download_path))
 
         with open(download_path, 'r') as f:
@@ -262,7 +405,7 @@ class RTIRESTTestCase(unittest.TestCase, TestCaseBase):
         pass
 
 
-class UnsuccessfulJob(SaaSException):
+class UnsuccessfulJob(SaaSRuntimeException):
     def __init__(self, reason: str, details: dict) -> None:
         super().__init__(f"Unsuccessful job: {reason}", details=details)
 
@@ -276,50 +419,16 @@ def submit_job(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputVal
 
 def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
     while True:
-        job = rti.get_job_status(job_id, owner)
+        status = rti.get_job_status(job_id, owner)
+        print(status)
 
-        state = State(job.status['state'])
-        if state == State.SUCCESSFUL:
-            return {item['name']: item['obj_id'] for item in job.status['output']}
+        if status.state == JobStatus.State.SUCCESSFUL:
+            return status.output
 
-        elif state == State.FAILED:
-            reason = 'unknown'
-            details = {}
-            lines = job.status['error'].split('\n')
-            for line in lines:
-                if ': ' in line:
-                    idx = line.find(': ')
-                    line = [line[:idx], line[idx+2:]]
-                    if line[0] == 'reason':
-                        reason = line[1]
-
-                    elif line[0] == 'details':
-                        # correct JSON quotes
-                        rstr = ""
-                        escaped = False
-                        for c in line[1]:
-                            if c == "'" and not escaped:
-                                c = '"'
-
-                            elif c == "'" and escaped:
-                                rstr = rstr[:-1]
-
-                            elif c == '"':
-                                c = '\\' + c
-
-                            escaped = (c == "\\")
-                            rstr += c
-
-                        try:
-                            details = json.loads(rstr)
-                        except JSONDecodeError:
-                            details = {
-                                'as_string': line[1]
-                            }
-                        except Exception as e:
-                            print(e)
-
-            raise UnsuccessfulJob(f"Job failed: {reason}", details=details)
+        elif status.state == JobStatus.State.FAILED:
+            raise UnsuccessfulJob(f"Job failed with {len(status.errors)} errors", details={
+                'errors': [e.dict() for e in status.errors]
+            })
 
         time.sleep(1)
 
@@ -357,7 +466,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         if RTIServiceTestCase._node is None:
             RTIServiceTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                     wd_path=RTIServiceTestCase._wd_path)
+                                                     wd_path=RTIServiceTestCase._wd_path, strict_deployment=False)
             RTIServiceTestCase._rti = RTIProxy(RTIServiceTestCase._node.rest.address())
             RTIServiceTestCase._dor = DORProxy(RTIServiceTestCase._node.rest.address())
             RTIServiceTestCase._db = NodeDBProxy(RTIServiceTestCase._node.rest.address())
@@ -367,7 +476,8 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
                 RTIServiceTestCase._dor, RTIServiceTestCase._node.keystore, 'default')
 
             deploy_and_wait(
-                RTIServiceTestCase._rti, RTIServiceTestCase._test_proc_id, RTIServiceTestCase._test_proc_gh_cred)
+                RTIServiceTestCase._rti, RTIServiceTestCase._test_proc_id, RTIServiceTestCase._node.keystore,
+                RTIServiceTestCase._test_proc_gh_cred)
 
             extras = self.create_keystores(1)
             RTIServiceTestCase._known_user0 = extras[0]
@@ -381,9 +491,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         while True:
             time.sleep(1)
 
-            job_status = read_json_from_file(status_path)
-            if 'requests' in job_status:
-                for r in job_status['requests']:
+            status = JobStatus.parse_file(status_path)
+            if 'requests' in status.notes:
+                for r in status.notes['requests']:
                     # we should be able to decrypt it
                     request = owner.decrypt(r['request'].encode('utf-8')).decode('utf-8')
                     request = json.loads(request)
@@ -442,11 +552,12 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         assert('c' in output)
 
         # the output data object should be with the target node
-        meta = self._dor.get_meta(output['c'])
+        meta = self._dor.get_meta(output['c'].obj_id)
         assert(meta is None)
 
-        meta = target_dor.get_meta(output['c'])
+        meta = target_dor.get_meta(output['c'].obj_id)
         assert(meta is not None)
+        assert(meta.custodian.identity.id == target_node.identity.id)
 
         target_node.shutdown()
         time.sleep(2)
@@ -506,7 +617,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
             assert (output is not None)
             assert ('c' in output)
-            obj_id = output['c']
+            obj_id = output['c'].obj_id
 
             # get the c_hash for output object 'c'
             meta = self._dor.get_meta(obj_id)
@@ -591,7 +702,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulJob as e:
-            assert('Identity does not have access to data object' in e.reason)
+            print(e.reason)
+            print(e.details)
+            assert('Identity does not have access to data object' in e.details['errors'][0]['exception']['reason'])
 
         # grant access
         self._dor.grant_access(a_obj_id, owner, user.identity)
@@ -602,7 +715,9 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
             assert False
 
         except UnsuccessfulJob as e:
-            assert('authorisation failed' in e.details['reason'])
+            print(e.reason)
+            print(e.details)
+            assert('authorisation failed' in e.details['errors'][0]['exception']['details']['reason'])
 
         # create valid and invalid task input
         valid_signature = user.sign(f"{rti_node_info.identity.id}:{a_obj_id}".encode('utf-8'))
@@ -656,94 +771,6 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
         output = wait_for_job(self._rti, job_id, owner)
         assert('c' in output)
 
-    def test_docker_processor_execution_value(self):
-        # Undeploy current processor
-        logger.info(f"Undeploying processor")
-        time.sleep(3)
-        self._rti.undeploy(self._test_proc_id)
-        logger.info(f"Processor undeployed. {self._test_proc_id}")
-
-        # instruct the RTI to deploy the processor using docker
-        logger.info(f"Deploying processor using docker")
-        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred)
-
-        # wait for processor to be deployed
-        while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
-            logger.info(f"Waiting for processor to deploy. {state.name=}")
-            time.sleep(5)
-        logger.info(f"Processor to deployed. {state.name=}")
-
-        # add test data object
-        owner = self._node.keystore
-
-        task_input = [
-            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
-        ]
-
-        task_output = [
-            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
-                                  'content_encrypted': False})
-        ]
-
-        # submit and wait
-        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
-        assert (output is not None)
-        assert ('c' in output)
-
-        # Perform cleanup
-        self._rti.undeploy(self._test_proc_id)
-        prune_image(self._test_proc_id)
-        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
-
-    def test_docker_remote_processor_execution_value(self):
-        """
-        Requires test credentials to have one ssh credential named `docker`
-        """
-        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
-        ssh_credentials = keystore.ssh_credentials.get('docker')
-
-        # Undeploy current processor
-        logger.info(f"Undeploying processor")
-        time.sleep(3)
-        self._rti.undeploy(self._test_proc_id)
-        logger.info(f"Processor undeployed. {self._test_proc_id}")
-
-        # instruct the RTI to deploy the processor remotely using the SSH credentials
-        logger.info(f"Deploying processor using docker")
-        self._rti.deploy(self._test_proc_id, deployment="docker", github_credentials=self._test_proc_gh_cred,
-                         ssh_credentials=ssh_credentials)
-
-        # wait for processor to be deployed
-        while (state := ProcessorState(
-                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
-            logger.info(f"Waiting for processor to deploy. {state.name=}")
-            time.sleep(5)
-        logger.info(f"Processor to deployed. {state.name=}")
-
-        # add test data object
-        owner = self._node.keystore
-
-        task_input = [
-            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
-        ]
-
-        task_output = [
-            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
-                                  'content_encrypted': False})
-        ]
-
-        # submit and wait
-        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
-        assert (output is not None)
-        assert ('c' in output)
-
-        # Perform cleanup
-        self._rti.undeploy(self._test_proc_id)
-        self._rti.deploy(self._test_proc_id, github_credentials=self._test_proc_gh_cred)
-
     def test_retain_job_history_false(self):
         # create target node and join with the default node
         target_node = self.get_node('target', enable_rest=True, retain_job_history=False)
@@ -755,7 +782,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # add test proc and deploy
         proc_id, gh_cred = add_test_processor(target_dor, owner, 'default')
-        deploy_and_wait(target_rti, proc_id, gh_cred)
+        deploy_and_wait(target_rti, proc_id, owner, gh_cred)
 
         task_input = [
             Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
@@ -790,7 +817,7 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         # add test proc and deploy
         proc_id, gh_cred = add_test_processor(target_dor, owner, 'default')
-        deploy_and_wait(target_rti, proc_id, gh_cred)
+        deploy_and_wait(target_rti, proc_id, owner, gh_cred)
 
         task_input = [
             Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
@@ -813,6 +840,121 @@ class RTIServiceTestCase(unittest.TestCase, TestCaseBase):
 
         target_node.shutdown()
         time.sleep(2)
+
+
+class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
+    _wd_path = os.path.join(os.environ['HOME'], 'testing', str(get_timestamp_now()))
+    _node = None
+    _rti = None
+    _dor = None
+    _db = None
+    _test_proc_id = None
+    _test_proc_gh_cred = None
+
+    def __init__(self, method_name='runTest'):
+        unittest.TestCase.__init__(self, method_name)
+        TestCaseBase.__init__(self)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._node is not None:
+            shutil.rmtree(cls._wd_path, ignore_errors=True)
+            cls._node.shutdown(leave_network=False)
+
+    def setUp(self):
+        self.initialise()
+
+        if RTIServiceDockerTestCase._node is None:
+            RTIServiceDockerTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
+                                                           wd_path=RTIServiceDockerTestCase._wd_path)
+            RTIServiceDockerTestCase._rti = RTIProxy(RTIServiceDockerTestCase._node.rest.address())
+            RTIServiceDockerTestCase._dor = DORProxy(RTIServiceDockerTestCase._node.rest.address())
+            RTIServiceDockerTestCase._db = NodeDBProxy(RTIServiceDockerTestCase._node.rest.address())
+            time.sleep(1)
+
+            RTIServiceDockerTestCase._test_proc_id, RTIServiceDockerTestCase._test_proc_gh_cred = add_test_processor(
+                RTIServiceDockerTestCase._dor, RTIServiceDockerTestCase._node.keystore, 'default')
+
+            deploy_and_wait(RTIServiceDockerTestCase._rti, RTIServiceDockerTestCase._test_proc_id,
+                            RTIServiceDockerTestCase._node.keystore, RTIServiceDockerTestCase._test_proc_gh_cred)
+
+    def tearDown(self):
+        self.cleanup()
+
+    def test_docker_processor_execution_value(self):
+        # instruct the RTI to deploy the processor using docker
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, self._node.keystore,
+                         deployment="docker", github_credentials=self._test_proc_gh_cred)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id, self._node.keystore)
+
+    def test_docker_remote_processor_execution_value(self):
+        """
+        Requires test credentials to have one ssh credential named `docker`
+        """
+        keystore: Keystore = self.create_keystores(1, use_credentials=True)[0]
+        ssh_credentials = keystore.ssh_credentials.get('docker')
+
+        # instruct the RTI to deploy the processor remotely using the SSH credentials
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, self._node.keystore,
+                         deployment="docker", github_credentials=self._test_proc_gh_cred,
+                         ssh_credentials=ssh_credentials)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        # add test data object
+        owner = self._node.keystore
+
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
+        ]
+
+        # submit and wait
+        job_id, output = submit_and_wait(self._rti, self._test_proc_id, task_input, task_output, owner)
+        assert (output is not None)
+        assert ('c' in output)
+
+        # Perform cleanup
+        self._rti.undeploy(self._test_proc_id, self._node.keystore)
 
 
 class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
@@ -946,14 +1088,15 @@ class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
 
         # attempt to resume the job. note: this should work even though the job has already finished. we just
         # need to provide valid reconnect info.
-        descriptor, status, reconnect_info = self._rti.get_job_info(job_id)
-        assert(reconnect_info is not None)
+        status: JobStatus = self._rti.get_job_status(job_id, owner)
+        assert(status.reconnect is not None)
 
         # manually delete the remote exitcode file (we want to pretend the process hasn't finished yet)
-        exitcode_path = reconnect_info['pid_paths']['exitcode']
+        exitcode_path = status.reconnect.pid_paths['exitcode']
         run_command(f"mv {exitcode_path} {exitcode_path}.backup", ssh_credentials=self._nscc_ssh_cred)
 
-        job_descriptor = self._rti.resume_job(self._test_proc_id, reconnect_info)
+        job_descriptor = self._rti.resume_job(self._test_proc_id, status.job, status.reconnect,
+                                              with_authorisation_by=owner)
         job_id = job_descriptor.id
         logger.info(f"job_id={job_id}")
         assert (job_id is not None)

@@ -8,11 +8,12 @@ import logging
 
 from pydantic import BaseModel
 
-from saas.exceptions import SaaSException, UnsuccessfulRequestError
-from saas.helpers import get_timestamp_now
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.helpers import get_timestamp_now
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.rest.auth import VerifyAuthorisation
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rest.proxy import EndpointProxy
 from saas.rest.schemas import EndpointDefinition
 from tests.base_testcase import TestCaseBase
@@ -32,7 +33,7 @@ class TestDeleteRequest(BaseModel):
     key: str
 
 
-class TestException(SaaSException):
+class TestException(SaaSRuntimeException):
     pass
 
 

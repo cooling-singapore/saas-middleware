@@ -9,10 +9,10 @@ import saas.dor.service as dor_service
 import saas.rest.service as rest_service
 import saas.rti.service as rti_service
 import saas.nodedb.service as db_service
-from saas.helpers import get_timestamp_now
-from saas.keystore.identity import Identity
-from saas.keystore.keystore import Keystore
-from saas.log import Logging
+from saas.core.helpers import get_timestamp_now
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
 from saas.nodedb.schemas import NodeInfo
 
 logger = Logging.get('node')
@@ -44,10 +44,23 @@ class Node:
     def datastore(self) -> str:
         return self._datastore_path
 
+    @property
+    def info(self) -> NodeInfo:
+        return NodeInfo(
+            identity=self.identity,
+            last_seen=get_timestamp_now(),
+            dor_service=self.dor is not None,
+            rti_service=self.rti is not None,
+            p2p_address=self.p2p.address(),
+            rest_address=self.rest.address() if self.rest else None,
+            retain_job_history=self.rti.retain_job_history if self.rti else None,
+            strict_deployment=self.rti.strict_deployment if self.rti else None
+        )
+
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
-                retain_job_history: bool = False, bind_all_address: bool = False) -> None:
-        # TODO: Address should be the same except for port
+                retain_job_history: bool = False, strict_deployment: bool = True,
+                bind_all_address: bool = False) -> None:
         logger.info("starting P2P service.")
         self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
@@ -68,7 +81,7 @@ class Node:
             endpoints += self.dor.endpoints()
 
         if enable_rti:
-            self.rti = rti_service.RTIService(self, retain_job_history)
+            self.rti = rti_service.RTIService(self, retain_job_history, strict_deployment)
             logger.info("enabling RTI service.")
             endpoints += self.rti.endpoints()
 
@@ -86,7 +99,9 @@ class Node:
             dor_service=self.dor is not None,
             rti_service=self.rti is not None,
             p2p_address=self.p2p.address(),
-            rest_address=self.rest.address() if self.rest else None
+            rest_address=self.rest.address() if self.rest else None,
+            retain_job_history=retain_job_history if enable_rti else None,
+            strict_deployment=strict_deployment if enable_rti else None
         ))
 
         # join an existing network of nodes?
@@ -129,11 +144,14 @@ class Node:
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False, retain_job_history=False, bind_all_address=False) -> Node:
+               enable_dor=False, enable_rti=False, retain_job_history=False, strict_deployment=True,
+               bind_all_address=False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address,
-                     retain_job_history=retain_job_history, bind_all_address=bind_all_address)
+                     retain_job_history=retain_job_history,
+                     strict_deployment=strict_deployment,
+                     bind_all_address=bind_all_address)
 
         return node

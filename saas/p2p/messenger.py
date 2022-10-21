@@ -17,10 +17,10 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from cryptography.fernet import Fernet
 
-from saas.cryptography.eckeypair import ECKeyPair
-from saas.helpers import generate_random_string
-from saas.keystore.identity import Identity
-from saas.log import Logging
+from saas.core.eckeypair import ECKeyPair
+from saas.core.helpers import generate_random_string
+from saas.core.identity import Identity
+from saas.core.logging import Logging
 from saas.p2p.exceptions import ReceiveDataError, SendDataError, MismatchingBytesWrittenError, ResourceNotFoundError, \
     HandshakeFailedError, PeerUnavailableError, P2PException
 
