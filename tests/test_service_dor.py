@@ -156,14 +156,13 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
 
         owner = self._node.keystore
 
-        # create content
         content_path = os.path.join(self.wd_path, 'test.json')
 
         def upload_cycle(size: int) -> (int, float, float, float):
             t0 = get_timestamp_now()
             generate_random_file(content_path, size)
             t1 = get_timestamp_now()
-            obj = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json', [owner.identity])
+            obj = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
             t2 = get_timestamp_now()
             assert (obj is not None)
             assert (obj.c_hash == hash_file_content(content_path).hex())
@@ -181,9 +180,9 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
             upload_cycle(4 * 1024 * 1024),
             upload_cycle(16 * 1024 * 1024),
             upload_cycle(64 * 1024 * 1024),
-            upload_cycle(256 * 1024 * 1024),
-            upload_cycle(512 * 1024 * 1024),
-            upload_cycle(1024 * 1024 * 1024)
+            # upload_cycle(256 * 1024 * 1024),
+            # upload_cycle(512 * 1024 * 1024),
+            # upload_cycle(1024 * 1024 * 1024)
         ]
 
         print(f"upload performance: size, generation, upload, hashing")

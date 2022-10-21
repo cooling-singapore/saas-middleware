@@ -7,9 +7,10 @@ import subprocess
 from stat import S_IREAD, S_IRGRP
 from typing import Optional, List, Union
 
+import snappy
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from fastapi import UploadFile, Form, File
+from fastapi import UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Boolean, BigInteger
@@ -455,15 +456,21 @@ class DORService:
 
         # temp file for attachment
         attachment_path = os.path.join(self.obj_content_path(f"{get_timestamp_now()}_{generate_random_string(4)}"))
-        print(attachment_path)
+        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
         try:
-            digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-            print(digest)
             with open(attachment_path, 'wb') as f:
-                print("file openend for writing...")
-                while contents := attachment.file.read(1024 * 1024):
-                    f.write(contents)
-                    digest.update(contents)
+                buffer = bytearray()
+                while True:
+                    chunk = attachment.file.read(4)
+                    if not chunk:
+                        break
+
+                    chunk_length = int.from_bytes(chunk, 'big')
+                    chunk = attachment.file.read(chunk_length)
+                    chunk = snappy.decompress(chunk)
+                    buffer.extend(chunk)
+                    digest.update(chunk)
+                    f.write(chunk)
 
         except Exception as e:
             raise DORException("upload failed", details={'exception': e})
