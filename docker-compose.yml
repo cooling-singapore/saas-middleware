@@ -25,7 +25,7 @@ services:
       - "4002:4002"
     environment:
       PASSWORD: 1234
-      KEYSTORE_ID: qpjyum07zdt1lipsg2trt0jnsb0ysies49pa8felbs56lfxir57ofjdddw2eex9g
+      KEYSTORE_ID: hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz
       REST_ADDRESS: 127.0.0.1:5002
       P2P_ADDRESS: 127.0.0.1:4002
       BOOT_NODE: 127.0.0.1:4001
