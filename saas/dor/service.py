@@ -479,7 +479,7 @@ class DORService:
 
             # move the temporary content to its destination and make it read-only
             destination_path = self.obj_content_path(c_hash)
-            os.rename(temp.name, destination_path)
+            shutil.move(temp.name, destination_path)
             os.chmod(destination_path, S_IREAD | S_IRGRP)
 
         # determine the object id
