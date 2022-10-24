@@ -2,6 +2,8 @@ FROM python:3.9-slim
 
 ENV NODE_TYPE=full
 
+RUN apt update && apt install -y git
+
 COPY . /saas-mw
 RUN pip install /saas-mw
 
