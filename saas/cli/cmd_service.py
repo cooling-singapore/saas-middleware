@@ -22,7 +22,6 @@ class Service(CLICommand):
     default_strict_deployment = True
     default_bind_all_address = False
 
-
     def __init__(self):
         super().__init__('service', 'start a node as service provider', arguments=[
             Argument('--use-defaults', dest="use-defaults", action='store_const', const=True,
