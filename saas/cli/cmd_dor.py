@@ -123,9 +123,6 @@ class DORAddGPP(CLICommand):
 
             Argument('--config', dest='config', action='store',
                      help=f"the configuration to be used for installing and executing the processor"),
-
-            Argument('--name', dest='name', action='store',
-                     help=f"the name of the processor"),
         ])
 
     def execute(self, args: dict) -> None:
@@ -136,7 +133,7 @@ class DORAddGPP(CLICommand):
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
 
         # is any of the other arguments missing?
-        if not args['commit-id'] or not args['path'] or not args['config'] or not args['name']:
+        if not args['commit-id'] or not args['path'] or not args['config']:
             if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?",
                                        default=True):
                 # delete existing directory (if it exists)
@@ -259,14 +256,12 @@ class DORAddGPP(CLICommand):
             else:
                 prompt_if_missing(args, 'commit-id', prompt_for_string,
                                   message="Enter the commit id:")
-                prompt_if_missing(args, 'name', prompt_for_string,
-                                  message="Enter the name of the processor:")
                 prompt_if_missing(args, 'path', prompt_for_string,
                                   message="Enter the relative path of the processor in the repository:")
                 prompt_if_missing(args, 'config', prompt_for_string,
                                   message="Enter the name of the configuration profile to be used:")
 
-        # get Github credentials (if any)
+        # get GitHub credentials (if any)
         url = args['url']
         github_credentials: GithubCredentials = keystore.github_credentials.get(url)
         if github_credentials is not None:
