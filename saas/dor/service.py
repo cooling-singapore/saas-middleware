@@ -5,10 +5,12 @@ import os
 import shutil
 import subprocess
 from stat import S_IREAD, S_IRGRP
-from tempfile import NamedTemporaryFile
 from typing import Optional, List, Union
 
-from fastapi import UploadFile, Form, File
+import snappy
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from fastapi import UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Boolean, BigInteger
@@ -16,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
 
-from saas.core.helpers import hash_string_object, hash_json_object, hash_file_content
+from saas.core.helpers import hash_string_object, hash_json_object
 from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
     InvalidProcessorDescriptorError, DataObjectContentNotFoundError, DataObjectNotFoundError, \
     DORException
@@ -452,13 +454,32 @@ class DORService:
         for creator_iid in p.creators_iid:
             self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
-        # write contents to file
-        temp = NamedTemporaryFile(delete=False)
-        with temp as f:
-            f.write(attachment.file.read())
+        # temp file for attachment
+        attachment_path = os.path.join(self.obj_content_path(f"{get_timestamp_now()}_{generate_random_string(4)}"))
+        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
+        try:
+            with open(attachment_path, 'wb') as f:
+                buffer = bytearray()
+                while True:
+                    chunk = attachment.file.read(4)
+                    if not chunk:
+                        break
+
+                    chunk_length = int.from_bytes(chunk, 'big')
+                    chunk = attachment.file.read(chunk_length)
+                    chunk = snappy.decompress(chunk)
+                    buffer.extend(chunk)
+                    digest.update(chunk)
+                    f.write(chunk)
+
+        except Exception as e:
+            raise DORException("upload failed", details={'exception': e})
+
+        finally:
+            attachment.file.close()
 
         # calculate the hash for the data object content
-        c_hash = hash_file_content(temp.name).hex()
+        c_hash = digest.finalize().hex()
 
         # fix the c_hash in the recipe (if any)
         if p.recipe:
@@ -472,14 +493,14 @@ class DORService:
             logger.info(f"data object content '{c_hash}' already exists -> not adding content to DOR.")
 
             # delete the temporary content as it is not needed
-            os.remove(temp.name)
+            os.remove(attachment_path)
 
         else:
             logger.info(f"data object content '{c_hash}' does not exist yet -> adding content to DOR.")
 
             # move the temporary content to its destination and make it read-only
             destination_path = self.obj_content_path(c_hash)
-            shutil.move(temp.name, destination_path)
+            os.rename(attachment_path, destination_path)
             os.chmod(destination_path, S_IREAD | S_IRGRP)
 
         # determine the object id
@@ -511,10 +532,10 @@ class DORService:
             self._add_provenance_record(c_hash, provenance.dict())
 
             # check if temp file still exists.
-            if os.path.exists(temp.name):
+            if os.path.exists(attachment_path):
                 logger.warning(
-                    f"temporary file {temp.name} still exists after adding to DOR -> deleting.")
-                os.remove(temp.name)
+                    f"temporary file {attachment_path} still exists after adding to DOR -> deleting.")
+                os.remove(attachment_path)
 
             return self.get_meta(obj_id)
 

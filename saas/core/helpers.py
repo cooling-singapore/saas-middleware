@@ -201,3 +201,8 @@ def hash_bytes_object(obj: bytes) -> bytes:
     digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
     digest.update(obj)
     return digest.finalize()
+
+
+def generate_random_file(path: str, size: int) -> None:
+    with open(path, 'wb') as f:
+        f.write(os.urandom(int(size)))
