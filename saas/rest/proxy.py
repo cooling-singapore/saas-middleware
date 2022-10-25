@@ -1,9 +1,10 @@
 import json
 import time
 import traceback
-from typing import Union, Optional
+from typing import Union, Optional, BinaryIO
 
 import requests
+from snappy import snappy
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
@@ -82,6 +83,24 @@ def _make_headers(url: str, body: Union[dict, list] = None, authority: Keystore 
     return headers
 
 
+class Snapper:
+    def __init__(self, source: BinaryIO, chunk_size: int = 1024*1024) -> None:
+        self._source = source
+        self._chunk_size = chunk_size
+
+    def read(self) -> bytes:
+        buffer = bytearray()
+        while True:
+            chunk = self._source.read(self._chunk_size)
+            if not chunk:
+                return bytes(buffer)
+            chunk = snappy.compress(chunk)
+
+            chunk_length = len(chunk)
+            buffer.extend(chunk_length.to_bytes(4, byteorder='big'))
+            buffer.extend(chunk)
+
+
 class EndpointProxy:
     def __init__(self, endpoint_prefix: str, remote_address: (str, int)) -> None:
         self._endpoint_prefix = endpoint_prefix
@@ -131,11 +150,14 @@ class EndpointProxy:
 
         try:
             if attachment_path:
-                response = requests.put(url,
-                                        headers=headers,
-                                        data={'body': json.dumps(body)},
-                                        files={'attachment': open(attachment_path, 'rb')})
-                return extract_response(response)
+                with open(attachment_path, 'rb') as f:
+                    response = requests.put(url,
+                                            headers=headers,
+                                            data={'body': json.dumps(body)} if body else None,
+                                            files={'attachment': Snapper(f)}
+                                            )
+
+                    return extract_response(response)
 
             else:
                 response = requests.put(url, headers=headers, json=body)
@@ -166,8 +188,10 @@ class EndpointProxy:
                 with open(attachment_path, 'rb') as f:
                     response = requests.post(url,
                                              headers=headers,
-                                             data={'body': json.dumps(body)},
-                                             files={'attachment': f})
+                                             data={'body': json.dumps(body)} if body else None,
+                                             files={'attachment': Snapper(f)}
+                                             )
+
                     return extract_response(response)
 
             else:

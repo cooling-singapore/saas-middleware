@@ -6,7 +6,8 @@ import unittest
 import logging
 import os
 
-from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt
+from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt, generate_random_file, \
+    hash_file_content
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import DataObject
@@ -147,6 +148,46 @@ class DORTestCase(unittest.TestCase, TestCaseBase):
         result = self._dor.add_data_object(content_path, owner, False, False, 'JSON', 'json', [owner])
         print(result)
         assert(result is not None)
+
+    def test_add_c_large(self):
+        # this is necessary to avoid getting thousands of 'Calling on_part_data with data' messages...
+        mp_logger = logging.getLogger('multipart.multipart')
+        mp_logger.setLevel(logging.INFO)
+
+        owner = self._node.keystore
+
+        content_path = os.path.join(self.wd_path, 'test.json')
+
+        def upload_cycle(size: int) -> (int, float, float, float):
+            t0 = get_timestamp_now()
+            generate_random_file(content_path, size)
+            t1 = get_timestamp_now()
+            obj = self._dor.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
+            t2 = get_timestamp_now()
+            assert (obj is not None)
+            assert (obj.c_hash == hash_file_content(content_path).hex())
+            t3 = get_timestamp_now()
+
+            self._dor.delete_data_object(obj.obj_id, with_authorisation_by=owner)
+
+            dt0 = (t1 - t0) / 1000.0
+            dt1 = (t2 - t1) / 1000.0
+            dt2 = (t3 - t2) / 1000.0
+            return size, dt0, dt1, dt2
+
+        results = [
+            upload_cycle(1 * 1024 * 1024),
+            upload_cycle(4 * 1024 * 1024),
+            upload_cycle(16 * 1024 * 1024),
+            upload_cycle(64 * 1024 * 1024),
+            # upload_cycle(256 * 1024 * 1024),
+            # upload_cycle(512 * 1024 * 1024),
+            # upload_cycle(1024 * 1024 * 1024)
+        ]
+
+        print(f"upload performance: size, generation, upload, hashing")
+        for result in results:
+            print(f"{result[0]}\t{result[1]}\t{result[2]}\t{result[3]}")
 
     def test_add_gpp(self):
         owner = self._node.identity
