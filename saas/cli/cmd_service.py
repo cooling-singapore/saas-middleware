@@ -47,8 +47,8 @@ class Service(CLICommand):
                      help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
                           f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
-                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the machine"
-                          f"i.e. 0.0.0.0 (useful for docker)")
+                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the "
+                          f"machine i.e. 0.0.0.0 (useful for docker)")
         ])
 
     def execute(self, args: dict) -> None:

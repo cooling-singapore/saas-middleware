@@ -1,7 +1,9 @@
 import os
+import signal
 import sys
 import time
 import traceback
+from typing import List
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommand, default_if_missing, initialise_storage_folder, \
@@ -101,14 +103,27 @@ class RunNode(CLICommand):
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-        # wait forever
+        # wait until stop signal
         try:
-            while True:
+            signal_listener = SignalListener([signal.SIGTERM])
+            while not signal_listener.triggered:
                 time.sleep(1)
-
+            print("Received stop signal. Shutting down.")
         except KeyboardInterrupt:
             print("Interrupted by user. Shutting down.")
+        finally:
             node.shutdown()
+
+
+class SignalListener:
+    def __init__(self, signals: List[int]):
+        self.triggered = False
+
+        for sig in signals:
+            signal.signal(sig, self.trigger)
+
+    def trigger(self, signum, frame):
+        self.triggered = True
 
 
 def main():
