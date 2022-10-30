@@ -17,6 +17,7 @@ from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
+from saas.rti.adapters.docker import prune_image
 from saas.rti.exceptions import RunCommandError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
@@ -875,10 +876,8 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
             RTIServiceDockerTestCase._test_proc_id, RTIServiceDockerTestCase._test_proc_gh_cred = add_test_processor(
                 RTIServiceDockerTestCase._dor, RTIServiceDockerTestCase._node.keystore, 'default')
 
-            deploy_and_wait(RTIServiceDockerTestCase._rti, RTIServiceDockerTestCase._test_proc_id,
-                            RTIServiceDockerTestCase._node.keystore, RTIServiceDockerTestCase._test_proc_gh_cred)
-
     def tearDown(self):
+        prune_image(self._test_proc_id)
         self.cleanup()
 
     def test_docker_processor_execution_value(self):
@@ -955,6 +954,53 @@ class RTIServiceDockerTestCase(unittest.TestCase, TestCaseBase):
 
         # Perform cleanup
         self._rti.undeploy(self._test_proc_id, self._node.keystore)
+
+    def test_docker_submit_cancel_job(self):
+        logger.info(f"Deploying processor using docker")
+        self._rti.deploy(self._test_proc_id, self._node.keystore,
+                         deployment="docker", github_credentials=self._test_proc_gh_cred)
+
+        # wait for processor to be deployed
+        while (state := ProcessorState(
+                self._rti.get_status(self._test_proc_id).state)) == ProcessorState.STARTING:
+            logger.info(f"Waiting for processor to deploy. {state.name=}")
+            time.sleep(5)
+        logger.info(f"Processor to deployed. {state.name=}")
+
+        owner = self._node.keystore
+
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
+                                  'restricted_access': False, 'content_encrypted': False})
+        ]
+
+        # submit the job
+        result = self._rti.submit_job(self._test_proc_id, task_input, task_output, owner)
+        print(result)
+        assert(result is not None)
+
+        job_id = result.id
+
+        # wait until the job is running
+        while True:
+            status: JobStatus = self._rti.get_job_status(job_id, owner)
+            if status.state == JobStatus.State.RUNNING:
+                break
+            else:
+                time.sleep(0.5)
+
+        # cancel the job
+        self._rti.cancel_job(job_id, owner)
+
+        # get information about the job
+        status: JobStatus = self._rti.get_job_status(job_id, owner)
+        print(json.dumps(status.dict(), indent=4))
+        assert(status.state == JobStatus.State.CANCELLED)
 
 
 class RTIServiceTestCaseNSCC(unittest.TestCase, TestCaseBase):
