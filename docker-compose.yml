@@ -29,6 +29,7 @@ services:
       REST_ADDRESS: 127.0.0.1:5002
       P2P_ADDRESS: 127.0.0.1:4002
       BOOT_NODE: 127.0.0.1:4001
+      STRICT: false
     volumes:
       - ${HOME}/.keystore:/keystore
       - ${HOME}/.datastore2:/datastore
