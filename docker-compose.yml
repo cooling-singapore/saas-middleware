@@ -1,6 +1,6 @@
 version: "3.9"
 services:
-  node1:
+  boot_node:
     build: .
     # network_mode "host" does not work on mac, need to map ports manually
     # network_mode: "host"
@@ -25,10 +25,12 @@ services:
       - "4002:4002"
     environment:
       PASSWORD: 1234
-      KEYSTORE_ID: hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz
+      KEYSTORE_ID: qpjyum07zdt1lipsg2trt0jnsb0ysies49pa8felbs56lfxir57ofjdddw2eex9g
       REST_ADDRESS: 127.0.0.1:5002
       P2P_ADDRESS: 127.0.0.1:4002
       BOOT_NODE: 127.0.0.1:4001
     volumes:
       - ${HOME}/.keystore:/keystore
       - ${HOME}/.datastore2:/datastore
+    depends_on:
+      - boot_node
