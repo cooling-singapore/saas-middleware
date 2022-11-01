@@ -1,7 +1,9 @@
 import os
+import signal
 import sys
 import time
 import traceback
+from typing import List
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommand, default_if_missing, initialise_storage_folder, \
@@ -20,6 +22,7 @@ class RunNode(CLICommand):
     default_service = 'full'
     default_retain_job_history = False
     default_strict_deployment = True
+    default_bind_all_address = False
 
     def __init__(self):
         super().__init__('run', 'run a node as service provider', arguments=[
@@ -42,7 +45,10 @@ class RunNode(CLICommand):
                           f"debug/testing purposes."),
             Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
                      help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
-                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)")
+                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
+            Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
+                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the "
+                          f"machine i.e. 0.0.0.0 (useful for docker)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -53,6 +59,7 @@ class RunNode(CLICommand):
         default_if_missing(args, 'type', self.default_service)
         default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
         default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
+        default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
 
         # do we have keystore credentials?
         if not args['keystore-id'] or not args['password']:
@@ -83,7 +90,8 @@ class RunNode(CLICommand):
                                enable_dor=args['type'] == 'full' or args['type'] == 'storage',
                                enable_rti=args['type'] == 'full' or args['type'] == 'execution',
                                retain_job_history=args['retain-job-history'],
-                               strict_deployment=args['strict-deployment'])
+                               strict_deployment=args['strict-deployment'],
+                               bind_all_address=args['bind-all-address'])
 
         except SaaSRuntimeException as e:
             raise CLIRuntimeError(f"Could not start node because '{e.reason}'. Aborting.")
@@ -95,14 +103,27 @@ class RunNode(CLICommand):
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-        # wait forever
+        # wait until stop signal
         try:
-            while True:
+            signal_listener = SignalListener([signal.SIGTERM])
+            while not signal_listener.triggered:
                 time.sleep(1)
-
+            print("Received stop signal. Shutting down.")
         except KeyboardInterrupt:
             print("Interrupted by user. Shutting down.")
+        finally:
             node.shutdown()
+
+
+class SignalListener:
+    def __init__(self, signals: List[int]):
+        self.triggered = False
+
+        for sig in signals:
+            signal.signal(sig, self.trigger)
+
+    def trigger(self, signum, frame):
+        self.triggered = True
 
 
 def main():
