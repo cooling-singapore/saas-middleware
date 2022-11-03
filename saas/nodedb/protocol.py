@@ -63,7 +63,7 @@ class NodeDBP2PProtocol(P2PProtocol):
                     snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id]),
                     reciprocate=True
                 ))
-
+                logger.debug(f"Adding peer at {peer_address} to db: {peer.name} | {peer.id}")
                 self._handle_update(response, peer)
 
             except PeerUnavailableError:
@@ -88,6 +88,7 @@ class NodeDBP2PProtocol(P2PProtocol):
                 'actual': request.origin_who.dict()
             })
 
+        # FIXME: node will not check if the peer hostname is reachable before adding to db
         # update the db information about the originator
         self.node.db.update_identity(request.origin_who)
         self.node.db.update_network(request.origin_node)
