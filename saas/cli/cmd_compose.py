@@ -28,6 +28,7 @@ class DeploySpec(BaseModel):
         commit_id: str
         proc_path: str
         proc_config: str
+        dor: str = None
 
     nodes: Dict[str, NodeSpec]
     processors: Dict[str, ProcessorSpec]
@@ -52,7 +53,6 @@ def deploy_processors(spec: DeploySpec, keystore: Keystore):
     for _, node_spec in spec.nodes.items():
         node_address = extract_address(node_spec.rest_address)
         rti = RTIProxy(node_address)
-        dor = DORProxy(node_address)
 
         # Make sure node knows about caller identity before deploying
         # FIXME: Will throw error if node is in strict mode and caller is not node owner
@@ -64,7 +64,14 @@ def deploy_processors(spec: DeploySpec, keystore: Keystore):
             ssh_credentials = keystore.ssh_credentials.get(proc.ssh_credentials)
             github_credentials = keystore.github_credentials.get(proc_spec.source)
 
-            print(f"Uploading proc gpp: {proc_spec}")
+            dor_address = extract_address(spec.nodes[proc_spec.dor].rest_address) if proc_spec.dor else node_address
+            dor = DORProxy(dor_address)
+
+            # FIXME: No way to determine if proc gpp is already uploaded without cloning the repo (to calculate c_hash).
+            #  proc_descriptor might not be needed to calculate c_hash, which would solve this.
+            #  A lot of gpp with the same c_hash but different obj_id (thus different proc_id) would be uploaded
+            #  when running this script multiple times without checking.
+            print(f"Uploading proc gpp to {dor_address}: {proc_spec}")
             meta = dor.add_gpp_data_object(proc_spec.source,
                                            proc_spec.commit_id,
                                            proc_spec.proc_path,
