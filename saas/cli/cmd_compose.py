@@ -1,14 +1,20 @@
+import os.path
+import signal
+import time
+from enum import Enum
 from typing import List, Dict
 
 import yaml
 from pydantic import BaseModel
 
 from saas.cli.exceptions import CLIRuntimeError
-from saas.cli.helpers import CLICommand, Argument, extract_address, load_keystore
+from saas.cli.helpers import CLICommand, Argument, extract_address
 from saas.core.keystore import Keystore
 from saas.dor.proxy import DORProxy
+from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
+from saas.service import SignalListener
 
 
 class ProcInfo(BaseModel):
@@ -17,9 +23,23 @@ class ProcInfo(BaseModel):
     ssh_credentials: str = None
 
 
+class NodeType(str, Enum):
+    full = 'full'
+    storage = 'storage'
+    execution = 'execution'
+
+
 class DeploySpec(BaseModel):
     class NodeSpec(BaseModel):
+        datastore_path: str = "~/.datastore"
+        keystore_path: str = "~/.keystore"
+        log_path: str = "~/.log"
+        keystore_id: str
+        password: str
         rest_address: str
+        p2p_address: str
+        boot_node_address: str
+        type: NodeType = "full"
         processors: List[ProcInfo]
 
     class ProcessorSpec(BaseModel):
@@ -49,15 +69,30 @@ class DeploySpec(BaseModel):
             raise CLIRuntimeError(f"Required nodes do not have a DOR: {missing_nodes}")
 
 
-def deploy_processors(spec: DeploySpec, keystore: Keystore):
-    for _, node_spec in spec.nodes.items():
+def startup_node(node_spec: DeploySpec.NodeSpec):
+    # create node and startup services
+    keystore_path = os.path.join(os.path.expanduser(os.path.expanduser(node_spec.keystore_path)),
+                                 f"{node_spec.keystore_id}.json")
+    datastore_path = os.path.expanduser(os.path.expanduser(node_spec.datastore_path))
+
+    keystore = Keystore.load(keystore_path, node_spec.password)
+    node = Node.create(keystore=keystore,
+                       storage_path=datastore_path,
+                       p2p_address=extract_address(node_spec.p2p_address),
+                       boot_node_address=extract_address(node_spec.boot_node_address),
+                       rest_address=extract_address(node_spec.rest_address),
+                       enable_dor=node_spec.type == 'full' or node_spec.type == 'storage',
+                       enable_rti=node_spec.type == 'full' or node_spec.type == 'storage')
+
+    return node
+
+
+def deploy_processors(spec: DeploySpec, nodes: dict[str, Node]):
+    for node_key, node_spec in spec.nodes.items():
         node_address = extract_address(node_spec.rest_address)
         rti = RTIProxy(node_address)
 
-        # Make sure node knows about caller identity before deploying
-        # FIXME: Will throw error if node is in strict mode and caller is not node owner
-        db = NodeDBProxy(node_address)
-        db.update_identity(keystore.identity)
+        keystore = nodes[node_key].keystore
 
         for proc in node_spec.processors:
             proc_spec = spec.processors[proc.name]
@@ -99,19 +134,31 @@ class Compose(CLICommand):
         with open(spec_file, 'r') as stream:
             data_loaded = yaml.load(stream, Loader=yaml.Loader)
 
-        spec = DeploySpec.parse_obj(data_loaded)
-        spec.validate_nodes()
+        spec: DeploySpec = DeploySpec.parse_obj(data_loaded)
 
-        # Load caller keystore
-        keystore = load_keystore(args, ensure_publication=False)
-        deploy_processors(spec, keystore)
+        nodes = dict()
+        try:
+            signal_listener = SignalListener([signal.SIGTERM])
+            for node_key, node_spec in spec.nodes.items():
+                print(f"Starting up {node_key} | {node_spec.keystore_id}")
+                node = startup_node(node_spec)
+                nodes[node_key] = node
+
+            # spec.validate_nodes()
+            deploy_processors(spec, nodes)
+
+            # Block until interrupt
+            while not signal_listener.triggered:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("Interrupted by user. Shutting down.")
+        finally:
+            for _, node in nodes.items():
+                node.shutdown()
 
 
 if __name__ == '__main__':
     compose = Compose()
     compose.execute({
         "file": ["/Users/reynoldmok/Library/Application Support/JetBrains/PyCharm2022.2/scratches/compose.yml"],
-        "keystore": "/Users/reynoldmok/.keystore",
-        "keystore-id": "hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz",
-        "password": "1234"
     })
