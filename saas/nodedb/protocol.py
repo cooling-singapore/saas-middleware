@@ -28,14 +28,23 @@ class LeaveRequest(BaseModel):
     pass
 
 
+class PingRequest(BaseModel):
+    identity: Identity
+
+
 class NodeDBP2PProtocol(P2PProtocol):
     id = "node_db"
 
     def __init__(self, node) -> None:
         super().__init__(node, NodeDBP2PProtocol.id, [
             (UpdateMessage, self._handle_update, UpdateMessage),
-            (LeaveRequest, self._handle_leave, None)
+            (LeaveRequest, self._handle_leave, None),
+            (PingRequest, self._handle_ping, PingRequest)
         ])
+
+    def ping_node(self, boot_node_address: (str, int)) -> Identity:
+        response, _, peer = self.request(boot_node_address, PingRequest(identity=self.node.identity))
+        return response.identity
 
     def perform_join(self, boot_node_address: (str, int)) -> None:
         # send an update to the boot node, then proceed to send updates to all peers that discovered along the way
@@ -54,7 +63,7 @@ class NodeDBP2PProtocol(P2PProtocol):
                     snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id]),
                     reciprocate=True
                 ))
-
+                logger.debug(f"Adding peer at {peer_address} to db: {peer.name} | {peer.id}")
                 self._handle_update(response, peer)
 
             except PeerUnavailableError:
@@ -79,6 +88,7 @@ class NodeDBP2PProtocol(P2PProtocol):
                 'actual': request.origin_who.dict()
             })
 
+        # FIXME: node will not check if the peer hostname is reachable before adding to db
         # update the db information about the originator
         self.node.db.update_identity(request.origin_who)
         self.node.db.update_network(request.origin_node)
@@ -104,6 +114,10 @@ class NodeDBP2PProtocol(P2PProtocol):
     def _handle_leave(self, _: LeaveRequest, peer: Identity) -> None:
         self.node.db.update_identity(peer)
         self.node.db.remove_node_by_id(peer)
+
+    def _handle_ping(self, _: PingRequest, peer: Identity) -> PingRequest:
+        logger.info(f"Received ping request from node: {peer.name} | {peer.id}")
+        return PingRequest(identity=self.node.identity)
 
     def broadcast_identity_update(self, identity: Identity) -> None:
         # this is a simple update. we expect the peer to NOT reciprocate and to NOT forward our message (because we are

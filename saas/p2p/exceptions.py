@@ -72,6 +72,11 @@ class PeerUnavailableError(P2PException):
         super().__init__('Peer is not available', details=details)
 
 
+class BootNodeUnavailableError(P2PException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Boot node is not available', details=details)
+
+
 class AttachmentNotFoundError(P2PException):
     def __init__(self, details: dict) -> None:
         super().__init__('Attachment expected but not found', details=details)

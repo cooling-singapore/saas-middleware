@@ -99,7 +99,8 @@ class RunNode(CLICommand):
         # print info message
         if args['type'] == 'full' or args['type'] == 'execution':
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']} "
-                  f"(keep RTI job history: {'Yes' if args['retain-job-history'] else 'No'})")
+                  f"(keep RTI job history: {'Yes' if args['retain-job-history'] else 'No'}) "
+                  f"(strict: {'Yes' if args['strict-deployment'] else 'No'}) ")
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from threading import Lock
 from typing import Optional
 
@@ -14,6 +15,7 @@ from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.schemas import NodeInfo
+from saas.p2p.exceptions import P2PException, BootNodeUnavailableError
 
 logger = Logging.get('node')
 
@@ -122,7 +124,27 @@ class Node:
             self.rest.stop_service()
 
     def join_network(self, boot_node_address: (str, int)) -> None:
+        logger.info(f"joining network via boot node: {boot_node_address}")
+        connected = False
+        retries = 0
+        while not connected:
+            try:
+                boot_identity = self.db.protocol.ping_node(boot_node_address)
+                logger.info(f"boot node found: {boot_identity.name} | {boot_identity.id}")
+                connected = True
+            except P2PException as e:
+                logger.info(f"Unable to connect to boot node: {boot_node_address}")
+                retries += 1
+                if retries == 5:
+                    logger.info("Retry stopped")
+                    raise BootNodeUnavailableError({
+                        "boot_node_address": boot_node_address
+                    }) from e
+                logger.info("Retry joining network")
+                time.sleep(2)
+
         self.db.protocol.perform_join(boot_node_address)
+        logger.info(f"Nodes found in network: {[n.p2p_address for n in self.db.get_network()]}")
 
     def leave_network(self) -> None:
         self.db.protocol.perform_leave()

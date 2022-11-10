@@ -2,6 +2,7 @@ import os
 import sys
 import traceback
 
+from saas.cli.cmd_compose import Compose
 from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
@@ -100,7 +101,8 @@ def main():
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
                 NetworkList()
-            ])
+            ]),
+            Compose()
         ])
 
         cli.execute(sys.argv[1:])
