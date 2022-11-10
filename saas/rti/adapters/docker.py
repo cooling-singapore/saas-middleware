@@ -22,6 +22,7 @@ from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
 from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
+from saas.rti.schemas import JobStatus
 
 logger = Logging.get('rti.adapters.docker')
 
@@ -260,12 +261,24 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
             # Block and go through logs until container closes
             with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = list()
                 for log in self.container.logs(stream=True):
+                    if context.state == JobStatus.State.CANCELLED:
+                        # cancel tasks that are not yet running
+                        for future in futures:
+                            future.cancel()
+
+                        self.container.stop()
+                        # wait till all running tasks to finish
+                        executor.shutdown(wait=True)
+                        break
+
                     lines = log.decode('utf-8').splitlines()
 
                     for line in lines:
                         if line.startswith('trigger:output'):
-                            executor.submit(self._handle_trigger_output, line, context)
+                            future = executor.submit(self._handle_trigger_output, line, context)
+                            futures.append(future)
 
                         if line.startswith('trigger:progress'):
                             self._handle_trigger_progress(line, context)
