@@ -16,7 +16,7 @@ logger = Logging.get('p2p.service')
 
 
 class P2PService:
-    def __init__(self, node, address: (str, int)) -> None:
+    def __init__(self, node, address: (str, int), bind_all_address: bool) -> None:
         self._mutex = Lock()
         self._node = node
         self._address = address
@@ -24,6 +24,7 @@ class P2PService:
         self._is_server_running = False
         self._is_server_stopped = True
         self._registered_protocols: dict[str, P2PProtocol] = {}
+        self._bind_all_address = bind_all_address
 
     def add(self, protocol: P2PProtocol) -> None:
         """
@@ -55,7 +56,8 @@ class P2PService:
                     # create server socket
                     self._p2p_service_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    self._p2p_service_socket.bind(self._address)
+                    self._p2p_service_socket.bind(self._address if not self._bind_all_address
+                                                  else ("0.0.0.0", self._address[1]))
                     self._p2p_service_socket.listen(concurrency)
                     logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
                 except Exception as e:

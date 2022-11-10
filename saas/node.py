@@ -59,9 +59,10 @@ class Node:
 
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
-                retain_job_history: bool = False, strict_deployment: bool = True) -> None:
+                retain_job_history: bool = False, strict_deployment: bool = True,
+                bind_all_address: bool = False) -> None:
         logger.info("starting P2P service.")
-        self.p2p = p2p_service.P2PService(self, server_address)
+        self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
 
         endpoints = []
@@ -86,7 +87,7 @@ class Node:
 
         if rest_address is not None:
             logger.info("starting REST service.")
-            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1])
+            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1], bind_all_address)
             self.rest.start_service()
             self.rest.add(endpoints)
 
@@ -143,12 +144,14 @@ class Node:
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False, retain_job_history=False, strict_deployment=True) -> Node:
+               enable_dor=False, enable_rti=False, retain_job_history=False, strict_deployment=True,
+               bind_all_address=False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address,
                      retain_job_history=retain_job_history,
-                     strict_deployment=strict_deployment)
+                     strict_deployment=strict_deployment,
+                     bind_all_address=bind_all_address)
 
         return node

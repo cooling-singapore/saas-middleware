@@ -71,12 +71,13 @@ class RESTApp:
 
 
 class RESTService:
-    def __init__(self, node, host: str, port: int) -> None:
+    def __init__(self, node, host: str, port: int, bind_all_address: bool) -> None:
         self._node = node
         self._host = host
         self._port = port
         self._app = RESTApp()
         self._thread = None
+        self._bind_all_address = bind_all_address
 
     def address(self) -> (str, int):
         return self._host, self._port
@@ -100,7 +101,8 @@ class RESTService:
         if self._thread is None:
             logger.info(f"REST service starting up...")
             self._thread = Thread(target=uvicorn.run, args=(self._app.api,),
-                                  kwargs={"host": self._host, "port": self._port, "log_level": "info"},
+                                  kwargs={"host": self._host if not self._bind_all_address else "0.0.0.0",
+                                          "port": self._port, "log_level": "info"},
                                   daemon=True)
 
             self._thread.start()
