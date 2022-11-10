@@ -217,7 +217,12 @@ class EndpointProxy:
     def _make_url(self, endpoint: str, parameters: dict = None) -> str:
         url = f"http://{self._remote_address[0]}:{self._remote_address[1]}{self._endpoint_prefix}{endpoint}"
         if parameters:
-            for i in range(len(parameters)):
-                url += '?' if i == 0 else '&'
-                url += parameters[i][0] + '=' + parameters[i][1]
+            eligible = {}
+            for k, v in parameters.items():
+                if k is not None and v is not None:
+                    eligible[k] = v
+
+            if eligible:
+                url += '?' + '&'.join(f"{k}={v}" for k, v in eligible.items())
+
         return url
