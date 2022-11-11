@@ -7,12 +7,11 @@ from typing import List, Dict
 import yaml
 from pydantic import BaseModel
 
-from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, extract_address
 from saas.core.keystore import Keystore
 from saas.dor.proxy import DORProxy
+from saas.dor.service import fetch_proc_descriptor, _generate_gpp_hash
 from saas.node import Node
-from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
 from saas.service import SignalListener
 
@@ -53,21 +52,6 @@ class DeploySpec(BaseModel):
     nodes: Dict[str, NodeSpec]
     processors: Dict[str, ProcessorSpec]
 
-    def validate_nodes(self):
-        """
-        Checks if nodes are contactable and have required components e.g. DOR to upload GPP
-        """
-        missing_nodes = []
-        for node, info in self.nodes.items():
-            address = extract_address(info.rest_address)
-            # FIXME: This will hang if there is no response from the server
-            db = NodeDBProxy(address)
-            if not db.get_node().dor_service:
-                missing_nodes.append(node)
-
-        if missing_nodes:
-            raise CLIRuntimeError(f"Required nodes do not have a DOR: {missing_nodes}")
-
 
 def startup_node(node_spec: DeploySpec.NodeSpec):
     # create node and startup services
@@ -102,20 +86,29 @@ def deploy_processors(spec: DeploySpec, nodes: dict[str, Node]):
             dor_address = extract_address(spec.nodes[proc_spec.dor].rest_address) if proc_spec.dor else node_address
             dor = DORProxy(dor_address)
 
-            # FIXME: No way to determine if proc gpp is already uploaded without cloning the repo (to calculate c_hash).
-            #  proc_descriptor might not be needed to calculate c_hash, which would solve this.
-            #  A lot of gpp with the same c_hash but different obj_id (thus different proc_id) would be uploaded
-            #  when running this script multiple times without checking.
-            print(f"Uploading proc gpp to {dor_address}: {proc_spec}")
-            meta = dor.add_gpp_data_object(proc_spec.source,
-                                           proc_spec.commit_id,
-                                           proc_spec.proc_path,
-                                           proc_spec.proc_config,
-                                           keystore.identity,
-                                           github_credentials=github_credentials)
+            # fetch proc descriptor
+            proc_descriptor = fetch_proc_descriptor(proc_spec.source, proc_spec.commit_id, proc_spec.proc_path,
+                                                    proc_spec.proc_config, github_credentials)
+            # determine the content hash for the GPP
+            c_hash = _generate_gpp_hash(proc_spec.source, proc_spec.commit_id, proc_spec.proc_path,
+                                        proc_spec.proc_config, proc_descriptor.dict())
+            # check if gpp already found in dor
+            items = dor.search(c_hashes=[c_hash])
+            if items:
+                # use the first item if multiple exist
+                obj_id = items[0].obj_id
+            else:
+                print(f"Uploading proc gpp to {dor_address}: {proc_spec}")
+                meta = dor.add_gpp_data_object(proc_spec.source,
+                                               proc_spec.commit_id,
+                                               proc_spec.proc_path,
+                                               proc_spec.proc_config,
+                                               keystore.identity,
+                                               github_credentials=github_credentials)
+                obj_id = meta.obj_id
 
-            print(f"Deploying proc: {proc}")
-            rti.deploy(meta.obj_id,
+            print(f"Deploying proc ({obj_id}): {proc}")
+            rti.deploy(obj_id,
                        keystore,
                        proc.deployment,
                        ssh_credentials=ssh_credentials,
@@ -138,16 +131,18 @@ class Compose(CLICommand):
 
         nodes = dict()
         try:
-            signal_listener = SignalListener([signal.SIGTERM])
             for node_key, node_spec in spec.nodes.items():
                 print(f"Starting up {node_key} | {node_spec.keystore_id}")
                 node = startup_node(node_spec)
                 nodes[node_key] = node
 
-            # spec.validate_nodes()
+            print("Deploying processors to nodes")
             deploy_processors(spec, nodes)
 
+            print("Nodes ready")
+
             # Block until interrupt
+            signal_listener = SignalListener([signal.SIGTERM])
             while not signal_listener.triggered:
                 time.sleep(1)
         except KeyboardInterrupt:
