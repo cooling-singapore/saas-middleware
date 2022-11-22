@@ -1,0 +1,33 @@
+name: Python package
+
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install application
+        run: pip install .
+
+      - name: Create credentials.json
+        run: >
+          echo
+          {"github-credentials":[
+          {"repository":"https://github.com/cooling-singapore/saas-middleware-sdk",
+          "login":"oauth",
+          "personal_access_token":"${{ secrets.GITHUB_TOKEN }}"}
+          ]}
+          > ~/.saas-credentials.json
+
+      - run: cat ~/.saas-credentials.json
+
+      - name: Run tests
+        run: python -m unittest
