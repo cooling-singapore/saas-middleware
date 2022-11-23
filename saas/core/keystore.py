@@ -135,6 +135,11 @@ class Keystore:
         return keystore
 
     @property
+    def path(self) -> str:
+        with self._mutex:
+            return self._path
+
+    @property
     def identity(self) -> Identity:
         with self._mutex:
             return self._identity
@@ -238,3 +243,7 @@ class Keystore:
 
             # update identity
             self._update_identity()
+
+    def delete(self) -> None:
+        with self._mutex:
+            os.remove(self._path)

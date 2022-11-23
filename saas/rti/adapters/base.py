@@ -287,6 +287,9 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
             delay = max(pace - (t_now - t_prev), 0)
             time.sleep(delay / 1000.0)
 
+            # if we reach here, we can reset the attempts counter
+            n_attempts = 0
+
         # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
         # disconnect). wait and retry...
         except RunCommandError as e:
