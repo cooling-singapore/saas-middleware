@@ -23,11 +23,8 @@ jobs:
           '{"github-credentials":[
           {"repository":"https://github.com/cooling-singapore/saas-middleware-sdk",
           "login":"oauth",
-          "personal_access_token":"${{ secrets.GITHUB_TOKEN }}"}
-          ]}'
-          > ~/.saas-credentials.json
-
-      - run: cat ~/.saas-credentials.json
+          "personal_access_token":"${{ secrets.TEST_PROCESSOR_KEY }}"}
+          ]}' > ~/.saas-credentials.json
 
       - name: Run tests
         run: python -m unittest
