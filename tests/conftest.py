@@ -40,3 +40,9 @@ def dor_proxy(node):
 def node_db_proxy(node):
     proxy = NodeDBProxy(node.rest.address())
     return proxy
+
+
+@pytest.fixture()
+def temp_directory():
+    with tempfile.TemporaryDirectory() as tempdir:
+        yield tempdir

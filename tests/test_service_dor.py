@@ -1,7 +1,6 @@
 import json
 import random
 import tempfile
-import unittest
 import logging
 import os
 
@@ -623,7 +622,3 @@ def test_touch_data_object(test_context, known_users, dor_proxy, random_content)
     dor_proxy.remove_tags(obj_id, owner, ['name'])
     meta: DataObject = dor_proxy.get_meta(obj_id)
     assert(meta.last_accessed > last_accessed)
-
-
-if __name__ == '__main__':
-    unittest.main()
