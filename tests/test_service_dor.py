@@ -21,24 +21,14 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-@pytest.fixture(scope="module")
-def extra_users():
-    keystores = []
-    with tempfile.TemporaryDirectory() as tempdir:
-        for i in range(3):
-            keystore = Keystore.create(tempdir, f"keystore-{i}", f"no-email-provided", f"password")
-            keystores.append(keystore)
-        yield keystores
+@pytest.fixture()
+def unknown_user(extra_keystores):
+    return extra_keystores[2]
 
 
 @pytest.fixture()
-def unknown_user(extra_users):
-    return extra_users[2]
-
-
-@pytest.fixture()
-def known_users(extra_users, node_db_proxy):
-    keystores = [extra_users[0], extra_users[1]]
+def known_users(extra_keystores, node_db_proxy):
+    keystores = [extra_keystores[0], extra_keystores[1]]
     for keystore in keystores:
         node_db_proxy.update_identity(keystore.identity)
     return keystores

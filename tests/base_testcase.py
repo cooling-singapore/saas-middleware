@@ -159,7 +159,7 @@ class TestContext:
     def __init__(self):
         self._temp_testing_dir = os.path.join(os.environ['HOME'], 'testing')
         self.testing_dir = os.path.join(self._temp_testing_dir, str(get_timestamp_now()))
-        self.host = "localhost"
+        self.host = "127.0.0.1"
         self.nodes = dict()
         self.proxies = dict()
 

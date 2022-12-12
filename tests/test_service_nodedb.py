@@ -1,12 +1,10 @@
 import os
 import logging
-import tempfile
 import time
 
 import pytest
 
 from saas.core.identity import Identity
-from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
@@ -17,51 +15,41 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-@pytest.fixture(scope="module")
-def extra_users():
-    keystores = []
-    with tempfile.TemporaryDirectory() as tempdir:
-        for i in range(3):
-            keystore = Keystore.create(tempdir, f"keystore-{i}", f"no-email-provided", f"password")
-            keystores.append(keystore)
-        yield keystores
-
-
 @pytest.fixture()
-def known_users(extra_users, node_db_proxy):
-    keystores = [extra_users[0], extra_users[1]]
+def known_users(extra_keystores, node_db_proxy):
+    keystores = [extra_keystores[0], extra_keystores[1]]
     for keystore in keystores:
         node_db_proxy.update_identity(keystore.identity)
     return keystores
 
 
 @pytest.fixture()
-def unknown_nodes(test_context, extra_users):
-    nodes = test_context.create_nodes(extra_users, perform_join=False)
+def unknown_nodes(test_context, extra_keystores):
+    nodes = test_context.create_nodes(extra_keystores, perform_join=False)
     return nodes
 
 
 @pytest.fixture()
-def known_nodes(test_context, extra_users):
-    nodes = test_context.create_nodes(extra_users, perform_join=True)
+def known_nodes(test_context, extra_keystores):
+    nodes = test_context.create_nodes(extra_keystores, perform_join=True)
     return nodes
 
 
 @pytest.fixture()
-def rest_nodes(test_context, extra_users):
-    nodes = test_context.create_nodes(extra_users, perform_join=True, enable_rest=True)
+def rest_nodes(test_context, extra_keystores):
+    nodes = test_context.create_nodes(extra_keystores, perform_join=True, enable_rest=True)
     return nodes
 
 
 @pytest.fixture()
-def storage_node(test_context, extra_users):
-    node = test_context.get_node(extra_users[0], use_dor=True, use_rti=False, enable_rest=True)
+def storage_node(test_context, extra_keystores):
+    node = test_context.get_node(extra_keystores[0], use_dor=True, use_rti=False, enable_rest=True)
     return node
 
 
 @pytest.fixture()
-def execution_node(test_context, extra_users):
-    node = test_context.get_node(extra_users[1], use_dor=False, use_rti=True, enable_rest=True)
+def execution_node(test_context, extra_keystores):
+    node = test_context.get_node(extra_keystores[1], use_dor=False, use_rti=True, enable_rest=True)
     return node
 
 

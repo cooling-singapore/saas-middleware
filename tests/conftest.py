@@ -46,3 +46,13 @@ def node_db_proxy(node):
 def temp_directory():
     with tempfile.TemporaryDirectory() as tempdir:
         yield tempdir
+
+
+@pytest.fixture(scope="module")
+def extra_keystores():
+    keystores = []
+    with tempfile.TemporaryDirectory() as tempdir:
+        for i in range(3):
+            keystore = Keystore.create(tempdir, f"keystore-{i}", f"no-email-provided", f"password")
+            keystores.append(keystore)
+        yield keystores
