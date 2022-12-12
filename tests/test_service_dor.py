@@ -33,12 +33,12 @@ def extra_users():
 
 @pytest.fixture()
 def unknown_user(extra_users):
-    return extra_users[0]
+    return extra_users[2]
 
 
 @pytest.fixture()
 def known_users(extra_users, node_db_proxy):
-    keystores = [extra_users[1], extra_users[2]]
+    keystores = [extra_users[0], extra_users[1]]
     for keystore in keystores:
         node_db_proxy.update_identity(keystore.identity)
     return keystores

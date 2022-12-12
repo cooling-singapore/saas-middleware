@@ -19,7 +19,7 @@ def test_context():
 @pytest.fixture(scope="session")
 def keystore():
     with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, f"keystore", f"no-email-provided", f"password")
+        _keystore = Keystore.create(tempdir, f"node", f"no-email-provided", f"password")
         update_keystore_from_credentials(_keystore)
         yield _keystore
 

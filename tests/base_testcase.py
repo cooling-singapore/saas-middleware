@@ -3,6 +3,7 @@ import shutil
 import time
 
 from multiprocessing import Lock
+from typing import List
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import get_timestamp_now, read_json_from_file, validate_json
@@ -179,7 +180,7 @@ class TestContext:
 
         shutil.rmtree(self._temp_testing_dir)
 
-    def create_keystores(self, n: int, use_credentials: bool = False) -> list[Keystore]:
+    def create_keystores(self, n: int, use_credentials: bool = False) -> List[Keystore]:
         keystores = []
         for i in range(n):
             keystore = Keystore.create(self.testing_dir, f"keystore_{i}", f"no-email-provided", f"password_{i}")
@@ -191,10 +192,10 @@ class TestContext:
 
         return keystores
 
-    def create_nodes(self, n: int, perform_join: bool = True, enable_rest: bool = False) -> list[Node]:
+    def create_nodes(self, keystores: List[Keystore], perform_join: bool = True, enable_rest: bool = False) -> List[Node]:
         nodes = []
-        for i in range(n):
-            nodes.append(self.get_node(f"node", enable_rest=enable_rest))
+        for i, keystore in enumerate(keystores):
+            nodes.append(self.get_node(keystore, enable_rest=enable_rest))
 
             if perform_join and i > 0:
                 nodes[i].join_network(nodes[0].p2p.address())
