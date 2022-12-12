@@ -1,22 +1,17 @@
-import os
 import random
-import shutil
 import string
-import time
-import unittest
 import logging
 
+import pytest
 from pydantic import BaseModel
 
 from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import get_timestamp_now
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.rest.auth import VerifyAuthorisation
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rest.proxy import EndpointProxy
 from saas.rest.schemas import EndpointDefinition
-from tests.base_testcase import TestCaseBase
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -135,148 +130,102 @@ class TestProxy(EndpointProxy):
         return TestResponse.parse_obj(result)
 
 
-class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
-    _wd_path = os.path.join(os.environ['HOME'], 'testing', str(get_timestamp_now()))
-    _node = None
-    _proxy = None
+@pytest.fixture()
+def rest_node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True)
+    rest_service = TestRESTService()
 
-    def __init__(self, method_name='runTest'):
-        unittest.TestCase.__init__(self, method_name)
-        TestCaseBase.__init__(self)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._node is not None:
-            shutil.rmtree(cls._wd_path, ignore_errors=True)
-            cls._node.shutdown(leave_network=False)
-
-    def setUp(self):
-        self.initialise()
-
-        if RESTServiceTestCase._node is None:
-            RESTServiceTestCase._node = self.get_node('node', enable_rest=True, keep_track=False,
-                                                      wd_path=RESTServiceTestCase._wd_path)
-
-            rest_service = TestRESTService()
-            RESTServiceTestCase._node.rest.add(rest_service.endpoints())
-
-            RESTServiceTestCase._proxy = TestProxy(RESTServiceTestCase._node.rest.address())
-            time.sleep(1)
-
-    def tearDown(self):
-        self.cleanup()
-
-    def test_create_read(self):
-        result = self._proxy.create('hello world')
-        assert(result is not None)
-        assert(result.value == 'hello world')
-
-        result = self._proxy.read(result.key)
-        assert(result is not None)
-        assert(result.value == 'hello world')
-
-    def test_update_ok(self):
-        result = self._proxy.create('hello world')
-        assert(result is not None)
-        assert(result.value == 'hello world')
-        key = result.key
-
-        result = self._proxy.update(key, 'hello new world')
-        assert(result is not None)
-        assert(result.value == 'hello new world')
-
-    def test_update_fails(self):
-        result = self._proxy.create('hello world')
-        assert(result is not None)
-        assert(result.value == 'hello world')
-
-        try:
-            self._proxy.update('invalid', 'hello new world')
-            assert False
-
-        except UnsuccessfulRequestError:
-            assert True
-
-    def test_delete_ok(self):
-        result = self._proxy.create('hello world')
-        assert(result is not None)
-        assert(result.value == 'hello world')
-        key = result.key
-
-        result = self._proxy.remove(key)
-        assert(result is not None)
-
-        try:
-            self._proxy.read(key)
-            assert False
-
-        except UnsuccessfulRequestError:
-            assert True
-
-    def test_delete_fails(self):
-        result = self._proxy.create('hello world')
-        assert(result is not None)
-        assert(result.value == 'hello world')
-        key = result.key
-
-        try:
-            self._proxy.remove('invalid_key')
-            assert False
-
-        except UnsuccessfulRequestError:
-            assert True
-
-        try:
-            self._proxy.read(key)
-            assert True
-
-        except UnsuccessfulRequestError:
-            assert False
-
-    def test_delete_with_body(self):
-        result = self._proxy.create('hello world')
-        key = result.key
-
-        result = self._proxy.remove_with_body(key)
-        assert(result is not None)
-
-        try:
-            self._proxy.read(key)
-            assert False
-
-        except UnsuccessfulRequestError:
-            assert True
-
-    def test_delete_with_auth(self):
-        result = self._proxy.create('hello world')
-        key = result.key
-
-        good_authority = self._node.keystore
-        bad_authority = self.create_keystores(1)[0]
-
-        try:
-            # this should fail because the 'bad' authority is not known to the node
-            self._proxy.remove_with_auth(key, authority=bad_authority)
-            assert False
-
-        except UnsuccessfulRequestError as e:
-            assert e.details['reason'] == 'unknown identity'
-
-        try:
-            # this should succeed because the 'good' authority is known to the node
-            result = self._proxy.remove_with_auth(key, authority=good_authority)
-            assert (result is not None)
-
-        except UnsuccessfulRequestError:
-            assert False
-
-        try:
-            self._proxy.read(key)
-            assert False
-
-        except UnsuccessfulRequestError:
-            assert True
+    _node.rest.add(rest_service.endpoints())
+    return _node
 
 
-if __name__ == '__main__':
-    unittest.main()
+@pytest.fixture()
+def rest_test_proxy(rest_node):
+    proxy = TestProxy(rest_node.rest.address())
+    return proxy
+
+
+def test_create_read(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+    result = rest_test_proxy.read(result.key)
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+
+def test_update_ok(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    result = rest_test_proxy.update(key, 'hello new world')
+    assert(result is not None)
+    assert(result.value == 'hello new world')
+
+
+def test_update_fails(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.update('invalid', 'hello new world')
+
+
+def test_delete_ok(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    result = rest_test_proxy.remove(key)
+    assert(result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)
+
+
+def test_delete_fails(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.remove('invalid_key')
+
+    rest_test_proxy.read(key)
+
+
+def test_delete_with_body(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    key = result.key
+
+    result = rest_test_proxy.remove_with_body(key)
+    assert(result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)
+
+
+def test_delete_with_auth(test_context, rest_node, rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    key = result.key
+
+    good_authority = rest_node.keystore
+    bad_authority = test_context.create_keystores(1)[0]
+
+    with pytest.raises(UnsuccessfulRequestError) as e:
+        # this should fail because the 'bad' authority is not known to the node
+        rest_test_proxy.remove_with_auth(key, authority=bad_authority)
+    assert e.value.details['reason'] == 'unknown identity'
+
+    # this should succeed because the 'good' authority is known to the node
+    result = rest_test_proxy.remove_with_auth(key, authority=good_authority)
+    assert (result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)
