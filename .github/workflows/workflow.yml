@@ -27,4 +27,4 @@ jobs:
           ]}' > ~/.saas-credentials.json
 
       - name: Run tests
-        run: python -m unittest
+        run: pytest ./tests
