@@ -1,19 +1,19 @@
 import json
 import logging
 import os
-import shutil
 import time
 from threading import Thread
 from typing import Union, List
 
 import docker
 import pytest
+from docker.errors import DockerException
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import encrypt_file
 from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.core.helpers import get_timestamp_now, generate_random_string
+from saas.core.helpers import generate_random_string
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
@@ -755,7 +755,16 @@ def remote_docker_credentials(keystore):
     return cred
 
 
-docker_required = pytest.mark.skipif(not docker.from_env(), reason="Docker daemon not found")
+def check_docker():
+    try:
+        docker.from_env()
+    except DockerException:
+        return False
+    else:
+        return True
+
+
+docker_required = pytest.mark.skipif(not check_docker(), reason="Docker daemon not found")
 
 
 @docker_required
