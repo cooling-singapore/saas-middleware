@@ -5,6 +5,7 @@ import pytest
 from saas.core.keystore import Keystore
 from saas.dor.proxy import DORProxy
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rti.proxy import RTIProxy
 from tests.base_testcase import TestContext, update_keystore_from_credentials
 
 
@@ -26,7 +27,7 @@ def keystore():
 
 @pytest.fixture()
 def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True)
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False)
     return _node
 
 
@@ -39,6 +40,12 @@ def dor_proxy(node):
 @pytest.fixture()
 def node_db_proxy(node):
     proxy = NodeDBProxy(node.rest.address())
+    return proxy
+
+
+@pytest.fixture()
+def rti_proxy(node):
+    proxy = RTIProxy(node.rest.address())
     return proxy
 
 
