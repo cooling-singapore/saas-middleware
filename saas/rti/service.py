@@ -16,6 +16,7 @@ from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import generate_random_string, write_json_to_file
 from saas.core.identity import Identity
 from saas.core.logging import Logging
+from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.p2p.exceptions import PeerUnavailableError
 import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
@@ -96,7 +97,8 @@ class RTIService:
 
             try:
                 # lookup the GPP data object
-                gpp = self._node.dor.protocol.lookup_gpp(node.p2p_address, proc_id)
+                dor_protocol = DataObjectRepositoryP2PProtocol(self._node)
+                gpp = dor_protocol.lookup_gpp(node.p2p_address, proc_id)
                 if gpp:
                     return gpp
 

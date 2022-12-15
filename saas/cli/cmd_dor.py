@@ -246,10 +246,6 @@ class DORAddGPP(CLICommand):
                     choices = [Choice(c, c) for c in descriptor.configurations]
                     args['config'] = prompt_for_selection(choices, f"Select the configuration profile:")
 
-                # do we have a name?
-                if not args['name']:
-                    args['name'] = descriptor.name
-
                 # clean up
                 shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
 
