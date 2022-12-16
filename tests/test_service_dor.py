@@ -8,7 +8,6 @@ import pytest
 
 from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_encrypt, generate_random_file, \
     hash_file_content
-from saas.core.keystore import Keystore
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.schemas import DataObject
 from saas.core.schemas import GithubCredentials

@@ -671,9 +671,9 @@ def test_processor_execution_reference_encrypted(test_context, node, dor_proxy, 
     assert('c' in output)
 
 
-def test_retain_job_history_false(test_context, known_user):
+def test_retain_job_history_false(test_context, keystore):
     # create target node and join with the default node
-    target_node = test_context.get_node(known_user, enable_rest=True, retain_job_history=False)
+    target_node = test_context.get_node(keystore, enable_rest=True, retain_job_history=False)
     target_rti = RTIProxy(target_node.rest.address())
     target_dor = DORProxy(target_node.rest.address())
     time.sleep(2)
@@ -707,9 +707,9 @@ def test_retain_job_history_false(test_context, known_user):
     time.sleep(2)
 
 
-def test_retain_job_history_true(test_context, known_user):
+def test_retain_job_history_true(test_context, keystore):
     # create target node and join with the default node
-    target_node = test_context.get_node(known_user, enable_rest=True, retain_job_history=True)
+    target_node = test_context.get_node(keystore, enable_rest=True, retain_job_history=True)
     target_rti = RTIProxy(target_node.rest.address())
     target_dor = DORProxy(target_node.rest.address())
     time.sleep(2)
