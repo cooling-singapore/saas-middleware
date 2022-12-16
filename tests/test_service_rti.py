@@ -868,6 +868,9 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
     status: JobStatus = rti_proxy.get_job_status(job_id, owner)
     assert(status.state == JobStatus.State.CANCELLED)
 
+    # Perform cleanup
+    rti_proxy.undeploy(deployed_test_processor_docker, node.keystore)
+
 
 @pytest.fixture(scope="session")
 def nscc_ssh_cred(keystore):
