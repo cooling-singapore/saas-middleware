@@ -24,6 +24,7 @@ from saas.rti.exceptions import RunCommandError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.core.schemas import GithubCredentials
+from tests.base_testcase import update_keystore_from_credentials
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -52,13 +53,17 @@ def deploy_and_wait(rti: RTIProxy, proc_id: str, authority: Keystore, github_cre
 
 @pytest.fixture()
 def non_strict_node(test_context, extra_keystores):
-    node = test_context.get_node(extra_keystores[0], use_rti=True, enable_rest=True, strict_deployment=False)
+    keystore = extra_keystores[0]
+    update_keystore_from_credentials(keystore)
+    node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=False)
     return node
 
 
 @pytest.fixture()
 def strict_node(test_context, extra_keystores):
-    node = test_context.get_node(extra_keystores[1], use_rti=True, enable_rest=True, strict_deployment=True)
+    keystore = extra_keystores[1]
+    update_keystore_from_credentials(keystore)
+    node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=True)
     return node
 
 
