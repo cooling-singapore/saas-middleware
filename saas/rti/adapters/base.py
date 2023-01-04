@@ -135,6 +135,23 @@ def is_cygwin(ssh_credentials: SSHCredentials) -> bool:
     return "cygwin" in env.lower()
 
 
+def get_pid(pid_path: str, ssh_credentials: SSHCredentials = None, max_attempts: int = 10) -> str:
+    # wait for the PID file to exist
+    for attempt in range(max_attempts):
+        # does the PID file exist?
+        if check_if_path_exists(pid_path, ssh_credentials=ssh_credentials, timeout=10):
+            # read and return the PID
+            result = run_command(f"cat {pid_path}", ssh_credentials=ssh_credentials, timeout=10)
+            pid = result.stdout.decode('utf-8').splitlines()[0]
+            return pid
+
+        else:
+            logger.debug(f"PID file expected at '{pid_path}' does not (yet) exist... waiting (attempt={attempt})")
+            time.sleep(0.5)
+
+    raise RunCommandError(reason='PID file not found', details={'pid_path': pid_path})
+
+
 def run_command_async(command: str, local_output_path: str, name: str,
                       ssh_credentials: SSHCredentials = None) -> (str, dict):
 
@@ -195,9 +212,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
     run_command(command, ssh_credentials=ssh_credentials, timeout=10)
 
     # get the PID
-    time.sleep(0.5)
-    result = run_command(f"cat {paths['pid']}", ssh_credentials=ssh_credentials, timeout=10)
-    pid = result.stdout.decode('utf-8').splitlines()[0]
+    pid = get_pid(paths['pid'], ssh_credentials=ssh_credentials)
     logger.info(f"started async process {pid} running {'REMOTE:' if ssh_credentials else 'LOCAL:'}{paths['script']}")
 
     return pid, paths
