@@ -25,14 +25,20 @@ class TestResponse(BaseModel):
 
 
 class TestDeleteRequest(BaseModel):
+    __test__ = False
+
     key: str
 
 
 class TestException(SaaSRuntimeException):
+    __test__ = False
+
     pass
 
 
 class TestRESTService:
+    __test__ = False
+
     def __init__(self):
         self._objects = {}
 
@@ -102,6 +108,8 @@ class TestRESTService:
 
 
 class TestProxy(EndpointProxy):
+    __test__ = False
+
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
