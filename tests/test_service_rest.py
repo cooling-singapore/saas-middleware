@@ -20,6 +20,8 @@ endpoint_prefix = "/api/v1/test"
 
 
 class TestResponse(BaseModel):
+    __test__ = False
+
     key: str
     value: str
 
