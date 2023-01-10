@@ -134,6 +134,7 @@ def test_secure_connect_accept(test_context, server_identity, client_identity):
         SecureMessenger.connect(server_address, client_identity, wd_path)
     assert(client_peer_identity.id == server_identity.id)
     client_messenger.close()
+    server.join()
 
 
 def test_secure_send_receive_object(test_context, server_identity, client_identity):
@@ -176,6 +177,7 @@ def test_secure_send_receive_object(test_context, server_identity, client_identi
     assert(client_peer_identity.id == server_identity.id)
     client_messenger._send_object(ref_obj.dict())
     client_messenger.close()
+    server.join()
 
 
 def test_secure_send_receive_stream(test_context, server_identity, client_identity):
@@ -222,6 +224,7 @@ def test_secure_send_receive_stream(test_context, server_identity, client_identi
     client_messenger._send_stream(source_path)
 
     client_messenger.close()
+    server.join()
 
 
 def test_secure_send_receive_request(test_context, server_identity, client_identity):
@@ -277,3 +280,4 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
     assert(response.content['answer'] == '42')
 
     client_messenger.close()
+    server.join()
