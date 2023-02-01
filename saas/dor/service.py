@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from stat import S_IREAD, S_IRGRP
 from typing import Optional, List, Union
 
@@ -178,6 +179,68 @@ def _extract_data_object(record: DataObjectRecord, custodian: NodeInfo) -> Union
             'license': details['license'],
             'recipe': details['recipe'] if 'recipe' in details else None
         })
+
+
+def fetch_proc_descriptor(source: str, commit_id: str, proc_path: str, proc_config: str,
+                          credentials: GithubCredentials = None) -> ProcessorDescriptor:
+    """
+    Clone repo in gpp and returns the proc descriptor
+    """
+    # determine URL including credentials (if any)
+    url = source
+    if credentials:
+        insert = f"{credentials.login}:{credentials.personal_access_token}@"
+        index = url.find('github.com')
+        url = url[:index] + insert + url[index:]
+
+    # try to clone the repository
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = tmpdir
+        result = subprocess.run(['git', 'clone', url, repo_path], capture_output=True)
+        if result.returncode != 0:
+            raise CloneRepositoryError({
+                'url': url,
+                'stdout': result.stdout.decode('utf-8'),
+                'stderr': result.stderr.decode('utf-8')
+            })
+
+        # try to check out the specific commit
+        result = subprocess.run(['git', 'checkout', commit_id], capture_output=True, cwd=repo_path)
+        if result.returncode != 0:
+            raise CheckoutCommitError({
+                'commit_id': commit_id,
+                'stdout': result.stdout.decode('utf-8'),
+                'stderr': result.stderr.decode('utf-8')
+            })
+
+        # does the processor descriptor exist?
+        proc_descriptor_path = os.path.join(repo_path, proc_path, 'descriptor.json')
+        if not os.path.isfile(proc_descriptor_path):
+            raise ProcessorDescriptorNotFoundError({
+                'source': source,
+                'commit_id': commit_id,
+                'proc_path': proc_path
+            })
+
+        # read the processor descriptor
+        proc_descriptor = read_json_from_file(proc_descriptor_path)
+        if not validate_json(proc_descriptor, ProcessorDescriptor.schema()):
+            raise InvalidProcessorDescriptorError({
+                'source': source,
+                'commit_id': commit_id,
+                'proc_path': proc_path,
+                'proc_descriptor': proc_descriptor
+            })
+        proc_descriptor = ProcessorDescriptor.parse_obj(proc_descriptor)
+
+        # check if the config is valid
+        if proc_config not in proc_descriptor.configurations:
+            raise DORException(reason=f"Processor configuration '{proc_config}' not supported by processor.",
+                               details={
+                                   'proc_config': proc_config,
+                                   'proc_descriptor': proc_descriptor.dict()
+                               })
+    return proc_descriptor
 
 
 class DataObjectRecord(Base):
@@ -555,63 +618,8 @@ class DORService:
         for creator_iid in p.creators_iid:
             self._node.db.get_identity(creator_iid, raise_if_unknown=True)
 
-        # determine URL including credentials (if any)
-        url = p.source
-        if p.github_credentials:
-            insert = f"{p.github_credentials.login}:{p.github_credentials.personal_access_token}@"
-            index = url.find('github.com')
-            url = url[:index] + insert + url[index:]
-
-        # try to clone the repository
-        temp_id = generate_random_string(8)
-        repo_path = os.path.join(self._node.datastore, DOR_INFIX_TEMP_PATH, f"{temp_id}.repo")
-        result = subprocess.run(['git', 'clone', url, repo_path], capture_output=True)
-        if result.returncode != 0:
-            raise CloneRepositoryError({
-                'url': url,
-                'stdout': result.stdout.decode('utf-8'),
-                'stderr': result.stderr.decode('utf-8')
-            })
-
-        # try to check out the specific commit
-        result = subprocess.run(['git', 'checkout', p.commit_id], capture_output=True, cwd=repo_path)
-        if result.returncode != 0:
-            raise CheckoutCommitError({
-                'commit_id': p.commit_id,
-                'stdout': result.stdout.decode('utf-8'),
-                'stderr': result.stderr.decode('utf-8')
-            })
-
-        # does the processor descriptor exist?
-        proc_descriptor_path = os.path.join(repo_path, p.proc_path, 'descriptor.json')
-        if not os.path.isfile(proc_descriptor_path):
-            raise ProcessorDescriptorNotFoundError({
-                'source': p.source,
-                'commit_id': p.commit_id,
-                'proc_path': p.proc_path
-            })
-
-        # read the processor descriptor
-        proc_descriptor = read_json_from_file(proc_descriptor_path)
-        if not validate_json(proc_descriptor, ProcessorDescriptor.schema()):
-            raise InvalidProcessorDescriptorError({
-                'source': p.source,
-                'commit_id': p.commit_id,
-                'proc_path': p.proc_path,
-                'proc_descriptor': proc_descriptor
-            })
-        proc_descriptor = ProcessorDescriptor.parse_obj(proc_descriptor)
-
-        # check if the config is valid
-        if p.proc_config not in proc_descriptor.configurations:
-            raise DORException(reason=f"Processor configuration '{p.proc_config}' not supported by processor.",
-                               details={
-                                   'proc_config': p.proc_config,
-                                   'proc_descriptor': proc_descriptor.dict()
-                               })
-
-        # we don't need the repository anymore -> delete it
-        shutil.rmtree(repo_path)
+        # fetch proc descriptor
+        proc_descriptor = fetch_proc_descriptor(p.source, p.commit_id, p.proc_path, p.proc_config, p.github_credentials)
 
         # determine the content hash for the GPP
         c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config, proc_descriptor.dict())
