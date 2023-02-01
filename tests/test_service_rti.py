@@ -885,11 +885,11 @@ def nscc_ssh_cred(keystore):
     return cred
 
 
-def test_deployment_undeployment(rti_proxy, test_processor_info, nscc_ssh_cred):
+def test_deployment_undeployment(rti_proxy, test_processor_info, nscc_ssh_cred, keystore):
     test_proc_id, test_proc_gh_cred = test_processor_info
 
     # instruct the RTI to deploy the processor remotely using the SSH credentials
-    rti_proxy.deploy(test_proc_id, github_credentials=test_proc_gh_cred,
+    rti_proxy.deploy(test_proc_id, authority=keystore, github_credentials=test_proc_gh_cred,
                      ssh_credentials=nscc_ssh_cred)
 
     # wait for processor to be deployed
@@ -906,15 +906,16 @@ def test_deployment_undeployment(rti_proxy, test_processor_info, nscc_ssh_cred):
     assert(result[0].proc_id == test_proc_id)
 
     # undeploy the processor
-    result = rti_proxy.undeploy(test_proc_id)
+    result = rti_proxy.undeploy(test_proc_id, authority=keystore)
     assert(result is not None)
 
 
-def test_processor_execution_mixed(test_context, node, rti_proxy, dor_proxy, test_processor_info, nscc_ssh_cred):
+def test_processor_execution_mixed(test_context, node, rti_proxy, dor_proxy, test_processor_info, nscc_ssh_cred,
+                                   keystore):
     test_proc_id, test_proc_gh_cred = test_processor_info
 
     # instruct the RTI to deploy the processor remotely using the SSH credentials
-    rti_proxy.deploy(test_proc_id, github_credentials=test_proc_gh_cred,
+    rti_proxy.deploy(test_proc_id, authority=keystore, github_credentials=test_proc_gh_cred,
                      ssh_credentials=nscc_ssh_cred)
 
     # wait for processor to be deployed
@@ -947,11 +948,12 @@ def test_processor_execution_mixed(test_context, node, rti_proxy, dor_proxy, tes
     assert('c' in output)
 
 
-def test_processor_resume_execution(test_context, node, rti_proxy, dor_proxy, test_processor_info, nscc_ssh_cred):
+def test_processor_resume_execution(test_context, node, rti_proxy, dor_proxy, test_processor_info, nscc_ssh_cred,
+                                    keystore):
     test_proc_id, test_proc_gh_cred = test_processor_info
 
     # instruct the RTI to deploy the processor remotely using the SSH credentials
-    rti_proxy.deploy(test_proc_id, github_credentials=test_proc_gh_cred,
+    rti_proxy.deploy(test_proc_id, authority=keystore, github_credentials=test_proc_gh_cred,
                      ssh_credentials=nscc_ssh_cred)
 
     # wait for processor to be deployed
