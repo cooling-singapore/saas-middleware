@@ -187,7 +187,11 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             }) from e
 
     def shutdown(self) -> None:
-        pass
+        # Make sure that the container is removed
+        if self.container is not None:
+            logger.warning("Docker container seems to be still running during shutdown. Force removing it...")
+            self.container.remove(force=True)
+            self.container = None
 
     def execute(self, working_directory: str, context: JobContext) -> None:
         try:
@@ -243,6 +247,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         finally:
             if self.container is not None:
                 self.container.remove()
+                self.container = None
 
     def connect_and_monitor(self, context: JobContext) -> None:
         # Retrieve container from descriptor if not found
