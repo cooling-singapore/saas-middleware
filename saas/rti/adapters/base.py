@@ -158,7 +158,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
     # determine remote output path (in case it's needed)
     # FIXME: Might not need this since ssh should open in HOME directory anyway
     _home = get_home_directory(ssh_credentials)
-    remote_output_path = local_output_path.replace(os.environ['HOME'], _home)
+    remote_output_path = _home + local_output_path.replace(os.environ['HOME'], '')
 
     # check if the output path exists (locally and remotely, if applicable)
     os.makedirs(local_output_path, exist_ok=True)

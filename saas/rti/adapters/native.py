@@ -30,11 +30,12 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         # create paths
         local_repo_path = os.path.join(node.datastore, 'proc-repositories', proc_id)
         local_adapter_path = os.path.join(local_repo_path, self._gpp.proc_path)
+
         self._paths = {
             'local_repo': local_repo_path,
             'local_adapter': local_adapter_path,
-            'remote_repo': local_repo_path.replace(os.environ['HOME'], '~'),
-            'remote_adapter': local_adapter_path.replace(os.environ['HOME'], '~')
+            'remote_repo': '~'+local_repo_path.replace(os.environ['HOME'], ''),
+            'remote_adapter': '~'+local_adapter_path.replace(os.environ['HOME'], '')
         }
         self._paths['repo'] = self._paths['remote_repo'] if self._ssh_credentials else self._paths['local_repo']
         self._paths['adapter'] = \
@@ -99,7 +100,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
-            'remote_wd': local_working_directory.replace(os.environ['HOME'], _home)
+            'remote_wd': _home + local_working_directory.replace(os.environ['HOME'], '')
         }
         paths['wd'] = paths['remote_wd'] if self._ssh_credentials else paths['local_wd']
 
