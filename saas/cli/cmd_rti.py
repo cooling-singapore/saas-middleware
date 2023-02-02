@@ -105,8 +105,14 @@ class RTIProcDeploy(CLICommand):
                 if len(choices) == 0:
                     raise CLIRuntimeError("No SSH profiles found. Aborting.")
 
-                args['ssh-profile'] = prompt_for_selection(
+                ssh_credentials = prompt_for_selection(
                     choices, "Select the SSH profile to be used for deployment:", allow_multiple=False)
+
+        else:
+            # do we have these SSH credentials?
+            ssh_credentials = keystore.ssh_credentials.get(args['ssh_profile'])
+            if ssh_credentials is None:
+                raise CLIRuntimeError(f"SSH profile '{args['ssh_profile']}' found. Aborting.")
 
         # check if we have Github credentials for this URL
         url = gpp[args['proc-id']].source
