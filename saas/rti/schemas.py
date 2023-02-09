@@ -48,6 +48,8 @@ class Job(BaseModel):
     task: Task = Field(..., title="Task", description="The task of this job")
     retain: bool = Field(..., title="Retain", description="Indicates if the RTI should retain the working directory of this job. This is only used for debugging and testing purposes.", example=False)
     custodian: NodeInfo = Field(..., title='Custodian', description="Information about the node that hosts this job.")
+    proc_name: str = Field(..., title="Processor Name", description="The name of the processor.")
+    t_submitted: int = Field(..., title="Time Submitted", description="The timestamp (UTC in milliseconds since the beginning of the epoch) when the job was submitted.")
 
 
 class ReconnectInfo(BaseModel):
