@@ -36,6 +36,8 @@ class Task(BaseModel):
     user_iid: str = Field(..., title="User IId", description="The id of the user's identity who owns this task.")
     input: List[Union[InputReference, InputValue]] = Field(..., title="Input", description="Information needed for every input defined by the processor.")
     output: List[Output] = Field(..., title="Output", description="Information needed for every output defined by the processor.")
+    name: Optional[str] = Field(title="Name", description="The optional name of this task.")
+    description: Optional[str] = Field(title="Description", description="The optional description of this task.")
 
 
 class Job(BaseModel):

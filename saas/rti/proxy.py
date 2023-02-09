@@ -69,13 +69,25 @@ class RTIProxy(EndpointProxy):
         return ProcessorStatus.parse_obj(result)
 
     def submit_job(self, proc_id: str, job_input: List[Union[Task.InputReference, Task.InputValue]],
-                   job_output: List[Task.Output], with_authorisation_by: Keystore) -> Job:
-        result = self.post(f"/proc/{proc_id}/jobs", body={
+                   job_output: List[Task.Output], with_authorisation_by: Keystore, name: str = None,
+                   description: str = None) -> Job:
+
+        # build the body
+        body = {
             'proc_id': proc_id,
             'input': [i.dict() for i in job_input],
             'output': [o.dict() for o in job_output],
             'user_iid': with_authorisation_by.identity.id
-        }, with_authorisation_by=with_authorisation_by)
+        }
+
+        if name is not None:
+            body['name'] = name
+
+        if description is not None:
+            body['description'] = description
+
+        # post the request
+        result = self.post(f"/proc/{proc_id}/jobs", body=body, with_authorisation_by=with_authorisation_by)
 
         return Job.parse_obj(result)
 
