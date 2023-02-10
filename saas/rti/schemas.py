@@ -36,6 +36,8 @@ class Task(BaseModel):
     user_iid: str = Field(..., title="User IId", description="The id of the user's identity who owns this task.")
     input: List[Union[InputReference, InputValue]] = Field(..., title="Input", description="Information needed for every input defined by the processor.")
     output: List[Output] = Field(..., title="Output", description="Information needed for every output defined by the processor.")
+    name: Optional[str] = Field(title="Name", description="The optional name of this task.")
+    description: Optional[str] = Field(title="Description", description="The optional description of this task.")
 
 
 class Job(BaseModel):
@@ -46,6 +48,8 @@ class Job(BaseModel):
     task: Task = Field(..., title="Task", description="The task of this job")
     retain: bool = Field(..., title="Retain", description="Indicates if the RTI should retain the working directory of this job. This is only used for debugging and testing purposes.", example=False)
     custodian: NodeInfo = Field(..., title='Custodian', description="Information about the node that hosts this job.")
+    proc_name: str = Field(..., title="Processor Name", description="The name of the processor.")
+    t_submitted: int = Field(..., title="Time Submitted", description="The timestamp (UTC in milliseconds since the beginning of the epoch) when the job was submitted.")
 
 
 class ReconnectInfo(BaseModel):

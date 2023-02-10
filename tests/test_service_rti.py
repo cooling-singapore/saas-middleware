@@ -362,8 +362,8 @@ class UnsuccessfulJob(SaaSRuntimeException):
 
 
 def submit_job(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputValue, Task.InputReference]],
-               task_output: List[Task.Output], owner: Keystore) -> str:
-    result = rti.submit_job(proc_id, task_input, task_output, owner)
+               task_output: List[Task.Output], owner: Keystore, name: str = None, description: str = None) -> str:
+    result = rti.submit_job(proc_id, task_input, task_output, owner, name=name, description=description)
     job_id = result.id
     return job_id
 
@@ -385,9 +385,9 @@ def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
 
 
 def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputValue, Task.InputReference]],
-                    task_output: List[Task.Output],
-                    owner: Keystore) -> (str, dict):
-    job_id = submit_job(rti, proc_id, task_input, task_output, owner)
+                    task_output: List[Task.Output], owner: Keystore, name: str = None, description: str = None
+                    ) -> (str, dict):
+    job_id = submit_job(rti, proc_id, task_input, task_output, owner, name=name, description=description)
     output = wait_for_job(rti, job_id, owner)
     return job_id, output
 
@@ -430,6 +430,38 @@ def test_processor_execution_value(node, rti_proxy, deployed_test_processor):
 
     # submit and wait
     job_id, output = submit_and_wait(rti_proxy, deployed_test_processor, task_input, task_output, owner)
+    assert(output is not None)
+    assert('c' in output)
+
+
+def test_processor_execution_value_with_name_and_description(node, rti_proxy, deployed_test_processor):
+    owner = node.keystore
+
+    task_input = [
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+    ]
+
+    task_output = [
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                              'content_encrypted': False})
+    ]
+
+    # submit and wait
+    name = 'the job'
+    description = 'here is some description about this job...'
+    job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner,
+                        name=name, description=description)
+
+    # get the status
+    status = rti_proxy.get_job_status(job_id, owner)
+    print(status.job.task.name)
+    print(status.job.task.description)
+    assert(status.job.task.name == name)
+    assert(status.job.task.description == description)
+
+    # wait for the job to be done
+    output = wait_for_job(rti_proxy, job_id, owner)
     assert(output is not None)
     assert('c' in output)
 

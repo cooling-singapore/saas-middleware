@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import generate_random_string, write_json_to_file
+from saas.core.helpers import generate_random_string, write_json_to_file, get_timestamp_now
 from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -300,9 +300,17 @@ class RTIService:
                     'task': task
                 })
 
+            # get the processor
+            proc = self._deployed.get(task.proc_id)
+            if proc is None:
+                raise RTIException(f"Processor {task.proc_id} not deployed", details={
+                    'task': task
+                })
+
             # create job descriptor with a generated job id
             job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history,
-                      custodian=self._node.info)
+                      custodian=self._node.info, proc_name=proc.gpp.proc_descriptor.name,
+                      t_submitted=get_timestamp_now())
 
             # create working directory or log a warning if it already exists
             wd_path = os.path.join(self._jobs_path, job.id)
@@ -320,7 +328,7 @@ class RTIService:
             context.start()
 
             # add the job to the processor queue and return the job descriptor
-            self._deployed[proc_id].add(context)
+            proc.add(context)
             return job
 
     def resume(self, proc_id: str, job: Job, reconnect: ReconnectInfo, request: Request) -> Job:
