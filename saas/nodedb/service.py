@@ -1,442 +1,246 @@
-import json
-import canonicaljson
+from typing import Optional, List
 
-from dataclasses import dataclass, asdict
-from typing import Optional, Union
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, Text, Table
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, registry
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-from saascore.log import Logging
-from saascore.cryptography.eckeypair import ECKeyPair
-from saascore.cryptography.helpers import hash_json_object, hash_string_object
-from saascore.cryptography.rsakeypair import RSAKeyPair
-from saascore.helpers import get_timestamp_now
-from saascore.keystore.identity import Identity
-
-from saas.nodedb.exceptions import DataObjectNotFoundError, InvalidIdentityError
+from saas.core.helpers import get_timestamp_now
+from saas.core.identity import Identity
+from saas.core.logging import Logging
+from saas.nodedb.exceptions import InvalidIdentityError, IdentityNotFoundError
+from saas.nodedb.protocol import NodeDBP2PProtocol, NodeDBSnapshot
+from saas.nodedb.proxy import DB_ENDPOINT_PREFIX
+from saas.nodedb.schemas import NodeInfo
+from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('nodedb.service')
 
-mapper_registry = registry()
-Base = mapper_registry.generate_base()
+Base = declarative_base()
 
 
-@mapper_registry.mapped
-@dataclass
-class DataObjectRecord:
-    __table__ = Table(
-        'obj_record',
-        mapper_registry.metadata,
-
-        Column("obj_id", String(64), primary_key=True),
-
-        Column("c_hash", String(64), nullable=False),
-        Column("r_hash", String(64), nullable=True),
-        Column("data_type", String(64), nullable=False),
-        Column("data_format", String(64), nullable=False),
-        Column("created_by", String(64), nullable=False),
-        Column("created_t", Integer, nullable=False),
-        Column("gpp", Text, nullable=True),
-
-        Column("owner_iid", String(64), nullable=False),
-        Column("access_restricted", Boolean, nullable=False),
-        Column("content_encrypted", Boolean, nullable=False)
-    )
-
-    obj_id: str
-
-    # IMMUTABLE part of meta information:
-    c_hash: str
-    r_hash: Optional[str]
-    data_type: str
-    data_format: str
-    created_by: str
-    created_t: int
-    gpp: Optional[str]
-
-    # MUTABLE part of meta information:
-    owner_iid: str
-    access_restricted: bool
-    content_encrypted: bool
-
-    def as_dict(self) -> dict:
-        record_dict = asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
-        record_dict['r_hash'] = self.r_hash  # Make sure r_hash exists even if it is None
-        if self.gpp is not None:
-            record_dict['gpp'] = json.loads(self.gpp)
-
-        return record_dict
+class NodeRecord(Base):
+    __tablename__ = 'node'
+    iid = Column(String(64), primary_key=True)
+    last_seen = Column(BigInteger, nullable=False)
+    dor_service = Column(Boolean, nullable=False)
+    rti_service = Column(Boolean, nullable=False)
+    p2p_address = Column(String, nullable=False)
+    rest_address = Column(String, nullable=True)
+    retain_job_history = Column(Boolean, nullable=True)
+    strict_deployment = Column(Boolean, nullable=True)
 
 
-@mapper_registry.mapped
-@dataclass
-class DataObjectRecipe:
-    __table__ = Table(
-        'obj_recipe',
-        mapper_registry.metadata,
-        Column("c_hash", String(64), primary_key=True),
-        Column("r_hash", String(64), primary_key=True),
-        Column("recipe", Text, nullable=False)
-    )
-
-    c_hash: str
-    r_hash: str
-    recipe: str
-
-
-@mapper_registry.mapped
-@dataclass
-class DataObjectTag:
-    __table__ = Table(
-        'obj_tag',
-        mapper_registry.metadata,
-        Column("obj_id", String(64), primary_key=True),
-        Column("key", String(64), primary_key=True),
-        Column("value", String(256))
-    )
-
-    obj_id: str
-    key: str
-    value: str
-
-
-@mapper_registry.mapped
-@dataclass
-class DataObjectAccess:
-    __table__ = Table(
-        'obj_access',
-        mapper_registry.metadata,
-        Column("obj_id", String(64), primary_key=True),
-        Column("key_iid", String(64), primary_key=True)
-    )
-
-    obj_id: str
-    key_iid: str
-
-
-@mapper_registry.mapped
-@dataclass
-class IdentityRecord:
-    __table__ = Table(
-        'identity',
-        mapper_registry.metadata,
-        Column("iid", String(64), primary_key=True),
-        Column("name", String, nullable=False),
-        Column("email", String, nullable=False),
-        Column("nonce", Integer, nullable=False),
-        Column("s_public_key", String, nullable=True),
-        Column("e_public_key", String, nullable=True),
-        Column("signature", String, nullable=True)
-    )
-
-    iid: str
-    name: str
-    email: str
-    nonce: int
-    s_public_key: Optional[str]
-    e_public_key: Optional[str]
-    signature: Optional[str]
-
-
-@mapper_registry.mapped
-@dataclass
-class NetworkNode:
-    __table__ = Table(
-        'network_node',
-        mapper_registry.metadata,
-        Column("iid", String(64), primary_key=True),
-        Column("last_seen", BigInteger, nullable=False),
-        Column("p2p_address", String(21), nullable=False),
-        Column("rest_address", String(21), nullable=True),
-        Column("dor_service", Boolean, nullable=False),
-        Column("rti_service", Boolean, nullable=False)
-    )
-
-    iid: str
-    last_seen: int
-    p2p_address: str
-    rest_address: Optional[str]
-    dor_service: bool
-    rti_service: bool
-
-    def get_p2p_address(self):
-        return self.p2p_address.split(":")
-
-    def get_rest_address(self) -> (str, str):
-        return self.rest_address.split(':') if self.rest_address else None
-
-    def as_dict(self) -> dict:
-        return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
+class IdentityRecord(Base):
+    __tablename__ = 'identity'
+    iid = Column(String(64), primary_key=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    s_public_key = Column(String, nullable=True)
+    e_public_key = Column(String, nullable=True)
+    nonce = Column(Integer, nullable=False)
+    signature = Column(String, nullable=True)
+    last_seen = Column(BigInteger, nullable=False)
 
 
 class NodeDBService:
-    def __init__(self, node, db_path, protocol):
+    def __init__(self, node, db_path: str):
+        # initialise properties
         self._node = node
-        self.protocol = protocol
+        self._protocol = NodeDBP2PProtocol(node)
+
+        # initialise database things
         self._engine = create_engine(db_path)
         Base.metadata.create_all(self._engine)
         self._Session = sessionmaker(bind=self._engine)
 
-        self._print_statistics()
+    @property
+    def protocol(self) -> NodeDBP2PProtocol:
+        return self._protocol
 
-    def _print_statistics(self):
+    def endpoints(self) -> List[EndpointDefinition]:
+        return [
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'node',
+                               self.get_node, NodeInfo, None),
+
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'network',
+                               self.get_network, List[NodeInfo], None),
+
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'identity/{iid}',
+                               self.get_identity, Optional[Identity], None),
+
+            EndpointDefinition('GET', DB_ENDPOINT_PREFIX, 'identity',
+                               self.get_identities, List[Identity], None),
+
+            EndpointDefinition('POST', DB_ENDPOINT_PREFIX, 'identity',
+                               self.update_identity, Identity, None),
+        ]
+
+    def get_node(self) -> NodeInfo:
+        """
+        Retrieves information about the node.
+        """
         with self._Session() as session:
-            logger.debug(f"- DataObjectRecord: {session.query(DataObjectRecord).count()}")
-            logger.debug(f"- DataObjectRecipe: {session.query(DataObjectRecipe).count()}")
-            logger.debug(f"- DataObjectTag: {session.query(DataObjectTag).count()}")
-            logger.debug(f"- DataObjectAccess: {session.query(DataObjectAccess).count()}")
-            logger.debug(f"- IdentityRecord: {session.query(IdentityRecord).count()}")
-            logger.debug(f"- NetworkNode: {session.query(NetworkNode).count()}")
+            record = session.query(NodeRecord).get(self._node.identity.id)
+            return NodeInfo(
+                identity=self._node.identity,
+                last_seen=record.last_seen,
+                dor_service=record.dor_service,
+                rti_service=record.rti_service,
+                p2p_address=record.p2p_address.split(':'),
+                rest_address=record.rest_address.split(':') if record.rest_address else None,
+                retain_job_history=record.retain_job_history if record.retain_job_history is not None else None,
+                strict_deployment=record.strict_deployment if record.strict_deployment is not None else None
+            )
 
-    def _require_data_object(self, obj_id: str) -> DataObjectRecord:
+    def get_network(self) -> List[NodeInfo]:
+        """
+        Retrieves information about all peers known to the node.
+        """
         with self._Session() as session:
-            obj_record = session.query(DataObjectRecord).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-            return obj_record
+            return [NodeInfo(
+                identity=self.get_identity(record.iid, raise_if_unknown=True),
+                last_seen=record.last_seen,
+                dor_service=record.dor_service,
+                rti_service=record.rti_service,
+                p2p_address=record.p2p_address.split(':'),
+                rest_address=record.rest_address.split(':') if record.rest_address else None,
+                retain_job_history=record.retain_job_history if record.retain_job_history is not None else None,
+                strict_deployment=record.strict_deployment if record.strict_deployment is not None else None
+            ) for record in session.query(NodeRecord).all()]
 
-    # BEGIN: things that do NOT require synchronisation
-
-    def update_tags(self, obj_id: str, tags: list[dict[str, str]]) -> None:
-        self._require_data_object(obj_id)
+    def update_network(self, node: NodeInfo) -> None:
+        """
+        Adds information about a node to the db. If there is already information about this node in the database, the
+        db is updated accordingly.
+        """
         with self._Session() as session:
-            # update the tags
-            for tag in tags:
-                item = session.query(DataObjectTag).filter_by(obj_id=obj_id, key=tag['key']).first()
-                if item:
-                    item.value = tag['value']
+            # find all conflicting records, i.e., records of a node with a different iid but on the same P2P/REST
+            # address but different (if any).
+            p2p_address = f"{node.p2p_address[0]}:{node.p2p_address[1]}"
+            rest_address = f"{node.rest_address[0]}:{node.rest_address[1]}" if node.rest_address else None
+            conflicting_records = session.query(NodeRecord).filter(
+                (NodeRecord.iid != node.identity.id) & (
+                    (NodeRecord.p2p_address == p2p_address) |
+                    (NodeRecord.rest_address == rest_address if rest_address else False)
+                )
+            ).all()
+
+            for record in conflicting_records:
+                if record.last_seen >= node.last_seen:
+                    logger.debug(f"ignoring network node update -> record with conflicting address but more recent "
+                                 f"timestamp found: "
+                                 f"\nrecord.iid={record.iid} <> {node.identity.id}"
+                                 f"\nrecord.last_seen={record.last_seen} >= {node.last_seen}"
+                                 f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                                 f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
                 else:
-                    session.add(DataObjectTag(obj_id=obj_id, key=tag['key'], value=tag['value']))
-            session.commit()
+                    logger.debug(f"deleting record with outdated and conflicting address: "
+                                 f"\nrecord.iid={record.iid} <> {node.identity.id}"
+                                 f"\nrecord.last_seen={record.last_seen} < {node.last_seen}"
+                                 f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                                 f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
 
-    def remove_tags(self, obj_id: str, keys: list[str] = None) -> None:
-        self._require_data_object(obj_id)
-        with self._Session() as session:
-            # remove specific tags
-            if keys:
-                for key in keys:
-                    session.query(DataObjectTag).filter_by(obj_id=obj_id, key=key).delete()
+                    session.query(NodeRecord).filter_by(iid=record.iid).delete()
+                    session.commit()
 
-            # remove all tags
-            else:
-                session.query(DataObjectTag).filter_by(obj_id=obj_id).delete()
-
-            session.commit()
-
-    def get_statistics(self) -> dict:
-        with self._Session() as session:
-            result = {
-                'data_types': [value[0] for value in session.query(DataObjectRecord.data_type).distinct()],
-                'data_formats': [value[0] for value in session.query(DataObjectRecord.data_format).distinct()],
-                'tag_keys': sorted([value[0] for value in session.query(DataObjectTag.key).distinct()])
-            }
-
-            return result
-
-    def find_data_objects(self, patterns: list[str], owner_iid: str = None,
-                          data_type: str = None, data_format: str = None,
-                          c_hashes: list[str] = None) -> list[dict]:
-        with self._Session() as session:
-            # build the query and get the results
-            q = session.query(DataObjectRecord).filter()
-
-            # first, apply the search constraints (if any)
-            if owner_iid is not None:
-                q = q.filter(DataObjectRecord.owner_iid == owner_iid)
-
-            if data_type is not None:
-                q = q.filter(DataObjectRecord.data_type == data_type)
-
-            if data_format is not None:
-                q = q.filter(DataObjectRecord.data_format == data_format)
-
-            if c_hashes is not None:
-                q = q.filter(DataObjectRecord.c_hash.in_(c_hashes))
-
-            object_records: list[DataObjectRecord] = q.all()
-
-            # second, apply the search patterns (if any)
-            result = []
-            for obj_record in object_records:
-                # prepare a tags array for the result dict
-                tag_records = session.query(DataObjectTag).filter_by(obj_id=obj_record.obj_id).all()
-                tags = [{'key': tag.key, 'value': tag.value} for tag in tag_records]
-
-                # flatten all tags (keys values) into a single string for search purposes
-                flattened = ' '.join(f"{tag['key']} {tag['value']}" for tag in tags)
-
-                # add meta information to make them searchable
-                flattened += f" {obj_record.data_type}"
-                flattened += f" {obj_record.data_format}"
-
-                # check if any of the patterns is a substring the flattened string.
-                # if we don't have patterns then always add the object.
-                if patterns is None or any(pattern in flattened for pattern in patterns):
-                    access = session.query(DataObjectAccess).filter_by(obj_id=obj_record.obj_id).all()
-
-                    obj_record_dict = obj_record.as_dict()
-                    obj_record_dict["tags"] = tags
-                    obj_record_dict["access"] = [record.key_iid for record in access]
-
-                    result.append(obj_record_dict)
-
-            return result
-
-    def has_access(self, obj_id: str, identity: Identity) -> bool:
-        self._require_data_object(obj_id)
-        with self._Session() as session:
-            return session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id).first() is not None
-
-    def grant_access(self, obj_id: str, identity: Identity) -> None:
-        self._require_data_object(obj_id)
-        with self._Session() as session:
-            # grant access (if it hasn't already been granted)
-            item = session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id).first()
-            if item is None:
-                session.add(DataObjectAccess(obj_id=obj_id, key_iid=identity.id))
+            # do we already have a record for this node? only update if either the record does not exist yet OR if
+            # the information provided is more recent.
+            record = session.query(NodeRecord).filter_by(iid=node.identity.id).first()
+            if record is None:
+                session.add(NodeRecord(iid=node.identity.id, last_seen=node.last_seen,
+                                       dor_service=node.dor_service, rti_service=node.rti_service,
+                                       p2p_address=p2p_address, rest_address=rest_address,
+                                       retain_job_history=node.retain_job_history,
+                                       strict_deployment=node.strict_deployment))
                 session.commit()
 
-    def revoke_access(self, obj_id: str, identity: Identity = None) -> list[str]:
-        self._require_data_object(obj_id)
+            elif node.last_seen > record.last_seen:
+                record.last_seen = node.last_seen
+                record.dor_service = node.dor_service
+                record.rti_service = node.rti_service
+                record.p2p_address = p2p_address
+                record.rest_address = rest_address
+                record.retain_job_history = node.retain_job_history
+                record.strict_deployment = node.strict_deployment
+                session.commit()
+
+            else:
+                logger.debug(f"ignoring network node update -> more recent record found: "
+                             f"\nrecord.iid={record.iid} <> {node.identity.id}"
+                             f"\nrecord.last_seen={record.last_seen} >= {node.last_seen}"
+                             f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
+                             f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
+
+    def remove_node_by_id(self, identity: Identity) -> None:
+        """
+        Removes a node from the db, given its identity.
+        """
         with self._Session() as session:
-            # query for all or a specific identity
-            q = session.query(DataObjectAccess).filter_by(obj_id=obj_id, key_iid=identity.id) if identity else \
-                session.query(DataObjectAccess).filter_by(obj_id=obj_id)
-
-            # determine the ids of identities that have their access revoked
-            result = [record.key_iid for record in q.all()]
-
-            # revoke access
-            q.delete()
+            session.query(NodeRecord).filter_by(iid=identity.id).delete()
             session.commit()
 
-            return result
-
-    def add_data_object(self, c_hash: str, r_hash: Optional[str], data_type: str, data_format: str, created_by: str,
-                        gpp: Optional[dict], owner: Identity, access_restricted: bool, content_encrypted: bool) -> dict:
-
+    def remove_node_by_address(self, address: (str, int)) -> None:
+        """
+        Removes a node from the db, given its address (host, port).
+        """
         with self._Session() as session:
-            created_t = get_timestamp_now()
-
-            # determine object id
-            gpp_hash = hash_json_object(gpp).hex() if gpp else ''
-            obj_id = hash_string_object(f"{c_hash}{r_hash}{data_type}{data_format}{created_by}{created_t}{gpp_hash}").hex()
-
-            # add a new data object record
-            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash, r_hash=r_hash,
-                                         data_type=data_type, data_format=data_format,
-                                         created_by=created_by, created_t=created_t,
-                                         gpp=json.dumps(gpp) if gpp else None,
-                                         owner_iid=owner.id, access_restricted=access_restricted,
-                                         content_encrypted=content_encrypted))
-
-            # grant access permission to the owner
-            session.add(DataObjectAccess(obj_id=obj_id, key_iid=owner.id))
-
+            session.query(NodeRecord).filter_by(p2p_address=f"{address[0]}:{address[1]}").delete()
             session.commit()
 
-        return self.get_object_by_id(obj_id)
-
-    def remove_data_object(self, obj_id: str) -> dict:
-        self._require_data_object(obj_id)
+    def reset_network(self) -> None:
+        """
+        Resets the db, i.e., removes the information of all nodes in the db.
+        """
         with self._Session() as session:
-            record = self.get_object_by_id(obj_id)
-
-            # remove the record, all tags and all access
-            session.query(DataObjectRecord).filter_by(obj_id=obj_id).delete()
-            session.query(DataObjectTag).filter_by(obj_id=obj_id).delete()
-            session.query(DataObjectAccess).filter_by(obj_id=obj_id).delete()
+            session.query(NodeRecord).filter(NodeRecord.iid != self._node.identity.id).delete()
             session.commit()
 
-            return record
-
-    def get_object_by_id(self, obj_id: str) -> Optional[dict]:
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                return None
-
-            result = record.as_dict()
-
-            # get object recipe
-            r_hash = result["r_hash"]
-            if r_hash is not None:
-                c_hash = result["c_hash"]
-                recipe = session.query(DataObjectRecipe).get((c_hash, r_hash))
-                result["recipe"] = json.loads(recipe.recipe)
-
-            # get all tags
-            tags = session.query(DataObjectTag).filter_by(obj_id=obj_id).all()
-            result["tags"] = [{'key': tag.key, 'value': tag.value} for tag in tags]
-
-            # get list of all identities that have access
-            access = session.query(DataObjectAccess).filter_by(obj_id=obj_id).all()
-            result["access"] = [record.key_iid for record in access]
-
-            return result
-
-    def get_objects_by_content_hash(self, c_hash: str) -> list[dict]:
-        with self._Session() as session:
-            records = session.query(DataObjectRecord).filter_by(c_hash=c_hash).all()
-            return [self.get_object_by_id(record.obj_id) for record in records]
-
-    def get_owner(self, obj_id: str) -> Identity:
-        record = self._require_data_object(obj_id)
-        return self.get_identity(record.owner_iid)
-
-    def update_ownership(self, obj_id: str, new_owner: Identity) -> None:
-        self._require_data_object(obj_id)
-        with self._Session() as session:
-            # does the data object exist?
-            obj_record = session.query(DataObjectRecord).get(obj_id)
-            if obj_record is None:
-                raise DataObjectNotFoundError({
-                    'obj_id': obj_id
-                })
-
-            # transfer of ownership between same identities? --> nothing to do here.
-            prev_owner = self.get_identity(obj_record.owner_iid)
-            if prev_owner.id == new_owner.id:
-                return
-
-            # update ownership
-            obj_record.owner_iid = new_owner.id
-            session.commit()
-
-        # revoke all access to this data object
-        self.revoke_access(obj_id)
-
-        # grant access to the new owner
-        self.grant_access(obj_id, new_owner)
-
-    # END: things that do NOT require synchronisation
-
-    # BEGIN: things that DO require synchronisation
-
-    def get_identity(self, iid: str = None) -> Optional[Identity]:
+    def get_identity(self, iid: str, raise_if_unknown: bool = False) -> Optional[Identity]:
+        """
+        Retrieves the identity given its id (if the node db knows about it).
+        """
         with self._Session() as session:
             record = session.query(IdentityRecord).filter_by(iid=iid).first()
-            return Identity(record.iid, record.name, record.email,
-                            ECKeyPair.from_public_key_string(record.s_public_key) if record.s_public_key else None,
-                            RSAKeyPair.from_public_key_string(record.e_public_key) if record.e_public_key else None,
-                            record.nonce, record.signature) if record else None
 
-    def get_all_identities(self) -> dict[str, Identity]:
+            if raise_if_unknown and record is None:
+                raise IdentityNotFoundError(iid)
+
+            return Identity(
+                id=record.iid,
+                name=record.name,
+                email=record.email,
+                s_public_key=record.s_public_key,
+                e_public_key=record.e_public_key,
+                nonce=record.nonce,
+                signature=record.signature,
+                last_seen=record.last_seen
+            ) if record else None
+
+    def get_identities(self) -> List[Identity]:
+        """
+        Retrieves a list of all identities known to the node.
+        """
         with self._Session() as session:
             records = session.query(IdentityRecord).all()
-            return {record.iid: Identity(record.iid, record.name, record.email,
-                                         ECKeyPair.from_public_key_string(record.s_public_key),
-                                         RSAKeyPair.from_public_key_string(record.e_public_key),
-                                         record.nonce, record.signature) for record in records}
+            return [
+                Identity(
+                    id=record.iid,
+                    name=record.name,
+                    email=record.email,
+                    s_public_key=record.s_public_key,
+                    e_public_key=record.e_public_key,
+                    nonce=record.nonce,
+                    signature=record.signature,
+                    last_seen=record.last_seen
+                ) for record in records
+            ]
 
-    def update_identity(self, identity: Union[Identity, dict]) -> None:
-        # deserialise the identity (if necessary) and verify its authenticity
-        identity = Identity.deserialise(identity) if not isinstance(identity, Identity) else identity
-        if not identity.is_authentic():
+    def update_identity(self, identity: Identity) -> Identity:
+        """
+        Updates an existing identity or adds a new one in case an identity with the id does not exist yet.
+        """
+        # verify the integrity of the identity
+        if not identity.verify_integrity():
             raise InvalidIdentityError({
                 'identity': identity
             })
@@ -444,279 +248,55 @@ class NodeDBService:
         # update the db
         with self._Session() as session:
             # do we have the identity already on record?
-            # only perform update if either the record does not exist yet OR if the information provided is valid
-            # and more recent, i.e., if the nonce is greater than the one on record.
             record = session.query(IdentityRecord).filter_by(iid=identity.id).first()
             if record is None:
                 session.add(IdentityRecord(iid=identity.id, name=identity.name, email=identity.email,
-                                           s_public_key=identity.s_public_key_as_string(),
-                                           e_public_key=identity.e_public_key_as_string(),
-                                           nonce=identity.nonce, signature=identity.signature))
+                                           s_public_key=identity.s_public_key, e_public_key=identity.e_public_key,
+                                           nonce=identity.nonce, signature=identity.signature,
+                                           last_seen=get_timestamp_now()))
                 session.commit()
 
+            # only perform update if either the record does not exist yet OR if the information provided is valid
+            # and more recent, i.e., if the nonce is greater than the one on record.
             elif identity.nonce > record.nonce:
                 record.name = identity.name
                 record.email = identity.email
                 record.nonce = identity.nonce
-                record.s_key = identity.s_public_key_as_string()
-                record.e_key = identity.e_public_key_as_string()
+                record.s_key = identity.s_public_key
+                record.e_key = identity.e_public_key
                 record.signature = identity.signature
+                record.last_seen = get_timestamp_now()
                 session.commit()
 
             else:
                 logger.debug("Ignore identity update as nonce on record is more recent.")
 
-    def update_network(self, node_iid: str, last_seen: int, dor_service: bool, rti_service: bool,
-                       p2p_address: (str, int), rest_address: (str, int) = None) -> None:
+        return self.get_identity(identity.id, raise_if_unknown=True)
+
+    def get_snapshot(self, exclude: List[str] = None) -> NodeDBSnapshot:
+        """
+        Retrieves a snapshot of the contents stored in the db.
+        """
+        # get all nodes we know of (minus the ones to exclude)
+        nodes = []
+        for node in self.get_network():
+            if not exclude or node.identity.id not in exclude:
+                nodes.append(node)
+
+        # get all identities we know of (minus the ones to exclude)
+        identities = []
+        for identity in self.get_identities():
+            if not exclude or identity.id not in exclude:
+                identities.append(identity)
+
+        return NodeDBSnapshot(update_identity=identities, update_network=nodes)
+
+    def touch_identity(self, identity: Identity) -> None:
         with self._Session() as session:
-            # TRACE: usefule for debugging
-            # network = session.query(NetworkNode).all()
-            # for record in network:
-            #     print(f"R: {record.iid} {record.p2p_address} {record.rest_address} {record.last_seen}")
-            # print(f"+: {node_iid} {p2p_address} {rest_address} {last_seen}")
-            # print()
-
-            # do we have conflicting records (i.e., records of a node with a different iid but on the same P2P/REST
-            # address but different)?
-            conflicting_records = session.query(NetworkNode).filter(
-                (NetworkNode.iid != node_iid) & (
-                        (NetworkNode.p2p_address == f"{p2p_address[0]}:{p2p_address[1]}") |
-                        ((
-                                 NetworkNode.rest_address == f"{rest_address[0]}:{rest_address[1]}") if rest_address else False)
-                )
-            ).all()
-
-            for record in conflicting_records:
-                if record.last_seen > last_seen:
-                    logger.debug(f"ignoring network node update -> record with conflicting address but more recent "
-                                 f"timestamp found: "
-                                 f"\nrecord.iid={record.iid} <> {node_iid}"
-                                 f"\nrecord.last_seen={record.last_seen} > {last_seen}"
-                                 f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
-                                 f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
-                    return
-
-            # the pending update is more recent than any of the conflicting records -> delete the outdated conflicts
-            for record in conflicting_records:
-                session.query(NetworkNode).filter_by(iid=record.iid).delete()
-                session.commit()
-
-            # do we already have a record for this node? only update if either the record does not exist yet OR if
-            # the information provided is more recent.
-            record = session.query(NetworkNode).filter_by(iid=node_iid).first()
+            # do we have the identity already on record?
+            record = session.query(IdentityRecord).get(identity.id)
             if record is None:
-                session.add(NetworkNode(iid=node_iid, last_seen=last_seen,
-                                        dor_service=dor_service, rti_service=rti_service,
-                                        p2p_address=f"{p2p_address[0]}:{p2p_address[1]}",
-                                        rest_address=f"{rest_address[0]}:{rest_address[1]}" if rest_address else None))
-                session.commit()
+                raise IdentityNotFoundError(identity.id)
 
-            elif last_seen > record.last_seen:
-                record.last_seen = last_seen
-                record.dor_service = dor_service
-                record.rti_service = rti_service
-                record.p2p_address = f"{p2p_address[0]}:{p2p_address[1]}"
-                record.rest_address = f"{rest_address[0]}:{rest_address[1]}" if rest_address else None
-                session.commit()
-
-            else:
-                logger.debug(f"ignoring network node update -> more recent record found: "
-                             f"\nrecord.iid={record.iid} <> {node_iid}"
-                             f"\nrecord.last_seen={record.last_seen} > {last_seen}"
-                             f"\nrecord.p2p_address={record.p2p_address} <> {p2p_address}"
-                             f"\nrecord.rest_address={record.rest_address} <> {rest_address}")
-                return
-
-    def remove_network(self, node_iid: str = None, node_address: (str, int) = None) -> None:
-        with self._Session() as session:
-            if node_iid:
-                record = session.query(NetworkNode).get(node_iid)
-                if record is not None:
-                    session.query(NetworkNode).filter_by(iid=node_iid).delete()
-                    session.commit()
-
-            elif node_address:
-                session.query(NetworkNode).filter_by(p2p_address=f"{node_address[0]}:{node_address[1]}").delete()
-                session.commit()
-
-    def resolve_network(self, p2p_address: (str, int)) -> Optional[str]:
-        with self._Session() as session:
-            record = session.query(NetworkNode).filter_by(p2p_address=f"{p2p_address[0]}:{p2p_address[1]}").first()
-            return record.iid if record else None
-
-    def get_network(self, node_iid: str) -> Optional[NetworkNode]:
-        with self._Session() as session:
-            record: NetworkNode = session.query(NetworkNode).get(node_iid)
-            return record
-
-    def get_network_all(self) -> list[NetworkNode]:
-        with self._Session() as session:
-            return session.query(NetworkNode).all()
-
-    def add_recipe(self, c_hash: str, recipe: dict) -> str:
-        with self._Session() as session:
-            # convert recipe into string
-            recipe = canonicaljson.encode_canonical_json(recipe)
-            recipe = recipe.decode('utf-8')
-
-            # calculate recipe hash
-            r_hash = hash_string_object(recipe).hex()
-
-            # do we already have this recipe for the given content hash?
-            if r_hash in self.get_recipe(c_hash):
-                logger.info(f"recipe {r_hash} for content {c_hash} already exists -> not adding")
-            else:
-                # add the provenance record
-                record = DataObjectRecipe(c_hash=c_hash, r_hash=r_hash, recipe=recipe)
-                session.add(record)
-                session.commit()
-
-        return r_hash
-
-    def get_recipe(self, c_hash: str) -> dict[str, dict]:
-        with self._Session() as session:
-            return {record.r_hash: json.loads(record.recipe) for record in
-                    session.query(DataObjectRecipe).filter_by(c_hash=c_hash).all()}
-
-    def get_provenance(self, obj_id: str) -> dict:
-        # the data object of interest to serve as starting point for the provenance lookup
-        self._require_data_object(obj_id)
-        obj = self.get_object_by_id(obj_id)
-        c_hash0 = obj['c_hash']
-
-        # create lists of nodes (obj and procs) and edges
-        content_nodes = []
-        proc_nodes = []
-        steps = []
-
-        cache = {}
-        gpp_cache = {}
-
-        # first: collect all recipes in the history of this data object
-        all_recipes = {}
-        pending: list[dict] = [*self.get_recipe(c_hash0).values()]
-        while len(pending) > 0:
-            recipe = pending.pop(0)
-
-            # TODO: what is the correct behaviour? if multiple recipes produce a data object with c_hash then
-            #  whichever recipe processed last in the loop would the one that remains set in the all_recipes
-            #  dict. that's not wrong. because all we need is ONE recipe that can created the data object.
-            #  however, it's not entirely right either. because the same content (i.e., same c_hash) can be
-            #  produced by different processors that would produce a data object with different data types and
-            #  formats. that would mean that the resulting data object (despite having the same c_hash) to be
-            #  incompatible as input for a processor as part of this provenance history. one solution could
-            #  be to filter recipes by ones that produce the correct data type/format.
-            all_recipes[recipe['product']['c_hash']] = recipe
-            # print(json.dumps(recipe, indent=2))
-
-            # handle the processor
-            gpp_hash = hash_json_object(recipe['processor']['gpp']).hex()
-            gpp_cache[recipe['product']['c_hash']] = gpp_hash
-            if gpp_hash not in cache:
-                node = {
-                    'gpp_hash': gpp_hash,
-                    'gpp': recipe['processor']['gpp']
-                }
-                cache[gpp_hash] = node
-                proc_nodes.append(node)
-                # print(json.dumps(node, indent=2))
-
-            # handle inputs and add more recipes (if any)
-            for obj in recipe['input']:
-                pending += [*self.get_recipe(obj['c_hash']).values()]
-
-        # second: collect all data object nodes that are 'derived'
-        for recipe in all_recipes.values():
-            node = {
-                'c_hash': recipe['product']['c_hash'],
-                'type': 'derived',
-                'data_type': recipe['product']['data_type'],
-                'data_format': recipe['product']['data_format']
-            }
-            cache[node['c_hash']] = node
-            content_nodes.append(node)
-            # print(json.dumps(node, indent=2))
-
-        # third: collect all the data object nodes that are 'original'
-        for recipe in all_recipes.values():
-            for obj in recipe['input']:
-                if obj['c_hash'] not in cache:
-                    node = {
-                        'c_hash': obj['c_hash'],
-                        'type': 'original',
-                        'data_type': obj['data_type'],
-                        'data_format': obj['data_format']
-                    }
-                    cache[node['c_hash']] = node
-                    content_nodes.append(node)
-                    # print(json.dumps(node, indent=2))
-
-        # fourth: determine all the individual steps
-        for recipe in all_recipes.values():
-            c_hash = recipe['product']['c_hash']
-            consume = [o['c_hash'] for o in all_recipes[c_hash]['input']]
-            step = {
-                'consume': consume,
-                'processor': gpp_cache[c_hash],
-                'produce': c_hash
-            }
-            steps.append(step)
-
-        return {
-            'content_nodes': content_nodes,
-            'proc_nodes': proc_nodes,
-            'steps': steps,
-        }
-
-    # END: things that DO require synchronisation
-
-    def create_sync_snapshot(self, exclude_self: bool = False) -> dict:
-        identity_items = []
-        network_items = []
-        recipe_items = []
-        with self._Session() as session:
-            # add identity records
-            for item in session.query(IdentityRecord).all():
-                if exclude_self and item.iid == self._node.identity.id:
-                    continue
-
-                identity_items.append({
-                    'identity': {
-                        'iid': item.iid,
-                        'name': item.name,
-                        'email': item.email,
-                        'nonce': item.nonce,
-                        's_public_key': item.s_public_key,
-                        'e_public_key': item.e_public_key,
-                        'signature': item.signature
-                    }
-                })
-
-            # add network records
-            for item in session.query(NetworkNode).all():
-                if exclude_self and item.iid == self._node.identity.id:
-                    continue
-
-                p2p_address = item.p2p_address.split(':')
-                rest_address = item.rest_address.split(':') if item.rest_address else None
-                network_items.append({
-                    'node_iid': item.iid,
-                    'last_seen': item.last_seen,
-                    'dor_service': item.dor_service,
-                    'rti_service': item.rti_service,
-                    'p2p_address': [p2p_address[0], int(p2p_address[1])],
-                    'rest_address': [rest_address[0], int(rest_address[1])] if rest_address else None
-                })
-
-            # add recipe records
-            for item in session.query(DataObjectRecipe).all():
-                recipe_items.append({
-                    'c_hash': item.c_hash,
-                    'recipe': json.loads(item.recipe)
-                })
-
-        return {
-            'update_identity': identity_items,
-            'update_network': network_items,
-            'add_recipe': recipe_items
-        }
+            record.last_accessed = get_timestamp_now()
+            session.commit()

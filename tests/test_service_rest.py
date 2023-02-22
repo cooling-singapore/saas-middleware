@@ -1,15 +1,17 @@
-import time
-import unittest
+import random
+import string
 import logging
 
+import pytest
 from pydantic import BaseModel
-from saascore.api.sdk.helpers import create_ok_response, sign_authorisation_token
-from saascore.log import Logging
 
-from saas.rest.blueprint import SaaSBlueprint
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
+from saas.rest.auth import VerifyAuthorisation
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rest.proxy import EndpointProxy
-from saas.rest.request_manager import request_manager, verify_authorisation_token
-from tests.base_testcase import TestCaseBase
+from saas.rest.schemas import EndpointDefinition
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -17,82 +19,223 @@ logger = Logging.get(__name__)
 endpoint_prefix = "/api/v1/test"
 
 
-class TestBlueprint(SaaSBlueprint):
-    class TestRequest(BaseModel):
-        __root__: dict
+class TestResponse(BaseModel):
+    __test__ = False
 
-    class TestResponse(BaseModel):
-        message: str
+    key: str
+    value: str
+
+
+class TestDeleteRequest(BaseModel):
+    __test__ = False
+
+    key: str
+
+
+class TestException(SaaSRuntimeException):
+    __test__ = False
+
+    pass
+
+
+class TestRESTService:
+    __test__ = False
 
     def __init__(self):
-        super().__init__('test', __name__, endpoint_prefix)
+        self._objects = {}
 
-        self.add_rule('info/<value>', self.get_info, ['GET'])
+    def endpoints(self) -> list:
+        return [
+            EndpointDefinition('POST', endpoint_prefix, 'create/{value}',
+                               self.rest_post, TestResponse, None),
 
-    @request_manager.verify_request_body(TestRequest)
-    @request_manager.handle_request(TestResponse)
-    def get_info(self, value: str):
-        body = request_manager.get_request_variable('body')
+            EndpointDefinition('GET', endpoint_prefix, 'read/{key}',
+                               self.rest_get, TestResponse, None),
 
-        return create_ok_response({
-            'message': f"{value} {body['value']}"
+            EndpointDefinition('PUT', endpoint_prefix, 'update/{key}/{value}',
+                               self.rest_put, TestResponse, None),
+
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete/{key}',
+                               self.rest_delete, TestResponse, None),
+
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete_body',
+                               self.rest_delete_with_body, TestResponse, None),
+
+            EndpointDefinition('DELETE', endpoint_prefix, 'delete_auth',
+                               self.rest_delete_with_body, TestResponse, [VerifyAuthorisation])
+        ]
+
+    def rest_post(self, value: str) -> TestResponse:
+        key = None
+        while key is None or key in self._objects:
+            key = ''.join(random.choice(string.ascii_lowercase) for _ in range(8))
+
+        self._objects[key] = value
+        return TestResponse(key=key, value=self._objects[key])
+
+    def rest_get(self, key: str) -> TestResponse:
+        if key in self._objects:
+            return TestResponse(key=key, value=self._objects[key])
+
+        raise TestException("obj does not exist", details={
+            'key': key
+        })
+
+    def rest_put(self, key: str, value: str) -> TestResponse:
+        if key in self._objects:
+            self._objects[key] = value
+            return TestResponse(key=key, value=self._objects[key])
+
+        raise TestException("obj does not exist", details={
+            'key': key
+        })
+
+    def rest_delete(self, key: str) -> TestResponse:
+        if key in self._objects:
+            value = self._objects.pop(key)
+            return TestResponse(key=key, value=value)
+
+        raise TestException("obj does not exist", details={
+            'key': key
+        })
+
+    def rest_delete_with_body(self, r: TestDeleteRequest) -> TestResponse:
+        if r.key in self._objects:
+            value = self._objects.pop(r.key)
+            return TestResponse(key=r.key, value=value)
+
+        raise TestException("obj does not exist", details={
+            'key': r.key
         })
 
 
 class TestProxy(EndpointProxy):
+    __test__ = False
+
     def __init__(self, remote_address):
         EndpointProxy.__init__(self, endpoint_prefix, remote_address)
 
-    def get_info(self, value: str):
-        return self.get(f"/info/{value}", body={'value': 'world'})
+    def create(self, value: str) -> TestResponse:
+        result = self.post(f"/create/{value}")
+        return TestResponse.parse_obj(result)
+
+    def read(self, key: str) -> TestResponse:
+        result = self.get(f"/read/{key}")
+        return TestResponse.parse_obj(result)
+
+    def update(self, key: str, value: str) -> TestResponse:
+        result = self.put(f"/update/{key}/{value}")
+        return TestResponse.parse_obj(result)
+
+    def remove(self, key: str) -> TestResponse:
+        result = self.delete(f"/delete/{key}")
+        return TestResponse.parse_obj(result)
+
+    def remove_with_body(self, key: str) -> TestResponse:
+        result = self.delete(f"/delete_body", body={'key': key})
+        return TestResponse.parse_obj(result)
+
+    def remove_with_auth(self, key: str, authority: Keystore = None) -> TestResponse:
+        result = self.delete(f"/delete_auth", body={'key': key}, with_authorisation_by=authority)
+        return TestResponse.parse_obj(result)
 
 
-class RESTServiceTestCase(unittest.TestCase, TestCaseBase):
-    def __init__(self, method_name='runTest'):
-        unittest.TestCase.__init__(self, method_name)
-        TestCaseBase.__init__(self)
+@pytest.fixture()
+def rest_node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True)
+    rest_service = TestRESTService()
 
-    def setUp(self):
-        self.initialise()
-
-    def tearDown(self):
-        self.cleanup()
-
-    def test_simple_get(self):
-        node = self.get_node(f"node_0", enable_rest=True)
-        proxy = TestProxy(node.rest.address())
-
-        bp = TestBlueprint()
-        node.rest.add(bp.generate_blueprint())
-
-        result = proxy.get_info('hello')
-        assert(result['message'] == 'hello world')
-
-    def test_authorisation(self):
-        url = "/repository/345345345lk3j45345ef3f34r3984r"
-        body = {
-            'a': 'asdasdas',
-            'f': 2343
-        }
-
-        keystore = self.create_keystores(1)[0]
-
-        # case 1a: no body, successful
-        signature = sign_authorisation_token(keystore, url)
-        assert verify_authorisation_token(keystore.identity, signature, url)
-
-        # case 1b: no body, unsuccessful
-        time.sleep(11)
-        assert not verify_authorisation_token(keystore.identity, signature, url)
-
-        # case 2a: body, successful
-        signature = sign_authorisation_token(keystore, url, body)
-        assert verify_authorisation_token(keystore.identity, signature, url, body)
-
-        # case 2b: body, unsuccessful
-        time.sleep(11)
-        assert not verify_authorisation_token(keystore.identity, signature, url, body)
+    _node.rest.add(rest_service.endpoints())
+    return _node
 
 
-if __name__ == '__main__':
-    unittest.main()
+@pytest.fixture()
+def rest_test_proxy(rest_node):
+    proxy = TestProxy(rest_node.rest.address())
+    return proxy
+
+
+def test_create_read(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+    result = rest_test_proxy.read(result.key)
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+
+def test_update_ok(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    result = rest_test_proxy.update(key, 'hello new world')
+    assert(result is not None)
+    assert(result.value == 'hello new world')
+
+
+def test_update_fails(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.update('invalid', 'hello new world')
+
+
+def test_delete_ok(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    result = rest_test_proxy.remove(key)
+    assert(result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)
+
+
+def test_delete_fails(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    assert(result is not None)
+    assert(result.value == 'hello world')
+    key = result.key
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.remove('invalid_key')
+
+    rest_test_proxy.read(key)
+
+
+def test_delete_with_body(rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    key = result.key
+
+    result = rest_test_proxy.remove_with_body(key)
+    assert(result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)
+
+
+def test_delete_with_auth(test_context, rest_node, rest_test_proxy):
+    result = rest_test_proxy.create('hello world')
+    key = result.key
+
+    good_authority = rest_node.keystore
+    bad_authority = test_context.create_keystores(1)[0]
+
+    with pytest.raises(UnsuccessfulRequestError) as e:
+        # this should fail because the 'bad' authority is not known to the node
+        rest_test_proxy.remove_with_auth(key, authority=bad_authority)
+    assert e.value.details['reason'] == 'unknown identity'
+
+    # this should succeed because the 'good' authority is known to the node
+    result = rest_test_proxy.remove_with_auth(key, authority=good_authority)
+    assert (result is not None)
+
+    with pytest.raises(UnsuccessfulRequestError):
+        rest_test_proxy.read(key)

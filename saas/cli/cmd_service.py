@@ -1,9 +1,11 @@
 import os
+import sys
 
-from saascore.log import Logging
+from InquirerPy.base import Choice
 
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
-    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore
+    default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore, extract_address
+from saas.core.logging import Logging
 from saas.node import Node
 
 logger = Logging.get('cli.service')
@@ -16,7 +18,9 @@ class Service(CLICommand):
     default_p2p_address = '127.0.0.1:4001'
     default_boot_node_address = '127.0.0.1:4001'
     default_service = 'full'
-    default_retain_job_history = True
+    default_retain_job_history = False
+    default_strict_deployment = True
+    default_bind_all_address = False
 
     def __init__(self):
         super().__init__('service', 'start a node as service provider', arguments=[
@@ -38,7 +42,13 @@ class Service(CLICommand):
             Argument('--retain-job-history', dest="retain-job-history", action='store_const', const=True,
                      help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default "
                           f"behaviour is to delete information of completed jobs). This flag should only be used for "
-                          f"debug/testing purposes.")
+                          f"debug/testing purposes."),
+            Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
+                     help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
+                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
+            Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
+                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the "
+                          f"machine i.e. 0.0.0.0 (useful for docker)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -49,6 +59,8 @@ class Service(CLICommand):
             default_if_missing(args, 'boot-node', self.default_boot_node_address)
             default_if_missing(args, 'type', self.default_service)
             default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
+            default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
+            default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
 
         else:
             prompt_if_missing(args, 'datastore', prompt_for_string,
@@ -63,15 +75,22 @@ class Service(CLICommand):
             prompt_if_missing(args, 'boot-node', prompt_for_string,
                               message="Enter address for boot node:",
                               default=self.default_boot_node_address)
-            prompt_if_missing(args, 'type', prompt_for_selection, items=[
-                {'type': 'full', 'label': 'Full node (i.e., DOR + RTI services)'},
-                {'type': 'storage', 'label': 'Storage node (i.e., DOR service only)'},
-                {'type': 'execution', 'label': 'Execution node (i.e., RTI service only)'}
-            ], message="Select the type of service:")
+
+            if args['type'] is None:
+                args['type'] = prompt_for_selection([
+                    Choice('full', 'Full node (i.e., DOR + RTI services)'),
+                    Choice('storage', 'Storage node (i.e., DOR service only)'),
+                    Choice('execution', 'Execution node (i.e., RTI service only)')
+                ], "Select the type of service:")
 
             if args['type'] == 'full' or args['type'] == 'execution':
                 prompt_if_missing(args, 'retain-job-history', prompt_for_confirmation,
                                   message='Retain RTI job history?', default=False)
+                prompt_if_missing(args, 'bind-all-address', prompt_for_confirmation,
+                                  message='Bind service to all network addresses?', default=False)
+
+                prompt_if_missing(args, 'strict-deployment', prompt_for_confirmation,
+                                  message='Strict processor deployment?', default=True)
 
         keystore = load_keystore(args, ensure_publication=False)
 
@@ -79,12 +98,9 @@ class Service(CLICommand):
         initialise_storage_folder(args['datastore'], 'datastore')
 
         # extract host/ports
-        rest_service_address = args['rest-address'].split(':')
-        p2p_service_address = args['p2p-address'].split(':')
-        boot_node_address = args['boot-node'].split(':')
-        rest_service_address = (rest_service_address[0], int(rest_service_address[1]))
-        p2p_service_address = (p2p_service_address[0], int(p2p_service_address[1]))
-        boot_node_address = (boot_node_address[0], int(boot_node_address[1]))
+        rest_service_address = extract_address(args['rest-address'])
+        p2p_service_address = extract_address(args['p2p-address'])
+        boot_node_address = extract_address(args['boot-node'])
 
         # create a node instance
         node = Node.create(keystore, args['datastore'],
@@ -93,7 +109,9 @@ class Service(CLICommand):
                            boot_node_address=boot_node_address,
                            enable_dor=args['type'] == 'full' or args['type'] == 'storage',
                            enable_rti=args['type'] == 'full' or args['type'] == 'execution',
-                           retain_job_history=args['retain-job-history'])
+                           retain_job_history=args['retain-job-history'],
+                           strict_deployment=args['strict-deployment'],
+                           bind_all_address=args['bind-all-address'])
 
         # print info message
         if args['type'] == 'full' or args['type'] == 'execution':
@@ -102,10 +120,16 @@ class Service(CLICommand):
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-        # wait for confirmation to terminate the server
-        terminate = False
-        while not terminate:
-            terminate = prompt_for_confirmation("Terminate the server?", default=False)
+        try:
+            # wait for confirmation to terminate the server
+            terminate = False
+            while not terminate:
+                # only show prompt if shell is interactive
+                if sys.stdin.isatty():
+                    terminate = prompt_for_confirmation("Terminate the server?", default=False)
+        except KeyboardInterrupt:
+            print("Received stop signal")
+        finally:
+            print("Shutting down the node...")
+            node.shutdown()
 
-        print(f"Shutting down the node...")
-        node.shutdown()

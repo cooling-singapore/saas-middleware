@@ -6,18 +6,17 @@ import traceback
 from threading import Lock
 from typing import Optional
 
-from saascore.keystore.identity import Identity
-from saascore.log import Logging
-
-from saas.p2p.exceptions import P2PException, MalformedMessageError, UnsupportedProtocolError, \
-    UnexpectedMessageTypeError
-from saas.p2p.protocol import SecureMessenger, P2PProtocol, P2PMessage
+from saas.core.exceptions import SaaSRuntimeException
+from saas.core.identity import Identity
+from saas.core.logging import Logging
+from saas.p2p.exceptions import P2PException, UnsupportedProtocolError, UnexpectedMessageTypeError
+from saas.p2p.protocol import SecureMessenger, P2PProtocol
 
 logger = Logging.get('p2p.service')
 
 
 class P2PService:
-    def __init__(self, node, address: (str, int)) -> None:
+    def __init__(self, node, address: (str, int), bind_all_address: bool) -> None:
         self._mutex = Lock()
         self._node = node
         self._address = address
@@ -25,6 +24,7 @@ class P2PService:
         self._is_server_running = False
         self._is_server_stopped = True
         self._registered_protocols: dict[str, P2PProtocol] = {}
+        self._bind_all_address = bind_all_address
 
     def add(self, protocol: P2PProtocol) -> None:
         """
@@ -52,16 +52,22 @@ class P2PService:
         """
         with self._mutex:
             if not self._p2p_service_socket:
-                # create server socket
-                self._p2p_service_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self._p2p_service_socket.bind(self._address)
-                self._p2p_service_socket.listen(concurrency)
-                logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
+                try:
+                    # create server socket
+                    self._p2p_service_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    self._p2p_service_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    self._p2p_service_socket.bind(self._address if not self._bind_all_address
+                                                  else ("0.0.0.0", self._address[1]))
+                    self._p2p_service_socket.listen(concurrency)
+                    logger.info(f"[{self._node.identity.name}] p2p server initialised at address '{self._address}'")
+                except Exception as e:
+                    raise SaaSRuntimeException("P2P server socket cannot be created", details={
+                        'exception': e
+                    })
 
                 # start the server thread
                 thread = threading.Thread(target=self._handle_incoming_connections)
-                thread.setDaemon(True)
+                thread.daemon = True
                 thread.start()
 
     def stop_service(self) -> None:
@@ -115,56 +121,41 @@ class P2PService:
         logger.debug(f"[{self._node.identity.name}] begin serving client '{peer.id}'")
 
         try:
-            request = messenger.receive_request()
-
-            # check if th request is well-formed
-            required = ['request_id', 'content', 'attachment']
-            if not all(p in request for p in required):
-                raise MalformedMessageError({
-                    'request': request,
-                    'required': required
-                })
-
-            # check if th request content is well-formed
-            try:
-                content = P2PMessage(**request['content'])
-            except TypeError:
-                raise MalformedMessageError({
-                    'request_content': request['content'],
-                    'required': P2PMessage.__annotations__
-                })
+            request = messenger.receive_message()
 
             # is the protocol supported?
-            if not content.protocol in self._registered_protocols:
+            if request.protocol not in self._registered_protocols:
                 raise UnsupportedProtocolError({
-                    'request_content': request['content'],
+                    'request': request.dict(),
                     'supported': [*self._registered_protocols.keys()]
                 })
 
             # is the message type supported by the protocol?
-            protocol: P2PProtocol = self._registered_protocols[content.protocol]
-            if not protocol.supports(content.type):
+            protocol: P2PProtocol = self._registered_protocols[request.protocol]
+            if not protocol.supports(request.type):
                 raise UnexpectedMessageTypeError({
-                    'request': request,
-                    'type': content.type,
+                    'request': request.dict(),
+                    'type': request.type,
                     'protocol_name': protocol.name
                 })
 
             # let the protocol handle the message and send response back to peer (if any)
-            response = protocol.handle_message(content, peer)
+            response = protocol.handle_message(request, peer)
             if response:
-                messenger.send_response(request['request_id'], response.content, response.attachment)
+                response.sequence_id = request.sequence_id
+                messenger.send_response(response)
             else:
-                # if no response is provided, we reply with a simple 'acknowledge'
-                messenger.send_response(request['request_id'], protocol.prepare_message('acknowledge'))
+                messenger.send_null()
 
         except P2PException as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity.name}] problem encountered while handling client '{peer.id}: {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] problem encountered while handling "
+                           f"client '{peer.id}: {e}\n{trace}")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving client '{peer.id}': {e}\n{trace}")
+            logger.warning(f"[{self._node.identity.name}] unhandled exception while serving "
+                           f"client '{peer.id}': {e}\n{trace}")
 
         messenger.close()
         logger.debug(f"[{self._node.identity.name}] done serving client '{peer.id}'")

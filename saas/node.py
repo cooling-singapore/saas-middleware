@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import os
+import time
 from threading import Lock
 from typing import Optional
 
-from saascore.helpers import get_timestamp_now
-from saascore.keystore.identity import Identity
-from saascore.keystore.keystore import Keystore
-from saascore.log import Logging
-
-import saas.nodedb.protocol as nodedb_prot
-import saas.dor.protocol as dor_prot
 import saas.p2p.service as p2p_service
 import saas.dor.service as dor_service
 import saas.rest.service as rest_service
 import saas.rti.service as rti_service
-import saas.nodedb.service as nodedb_service
-import saas.dor.blueprint as dor_blueprint
-import saas.rti.blueprint as rti_blueprint
-import saas.nodedb.blueprint as nodedb_blueprint
+import saas.nodedb.service as db_service
+from saas.core.helpers import get_timestamp_now
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
+from saas.nodedb.schemas import NodeInfo
+from saas.p2p.exceptions import P2PException, BootNodeUnavailableError
 
 logger = Logging.get('node')
 
@@ -31,11 +28,11 @@ class Node:
         self._mutex = Lock()
         self._datastore_path = datastore_path
         self._keystore = keystore
-        self.db: Optional[nodedb_service.NodeDBService] = None
+        self.db: Optional[db_service.NodeDBService] = None
         self.p2p: Optional[p2p_service.P2PService] = None
         self.rest: Optional[rest_service.RESTService] = None
-        self.dor: Optional[dor_service.DataObjectRepositoryService] = None
-        self.rti: Optional[rti_service.RuntimeInfrastructureService] = None
+        self.dor: Optional[dor_service.DORService] = None
+        self.rti: Optional[rti_service.RTIService] = None
 
     @property
     def keystore(self) -> Keystore:
@@ -49,44 +46,65 @@ class Node:
     def datastore(self) -> str:
         return self._datastore_path
 
-    def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool,
+    @property
+    def info(self) -> NodeInfo:
+        return NodeInfo(
+            identity=self.identity,
+            last_seen=get_timestamp_now(),
+            dor_service=self.dor is not None,
+            rti_service=self.rti is not None,
+            p2p_address=self.p2p.address(),
+            rest_address=self.rest.address() if self.rest else None,
+            retain_job_history=self.rti.retain_job_history if self.rti else None,
+            strict_deployment=self.rti.strict_deployment if self.rti else None
+        )
+
+    def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
-                retain_job_history: bool = False) -> None:
+                retain_job_history: bool = False, strict_deployment: bool = True,
+                bind_all_address: bool = False) -> None:
         logger.info("starting P2P service.")
-        self.p2p = p2p_service.P2PService(self, server_address)
+        self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
 
-        logger.info("starting NodeDB service.")
-        protocol = nodedb_prot.NodeDBP2PProtocol(self)
-        self.db = nodedb_service.NodeDBService(self, f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}", protocol)
-        self.p2p.add(protocol)
+        endpoints = []
+        if enable_db:
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'node.db')}"
+            logger.info(f"enabling NodeDB service using {db_path}.")
+            self.db = db_service.NodeDBService(self, db_path)
+            self.p2p.add(self.db.protocol)
+            endpoints += self.db.endpoints()
 
         if enable_dor:
-            logger.info("starting DOR service.")
-            self.dor = dor_service.DataObjectRepositoryService(self)
-            self.p2p.add(dor_prot.DataObjectRepositoryP2PProtocol(self))
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'dor.db')}"
+            logger.info(f"enabling DOR service using {db_path}.")
+            self.dor = dor_service.DORService(self, db_path)
+            self.p2p.add(self.dor.protocol)
+            endpoints += self.dor.endpoints()
 
         if enable_rti:
-            logger.info("starting RTI service.")
-            self.rti = rti_service.RuntimeInfrastructureService(self, retain_job_history)
+            self.rti = rti_service.RTIService(self, retain_job_history, strict_deployment)
+            logger.info("enabling RTI service.")
+            endpoints += self.rti.endpoints()
 
         if rest_address is not None:
-            blueprint_dor = dor_blueprint.DORBlueprint(self)
-            blueprint_rti = rti_blueprint.RTIBlueprint(self)
-            blueprint_nodedb = nodedb_blueprint.NodeDBBlueprint(self)
-
             logger.info("starting REST service.")
-            self.rest = rest_service.RESTService(self, rest_address)
-            self.rest.add(blueprint_dor.generate_blueprint())
-            self.rest.add(blueprint_rti.generate_blueprint())
-            self.rest.add(blueprint_nodedb.generate_blueprint())
+            self.rest = rest_service.RESTService(self, rest_address[0], rest_address[1], bind_all_address)
             self.rest.start_service()
+            self.rest.add(endpoints)
 
         # update our node db
         self.db.update_identity(self.identity)
-        self.db.update_network(self.identity.id, get_timestamp_now(),
-                               self.dor is not None, self.rti is not None,
-                               self.p2p.address(), self.rest.address() if self.rest else None)
+        self.db.update_network(NodeInfo(
+            identity=self.identity,
+            last_seen=get_timestamp_now(),
+            dor_service=self.dor is not None,
+            rti_service=self.rti is not None,
+            p2p_address=self.p2p.address(),
+            rest_address=self.rest.address() if self.rest else None,
+            retain_job_history=retain_job_history if enable_rti else None,
+            strict_deployment=strict_deployment if enable_rti else None
+        ))
 
         # join an existing network of nodes?
         if boot_node_address:
@@ -106,10 +124,30 @@ class Node:
             self.rest.stop_service()
 
     def join_network(self, boot_node_address: (str, int)) -> None:
+        logger.info(f"joining network via boot node: {boot_node_address}")
+        connected = False
+        retries = 0
+        while not connected:
+            try:
+                boot_identity = self.db.protocol.ping_node(boot_node_address)
+                logger.info(f"boot node found: {boot_identity.name} | {boot_identity.id}")
+                connected = True
+            except P2PException as e:
+                logger.info(f"Unable to connect to boot node: {boot_node_address}")
+                retries += 1
+                if retries == 5:
+                    logger.info("Retry stopped")
+                    raise BootNodeUnavailableError({
+                        "boot_node_address": boot_node_address
+                    }) from e
+                logger.info("Retry joining network")
+                time.sleep(2)
+
         self.db.protocol.perform_join(boot_node_address)
+        logger.info(f"Nodes found in network: {[n.p2p_address for n in self.db.get_network()]}")
 
     def leave_network(self) -> None:
-        self.db.protocol.broadcast_leave()
+        self.db.protocol.perform_leave()
 
     def update_identity(self, name: str = None, email: str = None, propagate: bool = True) -> Identity:
         with self._mutex:
@@ -121,20 +159,21 @@ class Node:
 
             # propagate only if flag is set
             if propagate:
-                self.db.protocol.broadcast_update('update_identity', {
-                    'identity': identity.serialise()
-                })
+                self.db.protocol.broadcast_identity_update(identity)
 
             return identity
 
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False, retain_job_history=False) -> Node:
+               enable_dor=False, enable_rti=False, retain_job_history=False, strict_deployment=True,
+               bind_all_address=False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address,
-                     retain_job_history=retain_job_history)
+                     retain_job_history=retain_job_history,
+                     strict_deployment=strict_deployment,
+                     bind_all_address=bind_all_address)
 
         return node

@@ -1,24 +1,25 @@
-from saascore.api.sdk.proxies import NodeDBProxy
-from saascore.log import Logging
+import datetime
+
 from tabulate import tabulate
 
-from saas.cli.helpers import CLICommand, prompt_for_string, prompt_if_missing
+from saas.cli.helpers import CLICommand, prompt_for_string, prompt_if_missing, extract_address
+from saas.core.logging import Logging
+from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.network')
 
 
-class NetworkShow(CLICommand):
+class NetworkList(CLICommand):
     def __init__(self) -> None:
-        super().__init__('show', 'shows the known nodes in the network', arguments=[])
+        super().__init__('show', 'retrieves a list of all known nodes in the network', arguments=[])
 
     def execute(self, args: dict) -> None:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
 
-        db = NodeDBProxy(args['address'].split(':'))
+        db = NodeDBProxy(extract_address(args['address']))
         network = db.get_network()
-
         print(f"Found {len(network)} nodes in the network:")
 
         # headers
@@ -28,13 +29,14 @@ class NetworkShow(CLICommand):
         ]
 
         # list
-        lines += [
-            [node['iid'],
-             'Yes' if node['dor_service'] else 'No',
-             'Yes' if node['rti_service'] else 'No',
-             node['rest_address'],
-             node['p2p_address'],
-             node['last_seen']] for node in network
-        ]
+        for node in network:
+            lines.append([
+                node.identity.id,
+                'Yes' if node.dor_service else 'No',
+                'Yes' if node.rti_service else 'No',
+                f"{node.rest_address[0]}:{node.rest_address[1]}" if node.rest_address else '-',
+                f"{node.p2p_address[0]}:{node.p2p_address[1]}",
+                datetime.datetime.fromtimestamp(node.last_seen / 1000.0).strftime('%Y-%m-%d %H:%M:%S UTC')
+            ])
 
         print(tabulate(lines, tablefmt="plain"))

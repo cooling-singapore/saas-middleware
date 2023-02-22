@@ -1,103 +1,130 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from abc import abstractmethod, ABC
 from argparse import ArgumentParser
-from typing import Optional, Union
+from json import JSONDecodeError
+from typing import Optional, Union, List, Any
 
-import requests
-from PyInquirer import prompt
-from saascore.api.sdk.exceptions import UnsuccessfulRequestError
-from saascore.api.sdk.proxies import NodeDBProxy, DORProxy
-from saascore.log import Logging
+from InquirerPy import inquirer
+from InquirerPy.base import Choice
+from pydantic import ValidationError
 
 from saas.cli.exceptions import CLIRuntimeError
-from saascore.helpers import read_json_from_file, validate_json
-from saascore.keystore.identity import Identity
-from saascore.keystore.keystore import Keystore
-from saascore.keystore.schemas import SerializedKeystore as KeystoreSchema
+from saas.core.exceptions import SaaSRuntimeException
+from saas.dor.proxy import DORProxy
+from saas.dor.service import GPP_DATA_TYPE
+from saas.core.identity import Identity
+from saas.core.keystore import Keystore
+from saas.core.logging import Logging
+from saas.nodedb.proxy import NodeDBProxy
+from saas.dor.schemas import DataObject, GPPDataObject
+from saas.nodedb.schemas import NodeInfo
+from saas.core.schemas import KeystoreContent
+from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = Logging.get('cli.helpers')
 
 
-def initialise_storage_folder(path: str, usage: str) -> None:
+def initialise_storage_folder(path: str, usage: str, is_verbose: bool = False) -> None:
     # check if the path is pointing at a file
     if os.path.isfile(path):
-        raise CLIRuntimeError(f"Storage path '{path}' is a file. This path cannot be used as storage ({usage}) directory.")
+        raise CLIRuntimeError(f"Storage path '{path}' is a file. This path cannot "
+                              f"be used as storage ({usage}) directory.")
 
     # check if it already exists as directory
     if not os.path.isdir(path):
         logger.info(f"creating storage ({usage}) directory '{path}'")
         os.mkdir(path)
-        print(f"Storage directory ({usage}) created at '{path}'.")
+        if is_verbose:
+            print(f"Storage directory ({usage}) created at '{path}'.")
 
 
-def get_available_keystores(path: str) -> list[dict[str, str]]:
+def get_available_keystores(path: str, is_verbose: bool = False) -> List[KeystoreContent]:
     available = []
     for f in os.listdir(path):
-        # valid example: 9rak8e1tmc0xt4v3onwq7cpsydpselrjxqp2cys823alhu8evzkjhusqic740h39.json
-
+        # eligible filename example: 9rak8e1tmc0xt4v3onwq7cpsydpselrjxqp2cys823alhu8evzkjhusqic740h39.json
         temp = os.path.basename(f).split(".")
-        if len(temp) != 2:
-            continue
-
-        if temp[1].lower() != 'json':
-            continue
-
-        if len(temp[0]) != 64:
+        if len(temp) != 2 or temp[1].lower() != 'json' or len(temp[0]) != 64:
             continue
 
         # read content and validate
-        keystore_path = os.path.join(path, f)
-        content = read_json_from_file(keystore_path)
-        if validate_json(content, KeystoreSchema.schema()):
-            available.append({
-                'keystore-id': temp[0],
-                'keystore-path': keystore_path,
-                'label': f"{content['profile']['name']}/{content['profile']['email']}/{temp[0]}",
-                'name': content['profile']['name'],
-                'email': content['profile']['email']
-            })
+        try:
+            content = KeystoreContent.parse_file(os.path.join(path, f))
+            available.append(content)
+        except ValidationError:
+            logger.info(f"error while parsing {f}")
+            if is_verbose:
+                print(f"Error while parsing {f} -> Ignoring.")
+            continue
 
     return available
 
 
-def prompt_for_keystore_selection(path: str, message: str) -> Optional[dict]:
+def extract_address(address: str) -> (str, int):
+    if address.count(':') != 1:
+        raise CLIRuntimeError(f"Invalid address '{address}'")
+
+    temp = address.split(':')
+    if not temp[1].isdigit():
+        raise CLIRuntimeError(f"Invalid address '{address}'")
+
+    return temp[0], int(temp[1])
+
+
+def prompt_for_keystore_selection(path: str, message: str) -> Optional[KeystoreContent]:
     # get all available keystores
     available = get_available_keystores(path)
     if len(available) == 0:
         raise CLIRuntimeError(f"No keystores found at '{path}'")
 
-    return prompt_for_selection(available, message)
+    choices = [Choice(value=item.iid, name=f"{item.profile.name}/{item.profile.email}/{item.iid}",)
+               for item in available]
+    return prompt_for_selection(choices, message)
 
 
-def prompt_for_identity_selection(address: str, message: str, id_name: str) -> Optional[dict]:
-    try:
-        # get all identities known to the node
-        proxy = NodeDBProxy(address.split(":"))
-        available = []
-        for identity in proxy.get_identities().values():
-            available.append({
-                'label': f"{identity.name}/{identity.email}/{identity.id}",
-                'identity': identity,
-                id_name: identity.id
-            })
-            available.append(identity)
+def prompt_for_identity_selection(address: (str, int), message: str,
+                                  allow_multiple: bool = False) -> Union[Identity, List[Identity]]:
 
-        # prompt for selection
-        if len(available) == 0:
-            raise CLIRuntimeError(f"No identities found at '{address}'")
+    # get all identities known to the node
+    proxy = NodeDBProxy(address)
+    choices = [
+        Choice(identity, f"{identity.name}/{identity.email}/{identity.id}")
+        for identity in proxy.get_identities().values()
+    ]
 
-        return prompt_for_selection(available, message)
+    # prompt for selection
+    if len(choices) == 0:
+        raise CLIRuntimeError(f"No identities found at '{address}'")
 
-    except requests.exceptions.ConnectionError:
-        raise CLIRuntimeError(f"Could not connect to node at '{address}'.")
+    return prompt_for_selection(choices, message, allow_multiple=allow_multiple)
 
-    except requests.exceptions.InvalidURL:
-        raise CLIRuntimeError(f"Invalid node address: '{address}'.")
+
+def label_data_object(meta: DataObject) -> str:
+    tags = []
+    for key, value in meta.tags.items():
+        if value:
+            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
+        else:
+            tags.append(key)
+
+    return f"{meta.obj_id} C[{meta.data_type}:{meta.data_format}] {tags}"
+
+
+def label_gpp_data_object(meta: GPPDataObject) -> str:
+    tags = []
+    for key, value in meta.tags.items():
+        if value:
+            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
+        else:
+            tags.append(key)
+
+    return f"{meta.obj_id} GPP[{meta.gpp.proc_descriptor.name}] " \
+           f"[{meta.gpp.proc_config}:{meta.gpp.commit_id[:6]}] {tags}"
 
 
 def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
@@ -110,11 +137,10 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
 
     # try to unlock the keystore
     try:
-        keystore = Keystore.load(args['keystore'], args['keystore-id'], args['password'])
+        keystore = Keystore.load(os.path.join(args['keystore'], f"{args['keystore-id']}.json"), args['password'])
 
-    except Exception:
-        raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']}. "
-                              f"Incorrect password? Keystore corrupted? Aborting.")
+    except SaaSRuntimeException as e:
+        raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']} because '{e.reason}'. Aborting.")
 
     if ensure_publication:
         # prompt for the address (if missing)
@@ -144,7 +170,7 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
     return keystore
 
 
-def prompt_for_string(message: str, default: str = None, hide: bool = False, allow_empty: bool = False) -> str:
+def prompt_for_string(message: str, default: str = '', hide: bool = False, allow_empty: bool = False) -> str:
     questions = [
         {
             'type': 'password' if hide else 'input',
@@ -158,145 +184,92 @@ def prompt_for_string(message: str, default: str = None, hide: bool = False, all
         questions[0]['default'] = default
 
     while True:
-        # get the answer
-        answers = prompt(questions)
-        if len(answers['answer']) == 0 and not allow_empty:
-            continue
+        if hide:
+            answer = inquirer.secret(message=message, default=default).execute()
+        else:
+            answer = inquirer.text(message=message, default=default).execute()
 
-        return answers['answer']
+        if answer or allow_empty:
+            return answer
 
 
 def prompt_for_password(confirm: bool = True, allow_empty: bool = False) -> str:
-    if confirm:
-        questions = [
-            {
-                'type': 'password',
-                'message': 'Enter password:',
-                'name': 'password1'
-            },
-            {
-                'type': 'password',
-                'message': 'Re-enter password:',
-                'name': 'password2'
-            }
-        ]
-
-        while True:
-            answers = prompt(questions)
-            if len(answers['password1']) == 0 and not allow_empty:
-                print(f"Password must not be empty! Please try again.")
-                continue
-
-            elif answers['password1'] != answers['password2']:
+    while True:
+        pwd1 = prompt_for_string("Enter password:", hide=True, allow_empty=allow_empty)
+        if confirm:
+            pwd2 = prompt_for_string("Re-enter password:", hide=True, allow_empty=allow_empty)
+            if pwd1 != pwd2:
                 print(f"Passwords don't match! Please try again.")
                 continue
 
-            else:
-                return answers['password1']
-
-    else:
-        questions = [
-            {
-                'type': 'password',
-                'message': 'Enter password:',
-                'name': 'password'
-            }
-        ]
-
-        while True:
-            answers = prompt(questions)
-            if len(answers['password']) == 0 and not allow_empty:
-                print(f"Password must not be empty! Please try again.")
-                continue
-
-            else:
-                return answers['password']
+        return pwd1
 
 
-def prompt_for_selection(items: list[dict], message: str, allow_multiple=False) -> Union[dict, list[dict]]:
-    # build the reverse lookup table and the choices
-    reverse = {}
-    choices = []
-    for item in items:
-        reverse[item['label']] = item
-        choices.append({'name': item['label']} if allow_multiple else item['label'])
-
-    # determine questions
+def prompt_for_selection(choices: List[Choice], message: str, allow_multiple=False) -> Union[Any, List[Any]]:
     if allow_multiple:
-        questions = [
-            {
-                'type': 'checkbox',
-                'message': message,
-                'name': 'selection',
-                'choices': choices
-            }
-        ]
+        return inquirer.checkbox(
+            message=message,
+            choices=choices,
+            cycle=False,
+            show_cursor=False
+        ).execute()
 
     else:
-        questions = [
-            {
-                'type': 'list',
-                'message': message,
-                'name': 'selection',
-                'choices': choices
-            }
-        ]
-
-    answers = prompt(questions)
-
-    if allow_multiple:
-        result = []
-        for item in answers['selection']:
-            result.append(reverse[item])
-        return result
-
-    else:
-        return reverse[answers['selection']]
+        return inquirer.select(
+            message=message,
+            choices=choices,
+            cycle=False,
+            show_cursor=False
+        ).execute()
 
 
 def prompt_for_confirmation(message: str, default: bool) -> bool:
-    questions = [
-        {
-            'type': 'confirm',
-            'message': message,
-            'name': 'confirmation',
-            'default': default
-        }
-    ]
-
-    answers = prompt(questions)
-    return answers['confirmation']
+    return inquirer.confirm(message=message, default=default).execute()
 
 
-def prompt_for_tags(message: str) -> list[str]:
-    questions = [
-        {
-            'type': 'input',
-            'message': message,
-            'name': 'tag'
-        }
-    ]
+def deserialise_tag_value(tag: DataObject.Tag) -> DataObject.Tag:
+    if tag.value.isdigit():
+        tag.value = int(tag.value)
 
-    result = []
+    elif tag.value.replace('.', '', 1).isdigit():
+        tag.value = float(tag.value)
+
+    elif tag.value.lower() in ['true', 'false']:
+        tag.value = tag.value.lower() == 'true'
+
+    else:
+        try:
+            tag.value = json.loads(tag.value)
+        except JSONDecodeError:
+            pass
+
+    return tag
+
+
+def prompt_for_tags(message: str) -> List[DataObject.Tag]:
+    answers = []
     while True:
-        answers = prompt(questions)
-        if answers['tag'] == '':
-            break
+        answer = prompt_for_string(message, allow_empty=True)
+        if not answer:
+            return answers
 
-        elif answers['tag'].count('=') > 1:
-            print(f"Invalid tag. Use key=value form. Must not contain more than 1 '=' character. Try again...")
+        elif answer.count('=') > 1:
+            print(f"Invalid tag. Use key=value form. Must not contain more than one '=' character. Try again...")
+
+        elif answer.count('=') == 0:
+            answers.append(DataObject.Tag(key=answer))
 
         else:
-            result.append(answers['tag'])
+            answer = answer.split('=')
+            answers.append(deserialise_tag_value(DataObject.Tag(key=answer[0], value=answer[1])))
 
-    return result
 
+def prompt_for_data_objects(address: (str, int), message: str, filter_by_owner: Identity = None,
+                            allow_multiple=False) -> Union[str, List[str]]:
 
-def prompt_for_data_object_selection(address: str, owner: Identity, message: str,
-                                     allow_multiple=False) -> Union[Optional[str], list[str]]:
     # find all data objects owned by the identity
-    dor = DORProxy(address.split(':'))
-    result = dor.search(owner_iid=owner.id)
+    dor = DORProxy(address)
+    result = dor.search(owner_iid=filter_by_owner.id if filter_by_owner else None)
 
     # do we have any data objects?
     if len(result) == 0:
@@ -305,54 +278,41 @@ def prompt_for_data_object_selection(address: str, owner: Identity, message: str
     # determine choices
     choices = []
     for item in result:
-        obj_id = item['obj_id']
-        data_type = item['data_type']
-        data_format = item['data_format']
-        tags = [f"{tag['key']}={tag['value']}" for tag in item['tags']]
-        choices.append({
-            'label': f"{obj_id} [{data_type}/{data_format}] {tags}",
-            'obj-id': obj_id
-        })
-
-    # prompt for selection
-    return [item['obj-id'] for item in prompt_for_selection(choices, message, allow_multiple=True)] \
-        if allow_multiple else prompt_for_selection(choices, message, allow_multiple=False)['obj-id']
-
-
-def prompt_if_missing(args: dict, arg_key: str, function, **fargs) -> Union[str, bool]:
-    if args[arg_key] is None:
-        result = function(**fargs)
-        if isinstance(result, dict):
-            args[arg_key] = result[arg_key]
+        if item.data_type == GPP_DATA_TYPE:
+            meta = dor.get_meta(item.obj_id)
+            choices.append(Choice(item.obj_id, label_gpp_data_object(meta)))
 
         else:
-            args[arg_key] = result
+            choices.append(Choice(item.obj_id, label_data_object(item)))
 
-    return args[arg_key]
-
-
-def default_if_missing(args: dict, arg_key: str, default: Union[str, bool]) -> str:
-    if args[arg_key] is None:
-        args[arg_key] = default
-
-    return args[arg_key]
+    # prompt for selection
+    return prompt_for_selection(choices, message, allow_multiple)
 
 
-def get_nodes_by_service(address: [str, int]) -> dict[str, dict]:
-    result = {
-        'dor': {},
-        'rti': {}
-    }
+def prompt_if_missing(args: dict, key: str, function, **func_args) -> Any:
+    if args[key] is None:
+        args[key] = function(**func_args)
+    return args[key]
 
+
+def default_if_missing(args: dict, key: str, default: Any) -> Any:
+    if args[key] is None:
+        args[key] = default
+    return args[key]
+
+
+def get_nodes_by_service(address: [str, int]) -> (List[NodeInfo], List[NodeInfo]):
+    dor_nodes = []
+    rti_nodes = []
     db = NodeDBProxy(address)
     for node in db.get_network():
-        if node['dor_service']:
-            result['dor'][node['iid']] = node
+        if node.dor_service:
+            dor_nodes.append(node)
 
-        if node['rti_service']:
-            result['rti'][node['iid']] = node
+        if node.rti_service:
+            rti_nodes.append(node)
 
-    return result
+    return dor_nodes, rti_nodes
 
 
 class Argument:
@@ -459,7 +419,7 @@ class CLIParser(CLICommandGroup):
 
             console_enabled = args['log-console'] is not None
             log_path = args['log-path']
-            print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
+            # print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
             Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 

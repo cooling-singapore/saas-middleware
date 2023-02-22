@@ -1,7 +1,7 @@
-from saascore.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class RTIException(SaaSException):
+class RTIException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the RTI subsystem.
     """
@@ -34,7 +34,8 @@ class GPPDataObjectNotFound(RTIException):
 
 class ProcessorNotAcceptingJobsError(RTIException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Processor is not accepting job submissions (probably because it is shutting down)', details=details)
+        super().__init__('Processor is not accepting job submissions (probably because it is shutting down)',
+                         details=details)
 
 
 class UnresolvedInputDataObjectsError(RTIException):
@@ -90,3 +91,18 @@ class DockerRuntimeError(RTIException):
 class BuildDockerImageError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Error while building Docker image', details=details)
+
+
+class UnexpectedObjectName(RTIException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Unexpected object name encountered when processing push triggers', details=details)
+
+
+class RunCommandError(RTIException):
+    def __init__(self, details: dict, reason: str = 'Error while running command') -> None:
+        super().__init__(reason, details=details)
+
+
+class RunCommandTimeoutError(RunCommandError):
+    def __init__(self, details: dict) -> None:
+        super().__init__(details=details, reason='Timeout while running command')

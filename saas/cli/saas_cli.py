@@ -2,12 +2,15 @@ import os
 import sys
 import traceback
 
+from saas.cli.cmd_compose import Compose
 from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
-    DORAccessRevoke, DORAccessShow
+    DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
-    IdentityDiscover, IdentityPublish, CredentialsAdd, CredentialsRemove, CredentialsList
-from saas.cli.cmd_network import NetworkShow
-from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus
+    IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
+    CredentialsAddGithubCredentials
+from saas.cli.cmd_network import NetworkList
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
+    RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -47,7 +50,10 @@ def main():
                 IdentityDiscover(),
                 IdentityPublish(),
                 CLICommandGroup('credentials', 'manage credentials for a keystore', commands=[
-                    CredentialsAdd(),
+                    CLICommandGroup('add', 'add credentials to a keystore', commands=[
+                        CredentialsAddSSHCredentials(),
+                        CredentialsAddGithubCredentials(),
+                    ]),
                     CredentialsRemove(),
                     CredentialsList()
                 ]),
@@ -60,6 +66,8 @@ def main():
                 DORSearch(),
                 DORAdd(),
                 DORAddGPP(),
+                DORMeta(),
+                DORDownload(),
                 DORRemove(),
                 DORTag(),
                 DORUntag(),
@@ -73,19 +81,28 @@ def main():
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                RTIProcDeploy(),
-                RTIProcUndeploy(),
-                RTIProcList(),
-                RTIProcStatus(),
-                RTIJobSubmit(),
-                RTIJobStatus()
+                CLICommandGroup('proc', 'manage processors', commands=[
+                    RTIProcDeploy(),
+                    RTIProcUndeploy(),
+                    RTIProcList(),
+                    RTIProcShow(),
+                    RTIProcStatus()
+                ]),
+                CLICommandGroup('job', 'manage job', commands=[
+                    RTIJobList(),
+                    RTIJobSubmit(),
+                    RTIJobStatus(),
+                    RTIJobCancel(),
+                    RTIJobLogs()
+                ])
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',
                          help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
-                NetworkShow()
-            ])
+                NetworkList()
+            ]),
+            Compose()
         ])
 
         cli.execute(sys.argv[1:])
@@ -95,10 +112,14 @@ def main():
         print(e.reason)
         sys.exit(-1)
 
+    except KeyboardInterrupt:
+        print("Interrupted by user.")
+        sys.exit(-2)
+
     except Exception as e:
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
         print(f"Unrefined exception:\n{trace}")
-        sys.exit(-2)
+        sys.exit(-3)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
-from saascore.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class DORException(SaaSException):
+class DORException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the DOR subsystem.
     """
@@ -17,13 +17,6 @@ class DataObjectNotFoundError(DORException):
 class DataObjectContentNotFoundError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object content not found', details=details)
-
-
-class IdentityNotFoundError(DORException):
-    def __init__(self, iid: str) -> None:
-        super().__init__('Identity not found', details={
-            'iid': iid
-        })
 
 
 class ProcessorDescriptorNotFoundError(DORException):
@@ -54,4 +47,3 @@ class CheckoutCommitError(DORException):
 class FetchDataObjectFailedError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Data object could not be fetched', details=details)
-

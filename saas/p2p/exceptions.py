@@ -1,7 +1,7 @@
-from saascore.exceptions import SaaSException
+from saas.core.exceptions import SaaSRuntimeException
 
 
-class P2PException(SaaSException):
+class P2PException(SaaSRuntimeException):
     """
     Base exception class used for errors originating in the P2P subsystem.
     """
@@ -72,7 +72,11 @@ class PeerUnavailableError(P2PException):
         super().__init__('Peer is not available', details=details)
 
 
+class BootNodeUnavailableError(P2PException):
+    def __init__(self, details: dict) -> None:
+        super().__init__('Boot node is not available', details=details)
+
+
 class AttachmentNotFoundError(P2PException):
     def __init__(self, details: dict) -> None:
         super().__init__('Attachment expected but not found', details=details)
-
