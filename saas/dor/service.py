@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from stat import S_IREAD, S_IRGRP
@@ -13,7 +12,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from fastapi import UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse, Response
-from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Boolean, BigInteger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -31,7 +29,8 @@ from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.nodedb.schemas import NodeInfo
 from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
 from saas.dor.schemas import DORStatistics, CObjectNode, DataObjectRecipe, DataObjectProvenance, DataObject, \
-    GPPDataObject, CDataObject, ProcessorDescriptor, GPP_DATA_TYPE, GPP_DATA_FORMAT
+    GPPDataObject, CDataObject, ProcessorDescriptor, GPP_DATA_TYPE, GPP_DATA_FORMAT, SearchParameters, \
+    AddCDataObjectParameters, AddGPPDataObjectParameters
 from saas.core.schemas import GithubCredentials
 from saas.rest.schemas import EndpointDefinition
 
@@ -41,48 +40,6 @@ Base = declarative_base()
 
 DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
-
-
-class SearchParameters(BaseModel):
-    """
-    Search parameters.
-    """
-    patterns: Optional[List[str]] = Field(title="Patterns", description="Search patterns.")
-    owner_iid: Optional[str] = Field(title="Owner IId", description="Constraint: only data objects that are owned by this identity.")
-    data_type: Optional[str] = Field(title="Data Type", description="Constraint: only data objects that match the data type.")
-    data_format: Optional[str] = Field(title="Data Format", description="Constraint: only data objects that match the data format.")
-    c_hashes: Optional[List[str]] = Field(title="Content Hashes", description="Constraint: only data objects that have matching content hashes.")
-
-
-class AddDataObjectParameters(BaseModel):
-    """
-    General parameters for adding a new data object.
-    """
-    owner_iid: str = Field(..., title="Owner IId", description="The id of the identity that should be assigned ownership to this data object.")
-    creators_iid: List[str] = Field(..., title="", description="")
-
-
-class AddGPPDataObjectParameters(AddDataObjectParameters):
-    """
-    Parameters for creating a new GPP data object.
-    """
-    source: str = Field(..., title="Source", description="The source where the code can be found. Typically, this is a URL pointing at a Github repository.", example="https://github.com/the-repo")
-    commit_id: str = Field(..., title="Commit Id", description="The commit id to be used. This allows to refer to a specific version of the code.", example="833e8f7")
-    proc_path: str = Field(..., title="", description="The relative path in the repository where the processor can be found.", example="/processor/proc_simulator")
-    proc_config: str = Field(..., title="", description="The configuration that should be used.", example="default")
-    github_credentials: Optional[GithubCredentials] = Field(title="Github Credentials", description="The credentials needed to access the Github repository that contains the code for the processor. This information is not needed if the repository is public.")
-
-
-class AddCDataObjectParameters(AddDataObjectParameters):
-    """
-    Parameters for creating a new content data object.
-    """
-    data_type: str = Field(..., title="Data Type", description="The data type of the data object.")
-    data_format: str = Field(..., title="Data Format", description="The data format of the data object.")
-    access_restricted: bool = Field(..., title="Access Restricted", description="Indicates if the access to this data object should be restricted.")
-    content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content has been encrypted.")
-    license: CDataObject.License = Field(..., title="License", description="License information for this data object.")
-    recipe: Optional[DataObjectRecipe] = Field(title="Recipe", description="Recipe for this data object (if any).")
 
 
 def _generate_object_id(c_hash: str, data_type: str, data_format: str, creators_iid: List[str], created_t: int) -> str:
@@ -743,7 +700,7 @@ class DORService:
         """
         with self._Session() as session:
             # do we have an object with this id?
-            records: DataObjectProvenanceRecord = session.query(DataObjectProvenanceRecord).filter(
+            records: list[DataObjectProvenanceRecord] = session.query(DataObjectProvenanceRecord).filter(
                 (DataObjectProvenanceRecord.c_hash == c_hash)).all()
             return DataObjectProvenance.parse_obj(records[0].provenance) if records else None
 
