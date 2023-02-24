@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 from typing import Union, Optional, List
 
 from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject, GPP_DATA_TYPE
 from saas.core.schemas import GithubCredentials
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
-from saas.rest.proxy import EndpointProxy
+from saas.rest.proxy import EndpointProxy, Session
 
 DOR_ENDPOINT_PREFIX = "/api/v1/dor"
 
 
 class DORProxy(EndpointProxy):
-    def __init__(self, remote_address: (str, int)):
-        super().__init__(DOR_ENDPOINT_PREFIX, remote_address)
+    @classmethod
+    def from_session(cls, session: Session) -> DORProxy:
+        return DORProxy(remote_address=session.address, credentials=session.credentials)
+
+    def __init__(self, remote_address: (str, int), credentials: (str, str) = None):
+        super().__init__(DOR_ENDPOINT_PREFIX, remote_address, credentials=credentials)
 
     def search(self, patterns: list[str] = None, owner_iid: str = None,
                data_type: str = None, data_format: str = None,

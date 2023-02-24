@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 from typing import List, Union
 
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
-from saas.rest.proxy import EndpointProxy
+from saas.rest.proxy import EndpointProxy, Session
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
@@ -13,8 +15,12 @@ RTI_ENDPOINT_PREFIX = "/api/v1/rti"
 
 
 class RTIProxy(EndpointProxy):
-    def __init__(self, remote_address: (str, int)) -> None:
-        EndpointProxy.__init__(self, RTI_ENDPOINT_PREFIX, remote_address)
+    @classmethod
+    def from_session(cls, session: Session) -> RTIProxy:
+        return RTIProxy(remote_address=session.address, credentials=session.credentials)
+
+    def __init__(self, remote_address: (str, int), credentials: (str, str) = None) -> None:
+        EndpointProxy.__init__(self, RTI_ENDPOINT_PREFIX, remote_address, credentials=credentials)
 
     def get_deployed(self) -> List[Processor]:
         results = self.get(f"")
