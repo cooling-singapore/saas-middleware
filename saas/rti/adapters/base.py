@@ -120,10 +120,11 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
 
 def get_home_directory(ssh_credentials: SSHCredentials) -> str:
     # try to determine remote the home directory using Python3 (and Python in case Python3 doesn't work)
-    result = run_command(f"python3 -c \"import os; print(os.path.expanduser('~'))\"", ssh_credentials=ssh_credentials)
+    result = run_command(f"python3 -c \"import os; print(os.path.expanduser('~'))\"", ssh_credentials=ssh_credentials,
+                         check_exitcode=False)
     if result.returncode != 0:
         result2 = run_command(f"python -c \"import os; print(os.path.expanduser('~'))\"",
-                              ssh_credentials=ssh_credentials)
+                              ssh_credentials=ssh_credentials, check_exitcode=False)
         if result2.returncode != 0:
             raise SaaSRuntimeException(f"Cannot determine remote home directory", details={
                 'result.stdout': result.stdout.decode('utf-8'),
