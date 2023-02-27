@@ -157,6 +157,10 @@ class EndpointProxy:
     def remote_address(self) -> (str, int):
         return self._remote_address
 
+    @property
+    def session(self) -> Session:
+        return self._session
+
     def get(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, download_path: str = None,
             with_authorisation_by: Keystore = None) -> Optional[Union[dict, list]]:
 
