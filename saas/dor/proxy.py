@@ -1,17 +1,25 @@
-from typing import Union, Optional, List
+from __future__ import annotations
+
+from typing import Union, Optional, List, Tuple
 
 from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GPPDataObject, CDataObject, GPP_DATA_TYPE
 from saas.core.schemas import GithubCredentials
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
-from saas.rest.proxy import EndpointProxy
+from saas.rest.proxy import EndpointProxy, Session
 
 DOR_ENDPOINT_PREFIX = "/api/v1/dor"
 
 
 class DORProxy(EndpointProxy):
-    def __init__(self, remote_address: (str, int)):
-        super().__init__(DOR_ENDPOINT_PREFIX, remote_address)
+    @classmethod
+    def from_session(cls, session: Session) -> DORProxy:
+        return DORProxy(remote_address=session.address, credentials=session.credentials,
+                        endpoint_prefix=(session.endpoint_prefix_base, 'dor'))
+
+    def __init__(self, remote_address: (str, int), credentials: (str, str) = None,
+                 endpoint_prefix: Tuple[str, str] = ('/api/v1', 'dor')):
+        super().__init__(endpoint_prefix, remote_address, credentials=credentials)
 
     def search(self, patterns: list[str] = None, owner_iid: str = None,
                data_type: str = None, data_format: str = None,
@@ -38,7 +46,7 @@ class DORProxy(EndpointProxy):
                 if result['data_type'] == GPP_DATA_TYPE else CDataObject.parse_obj(result) for result in results]
 
     def statistics(self) -> DORStatistics:
-        result = self.get('/statistics')
+        result = self.get('statistics')
         return DORStatistics.parse_obj(result)
 
     def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
@@ -61,7 +69,7 @@ class DORProxy(EndpointProxy):
             }
         }
 
-        result = self.post('/add-c', body=body, attachment_path=content_path)
+        result = self.post('add-c', body=body, attachment_path=content_path)
         return CDataObject.parse_obj(result)
 
     def add_gpp_data_object(self, source: str, commit_id: str, proc_path: str, proc_config: str,
@@ -80,13 +88,13 @@ class DORProxy(EndpointProxy):
             } if github_credentials else None
         }
 
-        result = self.post('/add-gpp', body=body)
+        result = self.post('add-gpp', body=body)
         return GPPDataObject.parse_obj(result)
 
     def delete_data_object(self, obj_id: str,
                            with_authorisation_by: Keystore) -> Optional[Union[CDataObject, GPPDataObject]]:
 
-        result = self.delete(f"/{obj_id}", with_authorisation_by=with_authorisation_by)
+        result = self.delete(f"{obj_id}", with_authorisation_by=with_authorisation_by)
         if not result:
             return None
 
@@ -96,7 +104,7 @@ class DORProxy(EndpointProxy):
             return CDataObject.parse_obj(result)
 
     def get_meta(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
-        result = self.get(f"/{obj_id}/meta")
+        result = self.get(f"{obj_id}/meta")
         if not result:
             return None
 
@@ -106,21 +114,21 @@ class DORProxy(EndpointProxy):
             return CDataObject.parse_obj(result)
 
     def get_content(self, obj_id: str, with_authorisation_by: Keystore, download_path: str) -> None:
-        self.get(f"/{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
+        self.get(f"{obj_id}/content", download_path=download_path, with_authorisation_by=with_authorisation_by)
 
     def get_provenance(self, c_hash: str) -> DataObjectProvenance:
-        result = self.get(f"/{c_hash}/provenance")
+        result = self.get(f"{c_hash}/provenance")
         return DataObjectProvenance.parse_obj(result)
 
     def grant_access(self, obj_id: str, authority: Keystore, identity: Identity) -> Union[CDataObject, GPPDataObject]:
-        result = self.post(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
+        result = self.post(f"{obj_id}/access/{identity.id}", with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:
             return CDataObject.parse_obj(result)
 
     def revoke_access(self, obj_id: str, authority: Keystore, identity: Identity) -> Union[CDataObject, GPPDataObject]:
-        result = self.delete(f"/{obj_id}/access/{identity.id}", with_authorisation_by=authority)
+        result = self.delete(f"{obj_id}/access/{identity.id}", with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:
@@ -129,7 +137,7 @@ class DORProxy(EndpointProxy):
     def transfer_ownership(self, obj_id: str, authority: Keystore, new_owner: Identity) -> Union[CDataObject,
                                                                                                  GPPDataObject]:
         # TODO: reminder that the application layer is responsible to transfer the content_key to the new owner
-        result = self.put(f"/{obj_id}/owner/{new_owner.id}", with_authorisation_by=authority)
+        result = self.put(f"{obj_id}/owner/{new_owner.id}", with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:
@@ -139,14 +147,14 @@ class DORProxy(EndpointProxy):
                                                                                                  GPPDataObject]:
         tags = [tag.dict() for tag in tags]
 
-        result = self.put(f"/{obj_id}/tags", body=tags, with_authorisation_by=authority)
+        result = self.put(f"{obj_id}/tags", body=tags, with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:
             return CDataObject.parse_obj(result)
 
     def remove_tags(self, obj_id: str, authority: Keystore, keys: List[str]) -> Union[CDataObject, GPPDataObject]:
-        result = self.delete(f"/{obj_id}/tags", body=keys, with_authorisation_by=authority)
+        result = self.delete(f"{obj_id}/tags", body=keys, with_authorisation_by=authority)
         if 'gpp' in result:
             return GPPDataObject.parse_obj(result)
         else:
