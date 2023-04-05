@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 from InquirerPy.base import Choice
 
@@ -127,6 +128,8 @@ class Service(CLICommand):
                 # only show prompt if shell is interactive
                 if sys.stdin.isatty():
                     terminate = prompt_for_confirmation("Terminate the server?", default=False)
+                else:
+                    time.sleep(1)
         except KeyboardInterrupt:
             print("Received stop signal")
         finally:

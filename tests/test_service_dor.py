@@ -155,8 +155,23 @@ def test_add_gpp(keystore, dor_proxy):
     owner = keystore.identity
 
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '9bf18c3'
-    proc_path = 'saasadapters/example'
+    commit_id = '310354f'
+    proc_path = 'examples/adapters/proc_example'
+    proc_config = 'default'
+
+    github_credentials: GithubCredentials = keystore.github_credentials.get(source)
+
+    result = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
+                                           github_credentials=github_credentials)
+    assert(result is not None)
+
+
+def test_add_gpp_with_schema(keystore, dor_proxy):
+    owner = keystore.identity
+
+    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
+    commit_id = '310354f'
+    proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
 
     github_credentials: GithubCredentials = keystore.github_credentials.get(source)

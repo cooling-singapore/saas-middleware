@@ -32,8 +32,8 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = 'cd97d60'
-    proc_path = 'saasadapters/example'
+    commit_id = '310354f'
+    proc_path = 'examples/adapters/proc_example'
 
     github_credentials = owner.github_credentials.get(source)
 
