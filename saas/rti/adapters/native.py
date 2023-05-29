@@ -138,9 +138,11 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def connect_and_monitor(self, context: JobContext) -> None:
         # monitor the output of a process
         base.monitor_command(context.reconnect_info.pid, context.reconnect_info.pid_paths,
-                             ssh_credentials=self._ssh_credentials, triggers={
+                             ssh_credentials=self._ssh_credentials,
+                             triggers={
                                  'trigger:output': {'func': self._handle_trigger_output, 'context': context},
-                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context}
+                                 'trigger:progress': {'func': self._handle_trigger_progress, 'context': context},
+                                 'trigger:message': {'func': self._handle_trigger_message, 'context': context}
                              }, context=context)
 
         # wait for all outputs to be processed
@@ -168,6 +170,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
         progress = line.split(':')[2]
         context.progress = int(progress)
+
+    def _handle_trigger_message(self, line: str, context: JobContext) -> None:
+        message = line.split(':', 2)[2]
+        context.message(message)
 
     def _process_output(self, obj_name: str, context: JobContext) -> None:
         context.make_note(f"process_output:{obj_name}", 'started')
