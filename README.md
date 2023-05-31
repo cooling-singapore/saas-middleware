@@ -5,12 +5,12 @@ of a loosely-coupled federation of models.
 
 ## Install
 ### Prerequisites
-- Python 3.9 _(does not work on 3.10 as of now)_
+- Python 3.10 _(does not work on 3.11 as of now)_
 
 Clone this repository and install it using pip:
 ```shell
 git clone https://github.com/cooling-singapore/saas-middleware
-pip install saas-middleware
+pip install ./saas-middleware
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ commands also allow interactive use of the CLI in which case the user is prompte
 The following sections explains how to use of the CLI for common use-cases.
 
 ### Create Identity
-*If you are using the SaaS Middleware for the first time, you need to create an identity.*
+> *If you are using the SaaS Middleware for the first time, you need to create an identity.*
 
 Identities are used across the SaaS system for 
 authentication/authorisation purposes as well for managing ownership and access rights to
@@ -37,17 +37,17 @@ In addition to a name and email, an identity is also associated with a set of ke
 which are generated upon creation of the identity. The identity would then be assigned a unique ID and be stored
 together with the set of keys in the form of a JSON file called a keystore. The keystore can be referenced by the identity ID.
 
-By default, the keystore will be created in the folder named `.keystore` in the home directory
+By default, the keystore will be created in a folder named `.keystore` in the home directory
 (e.g. `$HOME\.keystore`), and can be changed by providing the `--keystore` flag.
 
 Identities can be created interactively by following the prompts using:
 ```shell
 saas-cli identity create
 
-? Enter name:  foo bar
-? Enter email:  foo.bar@email.com
-? Enter password:  ****
-? Re-enter password:  ****
+? Enter name: foo bar
+? Enter email: foo.bar@email.com
+? Enter password: ****
+? Re-enter password: ****
 New keystore created!
 - Identity: foo bar/foo.bar@email.com/bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv
 - Signing Key: EC/secp384r1/384/2623ce0ae4e4ebcc38c3e3f91bfb97f21300ea81a1f7f7fbe81796c25f68a94a
@@ -79,9 +79,13 @@ These credentials can be used for deploying processors and running jobs.
 For example, GitHub for cloning from private repositories or SSH for executing remote commands.
 More information about deploying processors and running jobs can be found in the sections below.
 
-Credentials can be added by following the prompts using:
+Credentials (SSH or GitHub) can be added by following the prompts using:
 ```shell
-saas-cli identity credentials add
+saas-cli identity credentials add ssh
+
+# OR
+
+saas-cli identity credentials add github
 ```
 
 For a list of all commands concerning identities, use:
@@ -99,25 +103,30 @@ nodes (by starting DOR and RTI services).
 When starting a node, the user has to specify the datastore path where a node stores all its data,
 and the ID of a keystore whose identity the node will use. By default, the datastore path will be in the home directory (e.g. `$HOME/.datastore`) and the keystore path to search for the ID in the home directory as well (e.g `$HOME/.keystore`). 
 
-The user also has to assign the address and port for the REST and P2P service for the node. These addresses are used for nodes in the network to commmunicate with each other. Make sure that the ports being assigned are open and not used by other processes. Additionally, new nodes will need to connect to a boot node in the network to retrieve information about other nodes in the network. The boot node will be referenced by its P2P address and can be any node in the network. If the node that is the first node in the network, it can connect to itself. 
+The user also has to assign the address and port for the REST and P2P service for the node. These addresses are used for nodes in the network to communicate with each other. Make sure that the ports being assigned are open and not used by other processes. Additionally, new nodes will need to connect to a boot node in the network to retrieve information about other nodes in the network. The boot node will be referenced by its P2P address and can be any node in the network. If the node that is the first node in the network, it can connect to itself. Additionally, the user can also allow the REST and P2P service to bind and accept connections pointing to any address of the machine i.e. 0.0.0.0 (useful for docker).
 
-Lastly, there is an option to retain job history (job information are not stored by default) for debugging purposes.
+There is an option to retain job history (job information are not stored by default) for debugging purposes. Lastly, the RTI service of execution and full nodes can be instructed to disable strict processor deployment, where only the node owner identity can deploy/undeploy processors (other users will not be able to deploy/undeploy processors on nodes that they do not own by default).
 
 ```shell
 saas-cli service
 
 ? Enter path to datastore:  /home/foo.bar/.datastore
-? Enter address for REST service:  127.0.0.1:5001
-? Enter address for P2P service:  127.0.0.1:4001
-? Enter address for boot node:  127.0.0.1:4001
-? Select the type of service:  Full node (i.e., DOR + RTI services)
-? Retain RTI job history?  No
+? Enter address for REST service: 127.0.0.1:5001
+? Enter address for P2P service: 127.0.0.1:4001
+? Enter address for boot node: 127.0.0.1:4001
+? Select the type of service: Full node (i.e., DOR + RTI services)
+? Retain RTI job history? No
+? Bind service to all network addresses? No
+? Strict processor deployment? Yes
 ? Select the keystore:  foo bar/foo.bar@email.com/bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv
-? Enter password:  ****
+? Enter password: ****
 
-Storage directory (datastore) created at '/home/foo.bar/.datastore'.
+INFO:     Started server process [90707]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:5001 (Press CTRL+C to quit)
 Created 'full' node instance at 127.0.0.1:5001/127.0.0.1:4001 (keep RTI job history: No)
-? Terminate the server?  (y/N)
+? Terminate the server? (y/N) 
 ```
 The example above shows a node running with a REST service at address `127.0.0.1:5001`. This address will be used to interact with this node using the CLI. 
 
@@ -152,27 +161,71 @@ permission to other identities before they can make use of the data objects. If 
 used, the CLI will use keystore functionality to create a content key and encrypt the data 
 object before uploading it to the DOR. 
 
+If it is the first time an identity is interacting with the node, there will be an option to publish the identity to the node so that the node will recognise it. This allows a user to assign this new identity as a co-creator of the object (more information below).
+
 Example:
 ```shell
 saas-cli dor --address 127.0.0.1:5001 add --restrict-access --encrypt-content --data-type 'JSONObject' --data-format 'json' $HOME/Desktop/data_object_a.json
 
 ? Select the keystore:  foo bar/foo.bar@email.com/bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv
 ? Enter password:  ****
+? Identity lcydhed5oawlqgwqodn1dfk7d0ilo12uusxghz8flxa5fth5u43w47n59snm7z5t is not known to the node at 127.0.0.1:5001. Publish identity? Yes
+Identity lcydhed5oawlqgwqodn1dfk7d0ilo12uusxghz8flxa5fth5u43w47n59snm7z5t published to node at 127.0.0.1:5001.
+? Select all identities that are co-creators of this data object: ['foo bar/foo.bar@email.com/lcydhed5oawlqgwqodn1dfk7d0ilo12uusxghz8flxa5fth5u43w47n59snm7z5t']
+
 Content key for object 53348424fa87736ef6be3c2cd9dbd92d4d6b163ea7cc7fb9cee1134e4000b098 added to keystore.
 Data object added: {
+    "obj_id": "53348424fa87736ef6be3c2cd9dbd92d4d6b163ea7cc7fb9cee1134e4000b098",
+    "c_hash": "eba7758b36df20cbc838835a13b22005118b3c1d188b70f15734f3912cdc90ee",
+    "data_type": "JSONObject",
+    "data_format": "json",
+    "created": {
+        "timestamp": 1684193866547,
+        "creators_iid": [
+            "bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv",
+            "lcydhed5oawlqgwqodn1dfk7d0ilo12uusxghz8flxa5fth5u43w47n59snm7z5t"
+        ]
+    },
+    "owner_iid": "bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv",
+    "access_restricted": true,
     "access": [
         "bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv"
     ],
-    "access_restricted": true,
-    "c_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tags": {},
+    "last_accessed": 1684193866547,
+    "custodian": {
+        "identity": {
+            "id": "lcydhed5oawlqgwqodn1dfk7d0ilo12uusxghz8flxa5fth5u43w47n59snm7z5t",
+            "name": "foo bar",
+            "email": "foo.bar@email.com",
+            "s_public_key": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEQ3+PaFLZyGraEsZWeOAOFN2yJxjpJhslQBtqYjs2xJZvxfzd/+a+fTiLwg+S+kMXMEOQU/9iQcu0huLHtfF/CSl3EZmSivxSl5RWbqna/iQD3aYmKnCAeyTt/LW4UB59",
+            "e_public_key": "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAjrGSopEkt296euBG+JllNivD+sefQ9hn6kNVb24e80BvD5iFpAotzNJbLC0dSZVTtlV9Kr+geF/ohcrLpIMxrj3Cx+Fc9lsqlvKxguwYzEr1wUkreCM3aTTpGqLjn9GpjQZpo9DoWgzOzch7UoREy+f7mDMjnyx+ePLqizbCLK0em9nEnYs1inTdntzJ9CyN7J1Go5zQ9BNem7isPBeFKgYmJP1s9Z8QUZf1AJ+9UMh25t6G6jHHCwwc6k7GqTN0vHYl6BOSyrtnufbsowOmh//oyv9Oa1izi/q5VuJ2hPWz2Vzo+5vkrjNkk2l+fa+PWJoV0Pgo870vwflW7b4NjZbGcwqMpKHcAUlck8o/SaKhhYTbu/XymXv5N8N07Cg4C9mxAsgIz0l5/KHb52RrLBjzaS/QVz3vDy3o8fjdc7YDOx9thqAhHqwZ5szV1CiaKvA+AAlDPTQqJD1hYWZNYLyY4fJR9P5zZuxRErduxISPapDT7077EbSGf9OU6DDnX2dyw7n9bf5lrJPXLXFNSbUmlivHFdTLE577RoaOi1rjJ1RwHqkNVQC7UqL2LpLSPo5xzTGlkpWP6wafS/ta+16pecd6cXh8DZWicG0DiQjXCBzeulkNnCshieN07TIDG7PY+qw8cgaR90PUJLMGBXLdz20xgyT3KvTp5clP5TMCAwEAAQ==",
+            "nonce": 1,
+            "signature": "306402304a3a8701f8a235d4594dc7f521fa920dafec15ad0a230c96a16560c7d705ac54250d291da2d664cb15432777ac27e0c0023012b3d446c927f1ce741bd6187bb23f24fe50b4ca4769d1db9d267893476f5572312d225c060e56a5c0a639de8c48043a",
+            "last_seen": null
+        },
+        "last_seen": 1684193866557,
+        "dor_service": true,
+        "rti_service": true,
+        "p2p_address": [
+            "127.0.0.1",
+`            4001
+        ],
+        "rest_address": [
+            "127.0.0.1",
+            5001
+        ],
+        "retain_job_history": false,
+        "strict_deployment": true
+    },
     "content_encrypted": true,
-    "created_by": "foo bar",
-    "created_t": 1644154698149,
-    "data_format": "json",
-    "data_type": "JSONObject",
-    "obj_id": "53348424fa87736ef6be3c2cd9dbd92d4d6b163ea7cc7fb9cee1134e4000b098",
-    "owner_iid": "bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv",
-    "tags": []
+    "license": {
+        "by": false,
+        "sa": false,
+        "nc": false,
+        "nd": false
+    },
+    "recipe": null
 }
 ```
 The example above shows the new data object `53348424fa87736ef6be3c2cd9dbd92d4d6b163ea7cc7fb9cee1134e4000b098` with an owner ID `bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv` which belongs to the identity used to add the data object.
@@ -181,7 +234,7 @@ The example above shows the new data object `53348424fa87736ef6be3c2cd9dbd92d4d6
 If a data object consists of multiple files, the CLI will archive (e.g., using tar.gz) them and 
 use the archive as data object content. Example: 
 ```shell
-saas-cli dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'AB-JSONObject' $HOME/Desktop/data_object_a.json $HOME/Desktop/data_object_b.json
+saas-cli dor --address 127.0.0.1:5001 add --restrict-access  --encrypt-content --data-type 'JSONObject' $HOME/Desktop/data_object_a.json $HOME/Desktop/data_object_b.json
 ``` 
 
 Data objects can only be removed by their owner. Example:
@@ -250,12 +303,14 @@ A processor descriptor specifies the name, input/output interfaces and the confi
 ```
 The input and output interfaces (`input` and `output`) are lists of items that specify the input 
 data consumed and output data produced by the processor, respectively. An item has a name, a
-data type and data format:
+data type and data format. If the data item is a JSON object, 
+a data schema using the [JSON Schema](https://json-schema.org/) format can be indicated to validate the item:
 ```json
 {
   "name": ...,
   "data_type": ...,
-  "data_format": ...
+  "data_format": ...,
+  "data_schema": ...
 }
 ```
 Both, input and output interface, can have an arbitrary number of items. For example, the
@@ -267,19 +322,40 @@ processor descriptor for the test processor looks as follows:
     {
       "name": "a",
       "data_type": "JSONObject",
-      "data_format": "json"
+      "data_format": "json",
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
     },
     {
       "name": "b",
       "data_type": "JSONObject",
-      "data_format": "json"
+      "data_format": "json",
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
     }
   ],
   "output": [
     {
       "name": "c",
       "data_type": "JSONObject",
-      "data_format": "json"
+      "data_format": "json",
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
     }
   ],
   "configurations": [
@@ -295,7 +371,7 @@ functionality can be used for this purpose.
 
 Example:
 ```shell
-saas-cli dor --address 127.0.0.1:5001 add-gpp --url 'https://github.com/cooling-singapore/saas-processor-template' --commit-id '7a87928' --path 'processor_test'
+saas-cli dor --address 127.0.0.1:5001 add-gpp --url 'https://github.com/cooling-singapore/saas-processor-template' --commit-id '778bd12' --path 'processor_test'
 
 ? Select the keystore:  foo bar/foo.bar@email.com/bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv
 ? Enter password:  ****
@@ -316,7 +392,7 @@ GPP Data object added: {
     "data_format": "json",
     "data_type": "Git-Processor-Pointer",
     "gpp": {
-        "commit_id": "7a87928",
+        "commit_id": "778bd12",
         "proc_config": "default",
         "proc_descriptor": {
             "configurations": [
@@ -352,17 +428,17 @@ to the object ID of the GPP data object.
 
 Example:
 ```shell
-saas-cli rti --address 127.0.0.1:5001 deploy '4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184'
+saas-cli rti --address 127.0.0.1:5001 proc deploy '4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184'
 ```
 
 If a processor ID is not specified, the CLI will allow the user to interactively select the GPP
 data object for deployment:
 ```shell
-saas-cli rti --address 127.0.0.1:5001 deploy
+saas-cli rti --address 127.0.0.1:5001 proc deploy
 
 ? Select the keystore:  foo bar/foo.bar@email.com/bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv
 ? Enter password:  ****
-? Select the processor you would like to deploy:  test-proc from https://github.com/cooling-singapore/saas-processor-template at processor_test
+? Select the processor you would like to deploy:  4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184 [test-proc] default:778bd12
 ? Select the deployment type:  Native Deployment
 ? Use an SSH profile for deployment?  No
 Deploying processor 4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184...Done
@@ -375,9 +451,9 @@ same node as the RTI (specified using `--address`).
 Undeployment works in the same fashion as deployment. If a processor id is not specified, the CLI 
 will fetch a list of processors deployed on the node and let the user select:
 ```shell
-saas-cli rti --address 127.0.0.1:5001 undeploy
+saas-cli rti --address 127.0.0.1:5001 proc undeploy
 
-? Select the processor(s) you would like to undeploy:  [test-proc/4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184]
+? Select the processor(s) you would like to undeploy: ['test-proc default:778bd12']
 Undeploy processor 4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184...Done
 ```
 
@@ -396,7 +472,8 @@ All these information has to be written in a job descriptor in the form of a JSO
 Example:
 ```json
 {
-  "processor_id": "4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184",
+  "proc_id": "4a96a57539ed211711686262ca443e29ebdd9a24f55a37f1a1795d3088a24184", 
+  "user_iid": "bfckflp9zeezvqocolcu7f1g9grg20zw8mv5x8p7j9l7b0e4mahfqk9krwnc4wzv",
   "input": [
     {
       "name": "a",
@@ -426,7 +503,7 @@ Example:
 
 A job can be submitted using a job descriptor file as above using:
 ```shell
-saas-cli rti --address 127.0.0.1:5001 submit --job $HOME/Desktop/job_descriptor.json
+saas-cli rti --address 127.0.0.1:5001 job submit --job $HOME/Desktop/job_descriptor.json
 
 Job submitted: job-id=TUAzUGI8
 ```
@@ -434,7 +511,7 @@ Job submitted: job-id=TUAzUGI8
 If the job has been successfully submitted, a job id will be returned. This id can be used
 to check on the status of the job:
 ```shell
-saas-cli rti --address 127.0.0.1:5001 status TUAzUGI8
+saas-cli rti --address 127.0.0.1:5001 job status TUAzUGI8
 
 Job descriptor: {
     "id": "TUAzUGI8",

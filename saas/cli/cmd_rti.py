@@ -389,18 +389,18 @@ class RTIJobSubmit(CLICommand):
 
             try:
                 # read the job descriptor
-                job_descriptor = Job.parse_file(args['job'])
-            except ValidationError:
-                raise CLIRuntimeError(f"Invalid job descriptor. Aborting.")
+                task = Task.parse_file(args['job'])
+            except ValidationError as e:
+                raise CLIRuntimeError(f"Invalid job descriptor: {e.errors()}. Aborting.")
 
             # is the processor deployed?
-            if job_descriptor.task.proc_id not in self._proc_choices:
-                raise CLIRuntimeError(f"Processor {job_descriptor.task.proc_id} is not "
+            if task.proc_id not in self._proc_choices:
+                raise CLIRuntimeError(f"Processor {task.proc_id} is not "
                                       f"deployed at {self._address[0]}:{self._address[1]}. Aborting.")
 
-            proc_id = job_descriptor.task.proc_id
-            job_input = job_descriptor.task.input
-            job_output = job_descriptor.task.output
+            proc_id = task.proc_id
+            job_input = task.input
+            job_output = task.output
 
         # if we don't have a job descriptor then we obtain all the information interactively
         else:
