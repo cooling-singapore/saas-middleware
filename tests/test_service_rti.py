@@ -32,7 +32,7 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
+    commit_id = '25b72c0'
     proc_path = 'examples/adapters/proc_example'
 
     github_credentials = owner.github_credentials.get(source)
@@ -369,9 +369,14 @@ def submit_job(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputVal
 
 
 def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
+    prev_message = None
     while True:
         status = rti.get_job_status(job_id, owner)
         print(status)
+
+        if 'message' in status.notes and status.notes['message'] != prev_message:
+            prev_message = status.notes['message']
+            print(prev_message)
 
         if status.state == JobStatus.State.SUCCESSFUL:
             return status.output
