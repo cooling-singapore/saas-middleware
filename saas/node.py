@@ -114,7 +114,7 @@ class Node:
         if leave_network:
             self.leave_network()
         else:
-            logger.warning(f"node shutting down silently (not leaving the network)")
+            logger.warning("node shutting down silently (not leaving the network)")
 
         logger.info("stopping all services.")
         if self.p2p:

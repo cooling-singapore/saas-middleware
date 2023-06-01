@@ -277,7 +277,7 @@ class RTIService:
             # get the user's identity and check if it's identical with that's indicated in the task
             iid = request.headers['saasauth-iid']
             if iid != task.user_iid:
-                raise RTIException(f"Mismatching between user indicated in task and user making request", details={
+                raise RTIException("Mismatching between user indicated in task and user making request", details={
                     'iid': iid,
                     'task': task
                 })
@@ -324,7 +324,7 @@ class RTIService:
             # get the user's identity and check if it's identical with that's indicated in the task
             iid = request.headers['saasauth-iid']
             if iid != job.task.user_iid:
-                raise RTIException(f"Mismatching between user indicated in task and user making request", details={
+                raise RTIException("Mismatching between user indicated in task and user making request", details={
                     'iid': iid,
                     'task': job.task
                 })
@@ -429,7 +429,7 @@ class RTIService:
 
         # do we have anything?
         if not existing:
-            raise RTIException(f"No execute logs available.", details={
+            raise RTIException("No execute logs available.", details={
                 'job_id': job_id
             })
 

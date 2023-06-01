@@ -22,6 +22,12 @@ setup(
     name=package_name,
     version=_locals["__version__"],
     install_requires=requirements,
+    extras_require={
+        'dev': [
+            'pytest',
+            'ruff'
+        ]
+    },
     packages=find_packages(),
     include_package_data=True,
     url='https://github.com/cooling-singapore/saas-middleware',

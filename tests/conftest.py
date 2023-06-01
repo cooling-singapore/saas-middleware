@@ -20,7 +20,7 @@ def test_context():
 @pytest.fixture(scope="session")
 def keystore():
     with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, f"node", f"no-email-provided", f"password")
+        _keystore = Keystore.create(tempdir, "node", "no-email-provided", "password")
         update_keystore_from_credentials(_keystore)
         yield _keystore
 
@@ -60,6 +60,6 @@ def extra_keystores():
     keystores = []
     with tempfile.TemporaryDirectory() as tempdir:
         for i in range(3):
-            keystore = Keystore.create(tempdir, f"keystore-{i}", f"no-email-provided", f"password")
+            keystore = Keystore.create(tempdir, f"keystore-{i}", "no-email-provided", "password")
             keystores.append(keystore)
         yield keystores

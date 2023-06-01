@@ -18,8 +18,8 @@ logger = Logging.get('cli.identity')
 class IdentityCreate(CLICommand):
     def __init__(self):
         super().__init__('create', 'creates a new identity', arguments=[
-            Argument('--name', dest='name', action='store', help=f"name of the identity"),
-            Argument('--email', dest='email', action='store', help=f"email of the identity")
+            Argument('--name', dest='name', action='store', help="name of the identity"),
+            Argument('--email', dest='email', action='store', help="email of the identity")
         ])
 
     def execute(self, args: dict) -> None:
@@ -30,7 +30,7 @@ class IdentityCreate(CLICommand):
         keystore = Keystore.create(args['keystore'], args['name'], args['email'], args['password'])
         identity = keystore.identity
 
-        print(f"New keystore created!")
+        print("New keystore created!")
         print(f"- Identity: {identity.name}/{identity.email}/{identity.id}")
         print(f"- Signing Key: {keystore.signing_key.info()}")
         print(f"- Encryption Key: {keystore.encryption_key.info()}")
@@ -40,7 +40,7 @@ class IdentityRemove(CLICommand):
     def __init__(self):
         super().__init__('remove', 'removes an existing identity', arguments=[
             Argument('--confirm', dest="confirm", action='store_const', const=True,
-                     help=f"do not require user confirmation to delete keystore"),
+                     help="do not require user confirmation to delete keystore"),
         ])
 
     def execute(self, args: dict) -> None:
@@ -56,7 +56,7 @@ class IdentityRemove(CLICommand):
             print(f"Keystore {args['keystore-id']} deleted.")
 
         else:
-            print(f"Aborting.")
+            print("Aborting.")
 
 
 class IdentityShow(CLICommand):
@@ -73,12 +73,12 @@ class IdentityShow(CLICommand):
         content = KeystoreContent.parse_file(keystore_path)
 
         # show the public information
-        print(f"Keystore details:")
+        print("Keystore details:")
         print(f"- Id: {content.iid}")
         print(f"- Name: {content.profile.name}")
         print(f"- Email: {content.profile.email}")
         print(f"- Nonce: {content.nonce}")
-        print(f"- Assets:")
+        print("- Assets:")
         for key, content in content.assets.items():
             if content['type'] in ['KeyPairAsset', 'MasterKeyPairAsset']:
                 print(f"    - {key}: {content['info']}")
@@ -115,7 +115,7 @@ class IdentityPublish(CLICommand):
     def __init__(self):
         super().__init__('publish', 'publishes an identity update to a node', arguments=[
             Argument('--address', dest='address', action='store', required=False,
-                     help=f"the address (host:port) of the node")
+                     help="the address (host:port) of the node")
         ])
 
     def execute(self, args: dict) -> None:
@@ -135,7 +135,7 @@ class IdentityDiscover(CLICommand):
     def __init__(self):
         super().__init__('discover', 'retrieves a list of all identities known to a node', arguments=[
             Argument('--address', dest='address', action='store', required=False,
-                     help=f"the address (host:port) of the node")
+                     help="the address (host:port) of the node")
         ])
 
     def execute(self, args):
@@ -146,7 +146,7 @@ class IdentityDiscover(CLICommand):
         proxy = NodeDBProxy(extract_address(args['address']))
         identities = proxy.get_identities()
         if len(identities) == 0:
-            print(f"No identities discovered.")
+            print("No identities discovered.")
         else:
             print(f"Discovered {len(identities)} identities:")
 
@@ -167,37 +167,37 @@ class IdentityDiscover(CLICommand):
 class IdentityUpdate(CLICommand):
     def __init__(self):
         super().__init__('update', 'updates the profile of the identity', arguments=[
-            Argument('--name', dest='name', action='store', help=f"name of the identity"),
-            Argument('--email', dest='email', action='store', help=f"email of the identity")
+            Argument('--name', dest='name', action='store', help="name of the identity"),
+            Argument('--email', dest='email', action='store', help="email of the identity")
         ])
 
     def execute(self, args: dict) -> None:
         keystore = load_keystore(args, ensure_publication=False)
 
-        print(f"Keystore details:")
+        print("Keystore details:")
         print(f"- Name: {keystore.identity.name}")
         print(f"- Email: {keystore.identity.email}")
 
         name = prompt_for_string("Enter name:", default=keystore.identity.name)
         email = prompt_for_string("Enter email address:", default=keystore.identity.email)
         if keystore.identity.name != name or keystore.identity.email != email:
-            print(f"Updating profile.")
+            print("Updating profile.")
             keystore.update_profile(name=name, email=email)
 
         else:
-            print(f"Nothing to update.")
+            print("Nothing to update.")
 
 
 class CredentialsAddSSHCredentials(CLICommand):
     def __init__(self):
         super().__init__('ssh', 'adds SSH credentials to the keystore', arguments=[
-            Argument('--name', dest='name', action='store', help=f"name used to identify this SSH credential"),
-            Argument('--host', dest='host', action='store', help=f"host used to connect the remote machine"),
-            Argument('--login', dest='login', action='store', help=f"login used for connecting to remote machine"),
+            Argument('--name', dest='name', action='store', help="name used to identify this SSH credential"),
+            Argument('--host', dest='host', action='store', help="host used to connect the remote machine"),
+            Argument('--login', dest='login', action='store', help="login used for connecting to remote machine"),
             Argument('--key-is-password', dest="key_is_password", action='store_const', const=True,
-                     help=f"indicates that the key of this credential is a password"),
-            Argument('--key', dest='key', action='store', help=f"key for this credentials items (or password in"
-                                                               f"case --key-is-password is set)")
+                     help="indicates that the key of this credential is a password"),
+            Argument('--key', dest='key', action='store', help="key for this credentials items (or password in"
+                                                               "case --key-is-password is set)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -211,7 +211,7 @@ class CredentialsAddSSHCredentials(CLICommand):
             args['key_is_password'] = prompt_for_selection([
                 Choice(True, 'Password'),
                 Choice(False, 'Key')
-            ], f"Type of SSH credentials:")
+            ], "Type of SSH credentials:")
 
         if args['key'] is None:
             if args['key_is_password']:
@@ -225,17 +225,17 @@ class CredentialsAddSSHCredentials(CLICommand):
                                                                      key_is_password=args['key_is_password'],
                                                                      key=args['key']))
         keystore.sync()
-        print(f"Credential successfully created.")
+        print("Credential successfully created.")
 
 
 class CredentialsAddGithubCredentials(CLICommand):
     def __init__(self):
         super().__init__('github', 'adds Github credentials to the keystore', arguments=[
-            Argument('--url', dest='url', action='store', help=f"URL of the repository (also used as identifier "
-                                                               f"for this Github credential)"),
-            Argument('--login', dest='login', action='store', help=f"login used to connect the remote machine"),
+            Argument('--url', dest='url', action='store', help="URL of the repository (also used as identifier "
+                                                               "for this Github credential)"),
+            Argument('--login', dest='login', action='store', help="login used to connect the remote machine"),
             Argument('--personal-access-token', dest='personal_access_token', action='store',
-                     help=f"personal access token for the login"),
+                     help="personal access token for the login"),
         ])
 
     def execute(self, args: dict) -> None:
@@ -249,7 +249,7 @@ class CredentialsAddGithubCredentials(CLICommand):
         keystore.github_credentials.update(
             args['url'], GithubCredentials(login=args['login'], personal_access_token=args['personal_access_token']))
         keystore.sync()
-        print(f"Credential successfully created.")
+        print("Credential successfully created.")
 
 
 class CredentialsRemove(CLICommand):
@@ -299,7 +299,7 @@ class CredentialsRemove(CLICommand):
             keystore.sync()
 
         else:
-            print(f"Aborting.")
+            print("Aborting.")
 
 
 class CredentialsList(CLICommand):

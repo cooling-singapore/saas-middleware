@@ -40,15 +40,15 @@ class RunNode(CLICommand):
                           f"will only load the DOR or RTI modules, respectively; a 'full' node will provide "
                           f"both (default: '{self.default_service}')."),
             Argument('--retain-job-history', dest="retain-job-history", action='store_const', const=True,
-                     help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default: "
-                          f"disabled, i.e., delete information of completed jobs). This flag should only be used for "
-                          f"debug/testing purposes."),
+                     help="[for execution/full nodes only] instructs the RTI to retain the job history (default: "
+                          "disabled, i.e., delete information of completed jobs). This flag should only be used for "
+                          "debug/testing purposes."),
             Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
-                     help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
-                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
+                     help="[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
+                          "(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
-                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the "
-                          f"machine i.e. 0.0.0.0 (useful for docker)")
+                     help="allows REST and P2P service to bind and accept connections pointing to any address of the "
+                          "machine i.e. 0.0.0.0 (useful for docker)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -63,8 +63,8 @@ class RunNode(CLICommand):
 
         # do we have keystore credentials?
         if not args['keystore-id'] or not args['password']:
-            raise CLIRuntimeError(f"No keystore credentials provided (use --keystore-id and --password arguments). "
-                                  f"Aborting.")
+            raise CLIRuntimeError("No keystore credentials provided (use --keystore-id and --password arguments). "
+                                  "Aborting.")
 
         # try to unlock the keystore
         try:
@@ -137,18 +137,18 @@ def main():
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
                      help=f"path to the keystore (default: '{default_keystore}')"),
             Argument('--keystore-id', dest='keystore-id', action='store',
-                     help=f"id of the keystore to be used"),
+                     help="id of the keystore to be used"),
             Argument('--password', dest='password', action='store',
-                     help=f"password for the keystore"),
+                     help="password for the keystore"),
             Argument('--temp-dir', dest='temp-dir', action='store', default=default_temp_dir,
                      help=f"path to directory used for intermediate files (default: '{default_temp_dir}')"),
             Argument('--log-level', dest='log-level', action='store',
                      choices=['INFO', 'DEBUG'], default=default_log_level,
                      help=f"set the log level (default: '{default_log_level}')"),
             Argument('--log-path', dest='log-path', action='store',
-                     help=f"enables logging to file using the given path (default: disabled)"),
+                     help="enables logging to file using the given path (default: disabled)"),
             Argument('--log-console', dest="log-console", action='store_const', const=False,
-                     help=f"enables logging to the console (default: disabled)"),
+                     help="enables logging to the console (default: disabled)"),
 
         ], commands=[
             RunNode()

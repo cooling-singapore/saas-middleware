@@ -25,7 +25,7 @@ class RTIProxy(EndpointProxy):
         super().__init__(endpoint_prefix, remote_address, credentials=credentials)
 
     def get_deployed(self) -> List[Processor]:
-        results = self.get(f"")
+        results = self.get("")
         return [Processor.parse_obj(result) for result in results]
 
     def deploy(self, proc_id: str, authority: Keystore, deployment: str = "native", gpp_custodian: str = None,
@@ -111,7 +111,7 @@ class RTIProxy(EndpointProxy):
         return [Job.parse_obj(result) for result in results]
 
     def get_jobs_by_user(self, authority: Keystore) -> List[Job]:
-        results = self.get(f"job", with_authorisation_by=authority)
+        results = self.get("job", with_authorisation_by=authority)
         return [Job.parse_obj(result) for result in results]
 
     def get_job_status(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:

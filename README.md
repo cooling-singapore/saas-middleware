@@ -11,6 +11,9 @@ Clone this repository and install it using pip:
 ```shell
 git clone https://github.com/cooling-singapore/saas-middleware
 pip install ./saas-middleware
+
+# install in dev mode
+pip install "./saas-middleware[dev]"
 ```
 
 ## Usage
