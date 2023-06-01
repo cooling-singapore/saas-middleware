@@ -7,7 +7,7 @@ from pydantic import BaseModel
 @dataclass
 class EndpointDefinition:
     method: str
-    prefix: Tuple[str, str]
+    prefix: str
     rule: str
     function: Any
     response_model: Any
