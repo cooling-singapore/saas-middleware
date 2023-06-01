@@ -113,30 +113,30 @@ class TestProxy(EndpointProxy):
     __test__ = False
 
     def __init__(self, remote_address):
-        EndpointProxy.__init__(self, endpoint_prefix, remote_address)
+        EndpointProxy.__init__(self, ("/api/v1", "test"), remote_address)
 
     def create(self, value: str) -> TestResponse:
-        result = self.post(f"/create/{value}")
+        result = self.post(f"create/{value}")
         return TestResponse.parse_obj(result)
 
     def read(self, key: str) -> TestResponse:
-        result = self.get(f"/read/{key}")
+        result = self.get(f"read/{key}")
         return TestResponse.parse_obj(result)
 
     def update(self, key: str, value: str) -> TestResponse:
-        result = self.put(f"/update/{key}/{value}")
+        result = self.put(f"update/{key}/{value}")
         return TestResponse.parse_obj(result)
 
     def remove(self, key: str) -> TestResponse:
-        result = self.delete(f"/delete/{key}")
+        result = self.delete(f"delete/{key}")
         return TestResponse.parse_obj(result)
 
     def remove_with_body(self, key: str) -> TestResponse:
-        result = self.delete(f"/delete_body", body={'key': key})
+        result = self.delete(f"delete_body", body={'key': key})
         return TestResponse.parse_obj(result)
 
     def remove_with_auth(self, key: str, authority: Keystore = None) -> TestResponse:
-        result = self.delete(f"/delete_auth", body={'key': key}, with_authorisation_by=authority)
+        result = self.delete(f"delete_auth", body={'key': key}, with_authorisation_by=authority)
         return TestResponse.parse_obj(result)
 
 
