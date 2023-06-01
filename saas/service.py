@@ -16,7 +16,7 @@ from saas.node import Node
 class RunNode(CLICommand):
     # define the default values
     default_datastore = os.path.join(os.environ['HOME'], '.datastore')
-    default_rest_address = f'127.0.0.1:5001'
+    default_rest_address = '127.0.0.1:5001'
     default_p2p_address = '127.0.0.1:4001'
     default_boot_node_address = '127.0.0.1:4001'
     default_service = 'full'
