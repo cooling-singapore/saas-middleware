@@ -43,26 +43,13 @@ class RESTApp:
     def register(self, endpoint: EndpointDefinition) -> None:
         route = f"{endpoint.prefix}/{endpoint.rule}"
         logger.info(f"REST app is mapping {endpoint.method}:{route} to {endpoint.function}")
-        if endpoint.method == 'POST':
-            self.api.post(route,
-                          response_model=endpoint.response_model,
-                          dependencies=endpoint.dependencies,
-                          description=endpoint.function.__doc__)(endpoint.function)
-        elif endpoint.method == 'GET':
-            self.api.get(route,
-                         response_model=endpoint.response_model,
-                         dependencies=endpoint.dependencies,
-                         description=endpoint.function.__doc__)(endpoint.function)
-        elif endpoint.method == 'PUT':
-            self.api.put(route,
-                         response_model=endpoint.response_model,
-                         dependencies=endpoint.dependencies,
-                         description=endpoint.function.__doc__)(endpoint.function)
-        elif endpoint.method == 'DELETE':
-            self.api.delete(route,
-                            response_model=endpoint.response_model,
-                            dependencies=endpoint.dependencies,
-                            description=endpoint.function.__doc__)(endpoint.function)
+        if endpoint.method in ['POST', 'GET', 'PUT', 'DELETE']:
+            self.api.add_api_route(route,
+                                   endpoint.function,
+                                   methods=[endpoint.method],
+                                   response_model=endpoint.response_model,
+                                   dependencies=endpoint.dependencies,
+                                   description=endpoint.function.__doc__)
         else:
             raise UnsupportedRESTMethod(endpoint.method, route)
 
