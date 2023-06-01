@@ -15,7 +15,7 @@ jobs:
           python-version: "3.9"
 
       - name: Install application
-        run: pip install .
+        run: pip install ".[dev]"
 
       - name: Create credentials.json
         run: >
