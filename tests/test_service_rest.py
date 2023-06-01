@@ -10,7 +10,7 @@ from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.rest.auth import VerifyAuthorisation
 from saas.rest.exceptions import UnsuccessfulRequestError
-from saas.rest.proxy import EndpointProxy
+from saas.rest.proxy import EndpointProxy, get_proxy_prefix
 from saas.rest.schemas import EndpointDefinition
 
 Logging.initialise(level=logging.DEBUG)
@@ -113,7 +113,7 @@ class TestProxy(EndpointProxy):
     __test__ = False
 
     def __init__(self, remote_address):
-        EndpointProxy.__init__(self, ("/api/v1", "test"), remote_address)
+        EndpointProxy.__init__(self, get_proxy_prefix(endpoint_prefix), remote_address)
 
     def create(self, value: str) -> TestResponse:
         result = self.post(f"create/{value}")

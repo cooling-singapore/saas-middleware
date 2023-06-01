@@ -6,7 +6,7 @@ from saas.dor.schemas import DORStatistics, DataObjectProvenance, DataObject, GP
 from saas.core.schemas import GithubCredentials
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
-from saas.rest.proxy import EndpointProxy, Session
+from saas.rest.proxy import EndpointProxy, Session, get_proxy_prefix
 
 DOR_ENDPOINT_PREFIX = "/api/v1/dor"
 
@@ -18,7 +18,7 @@ class DORProxy(EndpointProxy):
                         endpoint_prefix=(session.endpoint_prefix_base, 'dor'))
 
     def __init__(self, remote_address: (str, int), credentials: (str, str) = None,
-                 endpoint_prefix: Tuple[str, str] = ('/api/v1', 'dor')):
+                 endpoint_prefix: Tuple[str, str] = get_proxy_prefix(DOR_ENDPOINT_PREFIX)):
         super().__init__(endpoint_prefix, remote_address, credentials=credentials)
 
     def search(self, patterns: list[str] = None, owner_iid: str = None,
