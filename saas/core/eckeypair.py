@@ -183,7 +183,7 @@ class ECKeyPair(KeyPair):
             return False
 
     def encrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
-        raise NotImplementedError(f"EC keys do not currently support encryption/decryption")
+        raise NotImplementedError("EC keys do not currently support encryption/decryption")
 
     def decrypt(self, message: bytes, base64_encoded: bool = False) -> bytes:
-        raise NotImplementedError(f"EC keys do not currently support encryption/decryption")
+        raise NotImplementedError("EC keys do not currently support encryption/decryption")

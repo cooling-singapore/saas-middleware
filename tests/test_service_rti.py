@@ -632,7 +632,7 @@ def test_processor_execution_reference_restricted(test_context, node, node_db_pr
 
     user = known_user
 
-    invalid_signature = user.sign(f"invalid content".encode('utf-8'))
+    invalid_signature = user.sign("invalid content".encode('utf-8'))
     task_input_invalid = [
         Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
                                       'user_signature': invalid_signature}),
@@ -841,7 +841,7 @@ def test_docker_remote_processor_execution_value(node, remote_docker_credentials
     test_proc_id, test_proc_gh_cred = test_processor_info
 
     # instruct the RTI to deploy the processor remotely using the SSH credentials
-    logger.info(f"Deploying processor using docker")
+    logger.info("Deploying processor using docker")
     rti_proxy.deploy(test_proc_id, node.keystore,
                      deployment="docker", github_credentials=test_proc_gh_cred,
                      ssh_credentials=remote_docker_credentials)

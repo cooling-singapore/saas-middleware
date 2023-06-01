@@ -219,7 +219,7 @@ class Keystore:
 
         # verify the identity's integrity
         if not self._identity.verify_integrity():
-            raise SaaSRuntimeException(f"Keystore produced invalid identity", details={
+            raise SaaSRuntimeException("Keystore produced invalid identity", details={
                 'identity': self._identity
             })
 

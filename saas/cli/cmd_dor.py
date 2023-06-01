@@ -41,15 +41,15 @@ class DORAdd(CLICommand):
     def __init__(self) -> None:
         super().__init__('add', 'adds a data object', arguments=[
             Argument('--restrict-access', dest="restrict_access", action='store_const', const=True,
-                     help=f"indicates that access to this data object should be restricted"),
+                     help="indicates that access to this data object should be restricted"),
             Argument('--encrypt-content', dest="content_encrypted", action='store_const', const=True,
-                     help=f"indicates that the content of the data object should be encrypted"),
+                     help="indicates that the content of the data object should be encrypted"),
             Argument('--assume-creator', dest="assume_creator", action='store_const', const=True,
-                     help=f"assumes that the user uploading the data object is also the creator"),
+                     help="assumes that the user uploading the data object is also the creator"),
             Argument('--data-type', dest='data-type', action='store',
-                     help=f"the data type of the data object"),
+                     help="the data type of the data object"),
             Argument('--data-format', dest='data-format', action='store',
-                     help=f"the data format of the data object"),
+                     help="the data format of the data object"),
             Argument('file', metavar='file', type=str, nargs=1,
                      help="file containing the content of the data object")
         ])
@@ -113,16 +113,16 @@ class DORAddGPP(CLICommand):
     def __init__(self) -> None:
         super().__init__('add-gpp', 'adds a Git Processor Pointer (GPP) data object', arguments=[
             Argument('--url', dest='url', action='store',
-                     help=f"the URL where to find the git repository that contains the processor"),
+                     help="the URL where to find the git repository that contains the processor"),
 
             Argument('--commit-id', dest='commit-id', action='store',
-                     help=f"the commit id to be used (default: most recent commit of the repository)"),
+                     help="the commit id to be used (default: most recent commit of the repository)"),
 
             Argument('--path', dest='path', action='store',
-                     help=f"the relative path inside the repository where to find the processor"),
+                     help="the relative path inside the repository where to find the processor"),
 
             Argument('--config', dest='config', action='store',
-                     help=f"the configuration to be used for installing and executing the processor"),
+                     help="the configuration to be used for installing and executing the processor"),
         ])
 
     def execute(self, args: dict) -> None:
@@ -142,7 +142,7 @@ class DORAddGPP(CLICommand):
                 if os.path.exists(repo_path):
                     print(f"Deleting already existing path '{repo_path}'...", end='')
                     shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
-                    print(f"Done")
+                    print("Done")
 
                 # get the URL
                 url = args['url']
@@ -157,7 +157,7 @@ class DORAddGPP(CLICommand):
                 result = subprocess.run(['git', 'clone', url], capture_output=True, cwd=args['temp-dir'])
                 if result.returncode != 0:
                     raise CLIRuntimeError(f"Cannot clone repository {url}.")
-                print(f"Done")
+                print("Done")
 
                 # do we have a commit it?
                 if not args['commit-id']:
@@ -165,7 +165,7 @@ class DORAddGPP(CLICommand):
                     print("Determining default commit id...", end='')
                     result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, cwd=repo_path)
                     if result.returncode != 0:
-                        raise CLIRuntimeError(f"Cannot determine default commit id.")
+                        raise CLIRuntimeError("Cannot determine default commit id.")
                     default_commit_id = result.stdout.decode('utf-8').strip()
                     print(f"Done: {default_commit_id}")
 
@@ -183,7 +183,7 @@ class DORAddGPP(CLICommand):
                 # do we have a processor path?
                 if not args['path']:
                     # analyse all subdirectories to find 'descriptor.json' files
-                    print(f"Searching for processor descriptors...", end='')
+                    print("Searching for processor descriptors...", end='')
                     pending = [repo_path]
                     found = []
                     while len(pending) > 0:
@@ -225,7 +225,7 @@ class DORAddGPP(CLICommand):
                         raise CLIRuntimeError("No valid processor descriptors. Aborting.")
 
                     # select the processor path
-                    args['path'] = prompt_for_selection(choices, f"Select a processor:", allow_multiple=False)
+                    args['path'] = prompt_for_selection(choices, "Select a processor:", allow_multiple=False)
 
                 # does the descriptor file exist?
                 descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
@@ -244,7 +244,7 @@ class DORAddGPP(CLICommand):
                 # do we have a configuration?
                 if not args['config']:
                     choices = [Choice(c, c) for c in descriptor.configurations]
-                    args['config'] = prompt_for_selection(choices, f"Select the configuration profile:")
+                    args['config'] = prompt_for_selection(choices, "Select the configuration profile:")
 
                 # clean up
                 shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
@@ -276,7 +276,7 @@ class DORAddGPP(CLICommand):
 class DORMeta(CLICommand):
     def __init__(self):
         super().__init__('meta', 'retrieves the meta information of a data object', arguments=[
-            Argument('--obj-id', dest='obj-id', action='store', help=f"the id of the data object")
+            Argument('--obj-id', dest='obj-id', action='store', help="the id of the data object")
         ])
 
     def execute(self, args: dict) -> None:
@@ -310,9 +310,9 @@ class DORDownload(CLICommand):
     def execute(self, args: dict) -> None:
         # do we have a valid destination directory?
         if not args['destination']:
-            raise CLIRuntimeError(f"No download path provided")
+            raise CLIRuntimeError("No download path provided")
         elif not os.path.isdir(args['destination'][0]):
-            raise CLIRuntimeError(f"Destination path provided is not a directory")
+            raise CLIRuntimeError("Destination path provided is not a directory")
 
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
@@ -408,7 +408,7 @@ class DORTag(CLICommand):
     def __init__(self) -> None:
         super().__init__('tag', 'add/update tags of a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store',
-                     help=f"the id of the data object"),
+                     help="the id of the data object"),
 
             Argument('tags', metavar='tags', type=str, nargs='*',
                      help="the tags (given as \'key=value\' pairs) to be used for the data object")
@@ -473,7 +473,7 @@ class DORUntag(CLICommand):
     def __init__(self) -> None:
         super().__init__('untag', 'removes tags from a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store',
-                     help=f"the id of the data object"),
+                     help="the id of the data object"),
 
             Argument('keys', metavar='keys', type=str, nargs='*',
                      help="the tags (identified by their key) to be removed from the data object")
@@ -494,7 +494,7 @@ class DORUntag(CLICommand):
             # check if the object ids exist/owned by this entity
             result = dor.search(owner_iid=keystore.identity.id)
             result = {item.obj_id: item for item in result}
-            if not args['obj-id'] in result:
+            if args['obj-id'] not in result:
                 raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by "
                                       f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. "
                                       f"Aborting.")
@@ -535,13 +535,13 @@ class DORSearch(CLICommand):
     def __init__(self) -> None:
         super().__init__('search', 'searches for data objects', arguments=[
             Argument('--own', dest="own", action='store_const', const=True,
-                     help=f"limits the search to data objects owned by the identity used (refer to --keystore-id)"),
+                     help="limits the search to data objects owned by the identity used (refer to --keystore-id)"),
 
             Argument('--data-type', dest='data-type', action='store',
-                     help=f"only search for data objects with this data type"),
+                     help="only search for data objects with this data type"),
 
             Argument('--data-format', dest='data-format', action='store',
-                     help=f"only search for data objects with this data format"),
+                     help="only search for data objects with this data format"),
 
             Argument('pattern', metavar='pattern', type=str, nargs="*",
                      help="limits the search to data objects whose tag (key or value) contains the pattern(s)")
@@ -609,7 +609,7 @@ class DORAccessShow(CLICommand):
     def __init__(self) -> None:
         super().__init__('show', 'shows the identities who have been granted access to a data object', arguments=[
             Argument('--obj-id', dest='obj-id', action='store', required=False,
-                     help=f"the id of the data object"),
+                     help="the id of the data object"),
         ])
 
     def execute(self, args: dict) -> None:
@@ -619,7 +619,7 @@ class DORAccessShow(CLICommand):
         # get all data objects by this user
         result = dor.search(owner_iid=keystore.identity.id)
         if not result:
-            raise CLIRuntimeError(f"No data objects found. Aborting.")
+            raise CLIRuntimeError("No data objects found. Aborting.")
 
         # do we have object id?
         if not args['obj-id']:
@@ -648,10 +648,10 @@ class DORAccessShow(CLICommand):
         meta = result[args['obj-id']]
 
         if not meta.access_restricted:
-            print(f"Data object is not access restricted: everyone has access.")
+            print("Data object is not access restricted: everyone has access.")
 
         else:
-            print(f"The following identities have been granted access:")
+            print("The following identities have been granted access:")
             db = NodeDBProxy(extract_address(args['address']))
             identities = [db.get_identity(iid) for iid in meta.access]
             # headers
@@ -672,7 +672,7 @@ class DORAccessGrant(CLICommand):
     def __init__(self) -> None:
         super().__init__('grant', 'grants access to one or more data objects', arguments=[
             Argument('--iid', dest='iid', action='store',
-                     help=f"the id of the identity who will be granted access"),
+                     help="the id of the identity who will be granted access"),
 
             Argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
                      help="the ids of the data objects to which access will be granted")
@@ -727,9 +727,9 @@ class DORAccessGrant(CLICommand):
             print(f"Granting access to data object {obj_id} for identity {args['iid']}...", end='')
             meta = dor.grant_access(obj_id, keystore, identities[args['iid']])
             if args['iid'] not in meta.access:
-                print(f"Failed")
+                print("Failed")
             else:
-                print(f"Done")
+                print("Done")
 
 
 class DORAccessRevoke(CLICommand):
@@ -739,7 +739,7 @@ class DORAccessRevoke(CLICommand):
                      help="the id of the data objects to which access will be revoked"),
 
             Argument('iids', metavar='iids', type=str, nargs='*',
-                     help=f"the ids of the identities whose access will be revoked")
+                     help="the ids of the identities whose access will be revoked")
         ])
 
     def execute(self, args: dict) -> None:
@@ -754,7 +754,7 @@ class DORAccessRevoke(CLICommand):
                                                      allow_multiple=False)
 
             if args['obj-id'] is None:
-                raise CLIRuntimeError(f"No data objects found. Aborting.")
+                raise CLIRuntimeError("No data objects found. Aborting.")
 
         else:
             # check if the object id exists/owned by this entity
@@ -783,7 +783,7 @@ class DORAccessRevoke(CLICommand):
 
         # do we have any choices?
         if not choices:
-            raise CLIRuntimeError(f"No identities whose access could be revoked.")
+            raise CLIRuntimeError("No identities whose access could be revoked.")
 
         # select the identities to be removed
         args['iids'] = prompt_for_selection(
@@ -794,6 +794,6 @@ class DORAccessRevoke(CLICommand):
             print(f"Revoking access to data object {args['obj-id']} for identity {iid}...", end='')
             meta = dor.revoke_access(args['obj-id'], keystore, identities[iid])
             if iid in meta.access:
-                print(f"Failed")
+                print("Failed")
             else:
-                print(f"Done")
+                print("Done")

@@ -183,7 +183,7 @@ class TestContext:
     def create_keystores(self, n: int, use_credentials: bool = False) -> List[Keystore]:
         keystores = []
         for i in range(n):
-            keystore = Keystore.create(self.testing_dir, f"keystore_{i}", f"no-email-provided", f"password_{i}")
+            keystore = Keystore.create(self.testing_dir, f"keystore_{i}", "no-email-provided", f"password_{i}")
             keystores.append(keystore)
 
             # update keystore credentials (if applicable)

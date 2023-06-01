@@ -120,13 +120,13 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
 
 def get_home_directory(ssh_credentials: SSHCredentials) -> str:
     # try to determine remote the home directory using Python3 (and Python in case Python3 doesn't work)
-    result = run_command(f"python3 -c \"import os; print(os.path.expanduser('~'))\"", ssh_credentials=ssh_credentials,
+    result = run_command("python3 -c \"import os; print(os.path.expanduser('~'))\"", ssh_credentials=ssh_credentials,
                          check_exitcode=False)
     if result.returncode != 0:
-        result2 = run_command(f"python -c \"import os; print(os.path.expanduser('~'))\"",
+        result2 = run_command("python -c \"import os; print(os.path.expanduser('~'))\"",
                               ssh_credentials=ssh_credentials, check_exitcode=False)
         if result2.returncode != 0:
-            raise SaaSRuntimeException(f"Cannot determine remote home directory", details={
+            raise SaaSRuntimeException("Cannot determine remote home directory", details={
                 'result.stdout': result.stdout.decode('utf-8'),
                 'result.stderr': result.stderr.decode('utf-8'),
                 'result2.stdout': result2.stdout.decode('utf-8'),
@@ -202,13 +202,13 @@ def run_command_async(command: str, local_output_path: str, name: str,
     # create the run script
     with open(paths['local_script'], 'w') as f:
         f.write('\n'.join([
-            f"#!/bin/bash",
+            "#!/bin/bash",
             f"{command} > {paths['stdout']} 2> {paths['stderr']} &",
-            f"pid=$!",
+            "pid=$!",
             f"echo $pid > {paths['pid']}",
-            f"wait $pid",
+            "wait $pid",
             f"echo $? > {paths['exitcode']}",
-            f""
+            ""
         ]))
 
     # if needed copy the run script to the remote machine
@@ -629,7 +629,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 logger.info(f"purged pending job: {job_type} {status_logger.status.job}")
 
     def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
-        context.make_note('step', f"lookup by-reference input data objects")
+        context.make_note('step', "lookup by-reference input data objects")
 
         # do we have any by-reference input data objects in the first place?
         pending = {item.obj_id: item.user_signature if item.user_signature else None
@@ -693,7 +693,7 @@ class RTIProcessorAdapter(Thread, ABC):
     def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, obj_records: dict, working_directory: str,
                                             context: JobContext) -> list[dict]:
 
-        context.make_note('step', f"fetch by-reference input data objects")
+        context.make_note('step', "fetch by-reference input data objects")
 
         # do we have any data objects to fetch to begin with?
         if len(obj_records) == 0:
@@ -775,7 +775,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
                                               context: JobContext) -> None:
-        context.make_note('step', f"decrypt by-reference input data objects")
+        context.make_note('step', "decrypt by-reference input data objects")
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -798,7 +798,7 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _store_value_input_data_objects(self, working_directory: str, context: JobContext) -> None:
-        context.make_note('step', f"store by-value input data objects")
+        context.make_note('step', "store by-value input data objects")
         for item in context.job.task.input:
             # if it is a 'value' input then store it to the working directory
             if item.type == 'value':
@@ -894,7 +894,7 @@ class RTIProcessorAdapter(Thread, ABC):
         content_encrypted = task_out.content_encrypted
 
         # TODO: figure out what is supposed to happen with the content key here
-        content_key = encrypt_file(output_content_path, encrypt_for=owner,
+        encrypt_file(output_content_path, encrypt_for=owner,
                                    delete_source=True) if content_encrypted else None
 
         # do we have a target node specified for storing the data object?
@@ -903,7 +903,7 @@ class RTIProcessorAdapter(Thread, ABC):
             # check with the node db to see if we know about this node
             network = {item.identity.id: item for item in self._node.db.get_network()}
             if task_out.target_node_iid not in network:
-                raise RTIException(f"Target node not found in network", details={
+                raise RTIException("Target node not found in network", details={
                     'target_node_iid': task_out.target_node_iid,
                     'network': network
                 })

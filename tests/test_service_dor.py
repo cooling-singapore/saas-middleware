@@ -146,7 +146,7 @@ def test_add_c_large(test_context, keystore, dor_proxy):
         # upload_cycle(1024 * 1024 * 1024)
     ]
 
-    print(f"upload performance: size, generation, upload, hashing")
+    print("upload performance: size, generation, upload, hashing")
     for result in results:
         print(f"{result[0]}\t{result[1]}\t{result[2]}\t{result[3]}")
 

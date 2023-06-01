@@ -26,7 +26,7 @@ class Service(CLICommand):
     def __init__(self):
         super().__init__('service', 'start a node as service provider', arguments=[
             Argument('--use-defaults', dest="use-defaults", action='store_const', const=True,
-                     help=f"use defaults in case arguments are not specified (or prompt otherwise)"),
+                     help="use defaults in case arguments are not specified (or prompt otherwise)"),
             Argument('--datastore', dest='datastore', action='store',
                      help=f"path to the datastore (default: '{self.default_datastore}')"),
             Argument('--rest-address', dest='rest-address', action='store',
@@ -41,15 +41,15 @@ class Service(CLICommand):
                           f"will only load the DOR or RTI modules, respectively; a 'full' node will provide "
                           f"both (default: '{self.default_service}')."),
             Argument('--retain-job-history', dest="retain-job-history", action='store_const', const=True,
-                     help=f"[for execution/full nodes only] instructs the RTI to retain the job history (default "
-                          f"behaviour is to delete information of completed jobs). This flag should only be used for "
-                          f"debug/testing purposes."),
+                     help="[for execution/full nodes only] instructs the RTI to retain the job history (default "
+                          "behaviour is to delete information of completed jobs). This flag should only be used for "
+                          "debug/testing purposes."),
             Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
-                     help=f"[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
-                          f"(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
+                     help="[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
+                          "(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
-                     help=f"allows REST and P2P service to bind and accept connections pointing to any address of the "
-                          f"machine i.e. 0.0.0.0 (useful for docker)")
+                     help="allows REST and P2P service to bind and accept connections pointing to any address of the "
+                          "machine i.e. 0.0.0.0 (useful for docker)")
         ])
 
     def execute(self, args: dict) -> None:

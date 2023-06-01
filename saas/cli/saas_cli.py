@@ -28,17 +28,17 @@ def main():
             Argument('--temp-dir', dest='temp-dir', action='store', default=default_temp_dir,
                      help=f"path to directory used for intermediate files (default: '{default_temp_dir}')"),
             Argument('--keystore-id', dest='keystore-id', action='store',
-                     help=f"id of the keystore to be used if there are more than one available "
-                          f"(default: id of the only keystore if only one is available )"),
+                     help="id of the keystore to be used if there are more than one available "
+                          "(default: id of the only keystore if only one is available )"),
             Argument('--password', dest='password', action='store',
-                     help=f"password for the keystore"),
+                     help="password for the keystore"),
             Argument('--log-level', dest='log-level', action='store',
                      choices=['INFO', 'DEBUG'], default=default_log_level,
                      help=f"set the log level (default: '{default_log_level}')"),
             Argument('--log-path', dest='log-path', action='store',
-                     help=f"enables logging to file using the given path"),
+                     help="enables logging to file using the given path"),
             Argument('--log-console', dest="log-console", action='store_const', const=False,
-                     help=f"enables logging to the console"),
+                     help="enables logging to the console"),
 
         ], commands=[
             CLICommandGroup('identity', 'manage and explore identities', commands=[
@@ -61,7 +61,7 @@ def main():
             Service(),
             CLICommandGroup('dor', 'interact with a Data Object Repository (DOR)', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
                 DORSearch(),
                 DORAdd(),
@@ -79,7 +79,7 @@ def main():
             ]),
             CLICommandGroup('rti', 'interact with a Runtime Infrastructure (RTI)', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
                 CLICommandGroup('proc', 'manage processors', commands=[
                     RTIProcDeploy(),
@@ -98,7 +98,7 @@ def main():
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help=f"the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
                 NetworkList()
             ]),

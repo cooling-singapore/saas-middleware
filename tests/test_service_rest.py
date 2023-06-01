@@ -132,11 +132,11 @@ class TestProxy(EndpointProxy):
         return TestResponse.parse_obj(result)
 
     def remove_with_body(self, key: str) -> TestResponse:
-        result = self.delete(f"delete_body", body={'key': key})
+        result = self.delete("delete_body", body={'key': key})
         return TestResponse.parse_obj(result)
 
     def remove_with_auth(self, key: str, authority: Keystore = None) -> TestResponse:
-        result = self.delete(f"delete_auth", body={'key': key}, with_authorisation_by=authority)
+        result = self.delete("delete_auth", body={'key': key}, with_authorisation_by=authority)
         return TestResponse.parse_obj(result)
 
 

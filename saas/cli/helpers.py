@@ -161,7 +161,7 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
                     db.update_identity(keystore.identity)
                     print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
                 else:
-                    raise CLIRuntimeError(f"Cannot proceed without node ")
+                    raise CLIRuntimeError("Cannot proceed without node ")
 
         except UnsuccessfulRequestError as e:
             raise CLIRuntimeError(f"Could not ensure identity is known to node at {args[address_arg]}. Aborting. "
@@ -199,7 +199,7 @@ def prompt_for_password(confirm: bool = True, allow_empty: bool = False) -> str:
         if confirm:
             pwd2 = prompt_for_string("Re-enter password:", hide=True, allow_empty=allow_empty)
             if pwd1 != pwd2:
-                print(f"Passwords don't match! Please try again.")
+                print("Passwords don't match! Please try again.")
                 continue
 
         return pwd1
@@ -254,7 +254,7 @@ def prompt_for_tags(message: str) -> List[DataObject.Tag]:
             return answers
 
         elif answer.count('=') > 1:
-            print(f"Invalid tag. Use key=value form. Must not contain more than one '=' character. Try again...")
+            print("Invalid tag. Use key=value form. Must not contain more than one '=' character. Try again...")
 
         elif answer.count('=') == 0:
             answers.append(DataObject.Tag(key=answer))

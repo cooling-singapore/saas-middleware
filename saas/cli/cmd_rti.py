@@ -18,7 +18,7 @@ from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
-from saas.rti.schemas import Processor, ProcessorStatus, Task, Job
+from saas.rti.schemas import Processor, ProcessorStatus, Task
 from saas.dor.schemas import GPPDataObject, ProcessorDescriptor
 
 logger = Logging.get('cli.rti')
@@ -41,9 +41,9 @@ class RTIProcDeploy(CLICommand):
     def __init__(self) -> None:
         super().__init__('deploy', 'deploys a processor', arguments=[
             Argument('--type', dest='type', action='store', choices=['native', 'docker'],
-                     help=f"indicate the type of deployment: 'native' or 'docker'."),
+                     help="indicate the type of deployment: 'native' or 'docker'."),
             Argument('--ssh-profile', dest='ssh-profile', action='store',
-                     help=f"indicate the SSH profile to be used (if any)."),
+                     help="indicate the SSH profile to be used (if any)."),
             Argument('proc-id', metavar='proc-id', type=str, nargs='?',
                      help="the id of the GPP data object of the processor to be deployed")
         ])
@@ -130,7 +130,7 @@ class RTIProcDeploy(CLICommand):
                        gpp_custodian=custodian[args['proc-id']].identity.id,
                        ssh_credentials=ssh_credentials,
                        github_credentials=github_credentials)
-            print(f"Done")
+            print("Done")
         except UnsuccessfulRequestError as e:
             print(f"{e.reason} details: {e.details}")
 
@@ -162,7 +162,7 @@ class RTIProcUndeploy(CLICommand):
 
         # do we have a selection?
         if len(args['proc-id']) == 0:
-            raise CLIRuntimeError(f"No processors selected. Aborting.")
+            raise CLIRuntimeError("No processors selected. Aborting.")
 
         # are the processors deployed?
         for proc_id in args['proc-id']:
@@ -174,7 +174,7 @@ class RTIProcUndeploy(CLICommand):
             print(f"Undeploy processor {proc_id}...", end='')
             try:
                 rti.undeploy(proc_id, keystore)
-                print(f"Done")
+                print("Done")
             except UnsuccessfulRequestError as e:
                 print(f"{e.reason} details: {e.details}")
 
@@ -199,7 +199,7 @@ class RTIProcShow(CLICommand):
     def __init__(self) -> None:
         super().__init__('show', 'show details of a deployed processor', arguments=[
             Argument('--proc-id', dest='proc-id', action='store',
-                     help=f"the id of the processor")
+                     help="the id of the processor")
         ])
 
     def execute(self, args: dict) -> None:
@@ -246,7 +246,7 @@ class RTIJobSubmit(CLICommand):
     def __init__(self) -> None:
         super().__init__('submit', 'submit a new job', arguments=[
             Argument('--job', dest='job', action='store',
-                     help=f"path to the job descriptor")
+                     help="path to the job descriptor")
         ])
 
     def _prepare(self, args: dict) -> None:
@@ -302,7 +302,7 @@ class RTIJobSubmit(CLICommand):
                 while True:
                     if item.data_schema:
                         print(f"Input '{item.name}' uses schema for validation:\n{item.data_schema}")
-                        content = prompt_for_string(f"Enter a valid JSON object:")
+                        content = prompt_for_string("Enter a valid JSON object:")
                     else:
                         content = prompt_for_string(f"Input '{item.name}' has no schema for validation. "
                                                     f"Enter a valid JSON object:")
@@ -323,7 +323,7 @@ class RTIJobSubmit(CLICommand):
 
                         except jsonschema.exceptions.SchemaError as e:
                             logger.error(e.message)
-                            raise CLIRuntimeError(f"Schema used for input is not valid", details={
+                            raise CLIRuntimeError("Schema used for input is not valid", details={
                                 'schema': item.data_schema
                             })
 
@@ -469,7 +469,7 @@ class RTIJobStatus(CLICommand):
     def __init__(self):
         super().__init__('status', 'retrieve the status of a job', arguments=[
             Argument('job-id', metavar='job-id', type=str, nargs='?',
-                     help=f"the id of the job")
+                     help="the id of the job")
         ])
 
     def execute(self, args: dict) -> None:
@@ -490,7 +490,7 @@ class RTIJobStatus(CLICommand):
                 choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
 
             if not choices:
-                raise CLIRuntimeError(f"No jobs found.")
+                raise CLIRuntimeError("No jobs found.")
 
             args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
 
@@ -505,7 +505,7 @@ class RTIJobStatus(CLICommand):
 class RTIJobCancel(CLICommand):
     def __init__(self):
         super().__init__('cancel', 'attempts to cancel a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help=f"the id of the job")
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job")
         ])
 
     def execute(self, args: dict) -> None:
@@ -526,7 +526,7 @@ class RTIJobCancel(CLICommand):
                 choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
 
             if not choices:
-                raise CLIRuntimeError(f"No jobs found.")
+                raise CLIRuntimeError("No jobs found.")
 
             args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
 
@@ -541,7 +541,7 @@ class RTIJobCancel(CLICommand):
 class RTIJobLogs(CLICommand):
     def __init__(self):
         super().__init__('logs', 'retrieve the logs of a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help=f"the id of the job"),
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
             Argument('destination', metavar='destination', type=str, nargs=1, help="directory where to store the logs")
 
         ])
@@ -549,9 +549,9 @@ class RTIJobLogs(CLICommand):
     def execute(self, args: dict) -> None:
         # do we have a valid destination directory?
         if not args['destination']:
-            raise CLIRuntimeError(f"No download path provided")
+            raise CLIRuntimeError("No download path provided")
         elif not os.path.isdir(args['destination'][0]):
-            raise CLIRuntimeError(f"Destination path provided is not a directory")
+            raise CLIRuntimeError("Destination path provided is not a directory")
 
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
@@ -570,7 +570,7 @@ class RTIJobLogs(CLICommand):
                 choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
 
             if not choices:
-                raise CLIRuntimeError(f"No jobs found.")
+                raise CLIRuntimeError("No jobs found.")
 
             args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
 

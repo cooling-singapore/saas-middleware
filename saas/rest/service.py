@@ -54,7 +54,7 @@ class RESTApp:
             raise UnsupportedRESTMethod(endpoint.method, route)
 
     async def close(self) -> None:
-        logger.info(f"REST app is shutting down.")
+        logger.info("REST app is shutting down.")
 
 
 class RESTService:
@@ -86,7 +86,7 @@ class RESTService:
 
     def start_service(self) -> None:
         if self._thread is None:
-            logger.info(f"REST service starting up...")
+            logger.info("REST service starting up...")
             self._thread = Thread(target=uvicorn.run, args=(self._app.api,),
                                   kwargs={"host": self._host if not self._bind_all_address else "0.0.0.0",
                                           "port": self._port, "log_level": "info"},
@@ -96,13 +96,13 @@ class RESTService:
             # await asyncio.sleep(0.1)
 
         else:
-            logger.warning(f"REST service asked to start up but thread already exists! Ignoring...")
+            logger.warning("REST service asked to start up but thread already exists! Ignoring...")
 
     def stop_service(self) -> None:
         if self._thread is None:
-            logger.warning(f"REST service asked to shut down but thread does not exist! Ignoring...")
+            logger.warning("REST service asked to shut down but thread does not exist! Ignoring...")
 
         else:
-            logger.info(f"REST service shutting down...")
+            logger.info("REST service shutting down...")
             # there is no way to terminate a thread...
             # self._thread.terminate()
