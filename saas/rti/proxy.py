@@ -6,7 +6,7 @@ from typing import List, Union, Tuple
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.nodedb.proxy import NodeDBProxy
-from saas.rest.proxy import EndpointProxy, Session
+from saas.rest.proxy import EndpointProxy, Session, get_proxy_prefix
 from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
@@ -21,7 +21,7 @@ class RTIProxy(EndpointProxy):
                         endpoint_prefix=(session.endpoint_prefix_base, 'rti'))
 
     def __init__(self, remote_address: (str, int), credentials: (str, str) = None,
-                 endpoint_prefix: Tuple[str, str] = ('/api/v1', 'rti')):
+                 endpoint_prefix: Tuple[str, str] = get_proxy_prefix(RTI_ENDPOINT_PREFIX)):
         super().__init__(endpoint_prefix, remote_address, credentials=credentials)
 
     def get_deployed(self) -> List[Processor]:

@@ -1,7 +1,7 @@
 import json
 import time
 from datetime import datetime, timezone
-from typing import Union, Optional, BinaryIO
+from typing import Union, Optional, BinaryIO, Tuple
 
 import requests
 from snappy import snappy
@@ -12,6 +12,11 @@ from saas.core.keystore import Keystore
 from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
     UnsuccessfulConnectionError
 from saas.rest.schemas import Token
+
+
+def get_proxy_prefix(endpoint_prefix: str) -> Tuple[str, str]:
+    endpoint_split = endpoint_prefix.rsplit("/", 1)
+    return endpoint_split[0], endpoint_split[1]
 
 
 def extract_response(response: requests.Response) -> Optional[Union[dict, list]]:

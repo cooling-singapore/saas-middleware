@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Tuple
 
 from saas.core.identity import Identity
 from saas.nodedb.schemas import NodeInfo
-from saas.rest.proxy import EndpointProxy, Session
+from saas.rest.proxy import EndpointProxy, Session, get_proxy_prefix
 
 DB_ENDPOINT_PREFIX = "/api/v1/db"
 
@@ -16,7 +16,7 @@ class NodeDBProxy(EndpointProxy):
                            endpoint_prefix=(session.endpoint_prefix_base, 'db'))
 
     def __init__(self, remote_address: (str, int), credentials: (str, str) = None,
-                 endpoint_prefix: Tuple[str, str] = ('/api/v1', 'db')):
+                 endpoint_prefix: Tuple[str, str] = get_proxy_prefix(DB_ENDPOINT_PREFIX)):
         super().__init__(endpoint_prefix, remote_address, credentials=credentials)
 
     def get_node(self) -> NodeInfo:
