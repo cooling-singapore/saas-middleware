@@ -562,7 +562,6 @@ class RTIProcessorAdapter(Thread, ABC):
                 print("!!!")
                 print(trace)
                 print("!!!")
-                print(trace)
                 context.add_error('timeout while running job', e.content)
                 context.state = JobStatus.State.TIMEOUT
 
@@ -894,8 +893,7 @@ class RTIProcessorAdapter(Thread, ABC):
         content_encrypted = task_out.content_encrypted
 
         # TODO: figure out what is supposed to happen with the content key here
-        encrypt_file(output_content_path, encrypt_for=owner,
-                                   delete_source=True) if content_encrypted else None
+        encrypt_file(output_content_path, encrypt_for=owner, delete_source=True) if content_encrypted else None
 
         # do we have a target node specified for storing the data object?
         target_address = self._node.rest.address()

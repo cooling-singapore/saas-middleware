@@ -96,7 +96,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         pass
 
     def execute(self, local_working_directory: str, context: JobContext) -> None:
-
         _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
