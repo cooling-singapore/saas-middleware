@@ -88,6 +88,12 @@ def deployed_test_processor(test_processor_info, rti_proxy, node):
     return test_proc_id
 
 
+@pytest.fixture()
+def exec_only_node(test_context, extra_keystores):
+    node = test_context.get_node(extra_keystores[1], use_dor=False, use_rti=True, enable_rest=True)
+    return node
+
+
 def test_rest_get_deployed(rti_proxy):
     result = rti_proxy.get_deployed()
     assert(result is not None)
@@ -437,6 +443,33 @@ def test_processor_execution_value(node, rti_proxy, deployed_test_processor):
     job_id, output = submit_and_wait(rti_proxy, deployed_test_processor, task_input, task_output, owner)
     assert(output is not None)
     assert('c' in output)
+
+
+def test_processor_execution_value_non_dor_target(node, exec_only_node, rti_proxy, deployed_test_processor):
+    # join with the default node
+    target_node = exec_only_node
+    target_node.join_network(node.p2p.address())
+    time.sleep(2)
+
+    owner = node.keystore
+
+    task_input = [
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+    ]
+
+    task_output = [
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                              'content_encrypted': False, 'target_node_iid': target_node.identity.id})
+    ]
+
+    # submit and wait
+    try:
+        submit_and_wait(rti_proxy, deployed_test_processor, task_input, task_output, owner)
+        assert False
+
+    except UnsuccessfulJob as e:
+        assert(e.details['errors'][0]['exception']['reason'] == 'Target node does not support DOR capabilities')
 
 
 def test_processor_execution_value_with_name_and_description(node, rti_proxy, deployed_test_processor):

@@ -21,6 +21,7 @@ from saas.core.helpers import get_timestamp_now, read_json_from_file, write_json
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.nodedb.proxy import NodeDBProxy
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
@@ -909,6 +910,15 @@ class RTIProcessorAdapter(Thread, ABC):
             # extract the rest address from that node record
             node = network[task_out.target_node_iid]
             target_address = node.rest_address
+
+        # check if the target node has DOR capabilities
+        proxy = NodeDBProxy(target_address)
+        node = proxy.get_node()
+        if not node.dor_service:
+            raise RTIException("Target node does not support DOR capabilities", details={
+                'target_address': target_address,
+                'node': node.dict()
+            })
 
         # determine recipe
         recipe = {
