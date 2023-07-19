@@ -96,7 +96,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         pass
 
     def execute(self, local_working_directory: str, context: JobContext) -> None:
-
         _home = base.get_home_directory(self._ssh_credentials)
         paths = {
             'local_wd': local_working_directory,
@@ -145,8 +144,12 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
                                  'trigger:message': {'func': self._handle_trigger_message, 'context': context}
                              }, context=context)
 
-        # wait for all outputs to be processed
+        # wait for all outputs to be processed (or an exception to appear)
         while context.n_tasks() > 0:
+            # do we have an exception?
+            if context.exception():
+                raise context.exception()
+
             context.make_note('task', f"wait for all outputs to be processed: remaining={context.n_tasks()}")
             time.sleep(1)
 
