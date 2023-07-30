@@ -175,8 +175,10 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         context.progress = int(progress)
 
     def _handle_trigger_message(self, line: str, context: JobContext) -> None:
-        message = line.split(':', 2)[2]
-        context.message(message)
+        temp = line.split(':', 3)
+        severity = temp[2]
+        message = temp[3]
+        context.message(severity, message)
 
     def _process_output(self, obj_name: str, context: JobContext) -> None:
         context.make_note(f"process_output:{obj_name}", 'started')
