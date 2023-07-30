@@ -124,9 +124,12 @@ class JobContext(Thread):
             self._status.progress = new_progress
             self._sync()
 
-    def message(self, message: str) -> None:
+    def message(self, severity: str, message: str) -> None:
         with self._mutex:
-            self._status.notes['message'] = message
+            self._status.notes['message'] = {
+                'severity': severity,
+                'message': message
+            }
             self._sync()
 
     def get_output(self, obj_name: str) -> CDataObject:
