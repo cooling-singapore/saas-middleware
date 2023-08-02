@@ -21,6 +21,7 @@ from saas.core.helpers import get_timestamp_now, read_json_from_file, write_json
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.nodedb.proxy import NodeDBProxy
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
@@ -562,7 +563,6 @@ class RTIProcessorAdapter(Thread, ABC):
                 print("!!!")
                 print(trace)
                 print("!!!")
-                print(trace)
                 context.add_error('timeout while running job', e.content)
                 context.state = JobStatus.State.TIMEOUT
 
@@ -894,8 +894,7 @@ class RTIProcessorAdapter(Thread, ABC):
         content_encrypted = task_out.content_encrypted
 
         # TODO: figure out what is supposed to happen with the content key here
-        encrypt_file(output_content_path, encrypt_for=owner,
-                                   delete_source=True) if content_encrypted else None
+        encrypt_file(output_content_path, encrypt_for=owner, delete_source=True) if content_encrypted else None
 
         # do we have a target node specified for storing the data object?
         target_address = self._node.rest.address()
@@ -911,6 +910,15 @@ class RTIProcessorAdapter(Thread, ABC):
             # extract the rest address from that node record
             node = network[task_out.target_node_iid]
             target_address = node.rest_address
+
+        # check if the target node has DOR capabilities
+        proxy = NodeDBProxy(target_address)
+        node = proxy.get_node()
+        if not node.dor_service:
+            raise RTIException("Target node does not support DOR capabilities", details={
+                'target_address': target_address,
+                'node': node.dict()
+            })
 
         # determine recipe
         recipe = {

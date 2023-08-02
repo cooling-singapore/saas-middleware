@@ -22,6 +22,7 @@ class JobContext(Thread):
         self._status = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={}, job=job,
                                  reconnect=reconnect)
         self._tasks = []
+        self._exception = None
         self._sync()
 
     def run(self):
@@ -47,13 +48,9 @@ class JobContext(Thread):
                     logger.error(f"[{self._status.job.id}] context worker encountered an exception: {e.reason} "
                                  f"{e.details}")
 
-                    # manually set the state to failed
+                    # set the exception
                     with self._mutex:
-                        self._status.state = JobStatus.State.FAILED
-                        self._status.errors.append(JobStatus.Error(
-                            message='context worker encountered exception',
-                            exception=e.content
-                        ))
+                        self._exception = e
 
                     break
 
@@ -96,6 +93,10 @@ class JobContext(Thread):
         with self._mutex:
             return len(self._tasks)
 
+    def exception(self) -> Optional[SaaSRuntimeException]:
+        with self._mutex:
+            return self._exception
+
     def add_reconnect_info(self, paths: dict[str, str], pid: str, pid_paths: dict[str, str]) -> None:
         with self._mutex:
             self._status.reconnect = ReconnectInfo(paths=paths, pid=pid, pid_paths=pid_paths)
@@ -123,9 +124,12 @@ class JobContext(Thread):
             self._status.progress = new_progress
             self._sync()
 
-    def message(self, message: str) -> None:
+    def message(self, severity: str, message: str) -> None:
         with self._mutex:
-            self._status.notes['message'] = message
+            self._status.notes['message'] = {
+                'severity': severity,
+                'message': message
+            }
             self._sync()
 
     def get_output(self, obj_name: str) -> CDataObject:
