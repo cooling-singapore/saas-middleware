@@ -71,6 +71,7 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         base.run_command(f"cd {self._paths['repo']} && git checkout {commit_id}",
                          ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
 
+        time.sleep(2)
 
         # make scripts executable and remove \r characters
         logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
@@ -82,14 +83,17 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         base.run_command(f"chmod u+x {self._paths['install.sh']}",
                          ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
 
+        time.sleep(2)
 
         logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}")
         base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['execute.sh']}""",
                          ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
+        time.sleep(2)
 
         base.run_command(f"chmod u+x {self._paths['execute.sh']}",
                          ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
 
+        time.sleep(2)
 
         # run install script
         logger.debug(f"running {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
