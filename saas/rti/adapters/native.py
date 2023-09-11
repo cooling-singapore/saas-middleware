@@ -144,9 +144,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         # make this job resumable
         context.add_reconnect_info(paths, pid, pid_paths)
 
-        # try to monitor the job by (re)connecting to it
-        self.connect_and_monitor(context)
-
     def connect_and_monitor(self, context: JobContext) -> None:
         # monitor the output of a process
         base.monitor_command(context.reconnect_info.pid, context.reconnect_info.pid_paths,

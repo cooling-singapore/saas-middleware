@@ -9,7 +9,7 @@ import traceback
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.helpers import decrypt_file, encrypt_file, hash_json_object
@@ -389,6 +389,105 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
     run_command(f"ln -sf {target_path} {link_path}")
 
 
+class JobRunner(Thread):
+    def __init__(self, owner: RTIProcessorAdapter, job_type: str, context: JobContext, wd_path: str):
+        super().__init__()
+        self._owner = owner
+        self._job_type = job_type
+        self._context = context
+        self._wd_path = wd_path
+
+    @property
+    def job(self) -> Job:
+        return self._context.job
+
+    def run(self):
+        try:
+            if self._job_type == 'new':
+                # perform pre-execute routine
+                self._owner.pre_execute(self._wd_path, self._context)
+
+                # instruct processor adapter to execute the job
+                self._owner.execute(self._wd_path, self._context)
+
+            elif self._job_type == 'resume':
+                pass
+
+            else:
+                raise SaaSRuntimeException(f"unexpected job type '{self._job_type}'")
+
+            # set the job state to RUNNING
+            self._context.state = JobStatus.State.RUNNING
+
+            # connect to the job and monitor its progress
+            self._owner.connect_and_monitor(self._context)
+
+            # perform post-execute routine
+            self._owner.post_execute(self._context.job.id)
+
+            # if we reach here the job is either running or cancelled
+            assert (self._context.state in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED])
+            if self._context.state == JobStatus.State.RUNNING:
+                self._context.state = JobStatus.State.SUCCESSFUL
+
+        except RunCommandError as e:
+            # add the trace to the exception details
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.debug(trace)
+            details = e.details
+            details['trace'] = trace
+
+            self._context.add_error(
+                'error (timeout?) while running job', ExceptionContent(id=e.id, reason=e.reason, details=details)
+            )
+            self._context.state = JobStatus.State.TIMEOUT
+
+        except SaaSRuntimeException as e:
+            # add the trace to the exception details
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.debug(trace)
+            details = e.details
+            details['trace'] = trace
+
+            self._context.add_error(
+                'error (SaaS) while running job', ExceptionContent(id=e.id, reason=e.reason, details=details)
+            )
+            self._context.state = JobStatus.State.FAILED
+
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            self._context.add_error(
+                'unexpected exception while running job',
+                ExceptionContent(id='none', reason=f"{e}", details={'trace': trace}))
+            self._context.state = JobStatus.State.FAILED
+
+        # if the job history is not to be retained, delete its contents (with exception of the status and
+        # the job descriptor)
+        if not self._context.job.retain:
+            exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
+                          'execute_sh.pid', 'execute.sh']
+            logger.info(f"[adapter:{self._owner.id}][{self._context.job.id}] delete working directory contents "
+                        f"at {self._wd_path} (exclusions: {exclusions})...")
+
+            # collect all files in the directory
+            files = os.listdir(self._wd_path)
+            for file in files:
+                # if the item is not in the exclusion list, delete it
+                if not file.endswith(tuple(exclusions)):
+                    path = os.path.join(self._wd_path, file)
+                    if os.path.isfile(path):
+                        os.remove(path)
+                    elif os.path.isdir(path):
+                        shutil.rmtree(path)
+                    elif os.path.islink(path):
+                        os.unlink(path)
+                    else:
+                        logger.warning(f"Encountered neither file nor directory: {path}")
+
+    def cancel(self):
+        self._context.cancel()
+
+
 class RTIProcessorAdapter(Thread, ABC):
     def __init__(self, proc_id: str, gpp: GitProcessorPointer, job_wd_path: str, node) -> None:
         Thread.__init__(self, daemon=True)
@@ -402,7 +501,7 @@ class RTIProcessorAdapter(Thread, ABC):
         self._input_interface = {item.name: item for item in gpp.proc_descriptor.input}
         self._output_interface = {item.name: item for item in gpp.proc_descriptor.output}
         self._pending: List[Tuple[str, JobContext]] = []
-        self._active: Optional[JobContext] = None
+        self._active: Dict[str, JobRunner] = {}
         self._state = ProcessorState.UNINITIALISED
 
     @property
@@ -446,7 +545,7 @@ class RTIProcessorAdapter(Thread, ABC):
             return ProcessorStatus(
                 state=self._state.value,
                 pending=[context.job for _, context in self._pending],
-                active=self._active.job if self._active else None
+                active=[runner.job for _, runner in self._active.items()]
             )
 
     def pre_execute(self, working_directory: str, context: JobContext) -> None:
@@ -502,11 +601,19 @@ class RTIProcessorAdapter(Thread, ABC):
         with self._mutex:
             return [context.job for _, context in self._pending]
 
-    def active_job(self) -> Optional[Job]:
+    def active_jobs(self) -> List[Job]:
         with self._mutex:
-            return self._active.job if self._active else None
+            return [runner.job for _, runner in self._active.items()]
+
+    def cancel(self, job_id: str) -> None:
+        with self._mutex:
+            if job_id in self._active:
+                # remove the job runner from active and cancel it
+                runner = self._active.pop(job_id)
+                runner.cancel()
 
     def run(self) -> None:
+        # start-up the adapter
         try:
             logger.info(f"[adapter:{self._proc_id}] starting up...")
             self._state = ProcessorState.STARTING
@@ -525,88 +632,25 @@ class RTIProcessorAdapter(Thread, ABC):
             self._state = ProcessorState.WAITING
             logger.info(f"[adapter:{self._proc_id}] started.")
 
+        # while the processor is not stopped, and there are pending jobs, execute them
+        # (either in sequence or concurrently)
         while self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
             # wait for a pending job (or for adapter to become inactive)
-            self._active = None
             self._state = ProcessorState.WAITING
             pending_job = self._wait_for_pending_job()
             if not pending_job:
                 break
-
-            # process a job
-            job_type, context = pending_job
-            self._active = context
             self._state = ProcessorState.BUSY
 
-            # set job state
-            context.state = JobStatus.State.RUNNING
+            # create a job runner
+            job_type, context = pending_job
             wd_path = os.path.join(self._job_wd_path, context.job.id)
+            runner = JobRunner(self, job_type, context, wd_path)
+            self._active[context.job.id] = runner
 
-            try:
-                if job_type == 'new':
-                    # perform pre-execute routine
-                    self.pre_execute(wd_path, context)
-
-                    # instruct processor adapter to execute the job
-                    self.execute(wd_path, context)
-
-                elif job_type == 'resume':
-                    # instruct processor adapter to resume the job
-                    self.connect_and_monitor(context)
-
-                else:
-                    raise SaaSRuntimeException(f"unexpected job type '{pending_job[0]}'")
-
-                # perform post-execute routine
-                self.post_execute(context.job.id)
-
-                # if we reach here the job is either running or cancelled
-                assert(context.state in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED])
-                if context.state == JobStatus.State.RUNNING:
-                    context.state = JobStatus.State.SUCCESSFUL
-
-            except RunCommandError as e:
-                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                print("!!!")
-                print(trace)
-                print("!!!")
-                context.add_error('timeout while running job', e.content)
-                context.state = JobStatus.State.TIMEOUT
-
-            except SaaSRuntimeException as e:
-                context.add_error('error while running job', e.content)
-                context.state = JobStatus.State.FAILED
-
-            except Exception as e:
-                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                context.add_error('unexpected exception while running job',
-                                  ExceptionContent(id='none', reason=f"{e}", details={
-                                      'trace': trace
-                                  }))
-                context.state = JobStatus.State.FAILED
-
-            # if the job history is not to be retained, delete its contents (with exception of the status and
-            # the job descriptor)
-            if not context.job.retain:
-                exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
-                              'execute_sh.pid', 'execute.sh']
-                logger.info(f"[adapter:{self._proc_id}][{context.job.id}] delete working directory contents "
-                            f"at {wd_path} (exclusions: {exclusions})...")
-
-                # collect all files in the directory
-                files = os.listdir(wd_path)
-                for file in files:
-                    # if the item is not in the exclusion list, delete it
-                    if not file.endswith(tuple(exclusions)):
-                        path = os.path.join(wd_path, file)
-                        if os.path.isfile(path):
-                            os.remove(path)
-                        elif os.path.isdir(path):
-                            shutil.rmtree(path)
-                        elif os.path.islink(path):
-                            os.unlink(path)
-                        else:
-                            logger.warning(f"Encountered neither file nor directory: {path}")
+            # start the job runner
+            logger.info(f"[adapter:{self._proc_id}] starting job runner for {runner.job.id}.")
+            runner.run()
 
         logger.info(f"[adapter:{self._proc_id}] shutting down...")
         self._state = ProcessorState.STOPPING

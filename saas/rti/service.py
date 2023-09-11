@@ -239,6 +239,9 @@ class RTIService:
             # stop the processor and wait for it to be done
             logger.info(f"stopping processor {proc_id}...")
             processor.stop()
+
+            # wait for processor to be stopped and to return
+            logger.info(f"waiting for processor {proc_id} to be stopped...")
             processor.join()
 
             # delete the processor
@@ -348,9 +351,8 @@ class RTIService:
         with self._mutex:
             # collect all jobs
             result = [*self._deployed[proc_id].pending_jobs()]
-            active = self._deployed[proc_id].active_job()
-            if active:
-                result.append(active)
+            active = [*self._deployed[proc_id].active_jobs()]
+            result.extend(active)
 
             return result
 
@@ -371,8 +373,7 @@ class RTIService:
                 for pending in proc.pending_jobs():
                     result[pending.id] = pending
 
-                active = proc.active_job()
-                if active:
+                for active in proc.active_jobs():
                     result[active.id] = active
 
             # also check the live job status loggers
