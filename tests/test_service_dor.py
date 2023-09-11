@@ -154,10 +154,10 @@ def test_add_c_large(test_context, keystore, dor_proxy):
 def test_add_gpp(keystore, dor_proxy):
     owner = keystore.identity
 
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
-    proc_path = 'examples/adapters/proc_example'
-    proc_config = 'default'
+    source = "https://github.com/cooling-singapore/duct-fom"
+    commit_id = 'f654a71'
+    proc_path = "ucm-wrf/proc_prep"
+    proc_config = "gce-ubuntu-20.04"
 
     github_credentials: GithubCredentials = keystore.github_credentials.get(source)
 
