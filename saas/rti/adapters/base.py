@@ -47,7 +47,7 @@ class ProcessorState(Enum):
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
-                check_exitcode: bool = True) -> subprocess.CompletedProcess:
+                check_exitcode: bool = True, attempts: int = 1) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
@@ -63,27 +63,34 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
         wrapped_command = ['bash', '-c', command]
 
     # try to execute the command
-    try:
-        result = subprocess.run(wrapped_command, capture_output=True, check=check_exitcode, timeout=timeout)
-        return result
+    error = None
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(wrapped_command, capture_output=True, check=check_exitcode, timeout=timeout)
+            return result
 
-    except subprocess.CalledProcessError as e:
-        raise RunCommandError({
-            'reason': 'non-zero return code',
-            'returncode': e.returncode,
-            'wrapped_command': wrapped_command,
-            'stdout': e.stdout.decode('utf-8'),
-            'stderr': e.stderr.decode('utf-8'),
-            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
-        })
+        except subprocess.CalledProcessError as e:
+            error = {
+                'reason': 'non-zero return code',
+                'returncode': e.returncode,
+                'wrapped_command': wrapped_command,
+                'stdout': e.stdout.decode('utf-8'),
+                'stderr': e.stderr.decode('utf-8'),
+                'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
+            }
+            logger.error(f"[attempt:{(attempt+1)}/{attempts}] error: {error}")
 
-    except subprocess.TimeoutExpired:
-        raise RunCommandError({
-            'reason': 'timeout',
-            'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
-        })
+        except subprocess.TimeoutExpired:
+            error = {
+                'reason': 'timeout',
+                'wrapped_command': wrapped_command,
+                'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
+            }
+            logger.error(f"[attempt:{(attempt+1)}/{attempts}] error: {error}")
 
+        time.sleep(5)
+
+    raise RunCommandError(error)
 
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials) -> None:
     # generate the wrapped command
