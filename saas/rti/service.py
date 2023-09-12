@@ -37,7 +37,8 @@ logger = Logging.get('rti.service')
 class RTIService:
     infix_path = 'rti'
 
-    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True):
+    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True,
+                 job_concurrency: bool = False):
         # initialise properties
         self._mutex = Lock()
         self._node = node
@@ -48,6 +49,7 @@ class RTIService:
         self._jobs_context = {}
         self._retain_job_history = retain_job_history
         self._strict_deployment = strict_deployment
+        self._job_concurrency = job_concurrency
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
@@ -95,6 +97,10 @@ class RTIService:
     @property
     def strict_deployment(self) -> bool:
         return self._strict_deployment
+
+    @property
+    def job_concurrency(self) -> bool:
+        return self._job_concurrency
 
     def job_descriptor_path(self, job_id: str) -> str:
         return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
@@ -212,7 +218,8 @@ class RTIService:
                 processor = native_rti.RTINativeProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
                                                                  ssh_credentials=ssh_credentials,
                                                                  github_credentials=github_credentials,
-                                                                 retain_remote_wdirs=self._retain_job_history)
+                                                                 retain_remote_wdirs=self._retain_job_history,
+                                                                 job_concurrency=self._job_concurrency)
 
             elif p.deployment == 'docker':
                 # create a Docker RTI adapter instance

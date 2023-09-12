@@ -138,11 +138,11 @@ def test_rest_deploy_undeploy(non_strict_node, strict_node, known_user):
     rti1.deploy(proc_id1, node1.keystore, github_credentials=gh_cred1)
 
     # wait for deployment to be done
-    while rti0.get_status(proc_id0).state != 'waiting':
+    while rti0.get_status(proc_id0).state != 'operational':
         time.sleep(0.5)
 
     # wait for deployment to be done
-    while rti1.get_status(proc_id1).state != 'waiting':
+    while rti1.get_status(proc_id1).state != 'operational':
         time.sleep(0.5)
 
     # try to undeploy the processor with the wrong user on node0
@@ -173,9 +173,9 @@ def test_rest_deploy_descriptor_status_undeploy(node, test_processor_info, rti_p
     while True:
         result = rti_proxy.get_status(test_proc_id)
         assert(result is not None)
-        assert(result.state in ['starting', 'waiting', 'uninitialised'])
+        assert(result.state in ['starting', 'operational', 'uninitialised'])
 
-        if result.state == 'waiting':
+        if result.state == 'operational':
             break
 
         time.sleep(1)
@@ -616,6 +616,53 @@ def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_proc
     provenance = dor_proxy.get_provenance(log[2][2])
     assert(provenance is not None)
     print(json.dumps(provenance.dict(), indent=2))
+
+
+def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, deployed_test_processor):
+    wd_path = test_context.testing_dir
+    owner = concurrent_node.keystore
+
+    # submit jobs
+    n = 3
+    jobs = []
+    for i in range(n):
+        task_input = [
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': i*100+1}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': i*100+2}})
+        ]
+
+        task_output = [
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                  'content_encrypted': False})
+        ]
+
+        job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
+        print(f"job {job_id} submitted")
+        jobs.append(job_id)
+
+    # wait for all jobs
+    results = []
+    for i in range(n):
+        status = rti_proxy.get_status(deployed_test_processor)
+        print(f"proc status: {status}")
+
+        job_id = jobs[i]
+        output = wait_for_job(rti_proxy, job_id, owner)
+        print(f"job {job_id} done -> output: {output}")
+
+        obj_id = output['c'].obj_id
+        download_path = os.path.join(wd_path, f"{obj_id}.json")
+        dor_proxy.get_content(obj_id, owner, download_path)
+
+        with open(download_path, 'r') as f:
+            content = json.load(f)
+            results.append(content['v'])
+
+    for i in range(n):
+        a = i*100+1
+        b = i*100+2
+        c = a + b
+        assert(c == results[i])
 
 
 def test_processor_execution_same_reference(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):

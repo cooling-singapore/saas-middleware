@@ -23,6 +23,7 @@ class RunNode(CLICommand):
     default_retain_job_history = False
     default_strict_deployment = True
     default_bind_all_address = False
+    default_job_concurrency = False
 
     def __init__(self):
         super().__init__('run', 'run a node as service provider', arguments=[
@@ -48,7 +49,10 @@ class RunNode(CLICommand):
                           "(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
                      help="allows REST and P2P service to bind and accept connections pointing to any address of the "
-                          "machine i.e. 0.0.0.0 (useful for docker)")
+                          "machine i.e. 0.0.0.0 (useful for docker)"),
+            Argument('--enable-job-concurrency', dest="enable-job-concurrency", action='store_const', const=True,
+                     help="[for execution/full nodes only] instructs the RTI to execute jobs concurrently (default: "
+                          "disabled, i.e., jobs are executed in sequence of submission).")
         ])
 
     def execute(self, args: dict) -> None:
@@ -60,6 +64,7 @@ class RunNode(CLICommand):
         default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
         default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
         default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
+        default_if_missing(args, 'enable-job-concurrency', self.default_job_concurrency)
 
         # do we have keystore credentials?
         if not args['keystore-id'] or not args['password']:
@@ -91,7 +96,8 @@ class RunNode(CLICommand):
                                enable_rti=args['type'] == 'full' or args['type'] == 'execution',
                                retain_job_history=args['retain-job-history'],
                                strict_deployment=args['strict-deployment'],
-                               bind_all_address=args['bind-all-address'])
+                               bind_all_address=args['bind-all-address'],
+                               job_concurrency=args['enable-job-concurrency'])
 
         except SaaSRuntimeException as e:
             raise CLIRuntimeError(f"Could not start node because '{e.reason}'. Aborting.")
