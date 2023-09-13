@@ -1,0 +1,47 @@
+{
+  "name": "example-processor",
+  "input": [
+    {
+      "name": "a",
+      "data_type": "JSONObject",
+      "data_format": "json",
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
+    },
+    {
+      "name": "b",
+      "data_type": "JSONObject",
+      "data_format": "json",
+      "data_schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
+    }
+  ],
+  "output": [
+    {
+      "name": "c",
+      "data_type": "JSONObject",
+      "data_format": "json",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "v": {"type": "number"}
+        },
+        "required": ["v"]
+      }
+    }
+  ],
+  "configurations": [
+    "default", 
+    "nscc"
+  ]
+}

@@ -163,7 +163,7 @@ def test_secure_send_receive_object(test_context, server_identity, client_identi
             # FIXME: Assertions do not work for threads in test
             assert(server_peer_identity.id == client_identity.id)
 
-            server_obj = TestMessage.parse_obj(server_messenger._receive_object())
+            server_obj = TestMessage.model_validate(server_messenger._receive_object())
             assert(server_obj == ref_obj)
             server_messenger.close()
 
@@ -175,7 +175,7 @@ def test_secure_send_receive_object(test_context, server_identity, client_identi
 
     client_peer_identity, client_messenger = SecureMessenger.connect(server_address, client_identity, wd_path)
     assert(client_peer_identity.id == server_identity.id)
-    client_messenger._send_object(ref_obj.dict())
+    client_messenger._send_object(ref_obj.model_dump())
     client_messenger.close()
     server.join()
 
@@ -251,7 +251,7 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
             assert('question' in request.content)
             logger.debug(f"request received: {request}")
 
-            server_messenger.send_response(P2PMessage.parse_obj({
+            server_messenger.send_response(P2PMessage.model_validate({
                 'sequence_id': request.sequence_id,
                 'protocol': request.protocol,
                 'type': 'A',
@@ -268,7 +268,7 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
     client_peer_identity, client_messenger = SecureMessenger.connect(server_address, client_identity, wd_path)
     assert(client_peer_identity.id == server_identity.id)
 
-    response = client_messenger.send_message(P2PMessage.parse_obj({
+    response = client_messenger.send_message(P2PMessage.model_validate({
         'protocol': 'Hitchhiker',
         'type': 'Q',
         'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'}
