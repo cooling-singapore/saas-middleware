@@ -194,12 +194,12 @@ def test_rest_submit_list_get_job(test_context, node, dor_proxy, rti_proxy, depl
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 1}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 1}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
                               'restricted_access': False, 'content_encrypted': False})
     ]
 
@@ -275,12 +275,12 @@ def test_rest_submit_cancel_job(node, rti_proxy, deployed_test_processor, known_
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
                               'restricted_access': False, 'content_encrypted': False})
     ]
 
@@ -316,12 +316,12 @@ def test_rest_job_logs(test_context, node, deployed_test_processor, rti_proxy, d
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
                               'restricted_access': False, 'content_encrypted': False})
     ]
 
@@ -429,12 +429,12 @@ def test_processor_execution_value(node, rti_proxy, deployed_test_processor):
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -453,12 +453,12 @@ def test_processor_execution_value_non_dor_target(node, exec_only_node, rti_prox
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False, 'target_node_iid': target_node.identity.id})
     ]
 
@@ -475,12 +475,12 @@ def test_processor_execution_value_with_name_and_description(node, rti_proxy, de
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -513,12 +513,12 @@ def test_processor_execution_specific_target_node(node, non_strict_node, deploye
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False, 'target_node_iid': target_node.identity.id})
     ]
 
@@ -549,12 +549,12 @@ def test_processor_execution_reference_unrestricted(test_context, node, dor_prox
     a_obj_id = meta.obj_id
 
     task_input = [
-        Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -582,12 +582,12 @@ def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_proc
     log = []
     for i in range(3):
         task_input = [
-            Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': obj_id_a}),
-            Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 5}})
+            Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': obj_id_a}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
         ]
 
         task_output = [
-            Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                                   'content_encrypted': False})
         ]
 
@@ -626,12 +626,12 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
     jobs = []
     for i in range(n):
         task_input = [
-            Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': i*100+1}}),
-            Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': i*100+2}})
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': i*100+1}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': i*100+2}})
         ]
 
         task_output = [
-            Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                                   'content_encrypted': False})
         ]
 
@@ -676,12 +676,12 @@ def test_processor_execution_same_reference(test_context, node, dor_proxy, rti_p
     a_obj_id = meta.obj_id
 
     task_input = [
-        Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
-        Task.InputReference.model_validate({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id}),
+        Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+        Task.InputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id}),
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -713,14 +713,14 @@ def test_processor_execution_reference_restricted(test_context, node, node_db_pr
 
     invalid_signature = user.sign("invalid content".encode('utf-8'))
     task_input_invalid = [
-        Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
+        Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
                                       'user_signature': invalid_signature}),
-        Task.InputReference.model_validate({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
+        Task.InputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
                                       'user_signature': invalid_signature})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -740,9 +740,9 @@ def test_processor_execution_reference_restricted(test_context, node, node_db_pr
     # create valid and invalid task input
     valid_signature = user.sign(f"{rti_node_info.identity.id}:{a_obj_id}".encode('utf-8'))
     task_input_valid = [
-        Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
+        Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id,
                                       'user_signature': valid_signature}),
-        Task.InputReference.model_validate({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
+        Task.InputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': a_obj_id,
                                       'user_signature': valid_signature})
     ]
 
@@ -762,12 +762,12 @@ def test_processor_execution_reference_encrypted(test_context, node, dor_proxy, 
     obj_id = meta.obj_id
 
     task_input = [
-        Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': obj_id}),
-        Task.InputReference.model_validate({'name': 'b', 'type': 'reference', 'obj_id': obj_id})
+        Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': obj_id}),
+        Task.InputReference.parse_obj({'name': 'b', 'type': 'reference', 'obj_id': obj_id})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -801,12 +801,12 @@ def test_retain_job_history_false(test_context, keystore):
     deploy_and_wait(target_rti, proc_id, owner, gh_cred)
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -837,12 +837,12 @@ def test_retain_job_history_true(test_context, keystore):
     deploy_and_wait(target_rti, proc_id, owner, gh_cred)
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -894,12 +894,12 @@ def test_docker_processor_execution_value(node, rti_proxy, deployed_test_process
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -936,12 +936,12 @@ def test_docker_remote_processor_execution_value(node, remote_docker_credentials
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 1}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
                               'content_encrypted': False})
     ]
 
@@ -959,12 +959,12 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.model_validate({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
     ]
 
     task_output = [
-        Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id,
+        Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
                               'restricted_access': False, 'content_encrypted': False})
     ]
 
@@ -1049,12 +1049,12 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
 #     a_obj_id = meta.obj_id
 #
 #     task_input = [
-#         Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
-#         Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+#         Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+#         Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
 #     ]
 #
 #     task_output = [
-#         Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+#         Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
 #                               'content_encrypted': False})
 #     ]
 #
@@ -1087,12 +1087,12 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
 #     a_obj_id = meta.obj_id
 #
 #     task_input = [
-#         Task.InputReference.model_validate({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
-#         Task.InputValue.model_validate({'name': 'b', 'type': 'value', 'value': {'v': 2}})
+#         Task.InputReference.parse_obj({'name': 'a', 'type': 'reference', 'obj_id': a_obj_id}),
+#         Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 2}})
 #     ]
 #
 #     task_output = [
-#         Task.Output.model_validate({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+#         Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
 #                               'content_encrypted': False})
 #     ]
 #
