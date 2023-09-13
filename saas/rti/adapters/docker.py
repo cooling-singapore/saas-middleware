@@ -112,7 +112,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
                  ssh_credentials: SSHCredentials = None,
                  github_credentials: GithubCredentials = None) -> None:
-        super().__init__(proc_id, gpp, jobs_path, node)
+        super().__init__(proc_id, gpp, jobs_path, node, False)
 
         self._gpp = gpp
         self._ssh_credentials = ssh_credentials

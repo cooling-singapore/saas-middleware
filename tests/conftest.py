@@ -27,7 +27,13 @@ def keystore():
 
 @pytest.fixture()
 def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False)
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
+    return _node
+
+
+@pytest.fixture()
+def concurrent_node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=True)
     return _node
 
 

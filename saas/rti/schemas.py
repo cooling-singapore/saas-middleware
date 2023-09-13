@@ -106,7 +106,7 @@ class ProcessorStatus(BaseModel):
     """
     state: str = Field(..., title="State", description="The state of the processor.", example="initialised")
     pending: List[Job] = Field(..., title="Pending Jobs", description="A list of pending jobs that are queued for execution.")
-    active: Optional[Job] = Field(title="Active Job", description="The job that is currently being executed by the processor (if any).")
+    active: List[Job] = Field(..., title="Active Jobs", description="A list of active jobs that are currently being executed by the processor (if any).")
 
 
 class Permission(BaseModel):

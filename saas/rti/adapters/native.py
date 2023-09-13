@@ -15,8 +15,9 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
     def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
                  ssh_credentials: SSHCredentials = None,
                  github_credentials: GithubCredentials = None,
-                 retain_remote_wdirs: bool = False) -> None:
-        super().__init__(proc_id, gpp, jobs_path, node)
+                 retain_remote_wdirs: bool = False,
+                 job_concurrency: bool = False) -> None:
+        super().__init__(proc_id, gpp, jobs_path, node, job_concurrency)
 
         # set credentials
         self._ssh_credentials = ssh_credentials
@@ -143,9 +144,6 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
 
         # make this job resumable
         context.add_reconnect_info(paths, pid, pid_paths)
-
-        # try to monitor the job by (re)connecting to it
-        self.connect_and_monitor(context)
 
     def connect_and_monitor(self, context: JobContext) -> None:
         # monitor the output of a process

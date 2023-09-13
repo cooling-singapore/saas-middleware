@@ -223,7 +223,7 @@ class TestContext:
 
     def get_node(self, keystore: Keystore, enable_rest: bool = False,
                  use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True,
-                 strict_deployment: bool = False, wd_path: str = None) -> Node:
+                 strict_deployment: bool = False, job_concurrency: bool = False, wd_path: str = None) -> Node:
         name = keystore.identity.id
         if name in self.nodes:
             return self.nodes[name]
@@ -239,7 +239,8 @@ class TestContext:
         node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
                      rest_address=rest_address if enable_rest else None,
                      retain_job_history=retain_job_history if use_rti else None,
-                     strict_deployment=strict_deployment if use_rti else None)
+                     strict_deployment=strict_deployment if use_rti else None,
+                     job_concurrency=job_concurrency if use_rti else None)
 
         self.nodes[name] = node
 

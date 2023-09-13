@@ -37,7 +37,8 @@ logger = Logging.get('rti.service')
 class RTIService:
     infix_path = 'rti'
 
-    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True):
+    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True,
+                 job_concurrency: bool = False):
         # initialise properties
         self._mutex = Lock()
         self._node = node
@@ -48,6 +49,7 @@ class RTIService:
         self._jobs_context = {}
         self._retain_job_history = retain_job_history
         self._strict_deployment = strict_deployment
+        self._job_concurrency = job_concurrency
 
         # initialise directories
         os.makedirs(self._jobs_path, exist_ok=True)
@@ -95,6 +97,10 @@ class RTIService:
     @property
     def strict_deployment(self) -> bool:
         return self._strict_deployment
+
+    @property
+    def job_concurrency(self) -> bool:
+        return self._job_concurrency
 
     def job_descriptor_path(self, job_id: str) -> str:
         return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
@@ -212,7 +218,8 @@ class RTIService:
                 processor = native_rti.RTINativeProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
                                                                  ssh_credentials=ssh_credentials,
                                                                  github_credentials=github_credentials,
-                                                                 retain_remote_wdirs=self._retain_job_history)
+                                                                 retain_remote_wdirs=self._retain_job_history,
+                                                                 job_concurrency=self._job_concurrency)
 
             elif p.deployment == 'docker':
                 # create a Docker RTI adapter instance
@@ -239,6 +246,9 @@ class RTIService:
             # stop the processor and wait for it to be done
             logger.info(f"stopping processor {proc_id}...")
             processor.stop()
+
+            # wait for processor to be stopped and to return
+            logger.info(f"waiting for processor {proc_id} to be stopped...")
             processor.join()
 
             # delete the processor
@@ -348,9 +358,8 @@ class RTIService:
         with self._mutex:
             # collect all jobs
             result = [*self._deployed[proc_id].pending_jobs()]
-            active = self._deployed[proc_id].active_job()
-            if active:
-                result.append(active)
+            active = [*self._deployed[proc_id].active_jobs()]
+            result.extend(active)
 
             return result
 
@@ -371,8 +380,7 @@ class RTIService:
                 for pending in proc.pending_jobs():
                     result[pending.id] = pending
 
-                active = proc.active_job()
-                if active:
+                for active in proc.active_jobs():
                     result[active.id] = active
 
             # also check the live job status loggers
