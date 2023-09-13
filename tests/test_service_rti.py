@@ -18,9 +18,8 @@ from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
-from saas.rti.adapters.base import monitor_command, run_command, run_command_async, ProcessorState
+from saas.rti.adapters.base import ProcessorState
 from saas.rti.adapters.docker import prune_image
-from saas.rti.exceptions import RunCommandError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.core.schemas import GithubCredentials
