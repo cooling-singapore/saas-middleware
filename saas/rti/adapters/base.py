@@ -425,7 +425,10 @@ class JobRunner(Thread):
             self._owner.post_execute(self._context.job.id)
 
             # if we reach here the job is either running or cancelled
-            assert (self._context.state in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED])
+            if self._context.state not in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED]:
+                raise SaaSRuntimeException(f"encountered unexpected state '{self._context.state.value}'")
+
+            # if the job is 'running' we can set it to 'successful' because it has reached here without any issues
             if self._context.state == JobStatus.State.RUNNING:
                 self._context.state = JobStatus.State.SUCCESSFUL
 
