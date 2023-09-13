@@ -46,7 +46,7 @@ class ProcessorState(Enum):
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
-                check_exitcode: bool = True, attempts: int = 1) -> subprocess.CompletedProcess:
+                check_exitcode: bool = True, attempts: int = 10) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
