@@ -164,11 +164,19 @@ def get_pid(pid_path: str, ssh_credentials: SSHCredentials = None, max_attempts:
         if check_if_path_exists(pid_path, ssh_credentials=ssh_credentials, timeout=10):
             # read and return the PID
             result = run_command(f"cat {pid_path}", ssh_credentials=ssh_credentials, timeout=10)
-            pid = result.stdout.decode('utf-8').splitlines()[0]
-            return pid
+            temp = result.stdout.decode('utf-8').splitlines()
+            if temp is None or len(temp) == 0:
+                logger.debug(f"PID file content at '{pid_path}' does not contain PID (content: {temp})... "
+                             f"try again (attempt={attempt}/{max_attempts})")
+                time.sleep(0.5)
+                continue
+
+            # return the PID
+            return temp[0]
 
         else:
-            logger.debug(f"PID file expected at '{pid_path}' does not (yet) exist... waiting (attempt={attempt})")
+            logger.debug(f"PID file expected at '{pid_path}' does not (yet) exist... "
+                         f"try again (attempt={attempt}/{max_attempts})")
             time.sleep(0.5)
 
     raise RunCommandError(reason='PID file not found', details={'pid_path': pid_path})
