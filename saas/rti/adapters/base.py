@@ -400,6 +400,10 @@ class JobRunner(Thread):
     def job(self) -> Job:
         return self._context.job
 
+    @property
+    def context(self) -> JobContext:
+        return self._context
+
     def run(self):
         try:
             if self._job_type == 'new':
@@ -601,6 +605,18 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
 
             self._pending.append(('resume', context))
+
+    def job_context(self, job_id: str) -> Optional[JobContext]:
+        with self._mutex:
+            if job_id in self._active:
+                return self._active[job_id].context
+
+            else:
+                for job_type, context in self._pending:
+                    if context.job.id == job_id:
+                        return context
+
+            return None
 
     def pending_jobs(self) -> List[Job]:
         with self._mutex:

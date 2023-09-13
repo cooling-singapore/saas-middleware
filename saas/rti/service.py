@@ -46,7 +46,7 @@ class RTIService:
         self._ssh_credentials_paths = {}
         self._jobs_path = os.path.join(self._node.datastore, 'jobs')
         self._content_keys = {}
-        self._jobs_context = {}
+        self._job_proc_mapping: Dict[str, str] = {}
         self._retain_job_history = retain_job_history
         self._strict_deployment = strict_deployment
         self._job_concurrency = job_concurrency
@@ -316,11 +316,12 @@ class RTIService:
 
             # create job context logger
             context = JobContext(self.job_status_path(job.id), job)
-            self._jobs_context[job.id] = context
             context.start()
 
             # add the job to the processor queue and return the job descriptor
             proc.add(context)
+            self._job_proc_mapping[job.id] = proc.id
+
             return job
 
     def resume(self, proc_id: str, job: Job, reconnect: ReconnectInfo, request: Request) -> Job:
@@ -341,11 +342,12 @@ class RTIService:
 
             # create a job context
             context = JobContext(self.job_status_path(job.id), job, reconnect)
-            self._jobs_context[job.id] = context
             context.start()
 
             # add the job to the processor queue and return the job descriptor
             self._deployed[proc_id].resume(context)
+            self._job_proc_mapping[job.id] = proc_id
+
             return job
 
     def jobs_by_proc(self, proc_id: str) -> List[Job]:
@@ -383,10 +385,6 @@ class RTIService:
                 for active in proc.active_jobs():
                     result[active.id] = active
 
-            # also check the live job status loggers
-            for context in self._jobs_context.values():
-                result[context.job.id] = context.job
-
             # if the user is NOT the node owner, only return the jobs owned by the user
             if self._node.identity.id != user.id:
                 filtered = []
@@ -403,22 +401,28 @@ class RTIService:
         Retrieves detailed information about the status of a job. Authorisation is required by the owner of the job
         (i.e., the user that has created the job by submitting the task in the first place).
         """
-        with self._mutex:
-            # do we have a live job status logger?
-            status_path = self.job_status_path(job_id)
-            if job_id in self._jobs_context:
-                context: JobContext = self._jobs_context[job_id]
-                return context.status
 
-            # does the job status file exist?
-            elif os.path.isfile(status_path):
-                status = JobStatus.parse_file(status_path)
-                return status
+        # first try to get the job status directly from the job context (if possible)
+        if job_id in self._job_proc_mapping:
+            # get the processor for this job (if deployed)
+            proc_id = self._job_proc_mapping[job_id]
+            with self._mutex:
+                if proc_id in self._deployed:
+                    # get the job context from the processor (if any)
+                    context = self._deployed[proc_id].job_context(job_id)
+                    if context is not None:
+                        return context.status
 
-            else:
-                raise JobStatusNotFoundError({
-                    'job_id': job_id
-                })
+        # next, try to see if the job status is available on disk
+        status_path = self.job_status_path(job_id)
+        if os.path.isfile(status_path):
+            status = JobStatus.parse_file(status_path)
+            return status
+
+        # if that also, didn't work, then we don't know about this job
+        raise JobStatusNotFoundError({
+            'job_id': job_id
+        })
 
     def job_logs(self, job_id: str) -> Response:
         """
@@ -465,16 +469,33 @@ class RTIService:
         possible.
         """
         with self._mutex:
-            # do we have a live job status logger?
-            if job_id in self._jobs_context:
-                context: JobContext = self._jobs_context[job_id]
-                context.cancel()
+            # do we have a job-proc mapping?
+            if job_id not in self._job_proc_mapping:
+                raise RTIException(
+                    f"Cannot cancel job: no job-to-processor mapping found for {job_id} (has the node been restarted "
+                    f"in the meantime?)"
+                )
 
-                return context.status
+            # is the processor deployed?
+            proc_id = self._job_proc_mapping[job_id]
+            if proc_id not in self._deployed:
+                raise RTIException(
+                    f"Cannot cancel job: processor for {job_id} not deployed (has the node been restarted in the "
+                    f"meantime?)"
+                )
 
-            else:
-                raise RTIException(f"Cannot cancel job: no job context found for {job_id} (either job was not found or "
-                                   f"the job is not running any longer)")
+            # do we have a job runner?
+            proc = self._deployed[proc_id]
+            runner = proc.pop_job_runner(job_id)
+            if runner is None:
+                raise RTIException(
+                    f"Cannot cancel job: no job runner found for {job_id} (either job was not found or the job is "
+                    f"not running any longer)"
+                )
+
+            # cancel the job and return the status
+            runner.cancel()
+            return runner.context.status
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
         """
