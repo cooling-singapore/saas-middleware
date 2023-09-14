@@ -1,17 +1,19 @@
-import shutil
+import tempfile
 import time
-import unittest
 from threading import Thread
 from typing import List
 
+import pytest
 from fastapi import Depends
 from pydantic import BaseModel
+
+from saas.rest.exceptions import UnsuccessfulRequestError, UnexpectedHTTPError
 from saas.rest.proxy import EndpointProxy
 
 from saas.core.keystore import Keystore
 from saas.rest.schemas import EndpointDefinition
 from saas.sdk.app.base import Application, User, UserDB, UserAuth, get_current_active_user, UserProfile
-from saas.sdk.helper import create_wd, create_rnd_hex_string
+from saas.sdk.helper import create_rnd_hex_string
 
 
 class TestResponse(BaseModel):
@@ -99,117 +101,112 @@ class Server(Thread):
             time.sleep(0.2)
 
 
-class SDKAppTestCase(unittest.TestCase):
-    _address = ('127.0.0.1', 5101)
-    _endpoint_prefix = ('/v1', 'test')
-    _wd_path: str = None
-    _server: Server = None
-    _proxy: TestAppProxy = None
-    _keystore = None
-    _known_user = None
+server_address = ('127.0.0.1', 5101)
+server_endpoint_prefix = ('/v1', 'test')
+user_name = 'Foo Bar'
+user_email = 'foo.bar@somewhere.com'
+user_password = 'password'
 
-    @classmethod
-    def setUpClass(cls):
-        cls._wd_path = create_wd()
-        cls._keystore = Keystore.create(cls._wd_path, 'Foo Bar', 'foo.bar@somewhere.com', 'password')
-        cls._known_user = Keystore.create(cls._wd_path, 'John Doe', 'john.doe@somewhere.com', 'password')
 
-        # create and start server
-        cls._server = Server(cls._address, None, cls._endpoint_prefix, cls._wd_path)
-        cls._server.start()
-        cls._proxy = TestAppProxy(cls._address, cls._endpoint_prefix, 'foo.bar@somewhere.com', 'password')
-        cls._base_proxy = TestAppBaseProxy(cls._address, (cls._endpoint_prefix[0], None),
-                                           'foo.bar@somewhere.com', 'password')
-        time.sleep(20)
+@pytest.fixture(scope="module")
+def temp_working_directory():
+    with tempfile.TemporaryDirectory() as tempdir:
+        yield tempdir
 
-    @classmethod
-    def tearDownClass(cls):
-        # shutdown server
-        cls._server.shutdown()
-        time.sleep(1)
 
-        # delete working directory
-        shutil.rmtree(cls._wd_path)
+@pytest.fixture(scope="module")
+def keystore(temp_working_directory):
+    return Keystore.create(temp_working_directory, user_name, user_email, user_password)
 
-    def setUp(self):
-        pass
 
-    def tearDown(self):
-        pass
+@pytest.fixture(scope="module")
+def sdk_test_server(temp_working_directory, keystore):
+    server = Server(server_address, None, server_endpoint_prefix, temp_working_directory)
+    server.start()
+    time.sleep(20)
+    yield server
+    server.shutdown()
 
-    def test_get_token(self):
-        token = self._proxy.session.token
-        assert(token is not None)
 
-    def test_unprotected_endpoint(self):
-        response = self._proxy.unprotected()
-        print(response)
-        assert(response.message == 'hello open world!!!')
+@pytest.fixture()
+def server_proxy():
+    return TestAppProxy(server_address, server_endpoint_prefix, user_email, user_password)
 
-    def test_protected_endpoint(self):
-        response = self._proxy.protected()
-        print(response)
-        assert('foo.bar@somewhere.com' in response.message)
 
-    def test_get_user_profile(self):
-        profile = self._base_proxy.profile()
+@pytest.fixture()
+def base_proxy():
+    return TestAppBaseProxy(server_address, (server_endpoint_prefix[0], None), user_email, user_password)
+
+
+def test_get_token(sdk_test_server, server_proxy):
+    token = server_proxy.session.token
+    assert(token is not None)
+
+
+def test_unprotected_endpoint(sdk_test_server, server_proxy):
+    response = server_proxy.unprotected()
+    print(response)
+    assert(response.message == 'hello open world!!!')
+
+
+def test_protected_endpoint(sdk_test_server, server_proxy):
+    response = server_proxy.protected()
+    print(response)
+    assert('foo.bar@somewhere.com' in response.message)
+
+
+def test_get_user_profile(sdk_test_server, base_proxy):
+    profile = base_proxy.profile()
+    print(profile)
+    assert(profile is not None)
+    assert(profile.login == 'foo.bar@somewhere.com')
+    assert(profile.name == 'Foo Bar')
+
+
+def test_update_user_name(sdk_test_server, base_proxy):
+    profile = base_proxy.update_name('new_name')
+    print(profile)
+    assert(profile is not None)
+    assert(profile.login == 'foo.bar@somewhere.com')
+    assert(profile.name == 'new_name')
+
+    profile = base_proxy.profile()
+    print(profile)
+    assert(profile is not None)
+    assert(profile.name == 'new_name')
+
+
+def test_update_user_password(sdk_test_server, base_proxy):
+    # should fail
+    with pytest.raises(UnsuccessfulRequestError) as e:
+        base_proxy.update_password(('wrong_password', 'lalala'))
+    print(e)
+
+    # should work
+    try:
+        profile = base_proxy.update_password((user_password, 'lalala'))
+    except Exception as e:
+        print(e)
+        assert False
+    else:
         print(profile)
         assert(profile is not None)
-        assert(profile.login == 'foo.bar@somewhere.com')
-        assert(profile.name == 'Foo Bar')
 
-    def test_update_user_name(self):
-        profile = self._base_proxy.update_name('new_name')
+    # should fail now
+    proxy0 = TestAppBaseProxy(server_address, (server_endpoint_prefix[0], None), user_email, user_password)
+    with pytest.raises(UnexpectedHTTPError) as e:
+        proxy0.profile()
+    print(e)
+
+    # should work
+    proxy1 = TestAppBaseProxy(server_address, (server_endpoint_prefix[0], None), user_email, 'lalala')
+    try:
+        proxy1.profile()
+    except Exception as e:
+        print(e)
+        assert False
+    else:
         print(profile)
-        assert(profile is not None)
-        assert(profile.login == 'foo.bar@somewhere.com')
-        assert(profile.name == 'new_name')
 
-        profile = self._base_proxy.profile()
-        print(profile)
-        assert(profile is not None)
-        assert(profile.name == 'new_name')
-
-    def test_update_user_password(self):
-        # should fail
-        try:
-            self._base_proxy.update_password(('wrong_password', 'lalala'))
-            assert False
-        except Exception as e:
-            print(e)
-            assert True
-
-        # should work
-        try:
-            profile = self._base_proxy.update_password(('password', 'lalala'))
-            print(profile)
-            assert(profile is not None)
-        except Exception as e:
-            print(e)
-            assert False
-
-        # should fail now
-        proxy0 = TestAppBaseProxy(self._address, (self._endpoint_prefix[0], None), 'foo.bar@somewhere.com', 'password')
-        try:
-            proxy0.profile()
-            assert False
-        except Exception as e:
-            print(e)
-            assert True
-
-        # should work
-        proxy1 = TestAppBaseProxy(self._address, (self._endpoint_prefix[0], None), 'foo.bar@somewhere.com', 'lalala')
-        try:
-            proxy1.profile()
-            print(profile)
-            assert True
-        except Exception as e:
-            print(e)
-            assert False
-
-        # change it back to the original password
-        self._base_proxy.update_password(('lalala', 'password'))
-
-
-if __name__ == '__main__':
-    unittest.main()
+    # change it back to the original password
+    base_proxy.update_password(('lalala', user_password))
