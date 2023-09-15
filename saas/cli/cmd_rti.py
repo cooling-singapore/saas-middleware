@@ -238,8 +238,8 @@ class RTIProcStatus(CLICommand):
 
                 status: ProcessorStatus = rti.get_status(proc_id)
                 print(f"{proc_id}:{item.gpp.proc_descriptor.name} [{status.state.upper()}] "
-                      f"pending={[job.id for job in status.pending]} "
-                      f"active={status.active.id if status.active else '(none)'}")
+                      f"pending={[job.id for job in status.pending] if status.pending else '(none)'} "
+                      f"active={[job.id for job in status.active] if status.active else '(none)'}")
 
 
 class RTIJobSubmit(CLICommand):

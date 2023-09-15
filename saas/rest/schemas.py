@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union, Tuple
 
 from pydantic import BaseModel
 
@@ -7,7 +7,7 @@ from pydantic import BaseModel
 @dataclass
 class EndpointDefinition:
     method: str
-    prefix: str
+    prefix: Union[str, Tuple[str, str]]
     rule: str
     function: Any
     response_model: Any
