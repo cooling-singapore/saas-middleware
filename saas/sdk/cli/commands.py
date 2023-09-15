@@ -7,8 +7,8 @@ from saas.sdk.base import connect
 from tabulate import tabulate
 
 from saas.sdk.cli.exceptions import CLIRuntimeError
-from saas.sdk.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, load_keystore, \
-    extract_address, prompt_for_selection
+from saas.sdk.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, extract_address, \
+    prompt_for_selection
 
 default_userstore = os.path.join(os.environ['HOME'], '.userstore')
 
