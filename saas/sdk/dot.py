@@ -1,9 +1,8 @@
 import abc
 
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 from pydantic import BaseModel
-from pydantic.typing import Literal
 
 from saas.core.exceptions import ExceptionContent
 from saas.core.helpers import generate_random_string

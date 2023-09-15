@@ -3,10 +3,9 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import List, Union, Dict, Optional, Callable
+from typing import List, Union, Dict, Optional, Callable, Literal
 
 from pydantic import BaseModel
-from pydantic.typing import Literal
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.helpers import validate_json, get_timestamp_now
