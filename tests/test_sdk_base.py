@@ -1,8 +1,6 @@
 import json
 import os
-import shutil
 import tempfile
-import unittest
 
 import pytest
 
@@ -10,7 +8,7 @@ from saas.core.exceptions import SaaSRuntimeException
 from saas.core.keystore import Keystore
 from saas.dor.schemas import DataObject
 from saas.sdk.base import connect, SDKGPPDataObject
-from saas.sdk.helper import create_wd, generate_random_file
+from saas.sdk.helper import generate_random_file
 
 
 node_address = ('127.0.0.1', 5001)
