@@ -52,11 +52,9 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
     if ssh_credentials:
         a = ['sshpass', '-p', f"{ssh_credentials.key}"] if ssh_credentials.key_is_password else []
         b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-        c = ['-oHostKeyAlgorithms=+ssh-rsa']
+        c = ['-o', f"ConnectTimeout={timeout}"] if timeout else []
 
-        wrapped_command = [*a, 'ssh', *b, *c, '-o',
-                           f"ConnectTimeout={timeout}" if timeout else '',
-                           f"{ssh_credentials.login}@{ssh_credentials.host}", command]
+        wrapped_command = [*a, 'ssh', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
 
     else:
         wrapped_command = ['bash', '-c', command]
@@ -91,12 +89,12 @@ def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: i
 
     raise RunCommandError(error)
 
+
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials) -> None:
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-    c = ['-oHostKeyAlgorithms=+ssh-rsa']
-    wrapped_command = [*a, 'scp', *b, *c, local_path, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}"]
+    wrapped_command = [*a, 'scp', *b, local_path, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}"]
 
     # execute command
     result = subprocess.run(wrapped_command, capture_output=True)
@@ -112,8 +110,7 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
     # generate the wrapped command
     a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
     b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-    c = ['-oHostKeyAlgorithms=+ssh-rsa']
-    wrapped_command = [*a, 'scp', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}", local_path]
+    wrapped_command = [*a, 'scp', *b, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}", local_path]
 
     # execute command
     result = subprocess.run(wrapped_command, capture_output=True)
