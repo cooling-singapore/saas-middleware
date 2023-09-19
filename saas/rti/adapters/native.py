@@ -48,58 +48,40 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         url = self._gpp.source
         commit_id = self._gpp.commit_id
 
-        # check if the repository has already been cloned
-        if base.check_if_path_exists(self._paths['repo'], ssh_credentials=self._ssh_credentials, timeout=10):
-            logger.debug(f"repository already exists {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
-                         f"{self._paths['repo']} -> skip cloning")
-        else:
-            # do we have git credentials?
-            if self._github_credentials:
-                insert = f"{self._github_credentials.login}:{self._github_credentials.personal_access_token}@"
-                index = url.find('github.com')
-                url = url[:index] + insert + url[index:]
+        # do we have git credentials?
+        if self._github_credentials:
+            insert = f"{self._github_credentials.login}:{self._github_credentials.personal_access_token}@"
+            index = url.find('github.com')
+            url = url[:index] + insert + url[index:]
 
-            # clone the repository
-            logger.debug(f"repository does not exist {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}"
-                         f"{self._paths['repo']} -> clone")
-
-            _dir, _name = os.path.split(self._paths['repo'])
-            base.run_command(f"mkdir -p {_dir}", ssh_credentials=self._ssh_credentials)
-            base.run_command(f"cd {_dir} && git clone {url} {_name}", ssh_credentials=self._ssh_credentials)
-
-        # checkout the commit
-        logger.debug(f"checkout commit {commit_id}")
-        base.run_command(f"cd {self._paths['repo']} && git checkout {commit_id}",
-                         ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
+        # clone the repository and checkout the commit id
+        logger.debug(f"clone repository to {'REMOTE:' if self._ssh_credentials else 'LOCAL:'} {self._paths['repo']} "
+                     f"and checkout {commit_id}")
+        _dir, _name = os.path.split(self._paths['repo'])
+        base.run_command(f"mkdir -p {_dir} && "  # create the parent directory of the repo (if it doesn't exist) 
+                         f"cd {_dir} && "  # go to the parent directory
+                         f"rm -rf {_name} && "  # delete the repo (if it exists)
+                         f"git clone {url} {_name} && "  # clone the repo from the URL
+                         f"cd {_name} && "  # go to the repo directory
+                         f"git checkout {commit_id}",  # and checkout the correct commit
+                         ssh_credentials=self._ssh_credentials)
 
         time.sleep(2)
 
-        # make scripts executable and remove \r characters
-        logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
-        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['install.sh']}""",
-                         ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
-
-        time.sleep(2)
-
-        base.run_command(f"chmod u+x {self._paths['install.sh']}",
-                         ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
-
-        time.sleep(2)
-
-        logger.debug(f"make executable {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}")
-        base.run_command(f"""sed -i.old 's/\\r$//' {self._paths['execute.sh']}""",
-                         ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
-        time.sleep(2)
-
-        base.run_command(f"chmod u+x {self._paths['execute.sh']}",
-                         ssh_credentials=self._ssh_credentials, timeout=10, attempts=3)
+        # remove \r characters in install.sh
+        base.run_command(f"sed -i.old 's/\\r$//' {self._paths['install.sh']} && "  # remove \r characters
+                         f"sed -i.old 's/\\r$//' {self._paths['execute.sh']} && "  # remove \r characters
+                         f"chmod ug+x {self._paths['install.sh']} && "  # make executable
+                         f"chmod ug+x {self._paths['execute.sh']}",  # make executable
+                         ssh_credentials=self._ssh_credentials)
 
         time.sleep(2)
 
         # run install script
         logger.debug(f"running {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['install.sh']}")
-        pid, paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['install.sh']} "
-                                            f"{self._gpp.proc_config}",
+        pid, paths = base.run_command_async(f"cd {self._paths['adapter']} && "  # go to the adapter directory
+                                            f"chmod u+x {self._paths['install.sh']} && "  # ensure it's executable
+                                            f"{self._paths['install.sh']} {self._gpp.proc_config}",  # execute
                                             local_output_path=self._paths['local_adapter'],
                                             name='install_sh',
                                             ssh_credentials=self._ssh_credentials)
@@ -136,8 +118,9 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         task_msg = f"starting {'REMOTE:' if self._ssh_credentials else 'LOCAL:'}{self._paths['execute.sh']}"
         context.make_note('task', task_msg)
         logger.debug(task_msg)
-        pid, pid_paths = base.run_command_async(f"cd {self._paths['adapter']} && {self._paths['execute.sh']} "
-                                                f"{self._gpp.proc_config} {paths['wd']}",
+        pid, pid_paths = base.run_command_async(f"cd {self._paths['adapter']} && "
+                                                f"chmod ug+x {self._paths['execute.sh']} && "
+                                                f"{self._paths['execute.sh']} {self._gpp.proc_config} {paths['wd']}",
                                                 local_output_path=paths['local_wd'],
                                                 name='execute_sh',
                                                 ssh_credentials=self._ssh_credentials)
