@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 from InquirerPy.base import Choice
 from tabulate import tabulate
@@ -11,6 +12,7 @@ from saas.core.schemas import GithubCredentials, SSHCredentials, KeystoreContent
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
+from saas.rti.adapters.base import run_command
 
 logger = Logging.get('cli.identity')
 
@@ -300,6 +302,75 @@ class CredentialsRemove(CLICommand):
 
         else:
             print("Aborting.")
+
+
+class CredentialsTestSSHCredentials(CLICommand):
+    def __init__(self):
+        super().__init__('ssh', 'tests SSH credentials', arguments=[
+            Argument('--name', dest='name', action='store', help="name used to identify this SSH credential")
+        ])
+
+    def execute(self, args: dict) -> None:
+        keystore = load_keystore(args, ensure_publication=False)
+
+        prompt_if_missing(args, 'name', prompt_for_selection,
+            choices=[Choice(name=name, value=name) for name in keystore.ssh_credentials.list()],
+            message="Select profile:", allow_multiple=False
+        )
+
+        # do we have SSH credentials with this name?
+        if not args['name'] in keystore.ssh_credentials.list():
+            raise CLIRuntimeError(f"SSH credentials not found: {args['name']}")
+
+        # get the credentials
+        ssh_credentials = keystore.ssh_credentials.get(args['name'])
+        result = run_command('ls ~', ssh_credentials=ssh_credentials, check_exitcode=False)
+        if result.returncode == 0:
+            print("SSH credentials test successful.")
+        else:
+            print("SSH credentials test unsuccessful.\n"
+                  f"- stdout: {result.stdout.decode('utf-8')}\n"
+                  f"- stderr: {result.stdout.decode('utf-8')}")
+
+
+class CredentialsTestGithubCredentials(CLICommand):
+    def __init__(self):
+        super().__init__('github', 'tests Github credentials', arguments=[
+            Argument('--url', dest='url', action='store', help="URL of the repository (also used as identifier "
+                                                               "for this Github credential)"),
+        ])
+
+    def execute(self, args: dict) -> None:
+        keystore = load_keystore(args, ensure_publication=False)
+
+        prompt_if_missing(args, 'url', prompt_for_selection,
+            choices=[Choice(name=name, value=name) for name in keystore.github_credentials.list()],
+            message="Select repository URL:", allow_multiple=False
+        )
+
+        # do we have Github credentials for this URL?
+        if not args['url'] in keystore.github_credentials.list():
+            raise CLIRuntimeError(f"Github credentials not found for {args['url']}")
+
+        # get the credentials
+        github_credentials = keystore.github_credentials.get(args['url'])
+
+        url = args['url']
+        insert = f"{github_credentials.login}:{github_credentials.personal_access_token}@"
+        index = url.find('github.com')
+        url = url[:index] + insert + url[index:]
+
+        repo_name = url[url.find('github.com') + 11:]
+        print(f"repo_name: {repo_name}")
+
+        result = subprocess.run(['curl', '-H', f"Authorization: token {github_credentials.personal_access_token}",
+                                 f"https://api.github.com/repos/{repo_name}"], capture_output=True)
+        if result.returncode == 0:
+            print("Github credentials test successful.")
+        else:
+            print("Github credentials test unsuccessful.\n"
+                  f"- stdout: {result.stdout.decode('utf-8')}\n"
+                  f"- stderr: {result.stdout.decode('utf-8')}")
 
 
 class CredentialsList(CLICommand):
