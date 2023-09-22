@@ -35,15 +35,6 @@ from saas.core.schemas import SSHCredentials
 logger = Logging.get('rti.adapters')
 
 
-class ProcessorState(Enum):
-    UNINITIALISED = 'uninitialised'
-    FAILED = 'failed'
-    STARTING = 'starting'
-    OPERATIONAL = 'operational'
-    STOPPING = 'stopping'
-    STOPPED = 'stopped'
-
-
 def join_paths(components: List[str], ssh_credentials: SSHCredentials = None) -> str:
     unix_sep = '/'
     win_sep = '\\'
@@ -247,7 +238,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
 def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
                     pace: int = 500, max_attempts: int = 60, retry_delay: int = 10, context: JobContext = None) -> None:
 
-    job_id = context.job.id if context else '...'
+    job_id = context.job_id if context else '...'
     logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
     c_stdout_lines = 0
     c_stderr_lines = 0
