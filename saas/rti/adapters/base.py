@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
+import threading
 import time
 import traceback
 from abc import abstractmethod, ABC
@@ -11,13 +13,14 @@ from enum import Enum
 from threading import Lock, Thread
 from typing import Optional, List, Dict, Union
 
+import paramiko
+
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.helpers import decrypt_file, encrypt_file, hash_json_object
 from saas.core.keypair import KeyPair
 from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.core.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
-    generate_random_string
+from saas.core.helpers import read_json_from_file, write_json_to_file, validate_json, generate_random_string
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -208,6 +211,9 @@ def run_command_async(command: str, local_output_path: str, name: str,
 
     # 2) echo the contents of the wrapper script
     chain_command += ' && echo -e "#!/bin/bash\n' \
+                     f'touch {paths["stdout"]}\n' \
+                     f'touch {paths["stderr"]}\n' \
+                     f'touch {paths["exitcode"]}\n' \
                      f'{command} > {paths["stdout"]} 2> {paths["stderr"]} &\n' \
                      f'pid=\$!\n' \
                      f'echo \$pid > {paths["pid"]}\n' \
@@ -240,138 +246,126 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
 
     job_id = context.job_id if context else '...'
     logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
-    c_stdout_lines = 0
-    c_stderr_lines = 0
-    t_prev = get_timestamp_now()
-    n_attempts = 0
 
-    def get_line_count(file_path: str) -> int:
-        wc_result = run_command(f"wc -l {file_path}", ssh_credentials=ssh_credentials, timeout=10)
-        n_lines = wc_result.stdout.decode('utf-8').splitlines()[0].split()[0]
-        return int(n_lines)
+    class Session:
+        def __init__(self):
+            self.exitcode = None
+            self.ssh_client = None
 
-    exitcode_found = False
-    while True:
-        try:
-            # if we have a job context, then check if the job has the job been cancelled?
-            if context and context.state == JobStatus.State.CANCELLED:
-                # send SIGTERM...
-                logger.debug(f"[job:{job_id}] send SIGTERM to "
-                             f"{'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}")
-                run_command(f"kill {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
+            if ssh_credentials:
+                ssh_client = paramiko.SSHClient()
+                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-                # check if the process still exists for at most ~30 seconds or so
-                for _ in range(30):
-                    result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
-                    if result.returncode != 0:
-                        logger.debug(f"[job:{job_id}] process "
-                                     f"{'REMOTE' if ssh_credentials else 'LOCAL'}:{pid} terminated...")
-                        return
+                private_key = paramiko.RSAKey.from_private_key_file(ssh_credentials.key_path)
+                ssh_client.connect(ssh_credentials.host, username=ssh_credentials.login, pkey=private_key)
 
-                    # process still exists
-                    time.sleep(1)
+    def wait_for_exitcode_local(session: Session) -> None:
+        while session.exitcode is None:
+            time.sleep(0.5)
+            if os.path.getsize(pid_paths['exitcode']) > 0:
+                with open(pid_paths['exitcode'], 'r') as f:
+                    content = f.read()
+                    content = content.strip()
+                    session.exitcode = int(content)
+                    break
 
-                # send SIGKILL
-                print(f"[job:{job_id}] send SIGKILL to {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}")
-                run_command(f"kill -9 {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
-                return
+    def wait_for_exitcode_remote(session: Session) -> None:
+        sftp = session.ssh_client.open_sftp()
+        while session.exitcode is None:
+            time.sleep(0.5)
+            file_info = sftp.stat(pid_paths['exitcode'])
+            if file_info.st_size > 0:
+                with sftp.file(pid_paths['exitcode'], 'r') as f:
+                    content = f.read()
+                    session.exitcode = int(content)
+                    break
 
-            # get the number of lines in stdout and stderr
-            n_stdout_lines = get_line_count(pid_paths['stdout'])
-            n_stderr_lines = get_line_count(pid_paths['stderr'])
+        # copy some files to local
+        sftp.get(pid_paths['remote_stdout'], pid_paths['local_stdout'])
+        sftp.get(pid_paths['remote_stderr'], pid_paths['local_stderr'])
+        sftp.get(pid_paths['remote_exitcode'], pid_paths['local_exitcode'])
 
-            # new line count
-            d_stdout_lines = n_stdout_lines - c_stdout_lines
-            d_stderr_lines = n_stderr_lines - c_stderr_lines
+        sftp.close()
 
-            # no new lines at all? check if the process is still running
-            if d_stdout_lines == 0 and d_stderr_lines == 0:
-                # do we have an exit code file? (it is only generated when the process has terminated)
-                if check_if_path_exists(pid_paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
-                    logger.info(f"[job:{job_id}] end monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}.")
+    def monitor_stdout_local(session: Session) -> None:
+        position = 0
+        while session.exitcode is None:
+            with open(pid_paths['stdout'], 'r') as f:
+                f.seek(position)
+                for line in f:
+                    line = line.rstrip('\n')  # Remove newline character
 
-                    if not exitcode_found:
-                        # set the flag, wait a second to allow stdout/stderr to flush, then give it another round
-                        exitcode_found = True
-                        time.sleep(1.0)
-                        continue
-                    else:
-                        break
+                    for pattern, info in triggers.items():
+                        if pattern in line:
+                            idx = line.index(pattern)
+                            line = line[idx:]
+                            info['func'](line, info['context'])
 
-            # do we have new STDOUT lines to process?
-            if d_stdout_lines > 0:
-                result = run_command(f"tail -n +{c_stdout_lines + 1} {pid_paths['stdout']} | head -n {d_stdout_lines}",
-                                     ssh_credentials=ssh_credentials, timeout=10)
-                lines = result.stdout.decode('utf-8').splitlines()
+                position = f.tell()
+                time.sleep(1)
 
-                # parse the lines for this round
-                for line in lines:
-                    if triggers is not None:
-                        for pattern, info in triggers.items():
-                            if pattern in line:
-                                info['func'](line, info['context'])
+    def monitor_stdout_remote(session: Session) -> None:
+        ssh_shell = session.ssh_client.invoke_shell()
+        ssh_shell.send(f"tail -f {pid_paths['stdout']}\n".encode('utf-8'))
+        buffer = ''
+        while session.exitcode is None:
+            while ssh_shell.recv_ready():
+                output = ssh_shell.recv(4096)
+                output = output.decode('utf-8')
+                output = output.replace('\r', '')
+                buffer += output
 
-                c_stdout_lines += d_stdout_lines
+            # do we have a line?
+            while '\n' in buffer:
+                idx = buffer.index('\n')
+                line = buffer[:idx]
+                buffer = buffer[idx+1:]
 
-            # do we have new STDERR lines to process?
-            if d_stderr_lines > 0:
-                c_stderr_lines += d_stderr_lines
+                # does any of the triggers match?
+                for pattern, info in triggers.items():
+                    if pattern in line:
+                        idx = line.index(pattern)
+                        line = line[idx:]
+                        info['func'](line, info['context'])
 
-            # need pacing?
-            t_now = get_timestamp_now()
-            delay = max(pace - (t_now - t_prev), 0)
-            time.sleep(delay / 1000.0)
+        ssh_shell.close()
 
-            # if we reach here, we can reset the attempts counter
-            n_attempts = 0
-
-        # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
-        # disconnect). wait and retry...
-        except RunCommandError as e:
-            # increase attempt counter and check if limit is reached -> if so, then raise an exception
-            n_attempts += 1
-            if n_attempts >= max_attempts:
-                raise RunCommandError({
-                    'info': 'too many attempts',
-                    'n_attempts': n_attempts,
-                    'max_attempts': max_attempts,
-                    'most_recent_exception_details': e.details
-                })
-
+    def wait_for_cancellation_local(session: Session) -> None:
+        while session.exitcode is None:
+            if context.state == JobStatus.State.CANCELLED:
+                os.kill(int(pid), signal.SIGKILL)
+                break
             else:
-                logger.warning(f"[job:{job_id}] error while monitoring command "
-                               f"(attempt {n_attempts} of {max_attempts}) -> try again in {retry_delay} seconds. "
-                               f"reason: {e.reason} details: {e.details}")
-                time.sleep(retry_delay)
+                time.sleep(1)
 
-    # if needed copy the stdout/stderr/exitcode files from remote to the local machine
-    if ssh_credentials is not None:
-        todo = {
-            pid_paths['remote_stdout']: pid_paths['local_stdout'],
-            pid_paths['remote_stderr']: pid_paths['local_stderr'],
-            pid_paths['remote_exitcode']: pid_paths['local_exitcode']
-        }
+    def wait_for_cancellation_remote(session: Session) -> None:
+        while session.exitcode is None:
+            if context.state == JobStatus.State.CANCELLED:
+                ssh_shell = session.ssh_client.invoke_shell()
+                ssh_shell.send(f"kill -9 {pid}".encode('utf-8'))
+                ssh_shell.close()
+                break
+            else:
+                time.sleep(1)
 
-        for s, d in todo.items():
-            # wait for the source to be available
-            while not check_if_path_exists(s, ssh_credentials=ssh_credentials):
-                logger.warning(f"[job:{job_id}] resource not available at "
-                               f"{'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} -> retry in 5 seconds.")
-                time.sleep(5)
+    # what functions to run?
+    functions = [wait_for_exitcode_remote if ssh_credentials else wait_for_exitcode_local]
+    if context:
+        functions.append(wait_for_cancellation_remote if ssh_credentials else wait_for_cancellation_local)
+    if triggers:
+        functions.append(monitor_stdout_remote if ssh_credentials else monitor_stdout_local)
 
-            logger.info(f"[job:{job_id}] copying from remote to local: {s} -> {d}")
-            scp_remote_to_local(s, d, ssh_credentials)
+    # create threads and start them
+    session = Session()
+    threads = []
+    for f in functions:
+        t = threading.Thread(target=f, kwargs={'session': session})
+        t.start()
+        threads.append(t)
 
-    # get the error code returned by the process and raise exception if the process did not finish successfully.
-    with open(pid_paths['local_exitcode'], 'r') as f:
-        line = f.readline()
-        exitcode = int(line)
-        if exitcode != 0:
-            raise RunCommandError({
-                'pid': pid,
-                'exitcode': exitcode,
-                'pid_paths': pid_paths
-            })
+    # wait for all threads to be done
+    for t in threads:
+        t.join()
 
 
 def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = None) -> bool:
