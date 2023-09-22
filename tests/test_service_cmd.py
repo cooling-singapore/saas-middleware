@@ -361,14 +361,18 @@ def test_run_command_async_local():
     local_folder_path = join_paths([local_home_path, folder])
     assert not check_if_path_exists(local_folder_path)
 
-    command = 'sleep 20'
+    command = 'sleep 20 && echo trigger:progress 100'
+
+    def update_progress(line: str, context=None) -> None:
+        print(line)
 
     try:
         pid, paths = run_command_async(command, local_output_path=local_folder_path,
                                        name='test', ssh_credentials=ssh_credentials)
         assert check_if_path_exists(paths['wd_path'], ssh_credentials=ssh_credentials)
 
-        monitor_command(pid, paths, ssh_credentials=ssh_credentials)
+        triggers = {'trigger:progress': {'func': update_progress, 'context': None}}
+        monitor_command(pid, paths, triggers=triggers, ssh_credentials=ssh_credentials)
 
         run_command(f"rm -rf {paths['wd_path']}", ssh_credentials=ssh_credentials)
         assert not check_if_path_exists(paths['wd_path'], ssh_credentials=ssh_credentials)
@@ -391,7 +395,10 @@ def test_run_command_async_remote_linux(remote_linux_credentials):
     local_folder_path = join_paths([local_home_path, folder])
     assert not check_if_path_exists(local_folder_path)
 
-    command = 'sleep 20'
+    command = 'sleep 20 && echo trigger:progress 100'
+
+    def update_progress(line: str, context=None) -> None:
+        print(line)
 
     try:
         pid, paths = run_command_async(command, local_output_path=local_folder_path,
@@ -399,7 +406,8 @@ def test_run_command_async_remote_linux(remote_linux_credentials):
         assert check_if_path_exists(paths['wd_path'], ssh_credentials=ssh_credentials)
         assert check_if_path_exists(local_folder_path, ssh_credentials=None)
 
-        monitor_command(pid, paths, ssh_credentials=ssh_credentials)
+        triggers = {'trigger:progress': {'func': update_progress, 'context': None}}
+        monitor_command(pid, paths, triggers=triggers, ssh_credentials=ssh_credentials)
 
         run_command(f"rm -rf {paths['wd_path']}", ssh_credentials=ssh_credentials)
         shutil.rmtree(local_folder_path)
