@@ -102,20 +102,14 @@ def update_keystore_from_credentials(keystore: Keystore, credentials_path: str =
     # do we have SSH credentials?
     if 'ssh-credentials' in credentials:
         for item in credentials['ssh-credentials']:
-            # password or key path?
-            if 'password' in item:
-                keystore.ssh_credentials.update(item['name'],
-                                                SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=item['password'], key_is_password=True))
-
-            elif 'key_path' in item:
+            if 'key_path' in item:
                 # read the ssh key from file
                 with open(item['key_path'], 'r') as f:
                     ssh_key = f.read()
 
                 keystore.ssh_credentials.update(item['name'],
                                                 SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=ssh_key, key_is_password=False))
+                                                               key=ssh_key, key_path=item['key_path']))
 
             else:
                 raise RuntimeError(f"Unexpected SSH credentials format: {item}")

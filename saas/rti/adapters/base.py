@@ -45,15 +45,31 @@ class ProcessorState(Enum):
     STOPPED = 'stopped'
 
 
+def join_paths(components: List[str], ssh_credentials: SSHCredentials = None) -> str:
+    unix_sep = '/'
+    win_sep = '\\'
+
+    if ssh_credentials:
+        separators = (win_sep, unix_sep) if ssh_credentials.is_cygwin else (unix_sep, win_sep)
+    else:
+        separators = (win_sep, unix_sep) if os.path.sep == win_sep else (unix_sep, win_sep)
+
+    result = separators[0].join(components)
+    result = result.replace(separators[1], separators[0])
+    result = result.replace(f'{separators[0]}{separators[0]}', separators[0])
+    return result
+
+
 def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
                 check_exitcode: bool = True, attempts: int = 10) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
-        a = ['-i', ssh_credentials.key_path]
-        b = ['-o', f"ConnectTimeout={timeout}"] if timeout else []
+        args = ['-i', ssh_credentials.key_path]
+        if timeout:
+            args.extend(['-o', f"ConnectTimeout={timeout}"])
 
-        wrapped_command = ['ssh', *a, *b, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
+        wrapped_command = ['ssh', *args, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
 
     else:
         wrapped_command = ['bash', '-c', command]
@@ -119,7 +135,7 @@ def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHC
         })
 
 
-def determine_home_path(ssh_credentials: SSHCredentials) -> str:
+def determine_home_path(ssh_credentials: SSHCredentials = None) -> str:
     result = run_command('echo ~', ssh_credentials)
     home = result.stdout.decode('utf-8')
     home = home.strip()
@@ -131,7 +147,7 @@ def determine_home_path(ssh_credentials: SSHCredentials) -> str:
     return home
 
 
-def is_cygwin(ssh_credentials: SSHCredentials) -> bool:
+def determine_if_cygwin(ssh_credentials: SSHCredentials) -> bool:
     result = run_command("uname", ssh_credentials=ssh_credentials)
     env = result.stdout.decode('utf-8').strip()
     return "cygwin" in env.lower()
@@ -166,14 +182,18 @@ def run_command_async(command: str, local_output_path: str, name: str,
         'local_script': os.path.join(local_output_path, f"{name}.sh")
     }
 
+    # make sure the local working directory exists
+    if not os.path.isdir(paths['local_wd_path']):
+        os.makedirs(paths['local_wd_path'])
+
     if ssh_credentials is not None:
         remote_output_path = ssh_credentials.home_path + local_output_path.replace(os.environ['HOME'], '')
-        paths['remote_wd_path'] = remote_output_path,
-        paths['remote_stdout'] = os.path.join(remote_output_path, f"{name}.stdout"),
-        paths['remote_stderr'] = os.path.join(remote_output_path, f"{name}.stderr"),
-        paths['remote_pid'] = os.path.join(remote_output_path, f"{name}.pid"),
-        paths['remote_exitcode'] = os.path.join(remote_output_path, f"{name}.exitcode"),
-        paths['remote_script'] = os.path.join(remote_output_path, f"{name}.sh"),
+        paths['remote_wd_path'] = remote_output_path
+        paths['remote_stdout'] = join_paths([remote_output_path, f"{name}.stdout"], ssh_credentials)
+        paths['remote_stderr'] = join_paths([remote_output_path, f"{name}.stderr"], ssh_credentials)
+        paths['remote_pid'] = join_paths([remote_output_path, f"{name}.pid"], ssh_credentials)
+        paths['remote_exitcode'] = join_paths([remote_output_path, f"{name}.exitcode"], ssh_credentials)
+        paths['remote_script'] = join_paths([remote_output_path, f"{name}.sh"], ssh_credentials)
 
         paths['wd_path'] = paths['remote_wd_path']
         paths['stdout'] = paths['remote_stdout']
@@ -228,7 +248,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
 def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
                     pace: int = 500, max_attempts: int = 60, retry_delay: int = 10, context: JobContext = None) -> None:
 
-    job_id = context.job_id() if context else '...'
+    job_id = context.job.id if context else '...'
     logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
     c_stdout_lines = 0
     c_stderr_lines = 0
@@ -244,9 +264,9 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     while True:
         try:
             # if we have a job context, then check if the job has the job been cancelled?
-            if context and context.state() == JobStatus.State.CANCELLED:
+            if context and context.state == JobStatus.State.CANCELLED:
                 # send SIGTERM...
-                logger.debug(f"[job:{context.job_id()}] send SIGTERM to "
+                logger.debug(f"[job:{job_id}] send SIGTERM to "
                              f"{'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}")
                 run_command(f"kill {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
 
@@ -254,7 +274,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
                 for _ in range(30):
                     result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
                     if result.returncode != 0:
-                        logger.debug(f"[job:{context.job_id()}] process "
+                        logger.debug(f"[job:{job_id}] process "
                                      f"{'REMOTE' if ssh_credentials else 'LOCAL'}:{pid} terminated...")
                         return
 
@@ -262,7 +282,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
                     time.sleep(1)
 
                 # send SIGKILL
-                print(f"[job:{context.job_id()}] send SIGKILL to {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}")
+                print(f"[job:{job_id}] send SIGKILL to {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}")
                 run_command(f"kill -9 {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
                 return
 
@@ -374,7 +394,9 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
     if working_directory:
         link_path = os.path.join(working_directory, link_path)
         target_path = os.path.join(working_directory, target_path)
-    run_command(f"ln -sf {target_path} {link_path}")
+
+    os.symlink(src=target_path, dst=link_path)
+    # run_command(f"ln -sf {target_path} {link_path}")
 
 
 class JobRunner(Thread):
