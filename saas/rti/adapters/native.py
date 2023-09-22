@@ -24,7 +24,25 @@ class RTINativeProcessorAdapter(base.RTIProcessorAdapter):
         self._github_credentials = github_credentials
         self._retain_remote_wdirs = retain_remote_wdirs
 
-        # create the proc-temp directory if doesn't already exist
+        if self._ssh_credentials:
+            # write the key to disk and change file permissions
+            self._ssh_credentials.key_path = os.path.join(self._node.datastore, 'rti', f"{proc_id}.ssh_key")
+            with open(self._ssh_credentials.key_path, 'w') as f:
+                # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
+                f.write(f"{ssh_credentials.key}\n")
+            os.chmod(self._ssh_credentials.key_path, S_IREAD | S_IWRITE)
+
+            # test if the remote is cygwin
+            self._ssh_credentials.is_cygwin = is_cygwin(ssh_credentials)
+
+            # determine remote home path
+            self._ssh_credentials.home_path = determine_home_path(ssh_credentials)
+
+            logger.info(f"[adapter:{self._proc_short_id}] using SSH credentials: "
+                        f"{self._ssh_credentials.login}@{self._ssh_credentials.host} -> "
+                        f"remote machines uses cygwin: {self._ssh_credentials.is_cygwin} "
+                        f"home_path: {self._ssh_credentials.home_path}")
+
         self._proc_temp_path = os.path.join(node.datastore, 'proc-temp')
         os.makedirs(self._proc_temp_path, exist_ok=True)
 

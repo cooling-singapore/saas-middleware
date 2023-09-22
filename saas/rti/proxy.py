@@ -50,7 +50,6 @@ class RTIProxy(EndpointProxy):
                     'host': ssh_credentials.host,
                     'login': ssh_credentials.login,
                     'key': ssh_credentials.key,
-                    'key_is_password': ssh_credentials.key_is_password
                 })
                 body['encrypted_ssh_credentials'] = peer.encrypt(ssh_credentials_serialised.encode('utf-8')).hex()
 
