@@ -402,11 +402,11 @@ def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.Inp
     return job_id, output
 
 
-def handle_content_key_request(rti_proxy: RTIProxy, owner: Keystore, status_path: str, content_key: str):
+def handle_content_key_request(rti_proxy: RTIProxy, owner: Keystore, job_id: str, content_key: str):
     while True:
         time.sleep(1)
 
-        status = JobStatus.parse_file(status_path)
+        status = rti_proxy.get_job_status(job_id, with_authorisation_by=owner)
         if 'requests' in status.notes:
             for r in status.notes['requests']:
                 # we should be able to decrypt it
@@ -774,12 +774,8 @@ def test_processor_execution_reference_encrypted(test_context, node, dor_proxy, 
     # submit the job
     job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
 
-    # determine the status path
-    status_path = os.path.join(node.datastore, 'jobs', job_id, 'job_status.json')
-    assert(os.path.isfile(status_path))
-
     # run monitoring thread
-    thread = Thread(target=handle_content_key_request, args=[rti_proxy, owner, status_path, content_key])
+    thread = Thread(target=handle_content_key_request, args=[rti_proxy, owner, job_id, content_key])
     thread.start()
 
     # wait for the job to finish
