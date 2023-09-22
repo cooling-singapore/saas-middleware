@@ -5,6 +5,8 @@ import time
 from threading import Lock
 from typing import Optional
 
+from saas.meta import __version__
+
 import saas.p2p.service as p2p_service
 import saas.dor.service as dor_service
 import saas.rest.service as rest_service
@@ -64,6 +66,9 @@ class Node:
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
                 retain_job_history: bool = False, strict_deployment: bool = True,
                 bind_all_address: bool = False, job_concurrency: bool = False) -> None:
+
+        logger.info(f"saas-middleware {__version__}")
+
         logger.info("starting P2P service.")
         self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
