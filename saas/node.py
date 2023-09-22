@@ -89,8 +89,9 @@ class Node:
             endpoints += self.dor.endpoints()
 
         if enable_rti:
-            self.rti = rti_service.RTIService(self, retain_job_history, strict_deployment, job_concurrency)
-            logger.info("enabling RTI service.")
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'rti.db')}"
+            self.rti = rti_service.RTIService(self, db_path, retain_job_history, strict_deployment, job_concurrency)
+            logger.info(f"enabling RTI service using {db_path}.")
             endpoints += self.rti.endpoints()
 
         if rest_address is not None:

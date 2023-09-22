@@ -263,35 +263,12 @@ class SDKJob:
         if auto_refresh:
             # refresh the status if we don't have a status or if the job is still running (we don't refresh if the
             # job is not running any longer)
-            if not state or state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING]:
+            if not state or state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING,
+                                      JobStatus.State.POSTPROCESSING]:
                 self.refresh_status()
 
         with self._mutex:
             return self._status
-
-    def resume(self) -> None:
-        # get the latest status
-        status = self.status
-        if not status:
-            raise SaaSRuntimeException(f"Status of job {self._job.id} cannot be obtained.")
-
-        # check if the job is marked as 'timed out'
-        if not status.state == JobStatus.State.TIMEOUT:
-            raise SaaSRuntimeException("Cannot resume job that has not timed out", details={
-                'status': status.dict()
-            })
-
-        # do we have reconnect information?
-        if not status.reconnect:
-            raise SaaSRuntimeException("Cannot resume job without reconnect information", details={
-                'status': status.dict()
-            })
-
-        # resume job
-        with self._mutex:
-            self._job = self._rti.resume_job(self._proc.descriptor.proc_id, self._job, status.reconnect,
-                                             self._authority)
-            self._status = None
 
     def cancel(self) -> JobStatus:
         with self._mutex:
@@ -329,7 +306,8 @@ class SDKJob:
                         callback_message(log_message)
                         prev_message = message
 
-            if status.state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING]:
+            if status is None or status.state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING,
+                                                  JobStatus.State.POSTPROCESSING]:
                 time.sleep(pace)
 
             elif status.state == JobStatus.State.SUCCESSFUL or status.state == JobStatus.State.CANCELLED:

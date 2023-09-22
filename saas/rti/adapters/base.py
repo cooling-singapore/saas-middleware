@@ -9,7 +9,7 @@ import traceback
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Dict, Union
 
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.helpers import decrypt_file, encrypt_file, hash_json_object
@@ -26,23 +26,13 @@ from saas.p2p.exceptions import PeerUnavailableError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException, RunCommandError
-from saas.rti.context import JobContext
 
 from saas.rti.schemas import JobStatus, ProcessorStatus, Job
-from saas.dor.schemas import GitProcessorPointer, DataObject
+from saas.dor.schemas import GitProcessorPointer, DataObject, CDataObject
 from saas.nodedb.schemas import NodeInfo
 from saas.core.schemas import SSHCredentials
 
 logger = Logging.get('rti.adapters')
-
-
-class ProcessorState(Enum):
-    UNINITIALISED = 'uninitialised'
-    FAILED = 'failed'
-    STARTING = 'starting'
-    OPERATIONAL = 'operational'
-    STOPPING = 'stopping'
-    STOPPED = 'stopped'
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
@@ -278,7 +268,6 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
             if d_stdout_lines == 0 and d_stderr_lines == 0:
                 # do we have an exit code file? (it is only generated when the process has terminated)
                 if check_if_path_exists(pid_paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
-                    logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
                     logger.info(f"[job:{job_id}] end monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}.")
 
                     if not exitcode_found:
@@ -378,67 +367,118 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
 
 
 class JobRunner(Thread):
-    def __init__(self, owner: RTIProcessorAdapter, job_type: str, context: JobContext, wd_path: str):
-        super().__init__()
+    def __init__(self, owner: RTIProcessorAdapter, context: JobContext):
+        super().__init__(name=f"job_runner.{context.job_id()}")
         self._owner = owner
-        self._job_type = job_type
         self._context = context
-        self._wd_path = wd_path
 
     @property
     def job(self) -> Job:
-        return self._context.job
+        return self._context.job()
 
-    @property
-    def context(self) -> JobContext:
-        return self._context
+    def cancel(self) -> None:
+        logger.info(f"[job:{self._context.job_id()}:{self._context.state().value}] cancel job!")
+        self._context.update_state(JobStatus.State.CANCELLED)
 
     def run(self):
-        try:
-            if self._job_type == 'new':
-                # perform pre-execute routine
-                self._owner.pre_execute(self._wd_path, self._context)
+        # get a few things for convenience
+        context = self._context
+        job_id = context.job().id
+        wd_path = context.wd_path()
+        descriptor_path = context.descriptor_path()
 
-                # instruct processor adapter to execute the job
-                self._owner.execute(self._wd_path, self._context)
+        # is the job still uninitialised?
+        if context.state() == JobStatus.State.UNINITIALISED:
+            try:
+                # perform pre-execution routine
+                self._owner.pre_execute(wd_path, self._context)
 
-            elif self._job_type == 'resume':
-                pass
+            except SaaSRuntimeException as e:
+                context.add_error(e.reason, e.content)
+                state = context.update_state(JobStatus.State.FAILED)
+                logger.warning(
+                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = context.update_state(JobStatus.State.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[job:{job_id}:{state.value}] initialisation failed: {e}\n{trace}")
 
             else:
-                raise SaaSRuntimeException(f"unexpected job type '{self._job_type}'")
+                state = context.update_state(JobStatus.State.INITIALISED)
+                logger.info(f"[job:{job_id}:{state.value}] initialisation successful")
 
-            # set the job state to RUNNING
-            self._context.state = JobStatus.State.RUNNING
+        # is the job initialised?
+        if context.state() == JobStatus.State.INITIALISED:
+            try:
+                # instruct the adapter to execute the job
+                self._owner.begin_job_execution(wd_path, self._context)
 
-            # connect to the job and monitor its progress
-            self._owner.connect_and_monitor(self._context)
+            except SaaSRuntimeException as e:
+                context.add_error(e.reason, e.content)
+                state = context.update_state(JobStatus.State.FAILED)
+                logger.warning(
+                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
 
-            # perform post-execute routine
-            self._owner.post_execute(self._context.job.id)
+            except Exception as e:
+                state = context.update_state(JobStatus.State.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[job:{job_id}:{state.value}] triggering execution failed: {e}\n{trace}")
 
-            # if we reach here the job is either running or cancelled
-            if self._context.state not in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED]:
-                raise SaaSRuntimeException(f"encountered unexpected state '{self._context.state.value}'")
+        # is the job running?
+        if context.state() == JobStatus.State.RUNNING:
+            try:
+                # connect to the job and monitor its progress
+                self._owner.monitor_job_execution(self._context)
 
-            # if the job is 'running' we can set it to 'successful' because it has reached here without any issues
-            if self._context.state == JobStatus.State.RUNNING:
-                self._context.state = JobStatus.State.SUCCESSFUL
+            except SaaSRuntimeException as e:
+                context.add_error(e.reason, e.content)
+                state = context.update_state(JobStatus.State.FAILED)
+                logger.warning(
+                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = context.update_state(JobStatus.State.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[job:{job_id}:{state.value}] monitoring execution failed: {e}\n{trace}")
+
+            else:
+                state = context.update_state(JobStatus.State.POSTPROCESSING)
+                logger.info(f"[job:{job_id}:{state.value}] monitoring execution successful")
+
+            # is the job running?
+            if context.state() == JobStatus.State.POSTPROCESSING:
+                try:
+                    # perform post-execution routine
+                    self._owner.post_execute(job_id)
+
+                except SaaSRuntimeException as e:
+                    context.add_error(e.reason, e.content)
+                    state = context.update_state(JobStatus.State.FAILED)
+                    logger.warning(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+                except Exception as e:
+                    state = context.update_state(JobStatus.State.FAILED)
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[job:{job_id}:{state.value}] post-execution routine failed: {e}\n{trace}")
+
+                else:
+                    state = context.update_state(JobStatus.State.SUCCESSFUL)
+                    logger.info(f"[job:{job_id}:{state.value}] post-execution routine successful")
 
             # if the job history is not to be retained, delete its contents (with exception to the status and
             # the job descriptor)
-            if not self._context.job.retain:
+            if not context.job().retain:
                 exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
                               'execute_sh.pid', 'execute.sh']
-                logger.info(f"[adapter:{self._owner.id}][{self._context.job.id}] delete working directory contents "
-                            f"at {self._wd_path} (exclusions: {exclusions})...")
+                logger.info(f"[job:{job_id}] deleting working directory contents at {wd_path} "
+                            f"(exclusions: {exclusions})...")
 
-                # collect all files in the directory
-                files = os.listdir(self._wd_path)
-                for file in files:
-                    # if the item is not in the exclusion list, delete it
-                    if not file.endswith(tuple(exclusions)):
-                        path = os.path.join(self._wd_path, file)
+                # delete the file/dir/link unless it's in the exclusion list
+                for item in os.listdir(wd_path):
+                    if not item.endswith(tuple(exclusions)):
+                        path = os.path.join(wd_path, item)
                         if os.path.isfile(path):
                             os.remove(path)
                         elif os.path.isdir(path):
@@ -448,64 +488,135 @@ class JobRunner(Thread):
                         else:
                             logger.warning(f"Encountered neither file nor directory: {path}")
 
-        except RunCommandError as e:
-            # add the trace to the exception details
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.debug(trace)
-            details = e.details
-            details['trace'] = trace
-
-            self._context.add_error(
-                'error (timeout?) while running job', ExceptionContent(id=e.id, reason=e.reason, details=details)
-            )
-            self._context.state = JobStatus.State.TIMEOUT
-
-        except SaaSRuntimeException as e:
-            # add the trace to the exception details
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.debug(trace)
-            details = e.details
-            details['trace'] = trace
-
-            self._context.add_error(
-                'error (SaaS) while running job', ExceptionContent(id=e.id, reason=e.reason, details=details)
-            )
-            self._context.state = JobStatus.State.FAILED
-
-        except Exception as e:
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            self._context.add_error(
-                'unexpected exception while running job',
-                ExceptionContent(id='none', reason=f"{e}", details={'trace': trace}))
-            self._context.state = JobStatus.State.FAILED
-
         # remove the job from the active set
-        self._owner.pop_job_runner(self.job.id)
+        self._owner.pop_job_runner(job_id)
 
-    def cancel(self):
-        self._context.cancel()
+
+class ProcessorState(Enum):
+    UNINITIALISED = 'uninitialised'
+    STARTING = 'starting'
+    OPERATIONAL = 'operational'
+    STOPPING = 'stopping'
+    STOPPED = 'stopped'
+    FAILED = 'failed'
+
+
+class ProcessorStateWrapper(ABC):
+    @abstractmethod
+    def state(self) -> ProcessorState:
+        pass
+
+    @abstractmethod
+    def update_state(self, state: ProcessorState) -> ProcessorState:
+        pass
+
+
+class JobContext(ABC):
+    @abstractmethod
+    def job_id(self) -> str:
+        pass
+
+    @abstractmethod
+    def job(self) -> Job:
+        pass
+
+    @abstractmethod
+    def wd_path(self) -> str:
+        pass
+
+    @abstractmethod
+    def descriptor_path(self) -> str:
+        pass
+
+    @abstractmethod
+    def state(self) -> JobStatus.State:
+        pass
+
+    @abstractmethod
+    def update_state(self, new_state: JobStatus.State) -> JobStatus.State:
+        pass
+
+    @abstractmethod
+    def status(self) -> JobStatus:
+        pass
+
+    @abstractmethod
+    def add_pending_output(self, obj_name: str) -> None:
+        pass
+
+    @abstractmethod
+    def get_pending_outputs(self) -> List[str]:
+        pass
+
+    @abstractmethod
+    def pop_pending_output(self, obj_name: str, obj: CDataObject) -> str:
+        pass
+
+    @abstractmethod
+    def progress(self) -> int:
+        pass
+
+    @abstractmethod
+    def update_progress(self, new_progress: int) -> int:
+        pass
+
+    @abstractmethod
+    def update_message(self, severity: str, message: str) -> None:
+        pass
+
+    @abstractmethod
+    def put_note(self, key: str, note: Union[str, int, float, bool, dict, list]) -> None:
+        pass
+
+    @abstractmethod
+    def get_note(self, key: str, default: Union[str, int, float, bool, dict, list] = None) -> Union[str, int, float,
+                                                                                                    bool, dict, list]:
+        pass
+
+    @abstractmethod
+    def remove_note(self, key: str) -> None:
+        pass
+
+    @abstractmethod
+    def add_error(self, message: str, exception: ExceptionContent) -> None:
+        pass
+
+    @abstractmethod
+    def errors(self) -> List[JobStatus.Error]:
+        pass
+
+
+def shorten_id(long_id: str) -> str:
+    return long_id[:4] + '...' + long_id[-4:]
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, gpp: GitProcessorPointer, job_wd_path: str, node, job_concurrency: bool) -> None:
-        Thread.__init__(self, daemon=True)
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, db_wrapper: ProcessorStateWrapper,
+                 node, job_wd_path: str, job_concurrency: bool) -> None:
+        Thread.__init__(self, daemon=True, name=f"rti.adapter:{proc_id[0:8]}...")
 
         self._mutex = Lock()
         self._proc_id = proc_id
+        self._proc_short_id = shorten_id(proc_id)
         self._gpp = gpp
-        self._job_wd_path = job_wd_path
+        self._db_wrapper = db_wrapper
         self._node = node
+        self._job_wd_path = job_wd_path
         self._job_concurrency = job_concurrency
+        self._stop_signal_received = False
 
         self._input_interface = {item.name: item for item in gpp.proc_descriptor.input}
         self._output_interface = {item.name: item for item in gpp.proc_descriptor.output}
-        self._pending: List[Tuple[str, JobContext]] = []
+        self._pending: List[JobContext] = []
         self._active: Dict[str, JobRunner] = {}
-        self._state = ProcessorState.UNINITIALISED
 
     @property
     def id(self) -> str:
         return self._proc_id
+
+    @property
+    def short_id(self) -> str:
+        return self._proc_short_id
 
     @property
     def gpp(self) -> GitProcessorPointer:
@@ -513,7 +624,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
     @property
     def state(self) -> ProcessorState:
-        return self._state
+        return self._db_wrapper.state()
 
     @abstractmethod
     def startup(self) -> None:
@@ -524,16 +635,120 @@ class RTIProcessorAdapter(Thread, ABC):
         pass
 
     @abstractmethod
-    def execute(self, working_directory: str, context: JobContext) -> None:
+    def begin_job_execution(self, wd_path: str, context: JobContext) -> None:
         pass
 
     @abstractmethod
-    def connect_and_monitor(self, context: JobContext) -> None:
+    def monitor_job_execution(self, context: JobContext) -> None:
+        pass
+
+    @abstractmethod
+    def cancel_job_execution(self, context: JobContext) -> None:
         pass
 
     def stop(self) -> None:
-        logger.info(f"[adapter:{self._proc_id}][{self._state}] received stop signal.")
-        self._state = ProcessorState.STOPPING
+        logger.info(f"[adapter:{shorten_id(self._proc_short_id)}:{self._db_wrapper.state().value}] received "
+                    f"stop signal.")
+        self._stop_signal_received = True
+
+    def run(self) -> None:
+        def update_state(new_state: ProcessorState) -> ProcessorState:
+            with self._mutex:
+                return self._db_wrapper.update_state(new_state)
+
+        # get the current state
+        state = self._db_wrapper.state()
+
+        # uninitialised? do startup...
+        if state in [ProcessorState.UNINITIALISED, ProcessorState.STARTING]:
+            if state == ProcessorState.STARTING:
+                logger.warning(f"[adapter:{self._proc_short_id}:{state.value}] appears to have been interrupted "
+                               f"while performing startup routine. trying again...")
+            else:
+                logger.info(f"[adapter:{self._proc_short_id}:{state.value}] performing startup routine...")
+
+            try:
+                update_state(ProcessorState.STARTING)
+                self.startup()
+
+            except SaaSRuntimeException as e:
+                state = update_state(ProcessorState.FAILED)
+                logger.error(
+                    f"[adapter:{self._proc_short_id}:{state.value}] start-up failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = update_state(ProcessorState.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[adapter:{self._proc_short_id}:{state.value}] start-up failed: {e}\n{trace}")
+
+            else:
+                state = update_state(ProcessorState.OPERATIONAL)
+                logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has started up.")
+
+        # while the processor is not stopped, and there are pending jobs, execute them
+        # (either in sequence or concurrently)
+        while state == ProcessorState.OPERATIONAL:
+            try:
+                # have we received the stop signal
+                if self._stop_signal_received:
+                    logger.info(f"[adapter:{shorten_id(self._proc_short_id)}:{state.value}] acknowledged "
+                                f"stop signal.")
+                    state = update_state(ProcessorState.STOPPING)
+                    break
+
+                # can we add a job? do we have a job?
+                if (self._job_concurrency or len(self._active) == 0) and len(self._pending) > 0:
+                    # get the job
+                    with self._mutex:
+                        context = self._pending.pop(0)
+
+                        # create a job runner
+                        runner = JobRunner(self, context)
+                        self._active[context.job_id()] = runner
+
+                    # start the job runner
+                    logger.info(f"[adapter:{self._proc_short_id}:{state.value}] starting job runner "
+                                f"for {runner.job.id}.")
+                    runner.start()
+
+                    # try if there is another job pending right away
+                    continue
+
+                else:
+                    # wait a bit...
+                    time.sleep(0.5)
+
+            except SaaSRuntimeException as e:
+                state = update_state(ProcessorState.FAILED)
+                logger.error(
+                    f"[adapter:{self._proc_short_id}:{state.value}] processing jobs failed: "
+                    f"[{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = update_state(ProcessorState.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[adapter:{self._proc_short_id}:{state.value}] processing jobs failed: {e}\n{trace}")
+
+        if state == ProcessorState.STOPPING:
+            # purge jobs before shutting down
+            with self._mutex:
+                for job_type, context in self._pending:
+                    logger.info(
+                        f"[adapter:{self._proc_short_id}:{state.value}] purged pending job: "
+                        f"{job_type} {context.status.job}"
+                    )
+                self._pending = []
+
+                for job_id, runner in self._active.items():
+                    runner.cancel()
+                    logger.info(f"[adapter:{self._proc_short_id}:{state.value}] purged active job: {runner.job}")
+                self._active = {}
+
+            logger.info(f"[adapter:{self._proc_short_id}:{state.value}] performing shutdown routine...")
+            self.shutdown()
+
+            state = update_state(ProcessorState.STOPPED)
+            logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has stopped.")
 
     @abstractmethod
     def delete(self) -> None:
@@ -542,13 +757,14 @@ class RTIProcessorAdapter(Thread, ABC):
     def status(self) -> ProcessorStatus:
         with self._mutex:
             return ProcessorStatus(
-                state=self._state.value,
-                pending=[context.job for _, context in self._pending],
+                state=str(self._db_wrapper.state().value),
+                pending=[context.job() for context in self._pending],
                 active=[runner.job for _, runner in self._active.items()]
             )
 
     def pre_execute(self, working_directory: str, context: JobContext) -> None:
-        logger.info(f"[adapter:{self._proc_id}][{self._state}][{context.job.id}] perform pre-execute routine...")
+        logger.info(f"[adapter:{self._proc_short_id}:{self.state.value}] "
+                    f"[job:{shorten_id(context.job().id)}] performing pre-execution routine...")
 
         # store by-value input data objects (if any)
         self._store_value_input_data_objects(working_directory, context)
@@ -571,45 +787,33 @@ class RTIProcessorAdapter(Thread, ABC):
         self._verify_outputs(context)
 
     def post_execute(self, job_id: str) -> None:
-        logger.info(f"[adapter:{self._proc_id}][{self._state}][{job_id}] perform post-execute routine...")
+        logger.info(f"[adapter:{self._proc_short_id}:{self.state.value}] "
+                    f"[job:{shorten_id(job_id)}] performing post-execution routine...")
 
     def add(self, context: JobContext) -> None:
         with self._mutex:
             # are we accepting jobs?
-            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+            if self.state in [ProcessorState.STOPPING, ProcessorState.STOPPED]:
                 raise ProcessorNotAcceptingJobsError({
                     'proc_id': self._proc_id,
-                    'job': context.job.dict()
+                    'job': context.job().dict()
                 })
 
-            self._pending.append(("new", context))
+            # create working directory (if it doesn't already exist)
+            if not os.path.exists(context.wd_path()):
+                os.makedirs(context.wd_path(), exist_ok=True)
 
-    def resume(self, context: JobContext) -> None:
-        with self._mutex:
-            # are we accepting jobs?
-            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
-                raise ProcessorNotAcceptingJobsError({
-                    'proc_id': self._proc_id,
-                    'job': context.job.dict()
-                })
+            # write the job descriptor  (if it doesn't already exist)
+            if not os.path.isfile(context.descriptor_path()):
+                with open(context.descriptor_path(), 'w') as f:
+                    f.write(json.dumps(context.job().dict(), indent=4))
 
-            self._pending.append(('resume', context))
-
-    def job_context(self, job_id: str) -> Optional[JobContext]:
-        with self._mutex:
-            if job_id in self._active:
-                return self._active[job_id].context
-
-            else:
-                for job_type, context in self._pending:
-                    if context.job.id == job_id:
-                        return context
-
-            return None
+            # add the job to the pending queue
+            self._pending.append(context)
 
     def pending_jobs(self) -> List[Job]:
         with self._mutex:
-            return [context.job for _, context in self._pending]
+            return [job_state.job() for job_state in self._pending]
 
     def active_jobs(self) -> List[Job]:
         with self._mutex:
@@ -620,82 +824,19 @@ class RTIProcessorAdapter(Thread, ABC):
             runner = self._active.pop(job_id) if job_id in self._active else None
             return runner
 
-    def run(self) -> None:
-        logger.info(f"[adapter:{self._proc_id}][{self._state}] has started.")
-
-        # start-up the adapter
-        try:
-            self._state = ProcessorState.STARTING
-            logger.info(f"[adapter:{self._proc_id}][{self._state}] performing startup routine...")
-            self.startup()
-
-        except SaaSRuntimeException as e:
-            self._state = ProcessorState.FAILED
-            logger.error(f"[adapter:{self._proc_id}][{self._state}] start-up failed: [{e.id}] {e.reason} {e.details}")
-
-        except Exception as e:
-            self._state = ProcessorState.FAILED
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.error(f"[adapter:{self._proc_id}][{self._state}] start-up failed: {e}\n{trace}")
-
-        else:
-            self._state = ProcessorState.OPERATIONAL
-            logger.info(f"[adapter:{self._proc_id}][{self._state}] has started up.")
-
-        # while the processor is not stopped, and there are pending jobs, execute them
-        # (either in sequence or concurrently)
-        while self._state == ProcessorState.OPERATIONAL:
-            # can we add a job? do we have a job?
-            if (self._job_concurrency or len(self._active) == 0) and len(self._pending) > 0:
-                # get the job
-                with self._mutex:
-                    job_type, context = self._pending.pop(0)
-
-                    # create a job runner
-                    wd_path = os.path.join(self._job_wd_path, context.job.id)
-                    runner = JobRunner(self, job_type, context, wd_path)
-                    self._active[context.job.id] = runner
-
-                # start the job runner
-                logger.info(f"[adapter:{self._proc_id}][{self._state}] starting job runner for {runner.job.id}.")
-                runner.start()
-
-            # if not, then wait a bit...
-            else:
-                time.sleep(0.25)
-
-        # purge jobs before shutting down
-        with self._mutex:
-            for job_type, context in self._pending:
-                logger.info(
-                    f"[adapter:{self._proc_id}][{self._state}] purged pending job: {job_type} {context.status.job}"
-                )
-            self._pending = []
-
-            for job_id, runner in self._active.items():
-                runner.cancel()
-                logger.info(f"[adapter:{self._proc_id}][{self._state}] purged active job: {runner.job}")
-            self._active = {}
-
-        logger.info(f"[adapter:{self._proc_id}][{self._state}] performing shutdown routine...")
-        self.shutdown()
-
-        self._state = ProcessorState.STOPPED
-        logger.info(f"[adapter:{self._proc_id}][{self._state}] has stopped.")
-
     def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
-        context.make_note('step', "lookup by-reference input data objects")
+        context.put_note('step', "lookup by-reference input data objects")
 
         # do we have any by-reference input data objects in the first place?
         pending = {item.obj_id: item.user_signature if item.user_signature else None
-                   for item in context.job.task.input if item.type == 'reference'}
+                   for item in context.job().task.input if item.type == 'reference'}
         if len(pending) == 0:
             return {}
 
         # get the user identity
-        user = self._node.db.get_identity(context.job.task.user_iid)
+        user = self._node.db.get_identity(context.job().task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(context.job.task.user_iid)
+            raise IdentityNotFoundError(context.job().task.user_iid)
 
         # lookup all referenced data objects using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -748,7 +889,7 @@ class RTIProcessorAdapter(Thread, ABC):
     def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, obj_records: dict, working_directory: str,
                                             context: JobContext) -> list[dict]:
 
-        context.make_note('step', "fetch by-reference input data objects")
+        context.put_note('step', "fetch by-reference input data objects")
 
         # do we have any data objects to fetch to begin with?
         if len(obj_records) == 0:
@@ -756,9 +897,9 @@ class RTIProcessorAdapter(Thread, ABC):
             return []
 
         # get the user identity
-        user = self._node.db.get_identity(context.job.task.user_iid)
+        user = self._node.db.get_identity(context.job().task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(context.job.task.user_iid)
+            raise IdentityNotFoundError(context.job().task.user_iid)
 
         # fetch input data objects one by one using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -771,7 +912,7 @@ class RTIProcessorAdapter(Thread, ABC):
             # fetch the data object
             custodian: NodeInfo = record['custodian']
             protocol.fetch(custodian.p2p_address, obj_id, meta_path, content_path,
-                           context.job.task.user_iid if record['access_restricted'] else None,
+                           context.job().task.user_iid if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
             # obtain the content hash for this data object
@@ -805,7 +946,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'receiver': user.id,
                     'request': request
                 })
-                context.make_note('requests', requests)
+                context.put_note('requests', requests)
 
                 # add on to the list of pending items
                 pending_content_keys.append({
@@ -815,7 +956,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
 
         # create symbolic links to the contents for every input AND update references with c_hash
-        for item in context.job.task.input:
+        for item in context.job().task.input:
             if item.type == 'reference':
                 create_symbolic_link(item.name, f"{item.obj_id}.content",
                                      working_directory=working_directory)
@@ -830,7 +971,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
                                               context: JobContext) -> None:
-        context.make_note('step', "decrypt by-reference input data objects")
+        context.put_note('step', "decrypt by-reference input data objects")
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -853,8 +994,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _store_value_input_data_objects(self, working_directory: str, context: JobContext) -> None:
-        context.make_note('step', "store by-value input data objects")
-        for item in context.job.task.input:
+        context.put_note('step', "store by-value input data objects")
+        for item in context.job().task.input:
             # if it is a 'value' input then store it to the working directory
             if item.type == 'value':
                 input_content_path = os.path.join(working_directory, item.name)
@@ -871,8 +1012,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _verify_inputs(self, working_directory: str, context: JobContext) -> None:
-        context.make_note('step', 'verify inputs: data object types and formats')
-        for item in context.job.task.input:
+        context.put_note('step', 'verify inputs: data object types and formats')
+        for item in context.job().task.input:
             obj_name = item.name
 
             # check if data type/format indicated in processor descriptor and data object descriptor match
@@ -903,8 +1044,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _verify_outputs(self, context: JobContext) -> None:
-        context.make_note('step', 'verify outputs: data object owner identities')
-        for item in context.job.task.output:
+        context.put_note('step', 'verify outputs: data object owner identities')
+        for item in context.job().task.output:
             owner = self._node.db.get_identity(item.owner_iid)
             if owner is None:
                 raise DataObjectOwnerNotFoundError({
@@ -913,14 +1054,14 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
         context.remove_note('step')
 
-    def _push_data_object(self, obj_name: str, working_directory: str, context: JobContext) -> None:
+    def push_data_object(self, obj_name: str, wd_path: str, context: JobContext) -> None:
         # convenience variables
-        task_out_items = {item.name: item for item in context.job.task.output}
+        task_out_items = {item.name: item for item in context.job().task.output}
         task_out = task_out_items[obj_name]
         proc_out = self._output_interface[obj_name]
 
         # check if the output data object exists
-        output_content_path = os.path.join(working_directory, obj_name)
+        output_content_path = os.path.join(wd_path, obj_name)
         if not os.path.isfile(output_content_path):
             raise DataObjectContentNotFoundError({
                 'output_name': obj_name,
@@ -988,7 +1129,7 @@ class RTIProcessorAdapter(Thread, ABC):
         }
 
         # update recipe inputs
-        for item0 in context.job.task.input:
+        for item0 in context.job().task.input:
             spec = self._input_interface[item0.name]
             if item0.type == 'value':
                 recipe['consumes'][item0.name] = {
@@ -1007,17 +1148,17 @@ class RTIProcessorAdapter(Thread, ABC):
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
-                                     proc_out.data_type, proc_out.data_format, recipe=recipe)
+        obj = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
+                                    proc_out.data_type, proc_out.data_format, recipe=recipe)
 
         # update tags with information from the job
-        meta = proxy.update_tags(meta.obj_id, self._node.keystore, [
+        obj = proxy.update_tags(obj.obj_id, self._node.keystore, [
             DataObject.Tag(key='name', value=obj_name),
-            DataObject.Tag(key='job_id', value=context.job.id)
+            DataObject.Tag(key='job_id', value=context.job().id)
         ])
 
         # transfer ownership to the new owner
-        meta = proxy.transfer_ownership(meta.obj_id, self._node.keystore, owner)
+        obj = proxy.transfer_ownership(obj.obj_id, self._node.keystore, owner)
 
         # set the output data object ids in the status
-        context.set_output(obj_name, meta)
+        context.pop_pending_output(obj_name, obj)
