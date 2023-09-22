@@ -410,3 +410,36 @@ def test_run_command_async_remote_linux(remote_linux_credentials):
         trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
         print(trace)
         assert False
+
+
+def test_run_command_async_remote_cygwin(remote_cygwin_credentials):
+    ssh_credentials = remote_cygwin_credentials
+    folder = '__test_run_command_async_remote_cygwin'
+
+    # update the remote home path
+    ssh_credentials.home_path = determine_home_path(ssh_credentials=ssh_credentials)
+
+    # ensure the test folder doesn't exist!
+    local_home_path = determine_home_path()
+    local_folder_path = join_paths([local_home_path, folder])
+    assert not check_if_path_exists(local_folder_path)
+
+    command = 'sleep 20'
+
+    try:
+        pid, paths = run_command_async(command, local_output_path=local_folder_path,
+                                       name='test', ssh_credentials=ssh_credentials)
+        assert check_if_path_exists(paths['wd_path'], ssh_credentials=ssh_credentials)
+        assert check_if_path_exists(local_folder_path, ssh_credentials=None)
+
+        monitor_command(pid, paths, ssh_credentials=ssh_credentials)
+
+        run_command(f"rm -rf {paths['wd_path']}", ssh_credentials=ssh_credentials)
+        shutil.rmtree(local_folder_path)
+        assert not check_if_path_exists(paths['wd_path'], ssh_credentials=ssh_credentials)
+        assert not check_if_path_exists(local_folder_path, ssh_credentials=None)
+
+    except Exception as e:
+        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+        print(trace)
+        assert False
