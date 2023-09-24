@@ -19,7 +19,6 @@ import saas.rti.adapters.base as base
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.logging import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
-from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.rti.schemas import JobStatus
@@ -109,10 +108,11 @@ def remove_host_from_ssh_config(host_id: str):
 
 
 class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
-    def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
-                 ssh_credentials: SSHCredentials = None,
-                 github_credentials: GithubCredentials = None) -> None:
-        super().__init__(proc_id, gpp, jobs_path, node, False)
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, state_wrapper: base.ProcessorStateWrapper,
+                 node, jobs_path: str, job_concurrency: bool,
+                 ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> None:
+
+        super().__init__(proc_id, gpp, state_wrapper, node, jobs_path, job_concurrency)
 
         self._gpp = gpp
         self._ssh_credentials = ssh_credentials
@@ -193,11 +193,11 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             self.container.remove(force=True)
             self.container = None
 
-    def execute(self, working_directory: str, context: JobContext) -> None:
+    def begin_job_execution(self, wd_path: str, context: base.JobContext) -> None:
         try:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
-                full_working_directory = os.path.realpath(working_directory)
+                full_working_directory = os.path.realpath(wd_path)
 
                 # REMOTE
                 if self.using_remote:
@@ -229,19 +229,22 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 self.container.start()
 
             # make it resumable
-            context.add_reconnect_info(paths={"working_directory": full_working_directory},
-                                       pid=self.container.id, pid_paths=dict())
+            context.put_note('reconnect_info', {
+                'working_directory': full_working_directory,
+                'pid': self.container.id,
+                'pid_paths': {}}
+            )
 
             # try to monitor the job by (re)connecting to it
-            self.connect_and_monitor(context)
+            self.monitor_job_execution(context)
 
         except SaaSRuntimeException:
             raise
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
-                'job': context.job.dict(),
-                'working_directory': working_directory,
+                'job': context.job().dict(),
+                'wd_path': wd_path,
                 'trace': trace
             })
         finally:
@@ -249,13 +252,13 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 self.container.remove()
                 self.container = None
 
-    def connect_and_monitor(self, context: JobContext) -> None:
+    def monitor_job_execution(self, context: base.JobContext) -> None:
         # Retrieve container from descriptor if not found
         if self.container is None:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
                 # FIXME: What happens if the job has completed successfully and container has already been removed.
-                self.container = client.containers.get(context.reconnect_info.pid)
+                self.container = client.containers.get(context.get_note('reconnect_info')['pid'])
         try:
             # Will only continue monitoring if container is still running.
             # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
@@ -268,7 +271,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = list()
                 for log in self.container.logs(stream=True):
-                    if context.state == JobStatus.State.CANCELLED:
+                    if context.state() == JobStatus.State.CANCELLED:
                         # cancel tasks that are not yet running
                         for future in futures:
                             future.cancel()
@@ -291,8 +294,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
-                'job': context.job.dict(),
-                'working_directory': context.reconnect_info.paths["working_directory"],
+                'job': context.job().dict(),
+                'working_directory': context.get_note('reconnect_info')["working_directory"],
                 'trace': trace
             })
         finally:
@@ -301,37 +304,40 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             self.container.remove()
             self.container = None
 
+    def cancel_job_execution(self, context: base.JobContext) -> None:
+        pass
+
     def delete(self) -> None:
         # FIXME: Might not be thread safe
         # Remove entry added to ssh config
         if self.using_remote:
             remove_host_from_ssh_config(self._proc_id)
 
-    def _handle_trigger_output(self, line: str, context: JobContext) -> None:
+    def _handle_trigger_output(self, line: str, context: base.JobContext) -> None:
         obj_name = line.split(':')[2]
-        working_directory = context.reconnect_info.paths['working_directory']
+        working_directory = context.get_note('reconnect_info')['working_directory']
         try:
-            context.make_note(f"process_output:{obj_name}", 'started')
+            context.put_note(f"process_output:{obj_name}", 'started')
 
             if self.using_remote:
                 # Fetch object from remote container
-                context.make_note(f"process_output:{obj_name}", 'retrieve')
+                context.put_note(f"process_output:{obj_name}", 'retrieve')
                 remote_obj = f"{self.container_working_directory}/{obj_name}"
                 data, stat = self.container.get_archive(remote_obj)
                 datastream = generator_to_stream(data)
                 with tarfile.open(fileobj=datastream, mode='r|*') as tf:
                     tf.extractall(working_directory)
 
-            context.make_note(f"process_output:{obj_name}", 'push')
-            self._push_data_object(obj_name, working_directory, context)
-            context.make_note(f"process_output:{obj_name}", 'done')
+            context.put_note(f"process_output:{obj_name}", 'push')
+            self.push_data_object(obj_name, working_directory, context)
+            context.put_note(f"process_output:{obj_name}", 'done')
 
         except SaaSRuntimeException as e:
-            context.make_note(f"process_output:{obj_name}", 'failed')
+            context.put_note(f"process_output:{obj_name}", 'failed')
             context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
                                                                                     details=e.details))
 
-    def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
+    def _handle_trigger_progress(self, line: str, context: base.JobContext) -> None:
         """
         Line is in the format `trigger:progress:<int>`
         """

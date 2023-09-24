@@ -8,7 +8,7 @@ from saas.core.logging import Logging
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.dor.schemas import GitProcessorPointer
 from saas.rti.adapters.base import RTIProcessorAdapter, ProcessorStateWrapper, JobContext, determine_home_path, \
-    run_command, scp_local_to_remote, run_command_async, monitor_command, scp_remote_to_local, is_cygwin
+    run_command, scp_local_to_remote, run_command_async, monitor_command, scp_remote_to_local, determine_if_cygwin
 
 from saas.rti.schemas import JobStatus
 
@@ -95,7 +95,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
             os.chmod(self._ssh_credentials.key_path, S_IREAD | S_IWRITE)
 
             # test if the remote is cygwin
-            self._ssh_credentials.is_cygwin = is_cygwin(ssh_credentials)
+            self._ssh_credentials.is_cygwin = determine_if_cygwin(ssh_credentials)
 
             # determine remote home path
             self._ssh_credentials.home_path = determine_home_path(ssh_credentials)

@@ -242,7 +242,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
 
 
 def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
-                    pace: int = 500, max_attempts: int = 60, retry_delay: int = 10, context: JobContext = None) -> None:
+                    context: JobContext = None) -> None:
 
     job_id = context.job_id if context else '...'
     logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
@@ -262,7 +262,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def wait_for_exitcode_local(session: Session) -> None:
         while session.exitcode is None:
             time.sleep(0.5)
-            if os.path.getsize(pid_paths['exitcode']) > 0:
+            if os.path.isfile(pid_paths['exitcode']) and os.path.getsize(pid_paths['exitcode']) > 0:
                 with open(pid_paths['exitcode'], 'r') as f:
                     content = f.read()
                     content = content.strip()
@@ -290,6 +290,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def monitor_stdout_local(session: Session) -> None:
         position = 0
         while session.exitcode is None:
+            time.sleep(1)
             with open(pid_paths['stdout'], 'r') as f:
                 f.seek(position)
                 for line in f:
@@ -302,7 +303,6 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
                             info['func'](line, info['context'])
 
                 position = f.tell()
-                time.sleep(1)
 
     def monitor_stdout_remote(session: Session) -> None:
         ssh_shell = session.ssh_client.invoke_shell()
@@ -332,21 +332,23 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
 
     def wait_for_cancellation_local(session: Session) -> None:
         while session.exitcode is None:
+            time.sleep(1)
             if context.state == JobStatus.State.CANCELLED:
                 os.kill(int(pid), signal.SIGKILL)
+
+                session.exitcode = -9
                 break
-            else:
-                time.sleep(1)
 
     def wait_for_cancellation_remote(session: Session) -> None:
         while session.exitcode is None:
+            time.sleep(1)
             if context.state == JobStatus.State.CANCELLED:
                 ssh_shell = session.ssh_client.invoke_shell()
                 ssh_shell.send(f"kill -9 {pid}".encode('utf-8'))
                 ssh_shell.close()
+
+                session.exitcode = -9
                 break
-            else:
-                time.sleep(1)
 
     # what functions to run?
     functions = [wait_for_exitcode_remote if ssh_credentials else wait_for_exitcode_local]

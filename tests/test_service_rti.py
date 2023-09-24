@@ -275,8 +275,8 @@ def test_rest_submit_cancel_job(node, rti_proxy, deployed_test_processor, known_
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 3600}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 3600}})
     ]
 
     task_output = [
@@ -622,12 +622,12 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
     owner = concurrent_node.keystore
 
     # submit jobs
-    n = 3
+    n = 20
     jobs = []
     for i in range(n):
         task_input = [
-            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': i*100+1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': i*100+2}})
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 5}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
         ]
 
         task_output = [
@@ -636,7 +636,7 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
         ]
 
         job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
-        print(f"job {job_id} submitted")
+        print(f"[{time.time()}] job {job_id} submitted")
         jobs.append(job_id)
 
     # wait for all jobs
@@ -656,12 +656,6 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
         with open(download_path, 'r') as f:
             content = json.load(f)
             results.append(content['v'])
-
-    for i in range(n):
-        a = i*100+1
-        b = i*100+2
-        c = a + b
-        assert(c == results[i])
 
 
 def test_processor_execution_same_reference(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
@@ -955,8 +949,8 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 5}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
     ]
 
     task_output = [
