@@ -201,7 +201,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 client: docker.DockerClient
                 full_working_directory = os.path.realpath(wd_path)
 
-                logger.info(f"Creating Docker container ({self.docker_image_tag})")
+                logger.info(f"Creating Docker container (image: {self.docker_image_tag})")
 
                 # REMOTE
                 if self.using_remote:
@@ -230,7 +230,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                                   }
                                                               })
 
-                logger.info(f"Starting Docker container ({self.docker_image_tag})")
+                logger.info(f"Starting Docker container (image: {self.docker_image_tag}, id: {self.container.id})")
                 self.container.start()
 
             # make it resumable
