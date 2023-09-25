@@ -235,8 +235,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 'pid_paths': {}}
             )
 
-            # try to monitor the job by (re)connecting to it
-            self.monitor_job_execution(context)
+            context.update_state(JobStatus.State.RUNNING)
+            logger.info(f"Docker container started ({self.docker_image_tag}) for job {context.job_id()}")
 
         except SaaSRuntimeException:
             raise
