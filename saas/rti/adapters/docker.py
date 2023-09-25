@@ -291,6 +291,9 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                         if line.startswith('trigger:progress'):
                             self._handle_trigger_progress(line, context)
 
+                        if line.startswith('trigger:message'):
+                            self._handle_trigger_message(line, context)
+
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
@@ -343,6 +346,15 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         """
         progress = line.split(':')[2]
         context.progress = int(progress)
+
+    def _handle_trigger_message(self, line: str, context: base.JobContext) -> None:
+        """
+        Line is in the format `trigger:message:<type:str>:<message:str>`
+        """
+        temp = line.split(':', 3)
+        severity = temp[2]
+        message = temp[3]
+        context.update_message(severity, message)
 
 
 def generator_to_stream(generator):
