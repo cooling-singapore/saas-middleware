@@ -5,7 +5,7 @@ import shutil
 import tarfile
 import tempfile
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Optional
 
@@ -281,6 +281,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
                     for line in lines:
                         if line.startswith('trigger:output'):
+                            # run IO task in thread
                             future = executor.submit(self._handle_trigger_output, line, context)
                             futures.append(future)
 
@@ -289,6 +290,20 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
                         if line.startswith('trigger:message'):
                             self._handle_trigger_message(line, context)
+
+                # wait for all tasks from triggers to complete
+                for future in as_completed(futures):
+                    logger.debug(f"{future}")
+
+            # Block and go through other pending outputs until processed
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [
+                    executor.submit(self._process_pending_output, obj_name, context)
+                    for obj_name in context.get_pending_outputs()
+                ]
+                # wait for any remaining pending outputs
+                for future in as_completed(futures):
+                    logger.debug(f"{future}")
 
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
@@ -314,6 +329,10 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
     def _handle_trigger_output(self, line: str, context: base.JobContext) -> None:
         obj_name = line.split(':')[2]
+        context.add_pending_output(obj_name)
+        self._process_pending_output(obj_name, context)
+
+    def _process_pending_output(self, obj_name: str, context: base.JobContext) -> None:
         working_directory = context.get_note('reconnect_info')['working_directory']
         try:
             context.put_note(f"process_output:{obj_name}", 'started')
@@ -335,6 +354,10 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             context.put_note(f"process_output:{obj_name}", 'failed')
             context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
                                                                                     details=e.details))
+            raise
+        except Exception as e:
+            logger.error(e)
+            raise
 
     def _handle_trigger_progress(self, line: str, context: base.JobContext) -> None:
         """
