@@ -170,17 +170,19 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                       buildargs={"PROCESSOR_PATH": self._gpp.proc_path,
                                                                  "PROC_CONFIG": self._gpp.proc_config,
                                                                  "PROC_ID": self._proc_id})
+                    logger.debug(f"Docker image created, tag: {image.tags}, id: {image.id}")
 
         except BuildError as e:
-            print(e.msg)
+            logger.error(e.msg)
             for log in e.build_log:
-                print(log.get("stream"))
+                logger.error(log.get("stream"))
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise BuildDockerImageError({
                 'trace': trace
             }) from e
 
         except Exception as e:
+            logger.error(e.msg)
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise BuildDockerImageError({
                 'trace': trace
@@ -198,6 +200,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with self.get_docker_client() as client:
                 client: docker.DockerClient
                 full_working_directory = os.path.realpath(wd_path)
+
+                logger.info(f"Creating Docker container ({self.docker_image_tag})")
 
                 # REMOTE
                 if self.using_remote:
@@ -226,6 +230,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                                   }
                                                               })
 
+                logger.info(f"Starting Docker container ({self.docker_image_tag})")
                 self.container.start()
 
             # make it resumable
