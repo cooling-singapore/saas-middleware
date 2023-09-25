@@ -247,10 +247,6 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 'wd_path': wd_path,
                 'trace': trace
             })
-        finally:
-            if self.container is not None:
-                self.container.remove()
-                self.container = None
 
     def monitor_job_execution(self, context: base.JobContext) -> None:
         # Retrieve container from descriptor if not found
