@@ -341,7 +341,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         Line is in the format `trigger:progress:<int>`
         """
         progress = line.split(':')[2]
-        context.progress = int(progress)
+        context.update_progress(int(progress))
 
     def _handle_trigger_message(self, line: str, context: base.JobContext) -> None:
         """
