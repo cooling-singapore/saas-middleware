@@ -12,7 +12,7 @@ from typing import Optional
 import paramiko
 
 import docker
-from docker.errors import BuildError
+from docker.errors import APIError, BuildError
 from docker.models.containers import Container
 
 import saas.rti.adapters.base as base
@@ -193,6 +193,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         if self.container is not None:
             logger.warning("Docker container seems to be still running during shutdown. Force removing it...")
             self.container.remove(force=True)
+            self.container.wait(condition="removed")
             self.container = None
 
     def begin_job_execution(self, wd_path: str, context: base.JobContext) -> None:
@@ -241,7 +242,8 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             )
 
             context.update_state(JobStatus.State.RUNNING)
-            logger.info(f"Docker container started ({self.docker_image_tag}) for job {context.job_id()}")
+            logger.info(f"Docker container started (image: {self.docker_image_tag}, id: {self.container.id}) "
+                        f"for job {context.job_id()}")
 
         except SaaSRuntimeException:
             raise
@@ -302,6 +304,10 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
 
             # Block and go through other pending outputs until processed
             with ThreadPoolExecutor(max_workers=3) as executor:
+                # ignore pending outputs when job is cancelled
+                if context.state() == JobStatus.State.CANCELLED:
+                    return
+
                 futures = [
                     executor.submit(self._process_pending_output, obj_name, context)
                     for obj_name in context.get_pending_outputs()
@@ -320,7 +326,14 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         finally:
             # Remove container after job is done
             self.container.wait()
-            self.container.remove()
+
+            try:
+                self.container.remove()
+                self.container.wait(condition="removed")
+            except APIError as e:
+                logger.error(f"Could not remove container ({self.container.id}), might have already been removed. "
+                             f"Docker API status code ({e.status_code}). Ignoring")
+
             self.container = None
 
     def cancel_job_execution(self, context: base.JobContext) -> None:
