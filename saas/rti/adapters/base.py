@@ -510,7 +510,7 @@ class JobRunner(Thread):
         self._owner.pop_job_runner(job_id)
 
 
-class ProcessorState(Enum):
+class ProcessorState(str, Enum):
     UNINITIALISED = 'uninitialised'
     STARTING = 'starting'
     OPERATIONAL = 'operational'
