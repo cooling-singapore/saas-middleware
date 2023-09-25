@@ -319,7 +319,7 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             self.container = None
 
     def cancel_job_execution(self, context: base.JobContext) -> None:
-        pass
+        context.update_state(JobStatus.State.CANCELLED)
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
