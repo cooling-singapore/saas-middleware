@@ -244,7 +244,7 @@ def run_command_async(command: str, local_output_path: str, name: str,
 def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
                     context: JobContext = None) -> None:
 
-    job_id = context.job_id if context else '...'
+    job_id = context.job_id() if context else '...'
     logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
 
     class Session:

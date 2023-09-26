@@ -263,8 +263,8 @@ class SDKJob:
         if auto_refresh:
             # refresh the status if we don't have a status or if the job is still running (we don't refresh if the
             # job is not running any longer)
-            if not state or state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING,
-                                      JobStatus.State.POSTPROCESSING]:
+            if not state or state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                      JobStatus.State.RUNNING, JobStatus.State.POSTPROCESSING]:
                 self.refresh_status()
 
         with self._mutex:
