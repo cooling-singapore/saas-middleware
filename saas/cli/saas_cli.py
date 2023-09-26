@@ -7,7 +7,7 @@ from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DO
     DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
-    CredentialsAddGithubCredentials
+    CredentialsAddGithubCredentials, CredentialsTestSSHCredentials, CredentialsTestGithubCredentials
 from saas.cli.cmd_network import NetworkList
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
     RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
@@ -52,7 +52,11 @@ def main():
                 CLICommandGroup('credentials', 'manage credentials for a keystore', commands=[
                     CLICommandGroup('add', 'add credentials to a keystore', commands=[
                         CredentialsAddSSHCredentials(),
-                        CredentialsAddGithubCredentials(),
+                        CredentialsAddGithubCredentials()
+                    ]),
+                    CLICommandGroup('test', 'test credentials', commands=[
+                        CredentialsTestSSHCredentials(),
+                        CredentialsTestGithubCredentials()
                     ]),
                     CredentialsRemove(),
                     CredentialsList()
