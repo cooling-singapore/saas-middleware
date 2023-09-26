@@ -333,7 +333,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def wait_for_cancellation_local(session: Session) -> None:
         while session.exitcode is None:
             time.sleep(1)
-            if context.state == JobStatus.State.CANCELLED:
+            if context.state() == JobStatus.State.CANCELLED:
                 os.kill(int(pid), signal.SIGKILL)
 
                 session.exitcode = -9
@@ -342,7 +342,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def wait_for_cancellation_remote(session: Session) -> None:
         while session.exitcode is None:
             time.sleep(1)
-            if context.state == JobStatus.State.CANCELLED:
+            if context.state() == JobStatus.State.CANCELLED:
                 ssh_shell = session.ssh_client.invoke_shell()
                 ssh_shell.send(f"kill -9 {pid}".encode('utf-8'))
                 ssh_shell.close()
@@ -403,7 +403,6 @@ class JobRunner(Thread):
         context = self._context
         job_id = context.job().id
         wd_path = context.wd_path()
-        descriptor_path = context.descriptor_path()
 
         # is the job still uninitialised?
         if context.state() == JobStatus.State.UNINITIALISED:

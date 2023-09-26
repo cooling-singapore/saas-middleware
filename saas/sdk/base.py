@@ -276,55 +276,48 @@ class SDKJob:
             return status
 
     def wait(self, pace: float = 1.0, callback_progress: Callable[[int], None] = None,
-             callback_message: Callable[[LogMessage], None] = None) -> Dict[str, SDKCDataObject]:
+             callback_message: Callable[[LogMessage], None] = None) -> Optional[Dict[str, SDKCDataObject]]:
         # wait until the job has finished
+        prev_progress = None
         prev_message = None
         while True:
+            # wait for a bit...
+            time.sleep(pace)
+
+            # check the status (if we have one)
             status = self.status
+            if status:
+                # only update progress if we have a callback and if necessary
+                if callback_progress and (prev_progress is None or prev_progress != status.progress):
+                    callback_progress(status.progress)
+                    prev_progress = status.progress
 
-            # do we have a progress callback?
-            if callback_progress:
-                callback_progress(status.progress)
+                # only update message if we have a callback and if necessary
+                message = status.notes['message'] if 'message' in status.notes else None
+                if callback_message and message is not None and prev_message != message:
+                    try:
+                        if isinstance(message, LogMessage):
+                            log_message = message
+                        else:
+                            message: str = message
+                            temp = message.split(':', 1)
+                            log_message = LogMessage(severity=temp[0], message=temp[1])
+                    except Exception:
+                        log_message = LogMessage(severity='warning', message=f"Malformed message: {message}")
 
-            # do we have a message callback?
-            if callback_message:
-                # do we have notes?
-                if status.notes and 'message' in status.notes:
-                    # do we have a different message than before?
-                    message = status.notes['message']
-                    if message != prev_message:
-                        # convert into log message
-                        try:
-                            if isinstance(message, LogMessage):
-                                log_message = message
-                            else:
-                                temp = message.split(':', 1)
-                                log_message = LogMessage(severity=temp[0], message=temp[1])
-                        except Exception:
-                            log_message = LogMessage(severity='warning', message=f"Malformed message: {message}")
+                    callback_message(log_message)
+                    prev_message = message
 
-                        callback_message(log_message)
-                        prev_message = message
+                # are we done?
+                if status.state == JobStatus.State.SUCCESSFUL:
+                    result = {
+                        name: SDKCDataObject(meta=meta, authority=self._authority, session=self._session)
+                        for name, meta in status.output.items()
+                    }
+                    return result
 
-            if status is None or status.state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING,
-                                                  JobStatus.State.POSTPROCESSING]:
-                time.sleep(pace)
-
-            elif status.state == JobStatus.State.SUCCESSFUL or status.state == JobStatus.State.CANCELLED:
-                break
-
-            else:
-                raise SaaSRuntimeException("Job execution failed/timed-out", details={
-                    'errors': status.errors
-                })
-
-        # collect information about the output data objects
-        output = {}
-        for name, meta in status.output.items():
-            output[name] = SDKCDataObject(meta=meta, authority=self._authority, session=self._session)
-
-        return output
-
+                elif status.state in [JobStatus.State.FAILED, JobStatus.State.CANCELLED]:
+                    return None
 
 class SDKContext:
     def __init__(self, dor_nodes: List[NodeInfo], rti_nodes: List[NodeInfo], authority: Keystore):

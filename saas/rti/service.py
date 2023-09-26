@@ -432,9 +432,6 @@ class RTIService:
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.submit, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
-            # EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-            #                    self.resume, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
-
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.jobs_by_proc, List[Job], [VerifyProcessorDeployed]),
 
