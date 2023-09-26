@@ -44,7 +44,7 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
 def deploy_and_wait(rti: RTIProxy, proc_id: str, authority: Keystore, github_credentials: GithubCredentials = None,
                     deployment: str = "native"):
     rti.deploy(proc_id, authority, deployment=deployment, github_credentials=github_credentials)
-    while (state := rti.get_status(proc_id).state) == ProcessorState.STARTING:
+    while (state := rti.get_status(proc_id).state) in [ProcessorState.UNINITIALISED, ProcessorState.STARTING]:
         logger.info(f"Waiting for processor to deploy. {state}")
         time.sleep(1)
     assert(rti.get_status(proc_id).state == ProcessorState.OPERATIONAL)

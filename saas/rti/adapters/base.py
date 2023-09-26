@@ -295,7 +295,6 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
                 f.seek(position)
                 for line in f:
                     line = line.rstrip('\n')  # Remove newline character
-
                     for pattern, info in triggers.items():
                         if pattern in line:
                             idx = line.index(pattern)

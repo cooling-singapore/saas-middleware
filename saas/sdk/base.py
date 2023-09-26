@@ -293,20 +293,10 @@ class SDKJob:
                     prev_progress = status.progress
 
                 # only update message if we have a callback and if necessary
-                message = status.notes['message'] if 'message' in status.notes else None
-                if callback_message and message is not None and prev_message != message:
-                    try:
-                        if isinstance(message, LogMessage):
-                            log_message = message
-                        else:
-                            message: str = message
-                            temp = message.split(':', 1)
-                            log_message = LogMessage(severity=temp[0], message=temp[1])
-                    except Exception:
-                        log_message = LogMessage(severity='warning', message=f"Malformed message: {message}")
-
+                if callback_message and status.message is not None and prev_message != status.message:
+                    log_message = LogMessage(severity=status.message.severity, message=status.message.content)
                     callback_message(log_message)
-                    prev_message = message
+                    prev_message = status.message
 
                 # are we done?
                 if status.state == JobStatus.State.SUCCESSFUL:
@@ -318,6 +308,7 @@ class SDKJob:
 
                 elif status.state in [JobStatus.State.FAILED, JobStatus.State.CANCELLED]:
                     return None
+
 
 class SDKContext:
     def __init__(self, dor_nodes: List[NodeInfo], rti_nodes: List[NodeInfo], authority: Keystore):

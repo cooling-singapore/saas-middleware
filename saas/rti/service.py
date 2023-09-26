@@ -39,17 +39,12 @@ logger = Logging.get('rti.service')
 Base = declarative_base()
 
 
-class Message(BaseModel):
-    severity: str
-    content: str
-
-
 class JobRuntimeInformation(BaseModel):
     pending_output: List[str]
     output: Dict[str, CDataObject]
     notes: Dict[str, Union[str, int, float, dict, list]]
     errors: List[JobStatus.Error]
-    message: Optional[Message]
+    message: Optional[JobStatus.Message]
 
 
 class DBContentKeys(Base):
@@ -228,10 +223,11 @@ class DBJobContextWrapper(JobContext):
     def update_message(self, severity: str, content: str) -> None:
         with self._mutex:
             with self._session_maker() as session:
+                print(f"update_message: {severity}    {content}")
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
-                jri.message = Message(severity=severity, content=content)
+                jri.message = JobStatus.Message(severity=severity, content=content)
 
                 record.info = jri.dict()
                 session.commit()
@@ -702,7 +698,7 @@ class RTIService:
                 job = Job.parse_obj(record.job)
                 jri = JobRuntimeInformation.parse_obj(record.info)
                 status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
-                                   notes=jri.notes, job=job, errors=jri.errors)
+                                   notes=jri.notes, job=job, errors=jri.errors, message=jri.message)
 
                 return status
 
