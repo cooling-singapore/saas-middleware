@@ -659,7 +659,6 @@ class RTIService:
             with self._Session() as session:
                 # get the identity
                 user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
-                logger.info(f"job_by_user: user={user.dict()}")
 
                 # if the user is NOT the node owner, only return the jobs owned by the user
                 if self._node.identity.id != user.id:
