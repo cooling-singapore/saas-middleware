@@ -662,11 +662,6 @@ class RTIProcessorAdapter(Thread, ABC):
     def cancel_job_execution(self, context: JobContext) -> None:
         pass
 
-    def stop(self) -> None:
-        logger.info(f"[adapter:{shorten_id(self._proc_short_id)}:{self._db_wrapper.state().value}] received "
-                    f"stop signal.")
-        self._stop_signal_received = True
-
     def run(self) -> None:
         def update_state(new_state: ProcessorState) -> ProcessorState:
             with self._mutex:
@@ -705,13 +700,6 @@ class RTIProcessorAdapter(Thread, ABC):
         # (either in sequence or concurrently)
         while state == ProcessorState.OPERATIONAL:
             try:
-                # have we received the stop signal
-                if self._stop_signal_received:
-                    logger.info(f"[adapter:{shorten_id(self._proc_short_id)}:{state.value}] acknowledged "
-                                f"stop signal.")
-                    state = update_state(ProcessorState.STOPPING)
-                    break
-
                 # can we add a job? do we have a job?
                 if (self._job_concurrency or len(self._active) == 0) and len(self._pending) > 0:
                     # get the job
@@ -765,6 +753,10 @@ class RTIProcessorAdapter(Thread, ABC):
 
             state = update_state(ProcessorState.STOPPED)
             logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has stopped.")
+
+            # delete the processor
+            logger.info(f"[adapter:{self._proc_short_id}] deleting...")
+            self.delete()
 
     @abstractmethod
     def delete(self) -> None:

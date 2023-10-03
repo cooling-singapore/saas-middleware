@@ -550,26 +550,15 @@ class RTIService:
         be deleted as well.
         """
         with self._mutex:
-            # remove the adapter
-            adapter = self._deployed.pop(proc_id)
-
-            # stop the processor and wait for it to be done
-            logger.info(f"[undeploy:{shorten_id(proc_id)}] send stop signal.")
-            adapter.stop()
-
-            # wait for processor to be stopped and to return
-            logger.info(f"[undeploy:{shorten_id(proc_id)}] waiting for adapter to be stopped...")
-            adapter.join()
-
-            # delete the processor
-            logger.info(f"[undeploy:{shorten_id(proc_id)}] deleting adapter...")
-            adapter.delete()
-
             # delete the processor state
             with self._Session() as session:
-                logger.info(f"[undeploy:{shorten_id(proc_id)}] deleting processor state (if any).")
-                session.query(DBProcessorState).filter_by(proc_id=proc_id).delete()
+                logger.info(f"[undeploy:{shorten_id(proc_id)}] set state to STOPPING.")
+                record = session.query(DBProcessorState).get(proc_id)
+                record.state = str(ProcessorState.STOPPING.value)
                 session.commit()
+
+            # remove the adapter
+            adapter = self._deployed.pop(proc_id)
 
             return Processor(proc_id=proc_id, gpp=adapter.gpp)
 
