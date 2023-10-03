@@ -253,15 +253,15 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
             self.ssh_client = None
 
             if ssh_credentials:
-                ssh_client = paramiko.SSHClient()
-                ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                self.ssh_client = paramiko.SSHClient()
+                self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
                 private_key = paramiko.RSAKey.from_private_key_file(ssh_credentials.key_path)
-                ssh_client.connect(ssh_credentials.host, username=ssh_credentials.login, pkey=private_key)
+                self.ssh_client.connect(ssh_credentials.host, username=ssh_credentials.login, pkey=private_key)
 
     def wait_for_exitcode_local(session: Session) -> None:
         while session.exitcode is None:
-            time.sleep(0.5)
+            time.sleep(5)
             if os.path.isfile(pid_paths['exitcode']) and os.path.getsize(pid_paths['exitcode']) > 0:
                 with open(pid_paths['exitcode'], 'r') as f:
                     content = f.read()
@@ -272,7 +272,9 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def wait_for_exitcode_remote(session: Session) -> None:
         sftp = session.ssh_client.open_sftp()
         while session.exitcode is None:
-            time.sleep(0.5)
+            time.sleep(5)
+
+            # check the file size
             file_info = sftp.stat(pid_paths['exitcode'])
             if file_info.st_size > 0:
                 with sftp.file(pid_paths['exitcode'], 'r') as f:
@@ -526,6 +528,10 @@ class ProcessorStateWrapper(ABC):
     def update_state(self, state: ProcessorState) -> ProcessorState:
         pass
 
+    @abstractmethod
+    def delete(self) -> None:
+        pass
+
 
 class JobContext(ABC):
     @abstractmethod
@@ -755,8 +761,13 @@ class RTIProcessorAdapter(Thread, ABC):
             logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has stopped.")
 
             # delete the processor
-            logger.info(f"[adapter:{self._proc_short_id}] deleting...")
+            logger.info(f"[adapter:{self._proc_short_id}] deleting processor..")
             self.delete()
+
+            # delete the db record
+            logger.info(f"[adapter:{self._proc_short_id}] deleting DB record...")
+            self._db_wrapper.delete()
+
 
     @abstractmethod
     def delete(self) -> None:

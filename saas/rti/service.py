@@ -98,6 +98,15 @@ class DBProcessorStateWrapper(ProcessorStateWrapper):
             else:
                 raise RTIException(f"No state found for processor {self._proc_id}")
 
+    def delete(self) -> None:
+        with self._session_maker() as session:
+            record = session.query(DBProcessorState).get(self._proc_id)
+            if record is not None:
+                session.delete(record)
+                session.commit()
+            else:
+                raise RTIException(f"No state found for processor {self._proc_id}")
+
 
 class DBJobContextWrapper(JobContext):
     def __init__(self, owner: RTIService, session_maker: sessionmaker, job_id: str):
@@ -488,7 +497,7 @@ class RTIService:
                     SSHCredentials(
                         host=ssh_credentials['host'],
                         login=ssh_credentials['login'],
-                        key_content=ssh_credentials['key_content']
+                        key=ssh_credentials['key']
                     )
             else:
                 ssh_credentials = None
@@ -550,7 +559,6 @@ class RTIService:
         be deleted as well.
         """
         with self._mutex:
-            # delete the processor state
             with self._Session() as session:
                 logger.info(f"[undeploy:{shorten_id(proc_id)}] set state to STOPPING.")
                 record = session.query(DBProcessorState).get(proc_id)
