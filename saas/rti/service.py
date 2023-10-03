@@ -57,6 +57,7 @@ class DBJobContext(Base):
     __tablename__ = 'job_context'
     job_id = Column(String(8), primary_key=True)
     proc_id = Column(String(64), nullable=False)
+    user_id = Column(String(64), nullable=False)
     wd_path = Column(String, nullable=False)
     job = Column(NestedMutableJson, nullable=False)
     state = Column(String, nullable=False)
@@ -232,7 +233,6 @@ class DBJobContextWrapper(JobContext):
     def update_message(self, severity: str, content: str) -> None:
         with self._mutex:
             with self._session_maker() as session:
-                print(f"update_message: {severity}    {content}")
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
@@ -614,9 +614,12 @@ class RTIService:
             # create and add the job state to the processor
             info = JobRuntimeInformation(pending_output=[], output={}, notes={}, errors=[], message=None)
 
+            # get the user identity
+            user: Identity = self._node.db.get_identity(iid)
+
             job_state = DBJobContext(
-                job_id=job_id, proc_id=proc_id, wd_path=os.path.join(self._jobs_path, job.id), job=job.dict(),
-                state=str(JobStatus.State.UNINITIALISED.value), progress=0, info=info.dict()
+                job_id=job_id, proc_id=proc_id, user_id=user.id, wd_path=os.path.join(self._jobs_path, job.id),
+                job=job.dict(), state=str(JobStatus.State.UNINITIALISED.value), progress=0, info=info.dict()
             )
 
             # add the state to the db
@@ -648,34 +651,24 @@ class RTIService:
 
     def jobs_by_user(self, request: Request) -> List[Job]:
         """
-        Retrieves a list of jobs owned by a user. Any job that is pending execution or actively executed will be
-        included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
-        included in this list.
+        Retrieves a list of jobs (past or current) owned by a user. If the user is the node owner, all jobs by all
+        users will be returned.
         """
 
         with self._mutex:
-            # get the identity
-            user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
+            with self._Session() as session:
+                # get the identity
+                user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
+                logger.info(f"job_by_user: user={user.dict()}")
 
-            # collect all jobs
-            result = {}
-            for proc in self._deployed.values():
-                for pending in proc.pending_jobs():
-                    result[pending.id] = pending
+                # if the user is NOT the node owner, only return the jobs owned by the user
+                if self._node.identity.id != user.id:
+                    records = session.query(DBJobContext).filter_by(user_id=user.id).all()
 
-                for active in proc.active_jobs():
-                    result[active.id] = active
+                else:
+                    records = session.query(DBJobContext).all()
 
-            # if the user is NOT the node owner, only return the jobs owned by the user
-            if self._node.identity.id != user.id:
-                filtered = []
-                for job in result.values():
-                    if job.task.user_iid == user.id:
-                        filtered.append(job)
-
-                return filtered
-
-            return list(result.values())
+                return [Job.parse_obj(record.job) for record in records]
 
     def job_status(self, job_id: str) -> JobStatus:
         """
