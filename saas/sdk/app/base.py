@@ -176,6 +176,10 @@ class Application(abc.ABC):
         return self._address
 
     @property
+    def node_address(self) -> (str, int):
+        return self._node_address
+
+    @property
     def endpoint_prefix(self) -> (str, str):
         return self._endpoint_prefix
 
