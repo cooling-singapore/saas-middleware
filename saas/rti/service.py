@@ -40,8 +40,8 @@ Base = declarative_base()
 
 
 class JobRuntimeInformation(BaseModel):
-    pending_output: List[str]
-    output: Dict[str, CDataObject]
+    # pending_output: List[str]
+    output: Dict[str, Optional[CDataObject]]
     notes: Dict[str, Union[str, int, float, dict, list]]
     errors: List[JobStatus.Error]
     message: Optional[JobStatus.Message]
@@ -189,10 +189,12 @@ class DBJobContextWrapper(JobContext):
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
-                jri.pending_output = [*jri.pending_output, obj_name]
+                jri.output[obj_name] = None
+                # jri.pending_output = [*jri.pending_output, obj_name]
 
                 record.info = jri.dict()
                 session.commit()
+                logger.info(f"[job:{record.job_id}:{record.state}] add pending output: {obj_name}")
 
     def get_pending_outputs(self) -> List[str]:
         with self._mutex:
@@ -200,7 +202,7 @@ class DBJobContextWrapper(JobContext):
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
-                return list(jri.pending_output)
+                return [obj_name for obj_name, obj in jri.output.items() if obj is None]
 
     def pop_pending_output(self, obj_name: str, obj: CDataObject) -> None:
         with self._mutex:
@@ -208,11 +210,12 @@ class DBJobContextWrapper(JobContext):
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
-                jri.pending_output.remove(obj_name)
+                # jri.pending_output.remove(obj_name)
                 jri.output[obj_name] = obj
 
                 record.info = jri.dict()
                 session.commit()
+                logger.info(f"[job:{record.job_id}:{record.state}] remove pending output: {obj_name} -> {obj.obj_id}")
 
     def progress(self) -> int:
         with self._mutex:
@@ -344,7 +347,8 @@ class RTIService:
                     adapter_class = self._adapter_classes[record.proc_adapter]
 
                     logger.info(f"[init:{shorten_id(record.proc_id)}] [{adapter_class.__name__}:"
-                                f"{'C' if self._job_concurrency else 'c'}{'S' if ssh_credentials else 's'}"
+                                f"{'C' if self._job_concurrency else 'c'}{'S' if self._strict_deployment else 's'}"
+                                f"{'R' if self._retain_job_history else 'r'}{'S' if ssh_credentials else 's'}"
                                 f"{'G' if github_credentials else 'g'}] starting adapter thread")
 
                     # start the adapter
@@ -526,18 +530,31 @@ class RTIService:
 
             # initialise the processor state
             with self._Session() as session:
-                session.add(
-                    DBProcessorState(
-                        proc_id=proc_id, proc_adapter=adapter_class.__name__,
-                        gpp=gpp.dict(), state=str(ProcessorState.UNINITIALISED.value),
-                        ssh_credentials=ssh_credentials.dict() if ssh_credentials else None,
-                        github_credentials=github_credentials.dict() if github_credentials else None
+                record = session.query(DBProcessorState).get(proc_id)
+                if record:
+                    logger.warning(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}: processor record "
+                                   f"already exists -> overwriting.")
+                    record.proc_id = proc_id
+                    record.proc_adapter = adapter_class.__name__
+                    record.gpp = gpp.dict()
+                    record.state = str(ProcessorState.UNINITIALISED.value)
+                    record.ssh_credentials = ssh_credentials.dict() if ssh_credentials else None
+                    record.github_credentials = github_credentials.dict() if github_credentials else None
+
+                else:
+                    session.add(
+                        DBProcessorState(
+                            proc_id=proc_id, proc_adapter=adapter_class.__name__,
+                            gpp=gpp.dict(), state=str(ProcessorState.UNINITIALISED.value),
+                            ssh_credentials=ssh_credentials.dict() if ssh_credentials else None,
+                            github_credentials=github_credentials.dict() if github_credentials else None
+                        )
                     )
-                )
                 session.commit()
 
             logger.info(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}:"
-                        f"{'C' if self._job_concurrency else 'c'}{'S' if ssh_credentials else 's'}"
+                        f"{'C' if self._job_concurrency else 'c'}{'S' if self._strict_deployment else 's'}"
+                        f"{'R' if self._retain_job_history else 'r'}{'S' if ssh_credentials else 's'}"
                         f"{'G' if github_credentials else 'g'}] starting adapter thread")
 
             # start the adapter

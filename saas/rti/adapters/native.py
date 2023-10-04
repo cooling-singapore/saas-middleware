@@ -47,7 +47,7 @@ class OutputProcessor(Thread):
     def shutdown(self) -> None:
         self._shutdown = True
 
-    def proces_pending(self) -> None:
+    def process_pending(self) -> None:
         # is there are any pending output?
         pending = self._context.get_pending_outputs()
         for obj_name in pending:
@@ -68,11 +68,11 @@ class OutputProcessor(Thread):
         # keep looping until we are told to shut down
         while not self._shutdown:
             # process any pending output
-            self.proces_pending()
+            self.process_pending()
 
             # wait a bit unless we have received the shutdown signal
             if not self._shutdown:
-                time.sleep(5)
+                time.sleep(1)
 
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
@@ -251,7 +251,7 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         output_processor.join()
 
         # process any pending output that might be left
-        output_processor.proces_pending()
+        output_processor.process_pending()
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if self._ssh_credentials is not None:

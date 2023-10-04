@@ -261,7 +261,7 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
 
     def wait_for_exitcode_local(session: Session) -> None:
         while session.exitcode is None:
-            time.sleep(5)
+            time.sleep(2.5)
             if os.path.isfile(pid_paths['exitcode']) and os.path.getsize(pid_paths['exitcode']) > 0:
                 with open(pid_paths['exitcode'], 'r') as f:
                     content = f.read()
@@ -272,20 +272,13 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
     def wait_for_exitcode_remote(session: Session) -> None:
         sftp = session.ssh_client.open_sftp()
         while session.exitcode is None:
-            time.sleep(5)
-
-            # check the file size
+            time.sleep(2.5)
             file_info = sftp.stat(pid_paths['exitcode'])
             if file_info.st_size > 0:
                 with sftp.file(pid_paths['exitcode'], 'r') as f:
                     content = f.read()
                     session.exitcode = int(content)
                     break
-
-        # copy some files to local
-        sftp.get(pid_paths['remote_stdout'], pid_paths['local_stdout'])
-        sftp.get(pid_paths['remote_stderr'], pid_paths['local_stderr'])
-        sftp.get(pid_paths['remote_exitcode'], pid_paths['local_exitcode'])
 
         sftp.close()
 
@@ -305,31 +298,62 @@ def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, 
 
                 position = f.tell()
 
+    def parse_buffer(buffer: str, addition: str) -> str:
+        # add on to the buffer and split into lines (if any)
+        buffer += addition
+        temp = buffer.split('\n')
+
+        # process lines and see if any triggers match -> last 'line' is unfinished buffer
+        for line in temp[:-1]:
+            for pattern, info in triggers.items():
+                if pattern in line:
+                    idx = line.index(pattern)
+                    line = line[idx:]
+                    info['func'](line, info['context'])
+
+        return temp[-1]
+
     def monitor_stdout_remote(session: Session) -> None:
         ssh_shell = session.ssh_client.invoke_shell()
         ssh_shell.send(f"tail -f {pid_paths['stdout']}\n".encode('utf-8'))
         buffer = ''
         while session.exitcode is None:
-            while ssh_shell.recv_ready():
-                output = ssh_shell.recv(4096)
-                output = output.decode('utf-8')
-                output = output.replace('\r', '')
-                buffer += output
+            # read whatever is there to read and parse it
+            if ssh_shell.recv_ready():
+                received = ssh_shell.recv(4096).decode('utf-8').replace('\r', '')
+                buffer = parse_buffer(buffer, received)
 
-            # do we have a line?
-            while '\n' in buffer:
-                idx = buffer.index('\n')
-                line = buffer[:idx]
-                buffer = buffer[idx+1:]
+            else:
+                time.sleep(0.5)
 
-                # does any of the triggers match?
-                for pattern, info in triggers.items():
-                    if pattern in line:
-                        idx = line.index(pattern)
-                        line = line[idx:]
-                        info['func'](line, info['context'])
+        # wait for stdout/stderr files to no longer change
+        sftp = session.ssh_client.open_sftp()
+        stdout_size = sftp.stat(pid_paths['remote_stdout']).st_size
+        stderr_size = sftp.stat(pid_paths['remote_stderr']).st_size
+        while True:
+            time.sleep(1)
+            new_stdout_size = sftp.stat(pid_paths['remote_stdout']).st_size
+            new_stderr_size = sftp.stat(pid_paths['remote_stderr']).st_size
+
+            if new_stdout_size == stdout_size and new_stderr_size == stderr_size:
+                break
+            else:
+                stdout_size = new_stdout_size
+                stderr_size = new_stderr_size
+
+        # read whatever is there to read and parse it
+        while ssh_shell.recv_ready():
+            if ssh_shell.recv_ready():
+                received = ssh_shell.recv(4096).decode('utf-8').replace('\r', '')
+                buffer = parse_buffer(buffer, received)
+
+        # copy remote files to local
+        sftp.get(pid_paths['remote_stdout'], pid_paths['local_stdout'])
+        sftp.get(pid_paths['remote_stderr'], pid_paths['local_stderr'])
+        sftp.get(pid_paths['remote_exitcode'], pid_paths['local_exitcode'])
 
         ssh_shell.close()
+        sftp.close()
 
     def wait_for_cancellation_local(session: Session) -> None:
         while session.exitcode is None:
@@ -718,7 +742,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
                     # start the job runner
                     logger.info(f"[adapter:{self._proc_short_id}:{state.value}] starting job runner "
-                                f"for {runner.job.id}.")
+                                f"for {runner.job.id}:{context.job().proc_name}.")
                     runner.start()
 
                     # try if there is another job pending right away
@@ -767,7 +791,6 @@ class RTIProcessorAdapter(Thread, ABC):
             # delete the db record
             logger.info(f"[adapter:{self._proc_short_id}] deleting DB record...")
             self._db_wrapper.delete()
-
 
     @abstractmethod
     def delete(self) -> None:
