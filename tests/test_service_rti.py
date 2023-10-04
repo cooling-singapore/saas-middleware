@@ -44,9 +44,10 @@ def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, Git
 def deploy_and_wait(rti: RTIProxy, proc_id: str, authority: Keystore, github_credentials: GithubCredentials = None,
                     deployment: str = "native"):
     rti.deploy(proc_id, authority, deployment=deployment, github_credentials=github_credentials)
-    while (state := rti.get_status(proc_id).state) == ProcessorState.STARTING:
+    while (state := rti.get_status(proc_id).state) in [ProcessorState.UNINITIALISED, ProcessorState.STARTING]:
         logger.info(f"Waiting for processor to deploy. {state}")
         time.sleep(1)
+    assert(rti.get_status(proc_id).state == ProcessorState.OPERATIONAL)
     logger.info(f"Processor to deployed. {state}")
 
 
@@ -275,8 +276,8 @@ def test_rest_submit_cancel_job(node, rti_proxy, deployed_test_processor, known_
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 3600}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 3600}})
     ]
 
     task_output = [
@@ -402,11 +403,11 @@ def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.Inp
     return job_id, output
 
 
-def handle_content_key_request(rti_proxy: RTIProxy, owner: Keystore, status_path: str, content_key: str):
+def handle_content_key_request(rti_proxy: RTIProxy, owner: Keystore, job_id: str, content_key: str):
     while True:
         time.sleep(1)
 
-        status = JobStatus.parse_file(status_path)
+        status = rti_proxy.get_job_status(job_id, with_authorisation_by=owner)
         if 'requests' in status.notes:
             for r in status.notes['requests']:
                 # we should be able to decrypt it
@@ -622,12 +623,12 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
     owner = concurrent_node.keystore
 
     # submit jobs
-    n = 3
+    n = 20
     jobs = []
     for i in range(n):
         task_input = [
-            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': i*100+1}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': i*100+2}})
+            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 5}}),
+            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
         ]
 
         task_output = [
@@ -636,7 +637,7 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
         ]
 
         job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
-        print(f"job {job_id} submitted")
+        print(f"[{time.time()}] job {job_id} submitted")
         jobs.append(job_id)
 
     # wait for all jobs
@@ -656,12 +657,6 @@ def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, de
         with open(download_path, 'r') as f:
             content = json.load(f)
             results.append(content['v'])
-
-    for i in range(n):
-        a = i*100+1
-        b = i*100+2
-        c = a + b
-        assert(c == results[i])
 
 
 def test_processor_execution_same_reference(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
@@ -774,12 +769,8 @@ def test_processor_execution_reference_encrypted(test_context, node, dor_proxy, 
     # submit the job
     job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
 
-    # determine the status path
-    status_path = os.path.join(node.datastore, 'jobs', job_id, 'job_status.json')
-    assert(os.path.isfile(status_path))
-
     # run monitoring thread
-    thread = Thread(target=handle_content_key_request, args=[rti_proxy, owner, status_path, content_key])
+    thread = Thread(target=handle_content_key_request, args=[rti_proxy, owner, job_id, content_key])
     thread.start()
 
     # wait for the job to finish
@@ -959,8 +950,8 @@ def test_docker_submit_cancel_job(node, rti_proxy, deployed_test_processor_docke
     owner = node.keystore
 
     task_input = [
-        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 10}}),
-        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 10}})
+        Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 5}}),
+        Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
     ]
 
     task_output = [

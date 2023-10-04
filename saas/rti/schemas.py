@@ -69,11 +69,13 @@ class JobStatus(BaseModel):
         """
         The possible states of a job.
         """
+        UNINITIALISED = 'uninitialised'
         INITIALISED = 'initialised'
         RUNNING = 'running'
-        FAILED = 'failed'
-        TIMEOUT = 'timeout'
+        POSTPROCESSING = 'postprocessing'
+
         SUCCESSFUL = 'successful'
+        FAILED = 'failed'
         CANCELLED = 'cancelled'
 
     class Error(BaseModel):
@@ -83,13 +85,21 @@ class JobStatus(BaseModel):
         message: str = Field(..., title="Message", description="A simple message indicating the nature of the problem.")
         exception: ExceptionContent = Field(..., title="Exception", description="Detailed information about an exception that occured during job execution.")
 
-    state: Literal[State.INITIALISED, State.RUNNING, State.FAILED, State.TIMEOUT, State.SUCCESSFUL, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
+    class Message(BaseModel):
+        """
+        A message with severity level.
+        """
+        severity: str
+        content: str
+
+    state: Literal[State.UNINITIALISED, State.INITIALISED, State.RUNNING, State.POSTPROCESSING, State.SUCCESSFUL, State.FAILED, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
     output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
     job: Job = Field(..., title="Job", description="The job information.")
     reconnect: Optional[ReconnectInfo] = Field(title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
     errors: Optional[List[Error]] = Field(title="Errors", description="A list of errors that occurred during job execution (if any)")
+    message: Optional[Message] = Field(title="Message", description="A message providing more details about its current status (if any)")
 
 
 class Processor(BaseModel):

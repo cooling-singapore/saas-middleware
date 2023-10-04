@@ -21,6 +21,7 @@ class Service(CLICommand):
     default_service = 'full'
     default_retain_job_history = False
     default_strict_deployment = True
+    default_concurrency = True
     default_bind_all_address = False
 
     def __init__(self):
@@ -47,6 +48,9 @@ class Service(CLICommand):
             Argument('--disable-strict-deployment', dest="strict-deployment", action='store_const', const=False,
                      help="[for execution/full nodes only] instructs the RTI to disable strict processor deployment "
                           "(default: enabled, i.e., only the node owner identity can deploy/undeploy processors.)"),
+            Argument('--disable-concurrency', dest="job-concurrency", action='store_const', const=False,
+                     help="[for execution/full nodes only] instructs the RTI to disable concurrent job execution "
+                          "(default: enabled, i.e., the node processes jobs concurrently.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
                      help="allows REST and P2P service to bind and accept connections pointing to any address of the "
                           "machine i.e. 0.0.0.0 (useful for docker)")
@@ -61,6 +65,7 @@ class Service(CLICommand):
             default_if_missing(args, 'type', self.default_service)
             default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
             default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
+            default_if_missing(args, 'job-concurrency', self.default_concurrency)
             default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
 
         else:
@@ -89,9 +94,10 @@ class Service(CLICommand):
                                   message='Retain RTI job history?', default=False)
                 prompt_if_missing(args, 'bind-all-address', prompt_for_confirmation,
                                   message='Bind service to all network addresses?', default=False)
-
                 prompt_if_missing(args, 'strict-deployment', prompt_for_confirmation,
                                   message='Strict processor deployment?', default=True)
+                prompt_if_missing(args, 'job-concurrency', prompt_for_confirmation,
+                                  message='Concurrent Job Processing?', default=True)
 
         keystore = load_keystore(args, ensure_publication=False)
 
@@ -112,6 +118,7 @@ class Service(CLICommand):
                            enable_rti=args['type'] == 'full' or args['type'] == 'execution',
                            retain_job_history=args['retain-job-history'],
                            strict_deployment=args['strict-deployment'],
+                           job_concurrency=args['job-concurrency'],
                            bind_all_address=args['bind-all-address'])
 
         # print info message

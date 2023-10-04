@@ -263,35 +263,12 @@ class SDKJob:
         if auto_refresh:
             # refresh the status if we don't have a status or if the job is still running (we don't refresh if the
             # job is not running any longer)
-            if not state or state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING]:
+            if not state or state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                      JobStatus.State.RUNNING, JobStatus.State.POSTPROCESSING]:
                 self.refresh_status()
 
         with self._mutex:
             return self._status
-
-    def resume(self) -> None:
-        # get the latest status
-        status = self.status
-        if not status:
-            raise SaaSRuntimeException(f"Status of job {self._job.id} cannot be obtained.")
-
-        # check if the job is marked as 'timed out'
-        if not status.state == JobStatus.State.TIMEOUT:
-            raise SaaSRuntimeException("Cannot resume job that has not timed out", details={
-                'status': status.dict()
-            })
-
-        # do we have reconnect information?
-        if not status.reconnect:
-            raise SaaSRuntimeException("Cannot resume job without reconnect information", details={
-                'status': status.dict()
-            })
-
-        # resume job
-        with self._mutex:
-            self._job = self._rti.resume_job(self._proc.descriptor.proc_id, self._job, status.reconnect,
-                                             self._authority)
-            self._status = None
 
     def cancel(self) -> JobStatus:
         with self._mutex:
@@ -299,53 +276,38 @@ class SDKJob:
             return status
 
     def wait(self, pace: float = 1.0, callback_progress: Callable[[int], None] = None,
-             callback_message: Callable[[LogMessage], None] = None) -> Dict[str, SDKCDataObject]:
+             callback_message: Callable[[LogMessage], None] = None) -> Optional[Dict[str, SDKCDataObject]]:
         # wait until the job has finished
+        prev_progress = None
         prev_message = None
         while True:
+            # wait for a bit...
+            time.sleep(pace)
+
+            # check the status (if we have one)
             status = self.status
+            if status:
+                # only update progress if we have a callback and if necessary
+                if callback_progress and (prev_progress is None or prev_progress != status.progress):
+                    callback_progress(status.progress)
+                    prev_progress = status.progress
 
-            # do we have a progress callback?
-            if callback_progress:
-                callback_progress(status.progress)
+                # only update message if we have a callback and if necessary
+                if callback_message and status.message is not None and prev_message != status.message:
+                    log_message = LogMessage(severity=status.message.severity, message=status.message.content)
+                    callback_message(log_message)
+                    prev_message = status.message
 
-            # do we have a message callback?
-            if callback_message:
-                # do we have notes?
-                if status.notes and 'message' in status.notes:
-                    # do we have a different message than before?
-                    message = status.notes['message']
-                    if message != prev_message:
-                        # convert into log message
-                        try:
-                            if isinstance(message, LogMessage):
-                                log_message = message
-                            else:
-                                temp = message.split(':', 1)
-                                log_message = LogMessage(severity=temp[0], message=temp[1])
-                        except Exception:
-                            log_message = LogMessage(severity='warning', message=f"Malformed message: {message}")
+                # are we done?
+                if status.state == JobStatus.State.SUCCESSFUL:
+                    result = {
+                        name: SDKCDataObject(meta=meta, authority=self._authority, session=self._session)
+                        for name, meta in status.output.items()
+                    }
+                    return result
 
-                        callback_message(log_message)
-                        prev_message = message
-
-            if status.state in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING]:
-                time.sleep(pace)
-
-            elif status.state == JobStatus.State.SUCCESSFUL or status.state == JobStatus.State.CANCELLED:
-                break
-
-            else:
-                raise SaaSRuntimeException("Job execution failed/timed-out", details={
-                    'errors': status.errors
-                })
-
-        # collect information about the output data objects
-        output = {}
-        for name, meta in status.output.items():
-            output[name] = SDKCDataObject(meta=meta, authority=self._authority, session=self._session)
-
-        return output
+                elif status.state in [JobStatus.State.FAILED, JobStatus.State.CANCELLED]:
+                    return None
 
 
 class SDKContext:

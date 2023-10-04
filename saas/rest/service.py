@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.logging import Logging
-from saas._meta import __title__, __version__, __description__
+from saas.meta import __title__, __version__, __description__
 from saas.rest.exceptions import UnsupportedRESTMethod
 from saas.rest.schemas import EndpointDefinition
 

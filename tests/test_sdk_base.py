@@ -12,9 +12,6 @@ from saas.sdk.helper import generate_random_file
 
 
 node_address = ('127.0.0.1', 5001)
-user_name = 'Foo Bar'
-user_email = 'foo.bar@somewhere.com'
-user_password = 'password'
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +22,12 @@ def temp_working_directory():
 
 @pytest.fixture(scope="module")
 def keystore(temp_working_directory):
-    return Keystore.create(temp_working_directory, user_name, user_email, user_password)
+    return Keystore.create(temp_working_directory, 'Foo Bar', 'foo.bar@somewhere.com', 'password')
+
+
+@pytest.fixture(scope="module")
+def another_keystore(temp_working_directory):
+    return Keystore.create(temp_working_directory, 'Foo Bar-2', 'foo.bar.2@somewhere.com', 'password')
 
 
 def test_context(keystore):
@@ -39,6 +41,7 @@ def test_context(keystore):
 
     context = connect(node_address, keystore)
     assert(context is not None)
+
 
 def test_upload_gpp_delete(keystore):
     context = connect(node_address, keystore)
@@ -66,11 +69,12 @@ def test_upload_gpp_delete(keystore):
     result = context.find_data_object(obj.meta.obj_id)
     assert(result is None)
 
-def test_upload_content_access_tags_ownership_delete(self):
-    context = connect(self._node_address, self._keystore)
+
+def test_upload_content_access_tags_ownership_delete(keystore, another_keystore, temp_working_directory):
+    context = connect(node_address, keystore)
 
     # generate file with random content
-    content_path = os.path.join(self._wd_path, 'content.dat')
+    content_path = os.path.join(temp_working_directory, 'content.dat')
     generate_random_file(content_path, 1024*1024)
 
     # upload
@@ -87,35 +91,35 @@ def test_upload_content_access_tags_ownership_delete(self):
     assert('k' not in obj.meta.tags)
 
     # download content (should not work)
-    context2 = connect(self._node_address, self._known_user)
+    context2 = connect(node_address, another_keystore)
     obj2 = context2.find_data_object(obj.meta.obj_id)
     try:
-        obj2.download(self._wd_path)
+        obj2.download(temp_working_directory)
         assert False
 
     except SaaSRuntimeException:
         assert True
 
     # grant access
-    assert(self._known_user.identity.id not in obj.meta.access)
-    obj.grant_access(self._known_user.identity)
-    assert(self._known_user.identity.id in obj.meta.access)
+    assert(another_keystore.identity.id not in obj.meta.access)
+    obj.grant_access(another_keystore.identity)
+    assert(another_keystore.identity.id in obj.meta.access)
 
     # download content (should work)
-    context2 = connect(self._node_address, self._known_user)
+    context2 = connect(node_address, another_keystore)
     obj2 = context2.find_data_object(obj.meta.obj_id)
     try:
-        obj2.download(self._wd_path)
+        obj2.download(temp_working_directory)
 
     except SaaSRuntimeException:
         assert False
 
     # revoke access
-    obj.revoke_access(self._known_user.identity)
-    assert(self._known_user.identity.id not in obj.meta.access)
+    obj.revoke_access(another_keystore.identity)
+    assert(another_keystore.identity.id not in obj.meta.access)
 
     # transfer ownership
-    obj.transfer_ownership(self._known_user.identity)
+    obj.transfer_ownership(another_keystore.identity)
 
     # delete the object (shouldn't work)
     try:
@@ -132,8 +136,9 @@ def test_upload_content_access_tags_ownership_delete(self):
     except SaaSRuntimeException:
         assert False
 
-def test_deploy_execute_provenance(self):
-    context = connect(self._node_address, self._keystore)
+
+def test_deploy_execute_provenance(keystore, temp_working_directory):
+    context = connect(node_address, keystore)
 
     # upload test GPP
     source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
@@ -173,7 +178,7 @@ def test_deploy_execute_provenance(self):
 
     # download 'c'
     c = output['c']
-    download_path = os.path.join(self._wd_path, 'c')
+    download_path = os.path.join(temp_working_directory, 'c')
     c.download(download_path)
     assert(os.path.isfile(download_path))
 

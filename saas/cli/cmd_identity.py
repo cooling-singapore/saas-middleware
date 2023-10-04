@@ -319,7 +319,7 @@ class CredentialsTestSSHCredentials(CLICommand):
         )
 
         # do we have SSH credentials with this name?
-        if not args['name'] in keystore.ssh_credentials.list():
+        if args['name'] not in keystore.ssh_credentials.list():
             raise CLIRuntimeError(f"SSH credentials not found: {args['name']}")
 
         # get the credentials
@@ -349,7 +349,7 @@ class CredentialsTestGithubCredentials(CLICommand):
         )
 
         # do we have Github credentials for this URL?
-        if not args['url'] in keystore.github_credentials.list():
+        if args['url'] not in keystore.github_credentials.list():
             raise CLIRuntimeError(f"Github credentials not found for {args['url']}")
 
         # get the credentials

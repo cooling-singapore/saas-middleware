@@ -7,7 +7,7 @@ package_name = 'saas'
 
 # read meta information without importing
 _locals = {}
-with open(os.path.join(package_name, "_meta.py")) as f:
+with open(os.path.join(package_name, "meta.py")) as f:
     exec(f.read(), None, _locals)
 
 # read the long description
