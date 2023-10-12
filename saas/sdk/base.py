@@ -275,7 +275,7 @@ class SDKJob:
             status = self._rti.cancel_job(self._job.id, self._authority)
             return status
 
-    def wait(self, pace: float = 1.0, callback_progress: Callable[[int], None] = None,
+    def wait(self, pace: float = 5.0, callback_progress: Callable[[int], None] = None,
              callback_message: Callable[[LogMessage], None] = None) -> Optional[Dict[str, SDKCDataObject]]:
         # wait until the job has finished
         prev_progress = None
