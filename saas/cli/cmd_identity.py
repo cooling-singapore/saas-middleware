@@ -1,5 +1,6 @@
 import os
 import subprocess
+from stat import S_IREAD, S_IWRITE
 
 from InquirerPy.base import Choice
 from tabulate import tabulate
@@ -324,6 +325,19 @@ class CredentialsTestSSHCredentials(CLICommand):
 
         # get the credentials
         ssh_credentials = keystore.ssh_credentials.get(args['name'])
+
+        # is the key not written to disk already?
+        delete_key_when_done = False
+        if ssh_credentials.key_path is None:
+            delete_key_when_done = True
+
+            # write the key to disk and change file permissions
+            ssh_credentials.key_path = os.path.join(args['temp-dir'], f"temp_ssh_key")
+            with open(ssh_credentials.key_path, 'w') as f:
+                # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
+                f.write(f"{ssh_credentials.key}\n")
+            os.chmod(ssh_credentials.key_path, S_IREAD | S_IWRITE)
+
         result = run_command('ls ~', ssh_credentials=ssh_credentials, check_exitcode=False)
         if result.returncode == 0:
             print("SSH credentials test successful.")
@@ -331,6 +345,10 @@ class CredentialsTestSSHCredentials(CLICommand):
             print("SSH credentials test unsuccessful.\n"
                   f"- stdout: {result.stdout.decode('utf-8')}\n"
                   f"- stderr: {result.stdout.decode('utf-8')}")
+
+        if delete_key_when_done:
+            os.remove(ssh_credentials.key_path)
+
 
 
 class CredentialsTestGithubCredentials(CLICommand):
