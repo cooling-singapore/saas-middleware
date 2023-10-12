@@ -350,7 +350,6 @@ class CredentialsTestSSHCredentials(CLICommand):
             os.remove(ssh_credentials.key_path)
 
 
-
 class CredentialsTestGithubCredentials(CLICommand):
     def __init__(self):
         super().__init__('github', 'tests Github credentials', arguments=[
