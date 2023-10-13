@@ -177,8 +177,8 @@ def user():
 @pytest.fixture()
 def gpp(context):
     # upload test processor
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '5efcd1e'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
     proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
     gpp = context.upload_gpp(source, commit_id, proc_path, proc_config)
@@ -399,8 +399,8 @@ def test_add_get_remove_c(temp_directory, owner) -> None:
 def test_add_gpp(owner) -> None:
     _owner, owner_credentials = owner
 
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
     proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
 

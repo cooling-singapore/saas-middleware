@@ -49,9 +49,9 @@ def main():
     code of the processor's SaaS adapter. Note that only nodes that support RTI services can be used to deploy adapters.
     """
     # upload the GPP
-    source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = '778bd126871d4759a1de4029872e52e97cc10be5'
-    proc_path = 'processor_test'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
+    proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
     gpp = context.upload_gpp(source, commit_id, proc_path, proc_config)
     print(f"object id of the GPP data object: {gpp.meta.obj_id}")
@@ -75,7 +75,7 @@ def main():
     # let's create a file with the contents for data object 'a'...
     a_path = os.path.join(directory, 'a.json')
     a_content = {
-        "v": 16
+        "v": 1
     }
     write_json_to_file(content=a_content, path=a_path)
 
@@ -94,7 +94,7 @@ def main():
     # SDK takes care of creating signatures.
     output = proc.submit_and_wait({
         'a': obj_a,  # in this case we assign the object we just uploaded, a so called by-reference assignment
-        'b': {"v": 2}  # in this case we assign the content of the data object directly, a so called by-value assignment
+        'b': {"v": 1}  # in this case we assign the content of the data object directly, a so called by-value assignment
     })
 
     """

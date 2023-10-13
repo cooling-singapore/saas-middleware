@@ -72,9 +72,9 @@ def upload_gpp_and_deploy_adapter(node_address: Tuple[str, int], user: Keystore)
         raise RuntimeError("Sorry this node doesn't support DOR services...")
 
     # set the parameters for the GPP...
-    source = 'https://github.com/cooling-singapore/saas-processor-template'
-    commit_id = '778bd126871d4759a1de4029872e52e97cc10be5'
-    proc_path = 'processor_test'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
+    proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
     owner = user.identity
 
@@ -130,7 +130,7 @@ def submit_job(node_address: Tuple[str, int], proc_id: str, user: Keystore) -> T
     # let's create a file with the contents for data object 'a'...
     a_path = os.path.join(os.environ['HOME'], 'a.json')
     a_content = {
-        'v': 16
+        'v': 1
     }
     write_json_to_file(content=a_content, path=a_path)
 
@@ -173,7 +173,7 @@ def submit_job(node_address: Tuple[str, int], proc_id: str, user: Keystore) -> T
             name='b',
             type='value',  # 'value' because we provide the content directly
             value={
-                'v': 2
+                'v': 1
             }
         )
     ]
