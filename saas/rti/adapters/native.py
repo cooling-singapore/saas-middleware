@@ -2,7 +2,7 @@ import os
 import time
 from stat import S_IREAD, S_IWRITE
 from threading import Thread
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from saas.core.logging import Logging
 from saas.core.schemas import GithubCredentials, SSHCredentials
@@ -43,8 +43,12 @@ class OutputProcessor(Thread):
 
         reconnect_info: Dict[str, Any] = context.get_note('reconnect_info')
         self._paths = reconnect_info['paths']
-
+        self._exception = None
         self._shutdown = False
+
+    @property
+    def exception(self) -> Optional[Exception]:
+        return self._exception
 
     def shutdown(self) -> None:
         self._shutdown = True
@@ -75,26 +79,30 @@ class OutputProcessor(Thread):
 
     def run(self):
         # keep looping until we are told to shut down and all pending objects are processed
-        while True:
-            # wait a bit...
-            time.sleep(1)
+        try:
+            while True:
+                # wait a bit...
+                time.sleep(1)
 
-            # get pending output (if any)
-            pending = self._context.get_pending_outputs()
+                # get pending output (if any)
+                pending = self._context.get_pending_outputs()
 
-            # are we supposed to shut down and have no pending items left?
-            if len(pending) == 0 and self._shutdown:
-                break
+                # are we supposed to shut down and have no pending items left?
+                if len(pending) == 0 and self._shutdown:
+                    break
 
-            # process any pending outputs
-            for obj_name in pending:
-                # if we have ssh_credentials, then we perform a remote execution
-                # -> copy output data to local working directory
-                if self._ssh_credentials is not None:
-                    self._retrieve_remote_data(obj_name)
+                # process any pending outputs
+                for obj_name in pending:
+                    # if we have ssh_credentials, then we perform a remote execution
+                    # -> copy output data to local working directory
+                    if self._ssh_credentials is not None:
+                        self._retrieve_remote_data(obj_name)
 
-                # upload the data object to the target DOR
-                self._upload_data_to_target_dor(obj_name)
+                    # upload the data object to the target DOR
+                    self._upload_data_to_target_dor(obj_name)
+
+        except Exception as e:
+            self._exception = e
 
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
@@ -271,6 +279,10 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         # tell the output processor to shut down and then wait for the thread to finish
         output_processor.shutdown()
         output_processor.join()
+
+        # did the output processor experience any exceptions? if so raise them
+        if output_processor.exception:
+            raise output_processor.exception
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if self._ssh_credentials is not None:
