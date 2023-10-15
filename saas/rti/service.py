@@ -40,7 +40,6 @@ Base = declarative_base()
 
 
 class JobRuntimeInformation(BaseModel):
-    # pending_output: List[str]
     output: Dict[str, Optional[CDataObject]]
     notes: Dict[str, Union[str, int, float, dict, list]]
     errors: List[JobStatus.Error]
@@ -76,42 +75,44 @@ class DBProcessorState(Base):
 
 
 class DBProcessorStateWrapper(ProcessorStateWrapper):
-    def __init__(self, session_maker: sessionmaker, proc_id: str):
+    def __init__(self, db_mutex: Lock, session_maker: sessionmaker, proc_id: str):
+        self._db_mutex = db_mutex
         self._session_maker = session_maker
         self._proc_id = proc_id
-        self._lookup = {member.value: member for member in ProcessorState}
 
     def state(self) -> ProcessorState:
         with self._session_maker() as session:
             record = session.query(DBProcessorState).filter_by(proc_id=self._proc_id).first()
             if record is not None:
-                return self._lookup[record.state]
+                return ProcessorState(record.state)
             else:
                 raise RTIException(f"No state found for processor {self._proc_id}")
 
     def update_state(self, state: ProcessorState) -> ProcessorState:
-        with self._session_maker() as session:
-            record = session.query(DBProcessorState).filter_by(proc_id=self._proc_id).first()
-            if record is not None:
-                record.state = state.value
-                session.commit()
-                return state
-            else:
-                raise RTIException(f"No state found for processor {self._proc_id}")
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBProcessorState).filter_by(proc_id=self._proc_id).first()
+                if record is not None:
+                    record.state = state.value
+                    session.commit()
+                    return state
+                else:
+                    raise RTIException(f"No state found for processor {self._proc_id}")
 
     def delete(self) -> None:
-        with self._session_maker() as session:
-            record = session.query(DBProcessorState).get(self._proc_id)
-            if record is not None:
-                session.delete(record)
-                session.commit()
-            else:
-                raise RTIException(f"No state found for processor {self._proc_id}")
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBProcessorState).get(self._proc_id)
+                if record is not None:
+                    session.delete(record)
+                    session.commit()
+                else:
+                    raise RTIException(f"No state found for processor {self._proc_id}")
 
 
 class DBJobContextWrapper(JobContext):
-    def __init__(self, owner: RTIService, session_maker: sessionmaker, job_id: str):
-        self._mutex = Lock()
+    def __init__(self, owner: RTIService, db_mutex: Lock, session_maker: sessionmaker, job_id: str):
+        self._db_mutex = db_mutex
         self._session_maker = session_maker
         self._job_id = job_id
         self._descriptor_path = owner.job_descriptor_path(job_id)
@@ -149,14 +150,13 @@ class DBJobContextWrapper(JobContext):
         return self._descriptor_path
 
     def state(self) -> JobStatus.State:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
-                state = self._state_mapping[record.state]
-                return state
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+            state = self._state_mapping[record.state]
+            return state
 
     def update_state(self, new_state: JobStatus.State) -> JobStatus.State:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -172,45 +172,41 @@ class DBJobContextWrapper(JobContext):
                 return state
 
     def status(self) -> JobStatus:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
 
-                jri = JobRuntimeInformation.parse_obj(record.info)
+            jri = JobRuntimeInformation.parse_obj(record.info)
 
-                status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
-                                   notes=jri.notes, job=self._job, errors=jri.errors)
+            status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
+                               notes=jri.notes, job=self._job, errors=jri.errors)
 
-                return status
+            return status
 
     def add_pending_output(self, obj_name: str) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
                 jri.output[obj_name] = None
-                # jri.pending_output = [*jri.pending_output, obj_name]
 
                 record.info = jri.dict()
                 session.commit()
                 logger.info(f"[job:{record.job_id}:{record.state}] add pending output: {obj_name}")
 
     def get_pending_outputs(self) -> List[str]:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
 
-                jri = JobRuntimeInformation.parse_obj(record.info)
-                return [obj_name for obj_name, obj in jri.output.items() if obj is None]
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return [obj_name for obj_name, obj in jri.output.items() if obj is None]
 
     def pop_pending_output(self, obj_name: str, obj: CDataObject) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
                 jri = JobRuntimeInformation.parse_obj(record.info)
-                # jri.pending_output.remove(obj_name)
                 jri.output[obj_name] = obj
 
                 record.info = jri.dict()
@@ -218,13 +214,12 @@ class DBJobContextWrapper(JobContext):
                 logger.info(f"[job:{record.job_id}:{record.state}] remove pending output: {obj_name} -> {obj.obj_id}")
 
     def progress(self) -> int:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
-                return record.progress
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+            return record.progress
 
     def update_progress(self, new_progress: int) -> int:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -234,7 +229,7 @@ class DBJobContextWrapper(JobContext):
                 return record.progress
 
     def update_message(self, severity: str, content: str) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -245,7 +240,7 @@ class DBJobContextWrapper(JobContext):
                 session.commit()
 
     def put_note(self, key: str, note: Union[str, int, float, bool, list, dict]) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -257,15 +252,14 @@ class DBJobContextWrapper(JobContext):
 
     def get_note(self, key: str, default: Union[str, int, float, bool, dict, list] = None) -> Union[str, int, float,
                                                                                                     bool, dict, list]:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
 
-                jri = JobRuntimeInformation.parse_obj(record.info)
-                return jri.notes[key] if key in jri.notes else default
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return jri.notes[key] if key in jri.notes else default
 
     def remove_note(self, key: str) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -277,7 +271,7 @@ class DBJobContextWrapper(JobContext):
                 session.commit()
 
     def add_error(self, message: str, exception: ExceptionContent) -> None:
-        with self._mutex:
+        with self._db_mutex:
             with self._session_maker() as session:
                 record = session.query(DBJobContext).get(self._job_id)
 
@@ -288,12 +282,11 @@ class DBJobContextWrapper(JobContext):
                 session.commit()
 
     def errors(self) -> List[JobStatus.Error]:
-        with self._mutex:
-            with self._session_maker() as session:
-                record = session.query(DBJobContext).get(self._job_id)
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
 
-                jri = JobRuntimeInformation.parse_obj(record.info)
-                return jri.errors
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return jri.errors
 
 
 class RTIService:
@@ -303,6 +296,7 @@ class RTIService:
                  job_concurrency: bool = False):
         # initialise properties
         self._mutex = Lock()
+        self._db_mutex = Lock()
         self._node = node
         self._retain_job_history = retain_job_history
         self._strict_deployment = strict_deployment
@@ -354,7 +348,8 @@ class RTIService:
                     # start the adapter
                     adapter: RTIProcessorAdapter = adapter_class(
                         proc_id=record.proc_id, gpp=GitProcessorPointer.parse_obj(record.gpp),
-                        state_wrapper=DBProcessorStateWrapper(session_maker=self._Session, proc_id=record.proc_id),
+                        state_wrapper=DBProcessorStateWrapper(db_mutex=self._db_mutex, session_maker=self._Session,
+                                                              proc_id=record.proc_id),
                         jobs_path=self._jobs_path, node=self._node, job_concurrency=self._job_concurrency,
                         ssh_credentials=ssh_credentials, github_credentials=github_credentials
                     )
@@ -372,7 +367,7 @@ class RTIService:
                             logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job_state.job_id} with "
                                         f"state {job_state.state} -> adding.")
 
-                            context = DBJobContextWrapper(self, self._Session, job_state.job_id)
+                            context = DBJobContextWrapper(self, self._mutex, self._Session, job_state.job_id)
                             adapter.add(context)
 
                 else:
@@ -529,28 +524,29 @@ class RTIService:
                 raise RTIException(f"Invalid RTI deployment type: {p.deployment}")
 
             # initialise the processor state
-            with self._Session() as session:
-                record = session.query(DBProcessorState).get(proc_id)
-                if record:
-                    logger.warning(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}: processor record "
-                                   f"already exists -> overwriting.")
-                    record.proc_id = proc_id
-                    record.proc_adapter = adapter_class.__name__
-                    record.gpp = gpp.dict()
-                    record.state = str(ProcessorState.UNINITIALISED.value)
-                    record.ssh_credentials = ssh_credentials.dict() if ssh_credentials else None
-                    record.github_credentials = github_credentials.dict() if github_credentials else None
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBProcessorState).get(proc_id)
+                    if record:
+                        logger.warning(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}: processor record "
+                                       f"already exists -> overwriting.")
+                        record.proc_id = proc_id
+                        record.proc_adapter = adapter_class.__name__
+                        record.gpp = gpp.dict()
+                        record.state = str(ProcessorState.UNINITIALISED.value)
+                        record.ssh_credentials = ssh_credentials.dict() if ssh_credentials else None
+                        record.github_credentials = github_credentials.dict() if github_credentials else None
 
-                else:
-                    session.add(
-                        DBProcessorState(
-                            proc_id=proc_id, proc_adapter=adapter_class.__name__,
-                            gpp=gpp.dict(), state=str(ProcessorState.UNINITIALISED.value),
-                            ssh_credentials=ssh_credentials.dict() if ssh_credentials else None,
-                            github_credentials=github_credentials.dict() if github_credentials else None
+                    else:
+                        session.add(
+                            DBProcessorState(
+                                proc_id=proc_id, proc_adapter=adapter_class.__name__,
+                                gpp=gpp.dict(), state=str(ProcessorState.UNINITIALISED.value),
+                                ssh_credentials=ssh_credentials.dict() if ssh_credentials else None,
+                                github_credentials=github_credentials.dict() if github_credentials else None
+                            )
                         )
-                    )
-                session.commit()
+                    session.commit()
 
             logger.info(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}:"
                         f"{'C' if self._job_concurrency else 'c'}{'S' if self._strict_deployment else 's'}"
@@ -560,7 +556,8 @@ class RTIService:
             # start the adapter
             adapter: RTIProcessorAdapter = adapter_class(
                 proc_id=proc_id, gpp=gpp,
-                state_wrapper=DBProcessorStateWrapper(session_maker=self._Session, proc_id=proc_id),
+                state_wrapper=DBProcessorStateWrapper(db_mutex=self._db_mutex, session_maker=self._Session,
+                                                      proc_id=proc_id),
                 jobs_path=self._jobs_path, node=self._node, job_concurrency=self._job_concurrency,
                 ssh_credentials=ssh_credentials, github_credentials=github_credentials
             )
@@ -576,11 +573,12 @@ class RTIService:
         be deleted as well.
         """
         with self._mutex:
-            with self._Session() as session:
-                logger.info(f"[undeploy:{shorten_id(proc_id)}] set state to STOPPING.")
-                record = session.query(DBProcessorState).get(proc_id)
-                record.state = str(ProcessorState.STOPPING.value)
-                session.commit()
+            with self._db_mutex:
+                with self._Session() as session:
+                    logger.info(f"[undeploy:{shorten_id(proc_id)}] set state to STOPPING.")
+                    record = session.query(DBProcessorState).get(proc_id)
+                    record.state = str(ProcessorState.STOPPING.value)
+                    session.commit()
 
             # remove the adapter
             adapter = self._deployed.pop(proc_id)
@@ -640,13 +638,14 @@ class RTIService:
             )
 
             # add the state to the db
-            with self._Session() as session:
-                session.add(job_state)
-                session.commit()
+            with self._db_mutex:
+                with self._Session() as session:
+                    session.add(job_state)
+                    session.commit()
 
             # add the job state to the processor
             logger.info(f"[submit:{shorten_id(proc_id)}] [job:{job_id}] adding job state to processor")
-            context = DBJobContextWrapper(self, self._Session, job_id)
+            context = DBJobContextWrapper(self, self._db_mutex, self._Session, job_id)
             proc.add(context)
 
             return job
@@ -657,7 +656,6 @@ class RTIService:
         be included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
         included in this list.
         """
-
         with self._mutex:
             # collect all jobs
             result = [*self._deployed[proc_id].pending_jobs()]
@@ -671,12 +669,11 @@ class RTIService:
         Retrieves a list of jobs (past or current) owned by a user. If the user is the node owner, all jobs by all
         users will be returned.
         """
-
         with self._mutex:
-            with self._Session() as session:
-                # get the identity
-                user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
+            # get the identity
+            user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
 
+            with self._Session() as session:
                 # if the user is NOT the node owner, only return the jobs owned by the user
                 if self._node.identity.id != user.id:
                     records = session.query(DBJobContext).filter_by(user_id=user.id).all()
@@ -702,10 +699,14 @@ class RTIService:
 
                 # determine job status
                 job = Job.parse_obj(record.job)
-                jri = JobRuntimeInformation.parse_obj(record.info)
-                status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
-                                   notes=jri.notes, job=job, errors=jri.errors, message=jri.message)
 
+                # determine the output (ignoring unavailable outputs)
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                output = {key: value for key, value in jri.output.items() if value is not None}
+
+                # generate the job status result
+                status = JobStatus(state=record.state, progress=record.progress, output=output,
+                                   notes=jri.notes, job=job, errors=jri.errors, message=jri.message)
                 return status
 
     def job_logs(self, job_id: str) -> Response:
@@ -805,20 +806,24 @@ class RTIService:
           'node_id': '9mip ... x85y'
         }`
         """
-        with self._Session() as session:
-            record = session.query(DBContentKeys).get(req_id)
-            if record:
-                record.value = permission.content_key
-            else:
-                session.add(DBContentKeys(key=req_id, value=permission.content_key))
-            session.commit()
+        with self._mutex:
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBContentKeys).get(req_id)
+                    if record:
+                        record.value = permission.content_key
+                    else:
+                        session.add(DBContentKeys(key=req_id, value=permission.content_key))
+                    session.commit()
 
     def pop_permission(self, req_id: str) -> Optional[str]:
-        with self._Session() as session:
-            record = session.query(DBContentKeys).get(req_id)
-            if record is not None:
-                result = record.value
-                session.delete(record)
-                session.commit()
-                return result
-            return None
+        with self._mutex:
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBContentKeys).get(req_id)
+                    if record is not None:
+                        result = record.value
+                        session.delete(record)
+                        session.commit()
+                        return result
+                    return None
