@@ -26,6 +26,7 @@ from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.nodedb.proxy import NodeDBProxy
 from saas.p2p.exceptions import PeerUnavailableError
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException, RunCommandError
@@ -469,24 +470,38 @@ class JobRunner(Thread):
 
         # is the job running?
         if context.state() == JobStatus.State.RUNNING:
-            try:
-                # connect to the job and monitor its progress
-                self._owner.monitor_job_execution(self._context)
+            while True:
+                try:
+                    # connect to the job and monitor its progress
+                    self._owner.monitor_job_execution(self._context)
 
-            except SaaSRuntimeException as e:
-                context.add_error(e.reason, e.content)
-                state = context.update_state(JobStatus.State.FAILED)
-                logger.warning(
-                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+                except UnsuccessfulRequestError as e:
+                    # this could be due to some timing issues, just try again to monitor the job
+                    state = context.state()
+                    logger.warning(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details} -> "
+                        f"trying again in 1 second.")
 
-            except Exception as e:
-                state = context.update_state(JobStatus.State.FAILED)
-                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                logger.error(f"[job:{job_id}:{state.value}] monitoring execution failed: {e}\n{trace}")
+                    time.sleep(1)
+                    continue
 
-            else:
-                state = context.update_state(JobStatus.State.POSTPROCESSING)
-                logger.info(f"[job:{job_id}:{state.value}] monitoring execution successful")
+                except SaaSRuntimeException as e:
+                    context.add_error(e.reason, e.content)
+                    state = context.update_state(JobStatus.State.FAILED)
+                    logger.error(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+                    break
+
+                except Exception as e:
+                    state = context.update_state(JobStatus.State.FAILED)
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[job:{job_id}:{state.value}] monitoring execution failed: {e}\n{trace}")
+                    break
+
+                else:
+                    state = context.update_state(JobStatus.State.POSTPROCESSING)
+                    logger.info(f"[job:{job_id}:{state.value}] monitoring execution successful")
+                    break
 
             # is the job running?
             if context.state() == JobStatus.State.POSTPROCESSING:

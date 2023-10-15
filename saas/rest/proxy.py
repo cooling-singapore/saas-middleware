@@ -39,13 +39,10 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
             content = response.json()
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            raise SaaSRuntimeException("Unexpected error", details={
-                'exception': e,
-                'trace': trace
-            })
+            raise UnsuccessfulRequestError(response.reason, details={'trace': trace})
 
         raise UnsuccessfulRequestError(
-            content['reason'], content['id'], content['details'] if 'details' in content else None
+            content['reason'], exception_id=content['id'], details=content['details'] if 'details' in content else None
         )
 
     else:
