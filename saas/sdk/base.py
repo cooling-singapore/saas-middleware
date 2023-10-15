@@ -230,45 +230,53 @@ class SDKJob:
         self._authority = authority
         self._rti = RTIProxy.from_session(session) if session else RTIProxy(job.custodian.rest_address)
         self._status = None
+        self._status_last_refresh = get_timestamp_now()
         self._session = session
 
-    def refresh_status(self) -> bool:
+    def refresh_status(self) -> Optional[JobStatus]:
         try:
+            # don't refresh too frequently (i.e., at most once a second)
+            with self._mutex:
+                t_now = get_timestamp_now()
+                if t_now < self._status_last_refresh + 1000:
+                    return None
+                else:
+                    self._status_last_refresh = t_now
+
+            # get the job status from the RTI
             status = self._rti.get_job_status(self._job.id, self._authority)
-            if status:
-                with self._mutex:
-                    self._status = status
-                return True
-            else:
-                return False
+
+            # update status
+            with self._mutex:
+                self._status = status
+                return self._status
 
         except SaaSRuntimeException as e:
             logger.warning(f"failed to refresh job status -> id={e.id} reason={e.reason} details:{e.details}")
-            return False
+            return None
 
         except Exception as e:
             logger.warning(f"failed to refresh job status -> unexpected exception={e}")
-            return False
+            return None
 
     @property
     def content(self) -> Job:
         return self._job
 
     @property
-    def status(self, auto_refresh: bool = True) -> Optional[JobStatus]:
-        # get the latest state
+    def status(self) -> Optional[JobStatus]:
+        # do we need to refresh?
         with self._mutex:
-            state = self._status.state if self._status else None
+            refresh_required = self._status is None or self._status.state in [JobStatus.State.UNINITIALISED,
+                                                                              JobStatus.State.INITIALISED,
+                                                                              JobStatus.State.RUNNING,
+                                                                              JobStatus.State.POSTPROCESSING]
 
-        if auto_refresh:
-            # refresh the status if we don't have a status or if the job is still running (we don't refresh if the
-            # job is not running any longer)
-            if not state or state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
-                                      JobStatus.State.RUNNING, JobStatus.State.POSTPROCESSING]:
-                self.refresh_status()
+        # perform refresh (if required)
+        if refresh_required:
+            self.refresh_status()
 
-        with self._mutex:
-            return self._status
+        return self._status
 
     def cancel(self) -> JobStatus:
         with self._mutex:
@@ -286,7 +294,7 @@ class SDKJob:
 
             # check the status (if we have one)
             status = self.status
-            if status:
+            if status is not None:
                 # only update progress if we have a callback and if necessary
                 if callback_progress and (prev_progress is None or prev_progress != status.progress):
                     callback_progress(status.progress)
