@@ -21,7 +21,7 @@ jobs:
         run: >
           echo
           '{"github-credentials":[
-          {"repository":"https://github.com/cooling-singapore/saas-middleware-sdk",
+          {"repository":"https://github.com/cooling-singapore/saas-middleware",
           "login":"oauth",
           "personal_access_token":"${{ secrets.TEST_PROCESSOR_KEY }}"}
           ]}' > ~/.saas-credentials.json
