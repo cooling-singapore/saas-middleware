@@ -1,7 +1,10 @@
 import json
 import logging
 import os
+import random
+import threading
 import time
+import traceback
 from threading import Thread
 from typing import Union, List
 
@@ -377,22 +380,31 @@ def submit_job(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputVal
 def wait_for_job(rti: RTIProxy, job_id: str, owner: Keystore) -> dict:
     prev_message = None
     while True:
-        status = rti.get_job_status(job_id, owner)
-        print(status)
+        try:
+            time.sleep(1)
+            status = rti.get_job_status(job_id, owner)
 
-        if 'message' in status.notes and status.notes['message'] != prev_message:
-            prev_message = status.notes['message']
-            print(prev_message)
+            print(status)
+            if 'message' in status.notes and status.notes['message'] != prev_message:
+                prev_message = status.notes['message']
+                print(prev_message)
 
-        if status.state == JobStatus.State.SUCCESSFUL:
-            return status.output
+            if status.state == JobStatus.State.SUCCESSFUL:
+                return status.output
 
-        elif status.state == JobStatus.State.FAILED:
-            raise UnsuccessfulJob(f"Job failed with {len(status.errors)} errors", details={
-                'errors': [e.dict() for e in status.errors]
-            })
+            elif status.state == JobStatus.State.FAILED:
+                raise UnsuccessfulJob(f"Job failed with {len(status.errors)} errors", details={
+                    'errors': [e.dict() for e in status.errors]
+                })
 
-        time.sleep(1)
+        except UnsuccessfulRequestError as e:
+            if 'Authorisation failed' not in e.reason:
+                print(e)
+                raise e
+
+        except Exception as e:
+            print(e)
+            raise e
 
 
 def submit_and_wait(rti: RTIProxy, proc_id: str, task_input: List[Union[Task.InputValue, Task.InputReference]],
@@ -621,42 +633,74 @@ def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_proc
 def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, deployed_test_processor):
     wd_path = test_context.testing_dir
     owner = concurrent_node.keystore
+    results = {}
+    failed = {}
+    rnd = random.Random()
+
+    def do_a_job(idx: int) -> None:
+        try:
+            dt = rnd.randint(0, 1000) / 1000.0
+            v0 = rnd.randint(2, 6)
+            v1 = rnd.randint(2, 6)
+
+            time.sleep(dt)
+
+            task_input = [
+                Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': v0}}),
+                Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': v1}})
+            ]
+
+            task_output = [
+                Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
+                                      'content_encrypted': False})
+            ]
+
+            job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
+            print(f"[{idx}] [{time.time()}] job {job_id} submitted")
+
+            status = rti_proxy.get_status(deployed_test_processor)
+            print(f"[{idx}] proc status: {status}")
+
+            output = wait_for_job(rti_proxy, job_id, owner)
+            print(f"[{idx}] job {job_id} done -> output: {output}")
+
+            obj_id = output['c'].obj_id
+            download_path = os.path.join(wd_path, f"{obj_id}.json")
+            while True:
+                try:
+                    dor_proxy.get_content(obj_id, owner, download_path)
+                    break
+                except UnsuccessfulRequestError as e:
+                    print(e)
+                    time.sleep(0.5)
+
+            with open(download_path, 'r') as f:
+                content = json.load(f)
+                results[idx] = content['v']
+
+        except Exception as e:
+            failed[idx] = e
 
     # submit jobs
-    n = 20
-    jobs = []
+    n = 10
+    threads = []
     for i in range(n):
-        task_input = [
-            Task.InputValue.parse_obj({'name': 'a', 'type': 'value', 'value': {'v': 5}}),
-            Task.InputValue.parse_obj({'name': 'b', 'type': 'value', 'value': {'v': 5}})
-        ]
+        thread = threading.Thread(target=do_a_job, kwargs={'idx': i})
+        thread.start()
+        threads.append(thread)
 
-        task_output = [
-            Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id, 'restricted_access': False,
-                                  'content_encrypted': False})
-        ]
+    # wait for all the threads
+    for thread in threads:
+        thread.join()
 
-        job_id = submit_job(rti_proxy, deployed_test_processor, task_input, task_output, owner)
-        print(f"[{time.time()}] job {job_id} submitted")
-        jobs.append(job_id)
+    for idx, e in failed.items():
+        trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+        logger.error(f"[{idx}] failed: {trace}")
 
-    # wait for all jobs
-    results = []
-    for i in range(n):
-        status = rti_proxy.get_status(deployed_test_processor)
-        print(f"proc status: {status}")
-
-        job_id = jobs[i]
-        output = wait_for_job(rti_proxy, job_id, owner)
-        print(f"job {job_id} done -> output: {output}")
-
-        obj_id = output['c'].obj_id
-        download_path = os.path.join(wd_path, f"{obj_id}.json")
-        dor_proxy.get_content(obj_id, owner, download_path)
-
-        with open(download_path, 'r') as f:
-            content = json.load(f)
-            results.append(content['v'])
+    # print(results)
+    logger.info(failed)
+    assert(len(failed) == 0)
+    assert(len(results) == n)
 
 
 def test_processor_execution_same_reference(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):

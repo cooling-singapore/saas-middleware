@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import shutil
+import tempfile
 import time
 
 import pytest
@@ -12,89 +14,96 @@ from saas.core.helpers import read_json_from_file
 from saas.core.logging import Logging
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import DataObject
+from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnexpectedHTTPError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.sdk.app.auth import UserDB, UserAuth
-from saas.sdk.base import SDKProcessor, connect, connect_to_relay, SDKRelayContext, SDKCDataObject
+from saas.sdk.base import SDKProcessor, connect, connect_to_relay, SDKRelayContext
 from saas.sdk.helper import create_rnd_hex_string, generate_random_file
 
 from relay.server import RelayServer, RELAY_ENDPOINT_PREFIX_BASE
+from tests.base_testcase import PortMaster
 
 Logging.initialise(logging.DEBUG)
 logger = Logging.get(__name__)
 
-nextcloud_path = os.path.join(os.environ['HOME'], 'Nextcloud', 'CS', 'CS2.0', 'Pillar DUCT R&D', 'Testing')
+nextcloud_path = os.path.join(os.environ['HOME'], 'Nextcloud', 'DT-Lab', 'Testing')
 
 db_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'db')
 dor_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'dor')
 rti_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'rti')
 
 server_address = ('127.0.0.1', 5011)
-node_address = ('127.0.0.1', 5001)
 user_password = 'password'
 
 
-def run_iem(proc_prep: SDKProcessor, proc_sim: SDKProcessor, bf_obj: SDKCDataObject,
-            wd: float, ws: float, area: dict, output_path: str) -> None:
+@pytest.fixture(scope="session")
+def init_auth_and_db(temp_directory):
+    keystore_path = os.path.join(temp_directory, 'keystore')
+    if os.path.isdir(keystore_path):
+        shutil.rmtree(keystore_path)
+    os.makedirs(keystore_path)
 
-    # submit the job for pre-processing -> creates everything that's needed to run IEM sim,
-    # most importantly it meshes the geometries.
-    job0 = proc_prep.submit({
-        'building-footprints': bf_obj,
-        'parameters': {
-            'settings': {
-                'wind_direction': wd,
-                'wind_speed': ws
-            },
-            # don't change the scaling parameters
-            'scaling': {
-                'lon': 111000,
-                'lat': 111000,
-                'height': 1
-            },
-            'area': area
-        }
-    })
+    # initialise user Auth and DB
+    UserAuth.initialise(create_rnd_hex_string(32))
+    UserDB.initialise(temp_directory)
 
-    # wait for the job to be done
-    output = job0.wait()
 
-    # obtain the run package handle
-    run_package = output['iem-run-package']
-    print(run_package.meta)
-    print(f"run package object id: {run_package.meta.obj_id}")
+@pytest.fixture(scope="session")
+def owner():
+    login = 'foo.bar@email.com'
+    user = UserDB.add_user(login, 'Foo Bar', user_password)
+    credentials = ('foo.bar@email.com', user_password)
+    return user, credentials
 
-    # submit the job for the IEMSim run.
-    job1 = proc_sim.submit({
-        'iem-run-package': run_package,
-        # don't change the following parameters. they are needed for the Aspire1 environment.
-        'parameters': {
-            'pbs_project_id': '21120261',
-            'pbs_queue': 'normal',
-            'pbs_nnodes': '1',
-            'pbs_ncpus': '24',
-            'pbs_mem': '96GB',
-            'pbs_mpiprocs': '24',
-            'walltime': '06:00:00',
-        }
-    })
-    print(f"job id: {job1.content.id}")
 
-    # wait for the job to be done
-    output = job1.wait()
+@pytest.fixture(scope="session")
+def user():
+    login = 'john.doe@email.com'
+    user = UserDB.add_user(login, 'John Doe', user_password)
+    credentials = ('john.doe@email.com', user_password)
+    return user, credentials
 
-    at_map = output['air-temperature']
-    ws_map = output['wind-speed']
-    wd_map = output['wind-direction']
 
-    at_map.download(os.path.join(output_path, f'at_{ws}_{wd}.tiff'))
-    ws_map.download(os.path.join(output_path, f'ws_{ws}_{wd}.tiff'))
-    wd_map.download(os.path.join(output_path, f'wd_{ws}_{wd}.tiff'))
+@pytest.fixture(scope="session")
+def node(keystore):
+    with tempfile.TemporaryDirectory() as tempdir:
+        rest_address = PortMaster.generate_rest_address()
+        p2p_address = PortMaster.generate_p2p_address()
 
-    # clean up
-    run_package.delete()
+        _node = Node.create(keystore=keystore, storage_path=tempdir,
+                            p2p_address=p2p_address, boot_node_address=p2p_address, rest_address=rest_address,
+                            enable_dor=True, enable_rti=True, strict_deployment=False)
+
+        yield _node
+
+        _node.shutdown()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def context(init_auth_and_db, temp_directory, owner, user, node):
+    _owner, _ = owner
+    _user, _ = user
+
+    print("created")
+
+    node_address = node.rest.address()
+
+    # create Dashboard server and proxy
+    server = RelayServer(server_address, node_address, temp_directory)
+    server.startup()
+
+    context = connect(node_address, _user.keystore)
+
+    # make identities known
+    context.publish_identity(_owner.identity)
+    context.publish_identity(_user.identity)
+
+    yield context
+
+    server.shutdown()
 
 
 def extract_buildings(bf_input_path: str, bbox: dict,
@@ -126,52 +135,6 @@ def extract_buildings(bf_input_path: str, bbox: dict,
             'features': result
         })
         f_out.write(content)
-
-
-@pytest.fixture()
-def init_auth_and_db(temp_directory):
-    keystore_path = os.path.join(temp_directory, 'keystore')
-    os.makedirs(keystore_path)
-
-    # initialise user Auth and DB
-    UserAuth.initialise(create_rnd_hex_string(32))
-    UserDB.initialise(temp_directory)
-
-
-@pytest.fixture(autouse=True)
-def context(init_auth_and_db, temp_directory, owner, user):
-    _owner, _ = owner
-    _user, _ = user
-
-    print("created")
-
-    # create Dashboard server and proxy
-    server = RelayServer(server_address, node_address, temp_directory)
-    server.startup()
-
-    context = connect(node_address, _user.keystore)
-
-    # make identities known
-    context.publish_identity(_owner.identity)
-    context.publish_identity(_user.identity)
-
-    yield context
-
-    server.shutdown()
-
-
-@pytest.fixture()
-def owner():
-    user = UserDB.add_user('foo.bar@email.com', 'Foo Bar', user_password)
-    credentials = ('foo.bar@email.com', user_password)
-    return user, credentials
-
-
-@pytest.fixture()
-def user():
-    user = UserDB.add_user('john.doe@email.com', 'John Doe', user_password)
-    credentials = ('john.doe@email.com', user_password)
-    return user, credentials
 
 
 @pytest.fixture()
@@ -412,7 +375,7 @@ def test_add_gpp(owner) -> None:
     with pytest.raises(SaaSRuntimeException) as e:
         dor = DORProxy(server_address, credentials=owner_credentials, endpoint_prefix=dor_endpoint_prefix)
         dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, _owner.identity)
-    assert e.value.details['status_code'] == 500
+    assert 'Internal Server Error' in e.value.reason
 
 
 def test_tag_untag_grant_transfer_revoke_access(temp_directory, owner, user) -> None:
@@ -544,7 +507,7 @@ def test_deploy(owner, gpp, processor) -> None:
     with pytest.raises(SaaSRuntimeException) as e:
         rti = RTIProxy(server_address, credentials=owner_credentials, endpoint_prefix=rti_endpoint_prefix)
         rti.deploy(gpp.meta.obj_id, authority=_owner.keystore)
-    assert e.value.details['status_code'] == 500
+    assert 'Internal Server Error' in e.value.reason
 
 
 def test_undeploy(owner, gpp, processor) -> None:
@@ -557,10 +520,10 @@ def test_undeploy(owner, gpp, processor) -> None:
     with pytest.raises(SaaSRuntimeException) as e:
         rti = RTIProxy(server_address, credentials=owner_credentials, endpoint_prefix=rti_endpoint_prefix)
         rti.undeploy(gpp.meta.obj_id, authority=_owner.keystore)
-    assert e.value.details['status_code'] == 500
+    assert 'Internal Server Error' in e.value.reason
 
 
-def test_gpp(owner, gpp) -> None:
+def test_gpp(owner, gpp, processor) -> None:
     _owner, owner_credentials = owner
     with pytest.raises(UnexpectedHTTPError) as e:
         rti = RTIProxy(server_address, credentials=None, endpoint_prefix=rti_endpoint_prefix)
@@ -764,69 +727,4 @@ def test_sdk(temp_directory, user, processor) -> None:
             c = c['v']
             print(f"{a} + {b} = {c}")
 
-    context.close()
-
-
-def test_sdk_remote(temp_directory, processor) -> None:
-    context: SDKRelayContext = connect_to_relay(temp_directory,
-                                                relay_address=('https', 'api-dev.duct.sg', 443),
-                                                credentials=('foo.bar@somewhere.com', '105PFvIg'))
-
-    result = context.find_processors()
-    for proc in result:
-        print(proc.name)
-        print(proc.descriptor)
-
-    context.close()
-
-
-@pytest.mark.skipif(not os.path.exists(nextcloud_path), reason="Test directory not found")
-def test_sdk_remote_iemsim(temp_directory, processor) -> None:
-    # path to the building footprints file with ALL the building footprints
-    bf_path = os.path.join(nextcloud_path, 'bdpimport_geo', 'output', 'building-footprints')
-
-    # bounding box of the area of interest
-    area = {
-        "west": 103.9058553468161392,
-        "south": 1.3270255520350709,
-        "east": 103.9090271198505349,
-        "north": 1.3290574984153798
-    }
-
-    # path to the building footprints file with only those buildings that are inside the area of interest
-    extracted_bf_path = os.path.join(temp_directory, 'bf_extracted.geojson')
-
-    # extract the buildings in the area of interest
-    extract_buildings(bf_path, area, extracted_bf_path)
-
-    # connect to the Relay
-    context: SDKRelayContext = connect_to_relay(temp_directory,
-                                                relay_address=('https', 'api-dev.duct.sg', 443),
-                                                credentials=('foo.bar@somewhere.com', '105PFvIg'))
-
-    # upload the extracted buildings so the processors can use it
-    bf_obj = context.upload_content(extracted_bf_path, 'DUCT.GeoVectorData', 'geojson',
-                                    access_restricted=False)
-    print(bf_obj.meta)
-
-    # find the two processors that we need: ucm-iem-prep and ucm-iem-sim
-    proc_prep = context.find_processor_by_name('ucm-iem-prep')
-    proc_sim = context.find_processor_by_name('ucm-iem-sim')
-    if proc_prep is None or proc_sim is None:
-        raise RuntimeError("Processors not found.")
-
-    # define the output path, i.e., the folder where to store all the simulation output
-    # output_path = self._wd_path
-    output_path = os.path.join(os.environ['HOME'], 'Desktop')
-
-    # running an IEM simulation requires two steps: (1) pre-processing (using ucm-iem-prep) and
-    # (2) solving (using ucm-iem-sim).
-    # for ws in range(1, 5, 1):
-    #     for wd in range(0, 360, 45):
-    #         print(f"ws={ws} wd={wd}")
-    #         run_iem(proc_prep, proc_sim, bf_obj, wd, wd, area, output_path)
-
-    run_iem(proc_prep, proc_sim, bf_obj, 45, 2.5, area, output_path)
-
-    # close the Relay session
     context.close()

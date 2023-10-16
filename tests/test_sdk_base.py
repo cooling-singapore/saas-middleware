@@ -11,7 +11,10 @@ from saas.sdk.base import connect, SDKGPPDataObject
 from saas.sdk.helper import generate_random_file
 
 
-node_address = ('127.0.0.1', 5001)
+@pytest.fixture()
+def node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
+    return _node
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +33,7 @@ def another_keystore(temp_working_directory):
     return Keystore.create(temp_working_directory, 'Foo Bar-2', 'foo.bar.2@somewhere.com', 'password')
 
 
-def test_context(keystore):
+def test_context(keystore, node):
     # try wrong address
     try:
         connect(('127.0.0.1', 9999), keystore)
@@ -39,11 +42,13 @@ def test_context(keystore):
     except SaaSRuntimeException as e:
         assert("Cannot establish connection" in e.reason)
 
+    node_address = node.rest.address()
     context = connect(node_address, keystore)
     assert(context is not None)
 
 
-def test_upload_gpp_delete(keystore):
+def test_upload_gpp_delete(keystore, node):
+    node_address = node.rest.address()
     context = connect(node_address, keystore)
 
     # upload test processor
@@ -70,7 +75,8 @@ def test_upload_gpp_delete(keystore):
     assert(result is None)
 
 
-def test_upload_content_access_tags_ownership_delete(keystore, another_keystore, temp_working_directory):
+def test_upload_content_access_tags_ownership_delete(keystore, another_keystore, temp_working_directory, node):
+    node_address = node.rest.address()
     context = connect(node_address, keystore)
 
     # generate file with random content
@@ -137,7 +143,8 @@ def test_upload_content_access_tags_ownership_delete(keystore, another_keystore,
         assert False
 
 
-def test_deploy_execute_provenance(keystore, temp_working_directory):
+def test_deploy_execute_provenance(keystore, temp_working_directory, node):
+    node_address = node.rest.address()
     context = connect(node_address, keystore)
 
     # upload test GPP

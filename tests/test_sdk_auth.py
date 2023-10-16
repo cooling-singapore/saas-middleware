@@ -72,7 +72,8 @@ def test_enable_disable_user(temp_directory):
 def test_update_user(temp_directory):
     UserDB.initialise(temp_directory)
 
-    user = UserDB.add_user('update', 'Update User', 'password')
+    login = 'user@somehwere.com'
+    user = UserDB.add_user(login, 'name', 'password')
     print(user)
     assert (user is not None)
     assert (os.path.isfile(user.keystore.path))
@@ -81,13 +82,23 @@ def test_update_user(temp_directory):
     assert (user.name == 'New Username')
     print(user)
 
+    user = UserDB.delete_user(login)
+    print(user)
+    assert (user is not None)
+
 
 def test_update_user_password(temp_directory):
     UserDB.initialise(temp_directory)
 
-    user = UserDB.add_user('update', 'Update User', 'password')
+    login = 'user@somehwere.com'
+    user = UserDB.add_user(login, 'name', 'password')
     print(user)
     assert (user is not None)
     assert (os.path.isfile(user.keystore.path))
+
     user = UserDB.update_user(user.login, False, password=('password', 'newpassword'))
     print(user)
+
+    user = UserDB.delete_user(login)
+    print(user)
+    assert (user is not None)
