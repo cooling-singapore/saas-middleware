@@ -188,13 +188,23 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                 'trace': trace
             }) from e
 
+    def _remove_container(self, force: bool = False) -> None:
+        if force:
+            logger.warning("Force removing container")
+
+        try:
+            self.container.remove(force=force)
+            self.container.wait(condition="removed")
+        except APIError as e:
+            logger.error(f"Could not remove container ({self.container.id}), might have already been removed "
+                         f"or does not exist."
+                         f"Docker API status code ({e.status_code}). Ignoring error")
+        else:
+            logger.debug(f"Container removed: {self.container.id}")
+
     def shutdown(self) -> None:
         # Make sure that the container is removed
-        if self.container is not None:
-            logger.warning("Docker container seems to be still running during shutdown. Force removing it...")
-            self.container.remove(force=True)
-            self.container.wait(condition="removed")
-            self.container = None
+        self._remove_container(force=True)
 
     def begin_job_execution(self, wd_path: str, context: base.JobContext) -> None:
         try:
@@ -274,16 +284,6 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = list()
                 for log in self.container.logs(stream=True):
-                    if context.state() == JobStatus.State.CANCELLED:
-                        # cancel tasks that are not yet running
-                        for future in futures:
-                            future.cancel()
-
-                        self.container.stop()
-                        # wait till all running tasks to finish
-                        executor.shutdown(wait=True)
-                        break
-
                     lines = log.decode('utf-8').splitlines()
 
                     for line in lines:
@@ -298,16 +298,22 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                         if line.startswith('trigger:message'):
                             self._handle_trigger_message(line, context)
 
+                if context.state() == JobStatus.State.CANCELLED:
+                    # cancel tasks that are not yet running
+                    for future in futures:
+                        future.cancel()
+
+                    self.container.stop()
+                    # wait till all running tasks to finish
+                    executor.shutdown(wait=True)
+                    return
+
                 # wait for all tasks from triggers to complete
                 for future in as_completed(futures):
                     logger.debug(f"{future}")
 
             # Block and go through other pending outputs until processed
             with ThreadPoolExecutor(max_workers=3) as executor:
-                # ignore pending outputs when job is cancelled
-                if context.state() == JobStatus.State.CANCELLED:
-                    return
-
                 futures = [
                     executor.submit(self._process_pending_output, obj_name, context)
                     for obj_name in context.get_pending_outputs()
@@ -325,19 +331,12 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             })
         finally:
             # Remove container after job is done
-            self.container.wait()
-
-            try:
-                self.container.remove()
-                self.container.wait(condition="removed")
-            except APIError as e:
-                logger.error(f"Could not remove container ({self.container.id}), might have already been removed. "
-                             f"Docker API status code ({e.status_code}). Ignoring")
-
-            self.container = None
+            self._remove_container()
 
     def cancel_job_execution(self, context: base.JobContext) -> None:
         context.update_state(JobStatus.State.CANCELLED)
+        # Force stop and remove container when job is cancelled
+        self._remove_container(force=True)
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
