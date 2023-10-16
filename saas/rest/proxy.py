@@ -10,7 +10,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from snappy import snappy
 
-from saas.core.exceptions import SaaSRuntimeException
 from saas.core.keystore import Keystore
 from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
     UnsuccessfulConnectionError
