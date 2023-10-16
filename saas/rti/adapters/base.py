@@ -423,6 +423,7 @@ class JobRunner(Thread):
     def cancel(self) -> None:
         logger.info(f"[job:{self._context.job_id()}:{self._context.state().value}] cancel job!")
         self._context.update_state(JobStatus.State.CANCELLED)
+        self._owner.cancel_job_execution(self._context)
 
     def run(self):
         # get a few things for convenience
