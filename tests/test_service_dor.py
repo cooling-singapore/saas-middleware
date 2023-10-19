@@ -169,8 +169,8 @@ def test_add_gpp(keystore, dor_proxy):
 def test_add_gpp_with_schema(keystore, dor_proxy):
     owner = keystore.identity
 
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
     proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
 
