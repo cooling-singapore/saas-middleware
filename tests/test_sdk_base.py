@@ -47,6 +47,7 @@ def test_context(keystore, node):
     assert(context is not None)
 
 
+# FIXME: Test passes local but fails in GitHub Actions
 def test_upload_gpp_delete(keystore, node):
     node_address = node.rest.address()
     context = connect(node_address, keystore)
