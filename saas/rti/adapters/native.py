@@ -2,13 +2,15 @@ import os
 import time
 from stat import S_IREAD, S_IWRITE
 from threading import Thread
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from saas.core.logging import Logging
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.dor.schemas import GitProcessorPointer
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.adapters.base import RTIProcessorAdapter, ProcessorStateWrapper, JobContext, determine_home_path, \
     run_command, scp_local_to_remote, run_command_async, monitor_command, scp_remote_to_local, determine_if_cygwin
+from saas.rti.exceptions import RunCommandError
 
 from saas.rti.schemas import JobStatus
 
@@ -41,38 +43,66 @@ class OutputProcessor(Thread):
 
         reconnect_info: Dict[str, Any] = context.get_note('reconnect_info')
         self._paths = reconnect_info['paths']
-
+        self._exception = None
         self._shutdown = False
+
+    @property
+    def exception(self) -> Optional[Exception]:
+        return self._exception
 
     def shutdown(self) -> None:
         self._shutdown = True
 
-    def process_pending(self) -> None:
-        # is there are any pending output?
-        pending = self._context.get_pending_outputs()
-        for obj_name in pending:
-            # if we have ssh_credentials, then we perform a remote execution
-            # -> copy output data to local working directory
-            if self._ssh_credentials is not None:
+    def _retrieve_remote_data(self, obj_name: str, max_attempts: int = 3, delay: int = 1) -> None:
+        for i in range(max_attempts):
+            try:
                 remote_path = os.path.join(self._paths['remote_wd'], obj_name)
                 logger.info(f"[job:{self._context.job_id()}] copy data objects: "
                             f"{remote_path} -> {self._paths['local_wd']}")
 
                 scp_remote_to_local(remote_path, self._paths['local_wd'], self._ssh_credentials)
 
-            # upload the data object to the target DOR
-            logger.info(f"[job:{self._context.job_id()}] push data object to DOR")
-            self._owner.push_data_object(obj_name, self._paths['local_wd'], self._context)
+            except RunCommandError as e:
+                logger.warning(f"[attempt={i+1}/{max_attempts}] retrieving remote data failed: {e.reason} {e.details} "
+                               f"-> trying again in {delay*(i+1)} second(s).")
+
+    def _upload_data_to_target_dor(self, obj_name: str, max_attempts: int = 3, delay: int = 1) -> None:
+        for i in range(max_attempts):
+            try:
+                # upload the data object to the target DOR
+                logger.info(f"[job:{self._context.job_id()}] push data object to DOR")
+                self._owner.push_data_object(obj_name, self._paths['local_wd'], self._context)
+
+            except UnsuccessfulRequestError as e:
+                logger.warning(f"[attempt={i+1}/{max_attempts}] pushing data object failed: {e.reason} {e.details} "
+                               f"-> trying again in {delay*(i+1)} second(s).")
 
     def run(self):
-        # keep looping until we are told to shut down
-        while not self._shutdown:
-            # process any pending output
-            self.process_pending()
-
-            # wait a bit unless we have received the shutdown signal
-            if not self._shutdown:
+        # keep looping until we are told to shut down and all pending objects are processed
+        try:
+            while True:
+                # wait a bit...
                 time.sleep(1)
+
+                # get pending output (if any)
+                pending = self._context.get_pending_outputs()
+
+                # are we supposed to shut down and have no pending items left?
+                if len(pending) == 0 and self._shutdown:
+                    break
+
+                # process any pending outputs
+                for obj_name in pending:
+                    # if we have ssh_credentials, then we perform a remote execution
+                    # -> copy output data to local working directory
+                    if self._ssh_credentials is not None:
+                        self._retrieve_remote_data(obj_name)
+
+                    # upload the data object to the target DOR
+                    self._upload_data_to_target_dor(obj_name)
+
+        except Exception as e:
+            self._exception = e
 
 
 class RTINativeProcessorAdapter(RTIProcessorAdapter):
@@ -250,8 +280,9 @@ class RTINativeProcessorAdapter(RTIProcessorAdapter):
         output_processor.shutdown()
         output_processor.join()
 
-        # process any pending output that might be left
-        output_processor.process_pending()
+        # did the output processor experience any exceptions? if so raise them
+        if output_processor.exception:
+            raise output_processor.exception
 
         # if ssh credentials are present, then we perform a remote execution -> delete the remote working directory
         if self._ssh_credentials is not None:

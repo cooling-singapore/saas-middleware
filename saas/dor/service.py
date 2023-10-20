@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from stat import S_IREAD, S_IRGRP
+from threading import Lock
 from typing import Optional, List, Union
 
 import snappy
@@ -231,6 +232,7 @@ class DataObjectProvenanceRecord(Base):
 class DORService:
     def __init__(self, node, db_path: str):
         # initialise properties
+        self._db_mutex = Lock()
         self._node = node
         self._protocol = DataObjectRepositoryP2PProtocol(node)
 
@@ -250,21 +252,18 @@ class DORService:
     def obj_content_path(self, c_hash: str) -> str:
         return os.path.join(self._node.datastore, DOR_INFIX_MASTER_PATH, c_hash)
 
-    def _get_object_records_by_content_hash(self, c_hash: str) -> list[DataObjectRecord]:
-        with self._Session() as session:
-            return session.query(DataObjectRecord).filter_by(c_hash=c_hash).all()
-
     def _add_provenance_record(self, c_hash: str, provenance: dict) -> None:
-        with self._Session() as session:
-            # determine provenance hash and see if we already have that in the database. if not, add a db record.
-            p_hash = hash_json_object(provenance).hex()
-            record = session.query(DataObjectProvenanceRecord).filter_by(p_hash=p_hash).first()
-            if record is None:
-                session.add(DataObjectProvenanceRecord(c_hash=c_hash, p_hash=p_hash, provenance=provenance))
-                session.commit()
-                logger.info(f"database provenance record created for c_hash={c_hash} and p_hash={p_hash}.")
-            else:
-                logger.info(f"database provenance record already exists for c_hash={c_hash} and p_hash={p_hash}.")
+        with self._db_mutex:
+            with self._Session() as session:
+                # determine provenance hash and see if we already have that in the database. if not, add a db record.
+                p_hash = hash_json_object(provenance).hex()
+                record = session.query(DataObjectProvenanceRecord).filter_by(p_hash=p_hash).first()
+                if record is None:
+                    session.add(DataObjectProvenanceRecord(c_hash=c_hash, p_hash=p_hash, provenance=provenance))
+                    session.commit()
+                    logger.info(f"database provenance record created for c_hash={c_hash} and p_hash={p_hash}.")
+                else:
+                    logger.info(f"database provenance record already exists for c_hash={c_hash} and p_hash={p_hash}.")
 
     def _search_network_for_provenance(self, c_hash: str) -> List[DataObjectProvenance]:
         # check every node in the network for provenance information
@@ -505,59 +504,52 @@ class DORService:
         if p.recipe:
             p.recipe.product.c_hash = c_hash
 
-        # check if there are already data objects with the same content
-        if len(self._get_object_records_by_content_hash(c_hash)) > 0:
-            # it is possible for cases like this to happen. despite the exact same content, this may well be
-            # a legitimate different data object. for example, different provenance has led to the exact same
-            # outcome. we thus create a new data object.
-            logger.info(f"data object content '{c_hash}' already exists -> not adding content to DOR.")
-
-            # delete the temporary content as it is not needed
-            os.remove(attachment_path)
-
-        else:
-            logger.info(f"data object content '{c_hash}' does not exist yet -> adding content to DOR.")
-
-            # move the temporary content to its destination and make it read-only
-            destination_path = self.obj_content_path(c_hash)
-            os.rename(attachment_path, destination_path)
-            os.chmod(destination_path, S_IREAD | S_IRGRP)
-
         # determine the object id
         created_t = get_timestamp_now()
         obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, p.creators_iid, created_t)
 
-        with self._Session() as session:
-            # add a new data object record
-            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
-                                         data_type=p.data_type, data_format=p.data_format,
-                                         created={
-                                             'timestamp': created_t,
-                                             'creators_iid': p.creators_iid
-                                         },
-                                         owner_iid=owner.id, access_restricted=p.access_restricted,
-                                         access=[owner.id], tags={},
-                                         details={
-                                             'content_encrypted': p.content_encrypted,
-                                             'license': p.license.dict(),
-                                             'recipe': p.recipe.dict() if p.recipe else None,
-                                         },
-                                         last_accessed=created_t))
-            session.commit()
-            logger.info(f"database record for data object '{obj_id}' added with c_hash={c_hash}.")
+        with self._db_mutex:
+            with self._Session() as session:
+                # check if there are already data objects with the same content (i.e., referencing the same c_hash).
+                # it is possible for cases like this to happen. despite the exact same content, this may well be
+                # a legitimate different data object. for example, different provenance has led to the exact same
+                # outcome. we thus create a new data object.
+                records = session.query(DataObjectRecord).filter_by(c_hash=c_hash).all()
+                if len(records) > 0:
+                    # delete the temporary content as it is not needed
+                    os.remove(attachment_path)
 
-            # determine the provenance and add to the database
-            provenance = self._generate_provenance_information(c_hash, p.recipe) if p.recipe else \
-                _generate_missing_provenance(c_hash, p.data_type, p.data_format)
-            self._add_provenance_record(c_hash, provenance.dict())
+                else:
+                    # move the temporary content to its destination and make it read-only
+                    destination_path = self.obj_content_path(c_hash)
+                    os.rename(attachment_path, destination_path)
+                    os.chmod(destination_path, S_IREAD | S_IRGRP)
 
-            # check if temp file still exists.
-            if os.path.exists(attachment_path):
-                logger.warning(
-                    f"temporary file {attachment_path} still exists after adding to DOR -> deleting.")
-                os.remove(attachment_path)
+                # create a new data object record
+                session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
+                                             data_type=p.data_type, data_format=p.data_format,
+                                             created={
+                                                 'timestamp': created_t,
+                                                 'creators_iid': p.creators_iid
+                                             },
+                                             owner_iid=owner.id, access_restricted=p.access_restricted,
+                                             access=[owner.id], tags={},
+                                             details={
+                                                 'content_encrypted': p.content_encrypted,
+                                                 'license': p.license.dict(),
+                                                 'recipe': p.recipe.dict() if p.recipe else None,
+                                             },
+                                             last_accessed=created_t))
+                session.commit()
+                logger.info(f"data object '{obj_id}' with content '{c_hash}' added to DOR. the content is "
+                            f"referenced by {len(records)} other data objects).")
 
-            return self.get_meta(obj_id)
+        # determine the provenance and add to the database
+        provenance = self._generate_provenance_information(c_hash, p.recipe) if p.recipe else \
+            _generate_missing_provenance(c_hash, p.data_type, p.data_format)
+        self._add_provenance_record(c_hash, provenance.dict())
+
+        return self.get_meta(obj_id)
 
     def add_gpp(self, p: AddGPPDataObjectParameters) -> GPPDataObject:
         """
@@ -581,32 +573,33 @@ class DORService:
         # determine the content hash for the GPP
         c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config, proc_descriptor.dict())
 
-        with self._Session() as session:
-            # determine the object id
-            created_t = get_timestamp_now()
-            obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, p.creators_iid, created_t)
+        # determine the object id
+        created_t = get_timestamp_now()
+        obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, p.creators_iid, created_t)
 
-            # add a new data object record
-            session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
-                                         data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
-                                         created={
-                                             'timestamp': created_t,
-                                             'creators_iid': p.creators_iid
-                                         },
-                                         owner_iid=owner.id, access_restricted=False, access=[owner.id],
-                                         tags={},
-                                         details={
-                                             'source': p.source,
-                                             'commit_id': p.commit_id,
-                                             'proc_path': p.proc_path,
-                                             'proc_config': p.proc_config,
-                                             'proc_descriptor': proc_descriptor.dict()
-                                         },
-                                         last_accessed=created_t))
+        with self._db_mutex:
+            with self._Session() as session:
+                # add a new data object record
+                session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
+                                             data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
+                                             created={
+                                                 'timestamp': created_t,
+                                                 'creators_iid': p.creators_iid
+                                             },
+                                             owner_iid=owner.id, access_restricted=False, access=[owner.id],
+                                             tags={},
+                                             details={
+                                                 'source': p.source,
+                                                 'commit_id': p.commit_id,
+                                                 'proc_path': p.proc_path,
+                                                 'proc_config': p.proc_config,
+                                                 'proc_descriptor': proc_descriptor.dict()
+                                             },
+                                             last_accessed=created_t))
 
-            session.commit()
+                session.commit()
 
-            return self.get_meta(obj_id)
+        return self.get_meta(obj_id)
 
     def remove(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
         """
@@ -619,18 +612,22 @@ class DORService:
             return None
 
         # delete the data object
-        with self._Session() as session:
-            # delete the database record only (we do not delete the provenance information)
-            session.query(DataObjectRecord).filter_by(obj_id=obj_id).delete()
-            session.commit()
+        with self._db_mutex:
+            with self._Session() as session:
+                # delete the database record only (we do not delete the provenance information)
+                session.query(DataObjectRecord).filter_by(obj_id=obj_id).delete()
+                session.commit()
 
         # is it a C data object?
         if meta.data_type != GPP_DATA_TYPE:
             # if it's a content data object, we need to check if there are other data objects that point to the same
-            # content (unlikely but not impossible). if so, then do NOT delete the data object content. otherwise
-            # delete it.
-            referenced = self._get_object_records_by_content_hash(meta.c_hash)
-            referenced = [record.obj_id for record in referenced]
+            # content (unlikely but not impossible).
+            with self._db_mutex:
+                with self._Session() as session:
+                    referenced = session.query(DataObjectRecord).filter_by(c_hash=meta.c_hash).all()
+                    referenced = [record.obj_id for record in referenced]
+
+            # only delete if we have not found any other data objects that reference this content.
             if len(referenced) == 0:
                 logger.info(f"data object content '{meta.c_hash}' not referenced by any data object -> delete.")
                 content_path = self.obj_content_path(meta.c_hash)
@@ -714,16 +711,17 @@ class DORService:
         if user is None:
             raise IdentityNotFoundError(user_iid)
 
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # grant access
-            if user_iid not in record.access:
-                record.access.append(user_iid)
-                session.commit()
+                # grant access
+                if user_iid not in record.access:
+                    record.access.append(user_iid)
+                    session.commit()
 
         # touch data object
         self.touch_data_object(obj_id)
@@ -740,16 +738,17 @@ class DORService:
         if user is None:
             raise IdentityNotFoundError(user_iid)
 
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # revoke access
-            if user_iid in record.access:
-                record.access.remove(user_iid)
-            session.commit()
+                # revoke access
+                if user_iid in record.access:
+                    record.access.remove(user_iid)
+                session.commit()
 
         # touch data object
         self.touch_data_object(obj_id)
@@ -766,15 +765,16 @@ class DORService:
         if new_owner is None:
             raise IdentityNotFoundError(new_owner_iid)
 
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # transfer ownership
-            record.owner_iid = new_owner_iid
-            session.commit()
+                # transfer ownership
+                record.owner_iid = new_owner_iid
+                session.commit()
 
         # touch data object
         self.touch_data_object(obj_id)
@@ -786,16 +786,17 @@ class DORService:
         Adds tags to a data object or updates tags in case they already exist. Authorisation required by the owner of
         the data object.
         """
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # update tags
-            for tag in tags:
-                record.tags[tag.key] = tag.value if tag.value else None
-            session.commit()
+                # update tags
+                for tag in tags:
+                    record.tags[tag.key] = tag.value if tag.value else None
+                session.commit()
 
         # touch data object
         self.touch_data_object(obj_id)
@@ -806,16 +807,17 @@ class DORService:
         """
         Removes tags from a data object. Authorisation required by the owner of the data object.
         """
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # remove keys
-            for key in keys:
-                record.tags.pop(key, None)
-            session.commit()
+                # remove keys
+                for key in keys:
+                    record.tags.pop(key, None)
+                session.commit()
 
         # touch data object
         self.touch_data_object(obj_id)
@@ -823,13 +825,14 @@ class DORService:
         return self.get_meta(obj_id)
 
     def touch_data_object(self, obj_id) -> None:
-        with self._Session() as session:
-            # do we have an object with this id?
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            if record is None:
-                raise DataObjectNotFoundError(obj_id)
+        with self._db_mutex:
+            with self._Session() as session:
+                # do we have an object with this id?
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                if record is None:
+                    raise DataObjectNotFoundError(obj_id)
 
-            # update the last accessed timestamp of this data object
-            record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
-            record.last_accessed = get_timestamp_now()
-            session.commit()
+                # update the last accessed timestamp of this data object
+                record: DataObjectRecord = session.query(DataObjectRecord).get(obj_id)
+                record.last_accessed = get_timestamp_now()
+                session.commit()

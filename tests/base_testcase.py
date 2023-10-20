@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import traceback
 
 from multiprocessing import Lock
 from typing import List
@@ -172,7 +173,11 @@ class TestContext:
             node = self.nodes[name]
             node.shutdown(leave_network=False)
 
-        shutil.rmtree(self._temp_testing_dir)
+        try:
+            shutil.rmtree(self._temp_testing_dir)
+        except OSError as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.error(f"exception during cleanup() -> {e} {trace}")
 
     def create_keystores(self, n: int, use_credentials: bool = False) -> List[Keystore]:
         keystores = []

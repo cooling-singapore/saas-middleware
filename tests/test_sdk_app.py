@@ -101,6 +101,11 @@ class Server(Thread):
             time.sleep(0.2)
 
 
+@pytest.fixture()
+def node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
+    return _node
+
 server_address = ('127.0.0.1', 5101)
 server_endpoint_prefix = ('/v1', 'test')
 user_name = 'Foo Bar'

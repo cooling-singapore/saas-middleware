@@ -332,7 +332,7 @@ class CredentialsTestSSHCredentials(CLICommand):
             delete_key_when_done = True
 
             # write the key to disk and change file permissions
-            ssh_credentials.key_path = os.path.join(args['temp-dir'], f"temp_ssh_key")
+            ssh_credentials.key_path = os.path.join(args['temp-dir'], 'temp_ssh_key')
             with open(ssh_credentials.key_path, 'w') as f:
                 # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
                 f.write(f"{ssh_credentials.key}\n")

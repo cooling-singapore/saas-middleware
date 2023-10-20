@@ -557,7 +557,7 @@ class RTIJobCancel(CLICommand):
             for job_id in args['job-id']:
                 status = rti.cancel_job(args['job-id'], keystore)
                 print(f"Cancelled {job_id} -> state={status.state}")
-            print(f"Done.")
+            print('Done.')
 
         except UnsuccessfulRequestError as e:
             print(f"{e.reason} details={e.details}")

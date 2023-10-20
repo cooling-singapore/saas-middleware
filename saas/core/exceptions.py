@@ -15,7 +15,7 @@ class ExceptionContent(BaseModel):
 
 
 class SaaSRuntimeException(Exception):
-    def __init__(self, reason: str, details: dict = None, id: str= None):
+    def __init__(self, reason: str, details: dict = None, id: str = None):
         self._content = ExceptionContent(id=id if id else generate_random_string(16), reason=reason, details=details)
 
     @property
