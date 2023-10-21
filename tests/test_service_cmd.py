@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import sys
 import traceback
 import pytest
 
@@ -12,7 +13,7 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def remote_linux_credentials(keystore):
     cred = keystore.ssh_credentials.get('vm-test-linux')
     if cred is None:
@@ -21,7 +22,7 @@ def remote_linux_credentials(keystore):
     return cred
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def remote_cygwin_credentials(keystore):
     cred = keystore.ssh_credentials.get('vm-test-cygwin')
     if cred is None:
@@ -41,6 +42,19 @@ def create_pid_file(folder_path: str, pid: str) -> str:
 
 def remove_pid_file(folder_path: str) -> str:
     return f"cd {folder_path} && rm pid.txt && cd .. && rmdir {folder_path}"
+
+
+def test_join_paths():
+    components = ['a', 'b', 'c.tmp']
+
+    # are we on windows or unix?
+    if sys.platform.startswith('win'):
+        path = join_paths(components)
+        assert path == 'a\\b\\c.tmp'
+
+    else:
+        path = join_paths(components)
+        assert path == 'a/b/c.tmp'
 
 
 def test_run_command_local(echo_hello):
