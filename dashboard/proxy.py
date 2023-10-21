@@ -18,7 +18,7 @@ class DashboardProxy(EndpointProxy):
         self._authority = user.keystore
 
     def get_processors(self) -> List[Processor]:
-        results = self.get(f"processors")
+        results = self.get("processors")
         return [Processor.parse_obj(result) for result in results]
 
     def submit_job(self, name: str, description: str, proc_id: str,
@@ -40,14 +40,14 @@ class DashboardProxy(EndpointProxy):
             } for item in job_output]
         }
 
-        result = self.post(f"job", body=p)
+        result = self.post("job", body=p)
         return Job.parse_obj(result)
 
     def get_job(self, job_id: str) -> dict:
         return self.get(f"job/{job_id}", with_authorisation_by=self._authority)
 
     def get_all_jobs(self) -> List[dict]:
-        return self.get(f"jobs", with_authorisation_by=self._authority)
+        return self.get("jobs", with_authorisation_by=self._authority)
 
     def cancel_job(self, job_id: str) -> dict:
         return self.delete(f"job/{job_id}", with_authorisation_by=self._authority)
@@ -96,7 +96,7 @@ class DashboardProxy(EndpointProxy):
         if patterns:
             q.append(f"patterns={','.join(patterns)}")
         if owned_by_user:
-            q.append(f"owned_by_user=True")
+            q.append("owned_by_user=True")
         if data_type:
             q.append(f"data_type={data_type}")
         if data_format:

@@ -28,7 +28,7 @@ class Service(CLICommand):
             Argument('--userstore', dest='userstore', action='store', default=self.default_userstore,
                      help=f"path to the userstore (default: '{self.default_userstore}')"),
             Argument('--secret_key', dest='secret_key', action='store', required=False,
-                     help=f"the secret key used to secure passwords"),
+                     help="the secret key used to secure passwords"),
             Argument('--server_address', dest='server_address', action='store',
                      help=f"address used by the server REST service interface (default: '{self.default_server_address}')."),
             Argument('--node_address', dest='node_address', action='store',
@@ -47,7 +47,7 @@ class Service(CLICommand):
         # get the secret key and check it
         prompt_if_missing(args, 'secret_key', prompt_for_string, message="Enter the secret key:", hide=True)
         if len(args['secret_key']) != 32:
-            raise DashboardRuntimeError(f"Secret key must have a size of 32 characters")
+            raise DashboardRuntimeError("Secret key must have a size of 32 characters")
 
         # get the server address
         prompt_if_missing(args, 'server_address', prompt_for_string,
@@ -107,17 +107,17 @@ def main():
             Argument('--temp-dir', dest='temp-dir', action='store', default=default_temp_dir,
                      help=f"path to directory used for intermediate files (default: '{default_temp_dir}')"),
             Argument('--keystore-id', dest='keystore-id', action='store',
-                     help=f"id of the keystore to be used if there are more than one available "
-                          f"(default: id of the only keystore if only one is available )"),
+                     help="id of the keystore to be used if there are more than one available "
+                          "(default: id of the only keystore if only one is available )"),
             Argument('--password', dest='password', action='store',
-                     help=f"password for the keystore"),
+                     help="password for the keystore"),
             Argument('--log-level', dest='log-level', action='store',
                      choices=['INFO', 'DEBUG'], default=default_log_level,
                      help=f"set the log level (default: '{default_log_level}')"),
             Argument('--log-path', dest='log-path', action='store',
-                     help=f"enables logging to file using the given path"),
+                     help="enables logging to file using the given path"),
             Argument('--log-console', dest="log-console", action='store_const', const=False,
-                     help=f"enables logging to the console"),
+                     help="enables logging to the console"),
 
         ], commands=[
             CLICommandGroup('user', 'manage users', commands=[
