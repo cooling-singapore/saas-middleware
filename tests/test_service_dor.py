@@ -151,26 +151,11 @@ def test_add_c_large(test_context, keystore, dor_proxy):
         print(f"{result[0]}\t{result[1]}\t{result[2]}\t{result[3]}")
 
 
-def test_add_gpp(keystore, dor_proxy):
-    owner = keystore.identity
-
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
-    proc_path = 'examples/adapters/proc_example'
-    proc_config = 'default'
-
-    github_credentials: GithubCredentials = keystore.github_credentials.get(source)
-
-    result = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
-                                           github_credentials=github_credentials)
-    assert(result is not None)
-
-
 def test_add_gpp_with_schema(keystore, dor_proxy):
     owner = keystore.identity
 
-    source = 'https://github.com/cooling-singapore/saas-middleware-sdk'
-    commit_id = '310354f'
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
     proc_path = 'examples/adapters/proc_example'
     proc_config = 'default'
 

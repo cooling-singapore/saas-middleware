@@ -25,9 +25,21 @@ def keystore():
         yield _keystore
 
 
+@pytest.fixture(scope="session")
+def temp_directory():
+    with tempfile.TemporaryDirectory() as tempdir:
+        yield tempdir
+
+
 @pytest.fixture()
 def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False)
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
+    return _node
+
+
+@pytest.fixture()
+def concurrent_node(test_context, keystore):
+    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=True)
     return _node
 
 
@@ -47,12 +59,6 @@ def node_db_proxy(node):
 def rti_proxy(node):
     proxy = RTIProxy(node.rest.address())
     return proxy
-
-
-@pytest.fixture()
-def temp_directory():
-    with tempfile.TemporaryDirectory() as tempdir:
-        yield tempdir
 
 
 @pytest.fixture(scope="module")

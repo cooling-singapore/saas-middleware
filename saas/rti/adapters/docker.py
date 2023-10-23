@@ -5,21 +5,20 @@ import shutil
 import tarfile
 import tempfile
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from typing import Optional
 
 import paramiko
 
 import docker
-from docker.errors import BuildError
+from docker.errors import APIError, BuildError
 from docker.models.containers import Container
 
 import saas.rti.adapters.base as base
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.logging import Logging
 from saas.rti.exceptions import DockerRuntimeError, BuildDockerImageError
-from saas.rti.context import JobContext
 from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.rti.schemas import JobStatus
@@ -109,10 +108,11 @@ def remove_host_from_ssh_config(host_id: str):
 
 
 class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
-    def __init__(self, proc_id: str, gpp: GitProcessorPointer, jobs_path: str, node,
-                 ssh_credentials: SSHCredentials = None,
-                 github_credentials: GithubCredentials = None) -> None:
-        super().__init__(proc_id, gpp, jobs_path, node)
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, state_wrapper: base.ProcessorStateWrapper,
+                 node, jobs_path: str, job_concurrency: bool,
+                 ssh_credentials: SSHCredentials = None, github_credentials: GithubCredentials = None) -> None:
+
+        super().__init__(proc_id, gpp, state_wrapper, node, jobs_path, job_concurrency)
 
         self._gpp = gpp
         self._ssh_credentials = ssh_credentials
@@ -170,34 +170,49 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                       buildargs={"PROCESSOR_PATH": self._gpp.proc_path,
                                                                  "PROC_CONFIG": self._gpp.proc_config,
                                                                  "PROC_ID": self._proc_id})
+                    logger.debug(f"Docker image created, tag: {image.tags}, id: {image.id}")
 
         except BuildError as e:
-            print(e.msg)
+            logger.error(e.msg)
             for log in e.build_log:
-                print(log.get("stream"))
+                logger.error(log.get("stream"))
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise BuildDockerImageError({
                 'trace': trace
             }) from e
 
         except Exception as e:
+            logger.error(e.msg)
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise BuildDockerImageError({
                 'trace': trace
             }) from e
 
+    def _remove_container(self, force: bool = False) -> None:
+        if force:
+            logger.warning("Force removing container")
+
+        try:
+            self.container.remove(force=force)
+            self.container.wait(condition="removed")
+        except APIError as e:
+            logger.error(f"Could not remove container ({self.container.id}), might have already been removed "
+                         f"or does not exist."
+                         f"Docker API status code ({e.status_code}). Ignoring error")
+        else:
+            logger.debug(f"Container removed: {self.container.id}")
+
     def shutdown(self) -> None:
         # Make sure that the container is removed
-        if self.container is not None:
-            logger.warning("Docker container seems to be still running during shutdown. Force removing it...")
-            self.container.remove(force=True)
-            self.container = None
+        self._remove_container(force=True)
 
-    def execute(self, working_directory: str, context: JobContext) -> None:
+    def begin_job_execution(self, wd_path: str, context: base.JobContext) -> None:
         try:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
-                full_working_directory = os.path.realpath(working_directory)
+                full_working_directory = os.path.realpath(wd_path)
+
+                logger.info(f"Creating Docker container (image: {self.docker_image_tag})")
 
                 # REMOTE
                 if self.using_remote:
@@ -226,36 +241,37 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
                                                                   }
                                                               })
 
+                logger.info(f"Starting Docker container (image: {self.docker_image_tag}, id: {self.container.id})")
                 self.container.start()
 
             # make it resumable
-            context.add_reconnect_info(paths={"working_directory": full_working_directory},
-                                       pid=self.container.id, pid_paths=dict())
+            context.put_note('reconnect_info', {
+                'working_directory': full_working_directory,
+                'pid': self.container.id,
+                'pid_paths': {}}
+            )
 
-            # try to monitor the job by (re)connecting to it
-            self.connect_and_monitor(context)
+            context.update_state(JobStatus.State.RUNNING)
+            logger.info(f"Docker container started (image: {self.docker_image_tag}, id: {self.container.id}) "
+                        f"for job {context.job_id()}")
 
         except SaaSRuntimeException:
             raise
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
-                'job': context.job.dict(),
-                'working_directory': working_directory,
+                'job': context.job().dict(),
+                'wd_path': wd_path,
                 'trace': trace
             })
-        finally:
-            if self.container is not None:
-                self.container.remove()
-                self.container = None
 
-    def connect_and_monitor(self, context: JobContext) -> None:
+    def monitor_job_execution(self, context: base.JobContext) -> None:
         # Retrieve container from descriptor if not found
         if self.container is None:
             with self.get_docker_client() as client:
                 client: docker.DockerClient
                 # FIXME: What happens if the job has completed successfully and container has already been removed.
-                self.container = client.containers.get(context.reconnect_info.pid)
+                self.container = client.containers.get(context.get_note('reconnect_info')['pid'])
         try:
             # Will only continue monitoring if container is still running.
             # If container exited with a non-zero code, it means that an error has occurred instead of a lost connection
@@ -268,38 +284,59 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = list()
                 for log in self.container.logs(stream=True):
-                    if context.state == JobStatus.State.CANCELLED:
-                        # cancel tasks that are not yet running
-                        for future in futures:
-                            future.cancel()
-
-                        self.container.stop()
-                        # wait till all running tasks to finish
-                        executor.shutdown(wait=True)
-                        break
-
                     lines = log.decode('utf-8').splitlines()
 
                     for line in lines:
                         if line.startswith('trigger:output'):
+                            # run IO task in thread
                             future = executor.submit(self._handle_trigger_output, line, context)
                             futures.append(future)
 
                         if line.startswith('trigger:progress'):
                             self._handle_trigger_progress(line, context)
 
+                        if line.startswith('trigger:message'):
+                            self._handle_trigger_message(line, context)
+
+                if context.state() == JobStatus.State.CANCELLED:
+                    # cancel tasks that are not yet running
+                    for future in futures:
+                        future.cancel()
+
+                    self.container.stop()
+                    # wait till all running tasks to finish
+                    executor.shutdown(wait=True)
+                    return
+
+                # wait for all tasks from triggers to complete
+                for future in as_completed(futures):
+                    logger.debug(f"{future}")
+
+            # Block and go through other pending outputs until processed
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [
+                    executor.submit(self._process_pending_output, obj_name, context)
+                    for obj_name in context.get_pending_outputs()
+                ]
+                # wait for any remaining pending outputs
+                for future in as_completed(futures):
+                    logger.debug(f"{future}")
+
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise DockerRuntimeError({
-                'job': context.job.dict(),
-                'working_directory': context.reconnect_info.paths["working_directory"],
+                'job': context.job().dict(),
+                'working_directory': context.get_note('reconnect_info')["working_directory"],
                 'trace': trace
             })
         finally:
             # Remove container after job is done
-            self.container.wait()
-            self.container.remove()
-            self.container = None
+            self._remove_container()
+
+    def cancel_job_execution(self, context: base.JobContext) -> None:
+        context.update_state(JobStatus.State.CANCELLED)
+        # Force stop and remove container when job is cancelled
+        self._remove_container(force=True)
 
     def delete(self) -> None:
         # FIXME: Might not be thread safe
@@ -307,36 +344,53 @@ class RTIDockerProcessorAdapter(base.RTIProcessorAdapter):
         if self.using_remote:
             remove_host_from_ssh_config(self._proc_id)
 
-    def _handle_trigger_output(self, line: str, context: JobContext) -> None:
+    def _handle_trigger_output(self, line: str, context: base.JobContext) -> None:
         obj_name = line.split(':')[2]
-        working_directory = context.reconnect_info.paths['working_directory']
+        context.add_pending_output(obj_name)
+        self._process_pending_output(obj_name, context)
+
+    def _process_pending_output(self, obj_name: str, context: base.JobContext) -> None:
+        working_directory = context.get_note('reconnect_info')['working_directory']
         try:
-            context.make_note(f"process_output:{obj_name}", 'started')
+            context.put_note(f"process_output:{obj_name}", 'started')
 
             if self.using_remote:
                 # Fetch object from remote container
-                context.make_note(f"process_output:{obj_name}", 'retrieve')
+                context.put_note(f"process_output:{obj_name}", 'retrieve')
                 remote_obj = f"{self.container_working_directory}/{obj_name}"
                 data, stat = self.container.get_archive(remote_obj)
                 datastream = generator_to_stream(data)
                 with tarfile.open(fileobj=datastream, mode='r|*') as tf:
                     tf.extractall(working_directory)
 
-            context.make_note(f"process_output:{obj_name}", 'push')
-            self._push_data_object(obj_name, working_directory, context)
-            context.make_note(f"process_output:{obj_name}", 'done')
+            context.put_note(f"process_output:{obj_name}", 'push')
+            self.push_data_object(obj_name, working_directory, context)
+            context.put_note(f"process_output:{obj_name}", 'done')
 
         except SaaSRuntimeException as e:
-            context.make_note(f"process_output:{obj_name}", 'failed')
+            context.put_note(f"process_output:{obj_name}", 'failed')
             context.add_error(f"process_output:{obj_name} failed", ExceptionContent(id=e.id, reason=e.reason,
                                                                                     details=e.details))
+            raise
+        except Exception as e:
+            logger.error(e)
+            raise
 
-    def _handle_trigger_progress(self, line: str, context: JobContext) -> None:
+    def _handle_trigger_progress(self, line: str, context: base.JobContext) -> None:
         """
         Line is in the format `trigger:progress:<int>`
         """
         progress = line.split(':')[2]
-        context.progress = int(progress)
+        context.update_progress(int(progress))
+
+    def _handle_trigger_message(self, line: str, context: base.JobContext) -> None:
+        """
+        Line is in the format `trigger:message:<type:str>:<message:str>`
+        """
+        temp = line.split(':', 3)
+        severity = temp[2]
+        message = temp[3]
+        context.update_message(severity, message)
 
 
 def generator_to_stream(generator):

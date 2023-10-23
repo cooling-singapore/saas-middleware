@@ -18,4 +18,4 @@ RUN ./install.sh $PROC_CONFIG
 # Make sure directory exists
 RUN mkdir /working_directory
 
-ENTRYPOINT ./execute.sh $PROC_CONFIG /working_directory
+CMD ./execute.sh $PROC_CONFIG /working_directory

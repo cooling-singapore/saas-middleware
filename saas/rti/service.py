@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
+import pkgutil
 import subprocess
-from _stat import S_IWRITE
-from stat import S_IREAD
 from threading import Lock
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any, Union
 
 from fastapi import Request
 from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, String, Integer
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy_json import NestedMutableJson
 
-from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import generate_random_string, write_json_to_file, get_timestamp_now
+import saas
+from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
+from saas.core.helpers import generate_random_string, get_timestamp_now
 from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
@@ -21,49 +26,353 @@ import saas.rti.adapters.native as native_rti
 import saas.rti.adapters.docker as docker_rti
 from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyUserIsNodeOwner, \
     VerifyUserIsJobOwnerOrNodeOwner
-from saas.rti.adapters.base import RTIProcessorAdapter
+from saas.rti.adapters.base import RTIProcessorAdapter, ProcessorState, ProcessorStateWrapper, shorten_id, JobContext
 from saas.rti.exceptions import JobStatusNotFoundError, GPPDataObjectNotFound, RTIException
-from saas.rti.context import JobContext
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX
-from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, ReconnectInfo, DeployParameters, \
-    Permission
-from saas.dor.schemas import GitProcessorPointer
+from saas.rti.schemas import ProcessorStatus, Processor, Job, Task, JobStatus, DeployParameters, Permission
+from saas.dor.schemas import GitProcessorPointer, CDataObject
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('rti.service')
 
+Base = declarative_base()
+
+
+class JobRuntimeInformation(BaseModel):
+    output: Dict[str, Optional[CDataObject]]
+    notes: Dict[str, Union[str, int, float, dict, list]]
+    errors: List[JobStatus.Error]
+    message: Optional[JobStatus.Message]
+
+
+class DBContentKeys(Base):
+    __tablename__ = 'content_keys'
+    key = Column(String(64), primary_key=True)
+    value = Column(String, nullable=False)
+
+
+class DBJobContext(Base):
+    __tablename__ = 'job_context'
+    job_id = Column(String(8), primary_key=True)
+    proc_id = Column(String(64), nullable=False)
+    user_id = Column(String(64), nullable=False)
+    wd_path = Column(String, nullable=False)
+    job = Column(NestedMutableJson, nullable=False)
+    state = Column(String, nullable=False)
+    progress = Column(Integer, nullable=False)
+    info = Column(NestedMutableJson, nullable=False)
+
+
+class DBProcessorState(Base):
+    __tablename__ = 'proc_state'
+    proc_id = Column(String(64), primary_key=True)
+    proc_adapter = Column(String, nullable=False)
+    gpp = Column(NestedMutableJson, nullable=False)
+    state = Column(String, nullable=False)
+    ssh_credentials = Column(NestedMutableJson, nullable=True)
+    github_credentials = Column(NestedMutableJson, nullable=True)
+
+
+class DBProcessorStateWrapper(ProcessorStateWrapper):
+    def __init__(self, db_mutex: Lock, session_maker: sessionmaker, proc_id: str):
+        self._db_mutex = db_mutex
+        self._session_maker = session_maker
+        self._proc_id = proc_id
+
+    def state(self) -> ProcessorState:
+        with self._session_maker() as session:
+            record = session.query(DBProcessorState).filter_by(proc_id=self._proc_id).first()
+            if record is not None:
+                return ProcessorState(record.state)
+            else:
+                raise RTIException(f"No state found for processor {self._proc_id}")
+
+    def update_state(self, state: ProcessorState) -> ProcessorState:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBProcessorState).filter_by(proc_id=self._proc_id).first()
+                if record is not None:
+                    record.state = state.value
+                    session.commit()
+                    return state
+                else:
+                    raise RTIException(f"No state found for processor {self._proc_id}")
+
+    def delete(self) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBProcessorState).get(self._proc_id)
+                if record is not None:
+                    session.delete(record)
+                    session.commit()
+                else:
+                    raise RTIException(f"No state found for processor {self._proc_id}")
+
+
+class DBJobContextWrapper(JobContext):
+    def __init__(self, owner: RTIService, db_mutex: Lock, session_maker: sessionmaker, job_id: str):
+        self._db_mutex = db_mutex
+        self._session_maker = session_maker
+        self._job_id = job_id
+        self._descriptor_path = owner.job_descriptor_path(job_id)
+        self._state_mapping = {
+            'uninitialised': JobStatus.State.UNINITIALISED,
+            'initialised': JobStatus.State.INITIALISED,
+            'running': JobStatus.State.RUNNING,
+            'postprocessing': JobStatus.State.POSTPROCESSING,
+            'successful': JobStatus.State.SUCCESSFUL,
+            'failed': JobStatus.State.FAILED,
+            'cancelled': JobStatus.State.CANCELLED
+        }
+
+        # get the db record and cache some static information
+        with session_maker() as session:
+            # get the record
+            record = session.query(DBJobContext).get(job_id)
+            if record is None:
+                raise RTIException(f"No job context record found for {job_id}")
+
+            self._proc_id = record.proc_id
+            self._wd_path = record.wd_path
+            self._job = Job.parse_obj(record.job)
+
+    def job_id(self) -> str:
+        return self._job_id
+
+    def job(self) -> Job:
+        return self._job
+
+    def wd_path(self) -> str:
+        return self._wd_path
+
+    def descriptor_path(self) -> str:
+        return self._descriptor_path
+
+    def state(self) -> JobStatus.State:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+            state = self._state_mapping[record.state]
+            return state
+
+    def update_state(self, new_state: JobStatus.State) -> JobStatus.State:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                # only allow updating the state if it's not terminal already
+                if record.state in [JobStatus.State.CANCELLED, JobStatus.State.FAILED, JobStatus.State.SUCCESSFUL]:
+                    logger.warning(f"[job:{record.job_id}:{record.state}] ignoring state update to {new_state.value}")
+
+                else:
+                    record.state = new_state.value
+                    session.commit()
+
+                state = self._state_mapping[record.state]
+                return state
+
+    def status(self) -> JobStatus:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+
+            jri = JobRuntimeInformation.parse_obj(record.info)
+
+            status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
+                               notes=jri.notes, job=self._job, errors=jri.errors)
+
+            return status
+
+    def add_pending_output(self, obj_name: str) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                jri.output[obj_name] = None
+
+                record.info = jri.dict()
+                session.commit()
+                logger.info(f"[job:{record.job_id}:{record.state}] add pending output: {obj_name}")
+
+    def get_pending_outputs(self) -> List[str]:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return [obj_name for obj_name, obj in jri.output.items() if obj is None]
+
+    def pop_pending_output(self, obj_name: str, obj: CDataObject) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                jri.output[obj_name] = obj
+
+                record.info = jri.dict()
+                session.commit()
+                logger.info(f"[job:{record.job_id}:{record.state}] remove pending output: {obj_name} -> {obj.obj_id}")
+
+    def progress(self) -> int:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+            return record.progress
+
+    def update_progress(self, new_progress: int) -> int:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                record.progress = new_progress
+                session.commit()
+
+                return record.progress
+
+    def update_message(self, severity: str, content: str) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                jri.message = JobStatus.Message(severity=severity, content=content)
+
+                record.info = jri.dict()
+                session.commit()
+
+    def put_note(self, key: str, note: Union[str, int, float, bool, list, dict]) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                jri.notes[key] = note
+
+                record.info = jri.dict()
+                session.commit()
+
+    def get_note(self, key: str, default: Union[str, int, float, bool, dict, list] = None) -> Union[str, int, float,
+                                                                                                    bool, dict, list]:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return jri.notes[key] if key in jri.notes else default
+
+    def remove_note(self, key: str) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                if key in jri.notes:
+                    jri.notes.pop(key)
+
+                record.info = jri.dict()
+                session.commit()
+
+    def add_error(self, message: str, exception: ExceptionContent) -> None:
+        with self._db_mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobContext).get(self._job_id)
+
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                jri.errors.append(JobStatus.Error(message=message, exception=exception))
+
+                record.info = jri.dict()
+                session.commit()
+
+    def errors(self) -> List[JobStatus.Error]:
+        with self._session_maker() as session:
+            record = session.query(DBJobContext).get(self._job_id)
+
+            jri = JobRuntimeInformation.parse_obj(record.info)
+            return jri.errors
+
 
 class RTIService:
     infix_path = 'rti'
 
-    def __init__(self, node, retain_job_history: bool = False, strict_deployment: bool = True):
+    def __init__(self, node, db_path: str, retain_job_history: bool = False, strict_deployment: bool = True,
+                 job_concurrency: bool = False):
         # initialise properties
         self._mutex = Lock()
+        self._db_mutex = Lock()
         self._node = node
-        self._deployed: Dict[str, RTIProcessorAdapter] = {}
-        self._ssh_credentials_paths = {}
-        self._jobs_path = os.path.join(self._node.datastore, 'jobs')
-        self._content_keys = {}
-        self._jobs_context = {}
         self._retain_job_history = retain_job_history
         self._strict_deployment = strict_deployment
+        self._job_concurrency = job_concurrency
 
         # initialise directories
+        self._jobs_path = os.path.join(self._node.datastore, 'jobs')
+        logger.info(f"[init] using jobs path at {self._jobs_path}")
         os.makedirs(self._jobs_path, exist_ok=True)
         os.makedirs(os.path.join(self._node.datastore, RTIService.infix_path), exist_ok=True)
 
-    def _store_ssh_credentials_key(self, proc_id: str, ssh_credentials: SSHCredentials) -> str:
-        key_path = os.path.join(self._node.datastore, RTIService.infix_path, f"{proc_id}.ssh_key")
-        self._ssh_credentials_paths[proc_id] = key_path
+        # initialise database things
+        logger.info(f"[init] using DB file at {db_path}")
+        self._engine = create_engine(db_path)
+        Base.metadata.create_all(self._engine)
+        self._Session = sessionmaker(bind=self._engine)
 
-        # write the key to disk and change file permissions
-        with open(key_path, 'w') as f:
-            # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
-            f.write(f"{ssh_credentials.key}\n")
-        os.chmod(key_path, S_IREAD | S_IWRITE)
+        # search for RTI adapter classes
+        self._adapter_classes: Dict[str, Any] = {}
+        base_path = os.path.abspath(os.path.dirname(saas.__path__[0]))
+        for module_info in pkgutil.iter_modules([os.path.join(base_path, 'saas', 'rti', 'adapters')]):
+            module = __import__(f"saas.rti.adapters.{module_info.name}", fromlist=[module_info.name])
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, RTIProcessorAdapter) and obj != RTIProcessorAdapter:
+                    logger.info(f"[init] adding adapter class: {name}")
+                    self._adapter_classes[name] = obj
 
-        return key_path
+        # check for deployed processors
+        self._deployed: Dict[str, RTIProcessorAdapter] = {}
+        with self._Session() as session:
+            for record in session.query(DBProcessorState).all():
+                if record.proc_adapter in self._adapter_classes:
+                    # do we have SSH credentials for this processor?
+                    ssh_credentials = \
+                        SSHCredentials.parse_obj(record.ssh_credentials) if record.ssh_credentials else None
+
+                    # do we have Github credentials for this processor?
+                    github_credentials = \
+                        GithubCredentials.parse_obj(record.github_credentials) if record.github_credentials else None
+
+                    # get the adapter class
+                    adapter_class = self._adapter_classes[record.proc_adapter]
+
+                    logger.info(f"[init:{shorten_id(record.proc_id)}] [{adapter_class.__name__}:"
+                                f"{'C' if self._job_concurrency else 'c'}{'S' if self._strict_deployment else 's'}"
+                                f"{'R' if self._retain_job_history else 'r'}{'S' if ssh_credentials else 's'}"
+                                f"{'G' if github_credentials else 'g'}] starting adapter thread")
+
+                    # start the adapter
+                    adapter: RTIProcessorAdapter = adapter_class(
+                        proc_id=record.proc_id, gpp=GitProcessorPointer.parse_obj(record.gpp),
+                        state_wrapper=DBProcessorStateWrapper(db_mutex=self._db_mutex, session_maker=self._Session,
+                                                              proc_id=record.proc_id),
+                        jobs_path=self._jobs_path, node=self._node, job_concurrency=self._job_concurrency,
+                        ssh_credentials=ssh_credentials, github_credentials=github_credentials
+                    )
+                    adapter.start()
+                    self._deployed[record.proc_id] = adapter
+
+                    # search for existing jobs and add them
+                    for job_state in session.query(DBJobContext).filter_by(proc_id=record.proc_id).all():
+                        if job_state.state in [JobStatus.State.CANCELLED.value, JobStatus.State.FAILED.value,
+                                               JobStatus.State.SUCCESSFUL.value]:
+                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job_state.job_id} with "
+                                        f"terminal state {job_state.state} -> skipping.")
+
+                        else:
+                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job_state.job_id} with "
+                                        f"state {job_state.state} -> adding.")
+
+                            context = DBJobContextWrapper(self, self._mutex, self._Session, job_state.job_id)
+                            adapter.add(context)
+
+                else:
+                    logger.warning(f"[init] found processor {shorten_id(record.proc_id)}:{record.state} "
+                                   f"using unavailable adapter {record.proc_adapter} -> skipping.")
 
     def _find_gpp_in_network(self, proc_id: str, gpp_custodian: str = None) -> Optional[GitProcessorPointer]:
         # get all nodes in the network (and filter by custodian if any)
@@ -96,6 +405,10 @@ class RTIService:
     def strict_deployment(self) -> bool:
         return self._strict_deployment
 
+    @property
+    def job_concurrency(self) -> bool:
+        return self._job_concurrency
+
     def job_descriptor_path(self, job_id: str) -> str:
         return os.path.join(self._jobs_path, job_id, 'job_descriptor.json')
 
@@ -122,9 +435,6 @@ class RTIService:
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.submit, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
-
-            EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
-                               self.resume, Job, [VerifyProcessorDeployed, VerifyAuthorisation]),
 
             EndpointDefinition('GET', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}/jobs',
                                self.jobs_by_proc, List[Job], [VerifyProcessorDeployed]),
@@ -165,7 +475,8 @@ class RTIService:
         with self._mutex:
             # is the processor already deployed?
             if proc_id in self._deployed:
-                logger.warning(f"processor {proc_id} already deployed -> do no redeploy and return descriptor only")
+                logger.warning(f"[deploy:{shorten_id(proc_id)}] processor already deployed -> "
+                               f"return descriptor only")
                 return Processor(proc_id=proc_id, gpp=self._deployed[proc_id].gpp)
 
             # try to find the GPP data object for this processor
@@ -181,17 +492,12 @@ class RTIService:
                 ssh_credentials = self._node.keystore.decrypt(ssh_credentials)
                 ssh_credentials = ssh_credentials.decode('utf-8')
                 ssh_credentials = json.loads(ssh_credentials)
-                ssh_credentials = SSHCredentials(host=ssh_credentials['host'],
-                                                 login=ssh_credentials['login'],
-                                                 key=ssh_credentials['key'],
-                                                 key_is_password=ssh_credentials['key_is_password'])
-
-                # if the credentials are NOT password-based, store the key to disk
-                if not ssh_credentials.key_is_password:
-                    key_path = self._store_ssh_credentials_key(proc_id, ssh_credentials)
-                    ssh_credentials = SSHCredentials(host=ssh_credentials.host, login=ssh_credentials.login,
-                                                     key=key_path, key_is_password=False)
-
+                ssh_credentials = \
+                    SSHCredentials(
+                        host=ssh_credentials['host'],
+                        login=ssh_credentials['login'],
+                        key=ssh_credentials['key']
+                    )
             else:
                 ssh_credentials = None
 
@@ -201,30 +507,64 @@ class RTIService:
                 github_credentials = self._node.keystore.decrypt(github_credentials)
                 github_credentials = github_credentials.decode('utf-8')
                 github_credentials = json.loads(github_credentials)
-                github_credentials = GithubCredentials(login=github_credentials['login'],
-                                                       personal_access_token=github_credentials[
-                                                           'personal_access_token'])
+                github_credentials = \
+                    GithubCredentials(
+                        login=github_credentials['login'],
+                        personal_access_token=github_credentials['personal_access_token']
+                    )
             else:
                 github_credentials = None
 
+            # determine the adapter class
             if p.deployment == 'native':
-                # create a native RTI adapter instance
-                processor = native_rti.RTINativeProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
-                                                                 ssh_credentials=ssh_credentials,
-                                                                 github_credentials=github_credentials,
-                                                                 retain_remote_wdirs=self._retain_job_history)
-
+                adapter_class = native_rti.RTINativeProcessorAdapter
             elif p.deployment == 'docker':
-                # create a Docker RTI adapter instance
-                processor = docker_rti.RTIDockerProcessorAdapter(proc_id, gpp, self._jobs_path, self._node,
-                                                                 ssh_credentials=ssh_credentials,
-                                                                 github_credentials=github_credentials)
+                adapter_class = docker_rti.RTIDockerProcessorAdapter
+            else:
+                raise RTIException(f"Invalid RTI deployment type: {p.deployment}")
 
-            # register and start the instance as deployed
-            self._deployed[proc_id] = processor
-            processor.start()
+            # initialise the processor state
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBProcessorState).get(proc_id)
+                    if record:
+                        logger.warning(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}: processor record "
+                                       f"already exists -> overwriting.")
+                        record.proc_id = proc_id
+                        record.proc_adapter = adapter_class.__name__
+                        record.gpp = gpp.dict()
+                        record.state = str(ProcessorState.UNINITIALISED.value)
+                        record.ssh_credentials = ssh_credentials.dict() if ssh_credentials else None
+                        record.github_credentials = github_credentials.dict() if github_credentials else None
 
-            return Processor(proc_id=proc_id, gpp=processor.gpp)
+                    else:
+                        session.add(
+                            DBProcessorState(
+                                proc_id=proc_id, proc_adapter=adapter_class.__name__,
+                                gpp=gpp.dict(), state=str(ProcessorState.UNINITIALISED.value),
+                                ssh_credentials=ssh_credentials.dict() if ssh_credentials else None,
+                                github_credentials=github_credentials.dict() if github_credentials else None
+                            )
+                        )
+                    session.commit()
+
+            logger.info(f"[deploy:{shorten_id(proc_id)}] [{adapter_class.__name__}:"
+                        f"{'C' if self._job_concurrency else 'c'}{'S' if self._strict_deployment else 's'}"
+                        f"{'R' if self._retain_job_history else 'r'}{'S' if ssh_credentials else 's'}"
+                        f"{'G' if github_credentials else 'g'}] starting adapter thread")
+
+            # start the adapter
+            adapter: RTIProcessorAdapter = adapter_class(
+                proc_id=proc_id, gpp=gpp,
+                state_wrapper=DBProcessorStateWrapper(db_mutex=self._db_mutex, session_maker=self._Session,
+                                                      proc_id=proc_id),
+                jobs_path=self._jobs_path, node=self._node, job_concurrency=self._job_concurrency,
+                ssh_credentials=ssh_credentials, github_credentials=github_credentials
+            )
+            adapter.start()
+            self._deployed[proc_id] = adapter
+
+            return Processor(proc_id=proc_id, gpp=adapter.gpp)
 
     def undeploy(self, proc_id: str) -> Processor:
         """
@@ -233,26 +573,17 @@ class RTIService:
         be deleted as well.
         """
         with self._mutex:
-            # remove the processor
-            processor = self._deployed.pop(proc_id)
+            with self._db_mutex:
+                with self._Session() as session:
+                    logger.info(f"[undeploy:{shorten_id(proc_id)}] set state to STOPPING.")
+                    record = session.query(DBProcessorState).get(proc_id)
+                    record.state = str(ProcessorState.STOPPING.value)
+                    session.commit()
 
-            # stop the processor and wait for it to be done
-            logger.info(f"stopping processor {proc_id}...")
-            processor.stop()
-            processor.join()
+            # remove the adapter
+            adapter = self._deployed.pop(proc_id)
 
-            # delete the processor
-            logger.info(f"deleting processor {proc_id}...")
-            processor.delete()
-
-            # delete SSH credentials key (if any)
-            if proc_id in self._ssh_credentials_paths:
-                cred_path = self._ssh_credentials_paths[proc_id]
-                logger.info(f"deleting SSH credentials at {cred_path}")
-                os.remove(cred_path)
-                self._ssh_credentials_paths.pop(proc_id)
-
-            return Processor(proc_id=proc_id, gpp=processor.gpp)
+            return Processor(proc_id=proc_id, gpp=adapter.gpp)
 
     def gpp(self, proc_id: str) -> GitProcessorPointer:
         """
@@ -290,52 +621,33 @@ class RTIService:
                 })
 
             # create job descriptor with a generated job id
-            job = Job(id=generate_random_string(8), task=task, retain=self._retain_job_history,
+            job_id = generate_random_string(8)
+            job = Job(id=job_id, task=task, retain=self._retain_job_history,
                       custodian=self._node.info, proc_name=proc.gpp.proc_descriptor.name,
                       t_submitted=get_timestamp_now())
 
-            # create working directory or log a warning if it already exists
-            wd_path = os.path.join(self._jobs_path, job.id)
-            if os.path.isdir(wd_path):
-                logger.warning(f"job working directory path '{wd_path}' already exists.")
-            os.makedirs(wd_path, exist_ok=True)
+            # create and add the job state to the processor
+            info = JobRuntimeInformation(pending_output=[], output={}, notes={}, errors=[], message=None)
 
-            # write the job descriptor
-            job_descriptor_path = self.job_descriptor_path(job.id)
-            write_json_to_file(job.dict(), job_descriptor_path)
+            # get the user identity
+            user: Identity = self._node.db.get_identity(iid)
 
-            # create job context logger
-            context = JobContext(self.job_status_path(job.id), job)
-            self._jobs_context[job.id] = context
-            context.start()
+            job_state = DBJobContext(
+                job_id=job_id, proc_id=proc_id, user_id=user.id, wd_path=os.path.join(self._jobs_path, job.id),
+                job=job.dict(), state=str(JobStatus.State.UNINITIALISED.value), progress=0, info=info.dict()
+            )
 
-            # add the job to the processor queue and return the job descriptor
+            # add the state to the db
+            with self._db_mutex:
+                with self._Session() as session:
+                    session.add(job_state)
+                    session.commit()
+
+            # add the job state to the processor
+            logger.info(f"[submit:{shorten_id(proc_id)}] [job:{job_id}] adding job state to processor")
+            context = DBJobContextWrapper(self, self._db_mutex, self._Session, job_id)
             proc.add(context)
-            return job
 
-    def resume(self, proc_id: str, job: Job, reconnect: ReconnectInfo, request: Request) -> Job:
-        """
-        Attempts to resume monitoring an existing job that may have lost connectivity. This may be the case for jobs
-        that are executed remotely. It is not guaranteed that resume is successful and depends on whether the
-        underlying reasons for the disconnect (e.g., network outage) have been resolved. Authorisation is required by
-        the owner of the job (i.e., the user that has created the job by submitting the task in the first place).
-        """
-        with self._mutex:
-            # get the user's identity and check if it's identical with that's indicated in the task
-            iid = request.headers['saasauth-iid']
-            if iid != job.task.user_iid:
-                raise RTIException("Mismatching between user indicated in task and user making request", details={
-                    'iid': iid,
-                    'task': job.task
-                })
-
-            # create a job context
-            context = JobContext(self.job_status_path(job.id), job, reconnect)
-            self._jobs_context[job.id] = context
-            context.start()
-
-            # add the job to the processor queue and return the job descriptor
-            self._deployed[proc_id].resume(context)
             return job
 
     def jobs_by_proc(self, proc_id: str) -> List[Job]:
@@ -344,51 +656,32 @@ class RTIService:
         be included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
         included in this list.
         """
-
         with self._mutex:
             # collect all jobs
             result = [*self._deployed[proc_id].pending_jobs()]
-            active = self._deployed[proc_id].active_job()
-            if active:
-                result.append(active)
+            active = [*self._deployed[proc_id].active_jobs()]
+            result.extend(active)
 
             return result
 
     def jobs_by_user(self, request: Request) -> List[Job]:
         """
-        Retrieves a list of jobs owned by a user. Any job that is pending execution or actively executed will be
-        included in the list. Past jobs, i.e., jobs that have completed execution (successfully or not) will not be
-        included in this list.
+        Retrieves a list of jobs (past or current) owned by a user. If the user is the node owner, all jobs by all
+        users will be returned.
         """
-
         with self._mutex:
             # get the identity
             user: Identity = self._node.db.get_identity(request.headers['saasauth-iid'])
 
-            # collect all jobs
-            result = {}
-            for proc in self._deployed.values():
-                for pending in proc.pending_jobs():
-                    result[pending.id] = pending
+            with self._Session() as session:
+                # if the user is NOT the node owner, only return the jobs owned by the user
+                if self._node.identity.id != user.id:
+                    records = session.query(DBJobContext).filter_by(user_id=user.id).all()
 
-                active = proc.active_job()
-                if active:
-                    result[active.id] = active
+                else:
+                    records = session.query(DBJobContext).all()
 
-            # also check the live job status loggers
-            for context in self._jobs_context.values():
-                result[context.job.id] = context.job
-
-            # if the user is NOT the node owner, only return the jobs owned by the user
-            if self._node.identity.id != user.id:
-                filtered = []
-                for job in result.values():
-                    if job.task.user_iid == user.id:
-                        filtered.append(job)
-
-                return filtered
-
-            return list(result.values())
+                return [Job.parse_obj(record.job) for record in records]
 
     def job_status(self, job_id: str) -> JobStatus:
         """
@@ -396,21 +689,25 @@ class RTIService:
         (i.e., the user that has created the job by submitting the task in the first place).
         """
         with self._mutex:
-            # do we have a live job status logger?
-            status_path = self.job_status_path(job_id)
-            if job_id in self._jobs_context:
-                context: JobContext = self._jobs_context[job_id]
-                return context.status
+            with self._Session() as session:
+                # get the context record for that job
+                record = session.query(DBJobContext).get(job_id)
+                if record is None:
+                    raise JobStatusNotFoundError({
+                        'job_id': job_id
+                    })
 
-            # does the job status file exist?
-            elif os.path.isfile(status_path):
-                status = JobStatus.parse_file(status_path)
+                # determine job status
+                job = Job.parse_obj(record.job)
+
+                # determine the output (ignoring unavailable outputs)
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                output = {key: value for key, value in jri.output.items() if value is not None}
+
+                # generate the job status result
+                status = JobStatus(state=record.state, progress=record.progress, output=output,
+                                   notes=jri.notes, job=job, errors=jri.errors, message=jri.message)
                 return status
-
-            else:
-                raise JobStatusNotFoundError({
-                    'job_id': job_id
-                })
 
     def job_logs(self, job_id: str) -> Response:
         """
@@ -457,16 +754,40 @@ class RTIService:
         possible.
         """
         with self._mutex:
-            # do we have a live job status logger?
-            if job_id in self._jobs_context:
-                context: JobContext = self._jobs_context[job_id]
-                context.cancel()
+            with self._Session() as session:
+                # get the context record for that job
+                record = session.query(DBJobContext).get(job_id)
+                if record is None:
+                    raise JobStatusNotFoundError({
+                        'job_id': job_id
+                    })
 
-                return context.status
+                # is the processor deployed?
+                if record.proc_id not in self._deployed:
+                    raise RTIException(
+                        f"Cannot cancel job: processor for {job_id} not deployed (has the node been restarted in "
+                        f"the meantime?)"
+                    )
 
-            else:
-                raise RTIException(f"Cannot cancel job: no job context found for {job_id} (either job was not found or "
-                                   f"the job is not running any longer)")
+                # do we have a job runner?
+                proc = self._deployed[record.proc_id]
+                runner = proc.pop_job_runner(job_id)
+                if runner is None:
+                    raise RTIException(
+                        f"Cannot cancel job: no job runner found for {job_id} (either job was not found or the "
+                        f"job is not running any longer)"
+                    )
+
+                # cancel the job and return the status
+                runner.cancel()
+
+                # determine job status
+                job = Job.parse_obj(record.job)
+                jri = JobRuntimeInformation.parse_obj(record.info)
+                status = JobStatus(state=record.state, progress=record.progress, output=jri.output,
+                                   notes=jri.notes, job=job, errors=jri.errors)
+
+                return status
 
     def put_permission(self, req_id: str, permission: Permission) -> None:
         """
@@ -486,8 +807,23 @@ class RTIService:
         }`
         """
         with self._mutex:
-            self._content_keys[req_id] = permission.content_key
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBContentKeys).get(req_id)
+                    if record:
+                        record.value = permission.content_key
+                    else:
+                        session.add(DBContentKeys(key=req_id, value=permission.content_key))
+                    session.commit()
 
     def pop_permission(self, req_id: str) -> Optional[str]:
         with self._mutex:
-            return self._content_keys.pop(req_id, None)
+            with self._db_mutex:
+                with self._Session() as session:
+                    record = session.query(DBContentKeys).get(req_id)
+                    if record is not None:
+                        result = record.value
+                        session.delete(record)
+                        session.commit()
+                        return result
+                    return None

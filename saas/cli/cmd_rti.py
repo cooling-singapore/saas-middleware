@@ -18,7 +18,7 @@ from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
-from saas.rti.schemas import Processor, ProcessorStatus, Task
+from saas.rti.schemas import Processor, ProcessorStatus, Task, JobStatus
 from saas.dor.schemas import GPPDataObject, ProcessorDescriptor
 
 logger = Logging.get('cli.rti')
@@ -35,6 +35,10 @@ def _require_rti(args: dict) -> RTIProxy:
                               f"not provide a RTI service. Aborting.")
 
     return RTIProxy(extract_address(args['address']))
+
+
+def shorten_id(long_id: str) -> str:
+    return f'{long_id[:4]}...{long_id[-4:]}'
 
 
 class RTIProcDeploy(CLICommand):
@@ -238,8 +242,8 @@ class RTIProcStatus(CLICommand):
 
                 status: ProcessorStatus = rti.get_status(proc_id)
                 print(f"{proc_id}:{item.gpp.proc_descriptor.name} [{status.state.upper()}] "
-                      f"pending={[job.id for job in status.pending]} "
-                      f"active={status.active.id if status.active else '(none)'}")
+                      f"pending={[job.id for job in status.pending] if status.pending else '(none)'} "
+                      f"active={[job.id for job in status.active] if status.active else '(none)'}")
 
 
 class RTIJobSubmit(CLICommand):
@@ -443,8 +447,8 @@ class RTIJobList(CLICommand):
 
                 # headers
                 lines = [
-                    ['JOB ID', 'OWNER', 'PROC NAME', 'STATE'],
-                    ['------', '-----', '---------', '-----']
+                    ['JOB ID', 'OWNER', 'PROC NAME', 'STATE', 'DESCRIPTION'],
+                    ['------', '-----', '---------', '-----', '-----------']
                 ]
 
                 for job in jobs:
@@ -453,7 +457,8 @@ class RTIJobList(CLICommand):
 
                     status = rti.get_job_status(job.id, with_authorisation_by=keystore)
 
-                    lines.append([job.id, job.task.user_iid, proc_name, status.state])
+                    lines.append([job.id, shorten_id(job.task.user_iid), proc_name, status.state,
+                                  job.task.description])
 
                 print(tabulate(lines, tablefmt="plain"))
                 print()
@@ -468,8 +473,9 @@ class RTIJobList(CLICommand):
 class RTIJobStatus(CLICommand):
     def __init__(self):
         super().__init__('status', 'retrieve the status of a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?',
-                     help="the id of the job")
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
+            Argument('--show-inactive', dest="show-inactive", action='store_const', const=True,
+                     help="include inactive jobs (i.e., jobs that are no longer running)")
         ])
 
     def execute(self, args: dict) -> None:
@@ -485,9 +491,18 @@ class RTIJobStatus(CLICommand):
             # get all jobs by this user and select
             choices = []
             for job in rti.get_jobs_by_user(keystore):
-                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
-                    if job.task.proc_id in deployed else 'unknown'
-                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+                status = rti.get_job_status(job.id, with_authorisation_by=keystore)
+
+                is_active = status.state not in [JobStatus.State.SUCCESSFUL.value, JobStatus.State.FAILED.value,
+                                                 JobStatus.State.CANCELLED.value]
+                include_inactive = 'show-inactive' in args and args['show-inactive'] is True
+
+                if is_active or include_inactive:
+                    proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                        if job.task.proc_id in deployed else 'unknown processor'
+
+                    choices.append(Choice(job.id, f"{job.id}  {shorten_id(job.task.user_iid)}  {proc_name}  "
+                                                  f"{status.state}  {job.task.description}"))
 
             if not choices:
                 raise CLIRuntimeError("No jobs found.")
@@ -521,18 +536,28 @@ class RTIJobCancel(CLICommand):
             # get all jobs by this user and select
             choices = []
             for job in rti.get_jobs_by_user(keystore):
-                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
-                    if job.task.proc_id in deployed else 'unknown'
-                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+                status = rti.get_job_status(job.id, with_authorisation_by=keystore)
+
+                # don't show jobs that are not running
+                if status.state not in [JobStatus.State.SUCCESSFUL.value, JobStatus.State.FAILED.value,
+                                        JobStatus.State.CANCELLED.value]:
+
+                    proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                        if job.task.proc_id in deployed else 'unknown processor'
+
+                    choices.append(Choice(job.id, f"{job.id}  {shorten_id(job.task.user_iid)}  {proc_name}  "
+                                                  f"{status.state}  {job.task.description}"))
 
             if not choices:
-                raise CLIRuntimeError("No jobs found.")
+                raise CLIRuntimeError("No active jobs found.")
 
-            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
+            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=True)
 
         try:
-            status = rti.cancel_job(args['job-id'], keystore)
-            print(f"Done. Status: {status}")
+            for job_id in args['job-id']:
+                status = rti.cancel_job(args['job-id'], keystore)
+                print(f"Cancelled {job_id} -> state={status.state}")
+            print('Done.')
 
         except UnsuccessfulRequestError as e:
             print(f"{e.reason} details={e.details}")
@@ -543,7 +568,6 @@ class RTIJobLogs(CLICommand):
         super().__init__('logs', 'retrieve the logs of a job', arguments=[
             Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
             Argument('destination', metavar='destination', type=str, nargs=1, help="directory where to store the logs")
-
         ])
 
     def execute(self, args: dict) -> None:
@@ -565,9 +589,13 @@ class RTIJobLogs(CLICommand):
             # get all jobs by this user and select
             choices = []
             for job in rti.get_jobs_by_user(keystore):
+                status = rti.get_job_status(job.id, with_authorisation_by=keystore)
+
                 proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
-                    if job.task.proc_id in deployed else 'unknown'
-                choices.append(Choice(job.id, f"{job.id} at '{proc_name}'"))
+                    if job.task.proc_id in deployed else 'unknown processor'
+
+                choices.append(Choice(job.id, f"{job.id}  {shorten_id(job.task.user_iid)}  {proc_name}  "
+                                              f"{status.state}  {job.task.description}"))
 
             if not choices:
                 raise CLIRuntimeError("No jobs found.")

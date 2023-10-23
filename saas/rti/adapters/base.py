@@ -3,224 +3,232 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
+import threading
 import time
 import traceback
 from abc import abstractmethod, ABC
 from enum import Enum
 from threading import Lock, Thread
-from typing import Optional, List, Tuple
+from typing import Optional, List, Dict, Union
+
+import paramiko
 
 from saas.core.exceptions import SaaSRuntimeException, ExceptionContent
 from saas.core.helpers import decrypt_file, encrypt_file, hash_json_object
 from saas.core.keypair import KeyPair
 from saas.core.rsakeypair import RSAKeyPair
 from saas.dor.proxy import DORProxy
-from saas.core.helpers import get_timestamp_now, read_json_from_file, write_json_to_file, validate_json, \
-    generate_random_string
+from saas.core.helpers import read_json_from_file, write_json_to_file, validate_json, generate_random_string
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.nodedb.proxy import NodeDBProxy
 from saas.p2p.exceptions import PeerUnavailableError
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.exceptions import ProcessorNotAcceptingJobsError, UnresolvedInputDataObjectsError, \
     AccessNotPermittedError, MissingUserSignatureError, MismatchingDataTypeOrFormatError, InvalidJSONDataObjectError, \
     DataObjectContentNotFoundError, DataObjectOwnerNotFoundError, RTIException, RunCommandError
-from saas.rti.context import JobContext
 
 from saas.rti.schemas import JobStatus, ProcessorStatus, Job
-from saas.dor.schemas import GitProcessorPointer, DataObject
+from saas.dor.schemas import GitProcessorPointer, DataObject, CDataObject
 from saas.nodedb.schemas import NodeInfo
 from saas.core.schemas import SSHCredentials
 
 logger = Logging.get('rti.adapters')
 
 
-class ProcessorState(Enum):
-    UNINITIALISED = 'uninitialised'
-    FAILED = 'failed'
-    STARTING = 'starting'
-    WAITING = 'waiting'
-    BUSY = 'busy'
-    STOPPING = 'stopping'
-    STOPPED = 'stopped'
+def join_paths(components: List[str], ssh_credentials: SSHCredentials = None) -> str:
+    unix_sep = '/'
+    win_sep = '\\'
+
+    if ssh_credentials:
+        separators = (win_sep, unix_sep) if ssh_credentials.is_cygwin else (unix_sep, win_sep)
+    else:
+        separators = (win_sep, unix_sep) if os.path.sep == win_sep else (unix_sep, win_sep)
+
+    result = separators[0].join(components)
+    result = result.replace(separators[1], separators[0])
+    result = result.replace(f'{separators[0]}{separators[0]}', separators[0])
+    return result
 
 
 def run_command(command: str, ssh_credentials: SSHCredentials = None, timeout: int = None,
-                check_exitcode: bool = True) -> subprocess.CompletedProcess:
+                check_exitcode: bool = True, attempts: int = 10) -> subprocess.CompletedProcess:
 
     # wrap the command depending on whether it is to be executed locally or remote (if ssh credentials provided)
     if ssh_credentials:
-        a = ['sshpass', '-p', f"{ssh_credentials.key}"] if ssh_credentials.key_is_password else []
-        b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-        c = ['-oHostKeyAlgorithms=+ssh-rsa']
+        args = ['-i', ssh_credentials.key_path]
+        if timeout:
+            args.extend(['-o', f"ConnectTimeout={timeout}"])
 
-        wrapped_command = [*a, 'ssh', *b, *c, '-o',
-                           f"ConnectTimeout={timeout}" if timeout else '',
-                           f"{ssh_credentials.login}@{ssh_credentials.host}", command]
+        wrapped_command = ['ssh', *args, f"{ssh_credentials.login}@{ssh_credentials.host}", command]
 
     else:
         wrapped_command = ['bash', '-c', command]
 
     # try to execute the command
-    try:
-        result = subprocess.run(wrapped_command, capture_output=True, check=check_exitcode, timeout=timeout)
-        return result
+    error = None
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(wrapped_command, capture_output=True, check=check_exitcode, timeout=timeout)
+            return result
 
-    except subprocess.CalledProcessError as e:
-        raise RunCommandError({
-            'reason': 'non-zero return code',
-            'returncode': e.returncode,
-            'wrapped_command': wrapped_command,
-            'stdout': e.stdout.decode('utf-8'),
-            'stderr': e.stderr.decode('utf-8'),
-            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
-        })
+        except subprocess.CalledProcessError as e:
+            error = {
+                'reason': 'non-zero return code',
+                'returncode': e.returncode,
+                'wrapped_command': wrapped_command,
+                'stdout': e.stdout.decode('utf-8'),
+                'stderr': e.stderr.decode('utf-8'),
+                'ssh_credentials_path': ssh_credentials.key_path if ssh_credentials else None
+            }
+            logger.error(f"[attempt:{(attempt+1)}/{attempts}] error: {error}")
 
-    except subprocess.TimeoutExpired:
-        raise RunCommandError({
-            'reason': 'timeout',
-            'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.dict() if ssh_credentials else None,
-        })
+        except subprocess.TimeoutExpired:
+            error = {
+                'reason': 'timeout',
+                'wrapped_command': wrapped_command,
+                'ssh_credentials_path': ssh_credentials.key_path if ssh_credentials else None
+            }
+            logger.error(f"[attempt:{(attempt+1)}/{attempts}] error: {error}")
+
+        time.sleep(5)
+
+    raise RunCommandError(error)
 
 
 def scp_local_to_remote(local_path: str, remote_path: str, ssh_credentials: SSHCredentials) -> None:
     # generate the wrapped command
-    a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
-    b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-    c = ['-oHostKeyAlgorithms=+ssh-rsa']
-    wrapped_command = [*a, 'scp', *b, *c, local_path, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}"]
+    wrapped_command = ['scp', '-i', ssh_credentials.key_path, local_path,
+                       f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}"]
 
     # execute command
     result = subprocess.run(wrapped_command, capture_output=True)
     if result.returncode != 0:
         raise RunCommandError({
             'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.dict(),
+            'ssh_credentials_path': ssh_credentials.key_path,
             'result': result
         })
 
 
 def scp_remote_to_local(remote_path: str, local_path: str, ssh_credentials: SSHCredentials) -> None:
     # generate the wrapped command
-    a = ['sshpass', '-p', ssh_credentials.key] if ssh_credentials.key_is_password else []
-    b = ['-i', ssh_credentials.key] if not ssh_credentials.key_is_password else []
-    c = ['-oHostKeyAlgorithms=+ssh-rsa']
-    wrapped_command = [*a, 'scp', *b, *c, f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}", local_path]
+    wrapped_command = ['scp', '-i', ssh_credentials.key_path,
+                       f"{ssh_credentials.login}@{ssh_credentials.host}:{remote_path}", local_path]
 
     # execute command
     result = subprocess.run(wrapped_command, capture_output=True)
     if result.returncode != 0:
         raise RunCommandError({
             'wrapped_command': wrapped_command,
-            'ssh_credentials': ssh_credentials.dict(),
+            'ssh_credentials_path': ssh_credentials.key_path,
             'result': result
         })
 
 
-def get_home_directory(ssh_credentials: SSHCredentials) -> str:
-    # try to determine remote the home directory using Python3 (and Python in case Python3 doesn't work)
-    result = run_command("python3 -c \"import os; print(os.path.expanduser('~'))\"", ssh_credentials=ssh_credentials,
-                         check_exitcode=False)
-    if result.returncode != 0:
-        result2 = run_command("python -c \"import os; print(os.path.expanduser('~'))\"",
-                              ssh_credentials=ssh_credentials, check_exitcode=False)
-        if result2.returncode != 0:
-            raise SaaSRuntimeException("Cannot determine remote home directory", details={
-                'result.stdout': result.stdout.decode('utf-8'),
-                'result.stderr': result.stderr.decode('utf-8'),
-                'result2.stdout': result2.stdout.decode('utf-8'),
-                'result2.stderr': result2.stderr.decode('utf-8')
-            })
-        else:
-            _home = result2.stdout.decode('utf-8').strip()
-    else:
-        _home = result.stdout.decode('utf-8').strip()
+def determine_home_path(ssh_credentials: SSHCredentials = None) -> str:
+    result = run_command('echo ~', ssh_credentials)
+    home = result.stdout.decode('utf-8')
+    home = home.strip()
 
-    if _home.startswith("/cygdrive/"):  # fix path for Windows machine with cygwin
-        _home = _home.replace("/cygdrive/", "")
-        _home = f"{_home[:1]}:{_home[1:]}"
+    if home.startswith("/cygdrive/"):  # fix path for Windows machine with cygwin
+        home = home.replace("/cygdrive/", "")
+        home = f"{home[:1]}:{home[1:]}"
 
-    return _home
+    return home
 
 
-def is_cygwin(ssh_credentials: SSHCredentials) -> bool:
+def determine_if_cygwin(ssh_credentials: SSHCredentials) -> bool:
     result = run_command("uname", ssh_credentials=ssh_credentials)
     env = result.stdout.decode('utf-8').strip()
     return "cygwin" in env.lower()
 
 
 def get_pid(pid_path: str, ssh_credentials: SSHCredentials = None, max_attempts: int = 10) -> str:
-    # wait for the PID file to exist
     for attempt in range(max_attempts):
-        # does the PID file exist?
-        if check_if_path_exists(pid_path, ssh_credentials=ssh_credentials, timeout=10):
-            # read and return the PID
-            result = run_command(f"cat {pid_path}", ssh_credentials=ssh_credentials, timeout=10)
-            pid = result.stdout.decode('utf-8').splitlines()[0]
-            return pid
-
-        else:
-            logger.debug(f"PID file expected at '{pid_path}' does not (yet) exist... waiting (attempt={attempt})")
+        command = f'if [ -e "{pid_path}" ]; then cat {pid_path}; else echo -1; fi'
+        result = run_command(command, ssh_credentials=ssh_credentials, timeout=10)
+        temp = result.stdout.decode('utf-8').splitlines()
+        if temp is None or len(temp) == 0 or temp[0] == '-1':
+            logger.debug(f"PID file content at '{pid_path}' does not contain PID (content: {temp})... "
+                         f"try again (attempt={attempt+1}/{max_attempts})")
             time.sleep(0.5)
+            continue
 
-    raise RunCommandError(reason='PID file not found', details={'pid_path': pid_path})
+        # return the PID
+        return temp[0]
+
+    raise RunCommandError(reason='Failed to obtain PID', details={'pid_path': pid_path})
 
 
 def run_command_async(command: str, local_output_path: str, name: str,
                       ssh_credentials: SSHCredentials = None) -> (str, dict):
 
-    # determine remote output path (in case it's needed)
-    # FIXME: Might not need this since ssh should open in HOME directory anyway
-    _home = get_home_directory(ssh_credentials)
-    remote_output_path = _home + local_output_path.replace(os.environ['HOME'], '')
-
-    # check if the output path exists (locally and remotely, if applicable)
-    os.makedirs(local_output_path, exist_ok=True)
-    if ssh_credentials is not None:
-        run_command(f"mkdir -p {remote_output_path}", ssh_credentials=ssh_credentials, timeout=10)
-
-    # determine paths
     paths = {
+        'local_wd_path': local_output_path,
         'local_stdout': os.path.join(local_output_path, f"{name}.stdout"),
         'local_stderr': os.path.join(local_output_path, f"{name}.stderr"),
         'local_pid': os.path.join(local_output_path, f"{name}.pid"),
         'local_exitcode': os.path.join(local_output_path, f"{name}.exitcode"),
-        'local_script': os.path.join(local_output_path, f"{name}.sh"),
-        'remote_stdout': os.path.join(remote_output_path, f"{name}.stdout"),
-        'remote_stderr': os.path.join(remote_output_path, f"{name}.stderr"),
-        'remote_pid': os.path.join(remote_output_path, f"{name}.pid"),
-        'remote_exitcode': os.path.join(remote_output_path, f"{name}.exitcode"),
-        'remote_script': os.path.join(remote_output_path, f"{name}.sh"),
+        'local_script': os.path.join(local_output_path, f"{name}.sh")
     }
-    paths['stdout'] = paths['remote_stdout'] if ssh_credentials else paths['local_stdout']
-    paths['stderr'] = paths['remote_stderr'] if ssh_credentials else paths['local_stderr']
-    paths['pid'] = paths['remote_pid'] if ssh_credentials else paths['local_pid']
-    paths['script'] = paths['remote_script'] if ssh_credentials else paths['local_script']
-    paths['exitcode'] = paths['remote_exitcode'] if ssh_credentials else paths['local_exitcode']
 
-    # create the run script
-    with open(paths['local_script'], 'w') as f:
-        f.write('\n'.join([
-            "#!/bin/bash",
-            f"{command} > {paths['stdout']} 2> {paths['stderr']} &",
-            "pid=$!",
-            f"echo $pid > {paths['pid']}",
-            "wait $pid",
-            f"echo $? > {paths['exitcode']}",
-            ""
-        ]))
+    # make sure the local working directory exists
+    if not os.path.isdir(paths['local_wd_path']):
+        os.makedirs(paths['local_wd_path'])
 
-    # if needed copy the run script to the remote machine
     if ssh_credentials is not None:
-        scp_local_to_remote(paths['local_script'], paths['remote_script'], ssh_credentials)
+        remote_output_path = ssh_credentials.home_path + local_output_path.replace(os.environ['HOME'], '')
+        paths['remote_wd_path'] = remote_output_path
+        paths['remote_stdout'] = join_paths([remote_output_path, f"{name}.stdout"], ssh_credentials)
+        paths['remote_stderr'] = join_paths([remote_output_path, f"{name}.stderr"], ssh_credentials)
+        paths['remote_pid'] = join_paths([remote_output_path, f"{name}.pid"], ssh_credentials)
+        paths['remote_exitcode'] = join_paths([remote_output_path, f"{name}.exitcode"], ssh_credentials)
+        paths['remote_script'] = join_paths([remote_output_path, f"{name}.sh"], ssh_credentials)
 
-    # make script executable
-    run_command(f"chmod u+x {paths['script']}", ssh_credentials=ssh_credentials, timeout=10)
+        paths['wd_path'] = paths['remote_wd_path']
+        paths['stdout'] = paths['remote_stdout']
+        paths['stderr'] = paths['remote_stderr']
+        paths['pid'] = paths['remote_pid']
+        paths['script'] = paths['remote_script']
+        paths['exitcode'] = paths['remote_exitcode']
 
-    # execute the script
-    if is_cygwin(ssh_credentials):
+    else:
+        paths['wd_path'] = paths['local_wd_path']
+        paths['stdout'] = paths['local_stdout']
+        paths['stderr'] = paths['local_stderr']
+        paths['pid'] = paths['local_pid']
+        paths['script'] = paths['local_script']
+        paths['exitcode'] = paths['local_exitcode']
+
+    # we are going to chain together a number of commands to avoid having to run many commands
+    chain_command = ''
+
+    # 1) ensure the working directory exists
+    chain_command += f"mkdir -p {paths['wd_path']}"
+
+    # 2) echo the contents of the wrapper script
+    chain_command += ' && echo -e "#!/bin/bash\n' \
+                     f'touch {paths["stdout"]}\n' \
+                     f'touch {paths["stderr"]}\n' \
+                     f'touch {paths["exitcode"]}\n' \
+                     f'{command} > {paths["stdout"]} 2> {paths["stderr"]} &\n' \
+                     f'pid=\$!\n' \
+                     f'echo \$pid > {paths["pid"]}\n' \
+                     f'wait \$pid\n' \
+                     f'echo \$? > {paths["exitcode"]}" > {paths["script"]}'
+
+    # 3) make the wrapper script executable
+    chain_command += f" && chmod u+x {paths['script']}"
+
+    # execute the chain command
+    run_command(chain_command, ssh_credentials=ssh_credentials, timeout=10)
+
+    # execute the wrapper script
+    if ssh_credentials and ssh_credentials.is_cygwin:
         # nohup does not really work in cygwin
         command = f"cygstart {paths['script']}"
     else:
@@ -235,139 +243,157 @@ def run_command_async(command: str, local_output_path: str, name: str,
 
 
 def monitor_command(pid: str, pid_paths: dict[str, str], triggers: dict = None, ssh_credentials: SSHCredentials = None,
-                    pace: int = 500, max_attempts: int = 60, retry_delay: int = 10, context: JobContext = None) -> None:
+                    context: JobContext = None) -> None:
 
-    logger.info(f"begin monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
-    c_stdout_lines = 0
-    c_stderr_lines = 0
-    t_prev = get_timestamp_now()
-    n_attempts = 0
+    job_id = context.job_id() if context else '...'
+    logger.info(f"[job:{job_id}] begin monitoring {'REMOTE' if ssh_credentials else 'LOCAL'}:{pid}...")
 
-    def get_line_count(file_path: str) -> int:
-        wc_result = run_command(f"wc -l {file_path}", ssh_credentials=ssh_credentials, timeout=10)
-        n_lines = wc_result.stdout.decode('utf-8').splitlines()[0].split()[0]
-        return int(n_lines)
+    class Session:
+        def __init__(self):
+            self.exitcode = None
+            self.ssh_client = None
 
-    exitcode_found = False
-    while True:
-        try:
-            # if we have a job context, then check if the job has the job been cancelled?
-            if context and context.state == JobStatus.State.CANCELLED:
-                # send SIGTERM...
-                logger.debug(f"[{context.job.id}] send SIGTERM to {pid}")
-                run_command(f"kill {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
+            if ssh_credentials:
+                self.ssh_client = paramiko.SSHClient()
+                self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-                # check if the process still exists for at most ~30 seconds or so
-                for _ in range(30):
-                    result = run_command(f"ps {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
-                    if result.returncode != 0:
-                        logger.debug(f"[{context.job.id}] process {pid} terminated...")
-                        return
+                private_key = paramiko.RSAKey.from_private_key_file(ssh_credentials.key_path)
+                self.ssh_client.connect(ssh_credentials.host, username=ssh_credentials.login, pkey=private_key)
 
-                    # process still exists
-                    time.sleep(1)
+    def wait_for_exitcode_local(session: Session) -> None:
+        while session.exitcode is None:
+            time.sleep(2.5)
+            if os.path.isfile(pid_paths['exitcode']) and os.path.getsize(pid_paths['exitcode']) > 0:
+                with open(pid_paths['exitcode'], 'r') as f:
+                    content = f.read()
+                    content = content.strip()
+                    session.exitcode = int(content)
+                    break
 
-                # send SIGKILL
-                print(f"[{context.job.id}] send SIGKILL to {pid}")
-                run_command(f"kill -9 {pid}", ssh_credentials=ssh_credentials, timeout=10, check_exitcode=False)
-                return
+    def wait_for_exitcode_remote(session: Session) -> None:
+        sftp = session.ssh_client.open_sftp()
+        while session.exitcode is None:
+            time.sleep(2.5)
+            file_info = sftp.stat(pid_paths['exitcode'])
+            if file_info.st_size > 0:
+                with sftp.file(pid_paths['exitcode'], 'r') as f:
+                    content = f.read()
+                    session.exitcode = int(content)
+                    break
 
-            # get the number of lines in stdout and stderr
-            n_stdout_lines = get_line_count(pid_paths['stdout'])
-            n_stderr_lines = get_line_count(pid_paths['stderr'])
+        sftp.close()
 
-            # new line count
-            d_stdout_lines = n_stdout_lines - c_stdout_lines
-            d_stderr_lines = n_stderr_lines - c_stderr_lines
+    def monitor_stdout_local(session: Session) -> None:
+        position = 0
+        while session.exitcode is None:
+            time.sleep(1)
+            with open(pid_paths['stdout'], 'r') as f:
+                f.seek(position)
+                for line in f:
+                    line = line.rstrip('\n')  # Remove newline character
+                    for pattern, info in triggers.items():
+                        if pattern in line:
+                            idx = line.index(pattern)
+                            line = line[idx:]
+                            info['func'](line, info['context'])
 
-            # no new lines at all? check if the process is still running
-            if d_stdout_lines == 0 and d_stderr_lines == 0:
-                # do we have an exit code file? (it is only generated when the process has terminated)
-                if check_if_path_exists(pid_paths['exitcode'], ssh_credentials=ssh_credentials, timeout=10):
-                    logger.info(f"end monitoring {pid} on {'REMOTE' if ssh_credentials else 'LOCAL'} machine.")
+                position = f.tell()
 
-                    if not exitcode_found:
-                        # set the flag, wait a second to allow stdout/stderr to flush, then give it another round
-                        exitcode_found = True
-                        time.sleep(1.0)
-                        continue
-                    else:
-                        break
+    def parse_buffer(buffer: str, addition: str) -> str:
+        # add on to the buffer and split into lines (if any)
+        buffer += addition
+        temp = buffer.split('\n')
 
-            # do we have new STDOUT lines to process?
-            if d_stdout_lines > 0:
-                result = run_command(f"tail -n +{c_stdout_lines + 1} {pid_paths['stdout']} | head -n {d_stdout_lines}",
-                                     ssh_credentials=ssh_credentials, timeout=10)
-                lines = result.stdout.decode('utf-8').splitlines()
+        # process lines and see if any triggers match -> last 'line' is unfinished buffer
+        for line in temp[:-1]:
+            for pattern, info in triggers.items():
+                if pattern in line:
+                    idx = line.index(pattern)
+                    line = line[idx:]
+                    info['func'](line, info['context'])
 
-                # parse the lines for this round
-                for line in lines:
-                    if triggers is not None:
-                        for pattern, info in triggers.items():
-                            if pattern in line:
-                                info['func'](line, info['context'])
+        return temp[-1]
 
-                c_stdout_lines += d_stdout_lines
-
-            # do we have new STDERR lines to process?
-            if d_stderr_lines > 0:
-                c_stderr_lines += d_stderr_lines
-
-            # need pacing?
-            t_now = get_timestamp_now()
-            delay = max(pace - (t_now - t_prev), 0)
-            time.sleep(delay / 1000.0)
-
-            # if we reach here, we can reset the attempts counter
-            n_attempts = 0
-
-        # if there is an error, then this could have been caused by a unstable connection (e.g., temporary VPN
-        # disconnect). wait and retry...
-        except RunCommandError as e:
-            # increase attempt counter and check if limit is reached -> if so, then raise an exception
-            n_attempts += 1
-            if n_attempts >= max_attempts:
-                raise RunCommandError({
-                    'info': 'too many attempts',
-                    'n_attempts': n_attempts,
-                    'max_attempts': max_attempts,
-                    'most_recent_exception_details': e.details
-                })
+    def monitor_stdout_remote(session: Session) -> None:
+        ssh_shell = session.ssh_client.invoke_shell()
+        ssh_shell.send(f"tail -f {pid_paths['stdout']}\n".encode('utf-8'))
+        buffer = ''
+        while session.exitcode is None:
+            # read whatever is there to read and parse it
+            if ssh_shell.recv_ready():
+                received = ssh_shell.recv(4096).decode('utf-8').replace('\r', '')
+                buffer = parse_buffer(buffer, received)
 
             else:
-                logger.warning(f"error while monitoring command (attempt {n_attempts} of {max_attempts}) "
-                               f"-> try again in {retry_delay} seconds. "
-                               f"reason: {e.reason} details: {e.details}")
-                time.sleep(retry_delay)
+                time.sleep(0.5)
 
-    # if needed copy the stdout/stderr/exitcode files from remote to the local machine
-    if ssh_credentials is not None:
-        todo = {
-            pid_paths['remote_stdout']: pid_paths['local_stdout'],
-            pid_paths['remote_stderr']: pid_paths['local_stderr'],
-            pid_paths['remote_exitcode']: pid_paths['local_exitcode']
-        }
+        # wait for stdout/stderr files to no longer change
+        sftp = session.ssh_client.open_sftp()
+        stdout_size = sftp.stat(pid_paths['remote_stdout']).st_size
+        stderr_size = sftp.stat(pid_paths['remote_stderr']).st_size
+        while True:
+            time.sleep(1)
+            new_stdout_size = sftp.stat(pid_paths['remote_stdout']).st_size
+            new_stderr_size = sftp.stat(pid_paths['remote_stderr']).st_size
 
-        for s, d in todo.items():
-            # wait for the source to be available
-            while not check_if_path_exists(s, ssh_credentials=ssh_credentials):
-                logger.warning(f"resource not available at {'REMOTE:' if ssh_credentials else 'LOCAL:'}{s} "
-                               f"-> retry in 5 seconds.")
-                time.sleep(5)
+            if new_stdout_size == stdout_size and new_stderr_size == stderr_size:
+                break
+            else:
+                stdout_size = new_stdout_size
+                stderr_size = new_stderr_size
 
-            logger.info(f"copying from remote to local: {s} -> {d}")
-            scp_remote_to_local(s, d, ssh_credentials)
+        # read whatever is there to read and parse it
+        while ssh_shell.recv_ready():
+            if ssh_shell.recv_ready():
+                received = ssh_shell.recv(4096).decode('utf-8').replace('\r', '')
+                buffer = parse_buffer(buffer, received)
 
-    # get the error code returned by the process and raise exception if the process did not finish successfully.
-    with open(pid_paths['local_exitcode'], 'r') as f:
-        line = f.readline()
-        exitcode = int(line)
-        if exitcode != 0:
-            raise RunCommandError({
-                'pid': pid,
-                'exitcode': exitcode,
-                'pid_paths': pid_paths
-            })
+        # copy remote files to local
+        sftp.get(pid_paths['remote_stdout'], pid_paths['local_stdout'])
+        sftp.get(pid_paths['remote_stderr'], pid_paths['local_stderr'])
+        sftp.get(pid_paths['remote_exitcode'], pid_paths['local_exitcode'])
+
+        ssh_shell.close()
+        sftp.close()
+
+    def wait_for_cancellation_local(session: Session) -> None:
+        while session.exitcode is None:
+            time.sleep(1)
+            if context.state() == JobStatus.State.CANCELLED:
+                os.kill(int(pid), signal.SIGKILL)
+
+                session.exitcode = -9
+                break
+
+    def wait_for_cancellation_remote(session: Session) -> None:
+        while session.exitcode is None:
+            time.sleep(1)
+            if context.state() == JobStatus.State.CANCELLED:
+                ssh_shell = session.ssh_client.invoke_shell()
+                ssh_shell.send(f"kill -9 {pid}".encode('utf-8'))
+                ssh_shell.close()
+
+                session.exitcode = -9
+                break
+
+    # what functions to run?
+    functions = [wait_for_exitcode_remote if ssh_credentials else wait_for_exitcode_local]
+    if context:
+        functions.append(wait_for_cancellation_remote if ssh_credentials else wait_for_cancellation_local)
+    if triggers:
+        functions.append(monitor_stdout_remote if ssh_credentials else monitor_stdout_local)
+
+    # create threads and start them
+    session = Session()
+    threads = []
+    for f in functions:
+        t = threading.Thread(target=f, kwargs={'session': session})
+        t.start()
+        threads.append(t)
+
+    # wait for all threads to be done
+    for t in threads:
+        t.join()
 
 
 def check_if_path_exists(path: str, ssh_credentials: SSHCredentials = None, timeout: int = None) -> bool:
@@ -379,28 +405,280 @@ def create_symbolic_link(link_path: str, target_path: str, working_directory: st
     if working_directory:
         link_path = os.path.join(working_directory, link_path)
         target_path = os.path.join(working_directory, target_path)
-    run_command(f"ln -sf {target_path} {link_path}")
+
+    os.symlink(src=target_path, dst=link_path)
+    # run_command(f"ln -sf {target_path} {link_path}")
+
+
+class JobRunner(Thread):
+    def __init__(self, owner: RTIProcessorAdapter, context: JobContext):
+        super().__init__(name=f"job_runner.{context.job_id()}")
+        self._owner = owner
+        self._context = context
+
+    @property
+    def job(self) -> Job:
+        return self._context.job()
+
+    def cancel(self) -> None:
+        logger.info(f"[job:{self._context.job_id()}:{self._context.state().value}] cancel job!")
+        self._context.update_state(JobStatus.State.CANCELLED)
+        self._owner.cancel_job_execution(self._context)
+
+    def run(self):
+        # get a few things for convenience
+        context = self._context
+        job_id = context.job().id
+        wd_path = context.wd_path()
+
+        # is the job still uninitialised?
+        if context.state() == JobStatus.State.UNINITIALISED:
+            try:
+                # perform pre-execution routine
+                self._owner.pre_execute(wd_path, self._context)
+
+            except SaaSRuntimeException as e:
+                context.add_error(e.reason, e.content)
+                state = context.update_state(JobStatus.State.FAILED)
+                logger.warning(
+                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = context.update_state(JobStatus.State.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[job:{job_id}:{state.value}] initialisation failed: {e}\n{trace}")
+
+            else:
+                state = context.update_state(JobStatus.State.INITIALISED)
+                logger.info(f"[job:{job_id}:{state.value}] initialisation successful")
+
+        # is the job initialised?
+        if context.state() == JobStatus.State.INITIALISED:
+            try:
+                # instruct the adapter to execute the job
+                self._owner.begin_job_execution(wd_path, self._context)
+
+            except SaaSRuntimeException as e:
+                context.add_error(e.reason, e.content)
+                state = context.update_state(JobStatus.State.FAILED)
+                logger.warning(
+                    f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = context.update_state(JobStatus.State.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[job:{job_id}:{state.value}] triggering execution failed: {e}\n{trace}")
+
+        # is the job running?
+        if context.state() == JobStatus.State.RUNNING:
+            while True:
+                try:
+                    # connect to the job and monitor its progress
+                    self._owner.monitor_job_execution(self._context)
+
+                except UnsuccessfulRequestError as e:
+                    # this could be due to some timing issues, just try again to monitor the job
+                    state = context.state()
+                    logger.warning(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details} -> "
+                        f"trying again in 1 second.")
+
+                    time.sleep(1)
+                    continue
+
+                except SaaSRuntimeException as e:
+                    context.add_error(e.reason, e.content)
+                    state = context.update_state(JobStatus.State.FAILED)
+                    logger.error(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+                    break
+
+                except Exception as e:
+                    state = context.update_state(JobStatus.State.FAILED)
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[job:{job_id}:{state.value}] monitoring execution failed: {e}\n{trace}")
+                    break
+
+                else:
+                    state = context.update_state(JobStatus.State.POSTPROCESSING)
+                    logger.info(f"[job:{job_id}:{state.value}] monitoring execution successful")
+                    break
+
+            # is the job running?
+            if context.state() == JobStatus.State.POSTPROCESSING:
+                try:
+                    # perform post-execution routine
+                    self._owner.post_execute(job_id)
+
+                except SaaSRuntimeException as e:
+                    context.add_error(e.reason, e.content)
+                    state = context.update_state(JobStatus.State.FAILED)
+                    logger.warning(
+                        f"[job:{job_id}:{state.value}] monitoring execution failed: [{e.id}] {e.reason} {e.details}")
+
+                except Exception as e:
+                    state = context.update_state(JobStatus.State.FAILED)
+                    trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                    logger.error(f"[job:{job_id}:{state.value}] post-execution routine failed: {e}\n{trace}")
+
+                else:
+                    state = context.update_state(JobStatus.State.SUCCESSFUL)
+                    logger.info(f"[job:{job_id}:{state.value}] post-execution routine successful")
+
+            # if the job history is not to be retained, delete its contents (with exception to the status and
+            # the job descriptor)
+            if not context.job().retain:
+                exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
+                              'execute_sh.pid', 'execute.sh']
+                logger.info(f"[job:{job_id}] deleting working directory contents at {wd_path} "
+                            f"(exclusions: {exclusions})...")
+
+                # delete the file/dir/link unless it's in the exclusion list
+                for item in os.listdir(wd_path):
+                    if not item.endswith(tuple(exclusions)):
+                        path = os.path.join(wd_path, item)
+                        if os.path.isfile(path):
+                            os.remove(path)
+                        elif os.path.isdir(path):
+                            shutil.rmtree(path)
+                        elif os.path.islink(path):
+                            os.unlink(path)
+                        else:
+                            logger.warning(f"Encountered neither file nor directory: {path}")
+
+        # remove the job from the active set
+        self._owner.pop_job_runner(job_id)
+
+
+class ProcessorState(str, Enum):
+    UNINITIALISED = 'uninitialised'
+    STARTING = 'starting'
+    OPERATIONAL = 'operational'
+    STOPPING = 'stopping'
+    STOPPED = 'stopped'
+    FAILED = 'failed'
+
+
+class ProcessorStateWrapper(ABC):
+    @abstractmethod
+    def state(self) -> ProcessorState:
+        pass
+
+    @abstractmethod
+    def update_state(self, state: ProcessorState) -> ProcessorState:
+        pass
+
+    @abstractmethod
+    def delete(self) -> None:
+        pass
+
+
+class JobContext(ABC):
+    @abstractmethod
+    def job_id(self) -> str:
+        pass
+
+    @abstractmethod
+    def job(self) -> Job:
+        pass
+
+    @abstractmethod
+    def wd_path(self) -> str:
+        pass
+
+    @abstractmethod
+    def descriptor_path(self) -> str:
+        pass
+
+    @abstractmethod
+    def state(self) -> JobStatus.State:
+        pass
+
+    @abstractmethod
+    def update_state(self, new_state: JobStatus.State) -> JobStatus.State:
+        pass
+
+    @abstractmethod
+    def status(self) -> JobStatus:
+        pass
+
+    @abstractmethod
+    def add_pending_output(self, obj_name: str) -> None:
+        pass
+
+    @abstractmethod
+    def get_pending_outputs(self) -> List[str]:
+        pass
+
+    @abstractmethod
+    def pop_pending_output(self, obj_name: str, obj: CDataObject) -> str:
+        pass
+
+    @abstractmethod
+    def progress(self) -> int:
+        pass
+
+    @abstractmethod
+    def update_progress(self, new_progress: int) -> int:
+        pass
+
+    @abstractmethod
+    def update_message(self, severity: str, message: str) -> None:
+        pass
+
+    @abstractmethod
+    def put_note(self, key: str, note: Union[str, int, float, bool, dict, list]) -> None:
+        pass
+
+    @abstractmethod
+    def get_note(self, key: str, default: Union[str, int, float, bool, dict, list] = None) -> Union[str, int, float,
+                                                                                                    bool, dict, list]:
+        pass
+
+    @abstractmethod
+    def remove_note(self, key: str) -> None:
+        pass
+
+    @abstractmethod
+    def add_error(self, message: str, exception: ExceptionContent) -> None:
+        pass
+
+    @abstractmethod
+    def errors(self) -> List[JobStatus.Error]:
+        pass
+
+
+def shorten_id(long_id: str) -> str:
+    return long_id[:4] + '...' + long_id[-4:]
 
 
 class RTIProcessorAdapter(Thread, ABC):
-    def __init__(self, proc_id: str, gpp: GitProcessorPointer, job_wd_path: str, node) -> None:
-        Thread.__init__(self, daemon=True)
+    def __init__(self, proc_id: str, gpp: GitProcessorPointer, db_wrapper: ProcessorStateWrapper,
+                 node, job_wd_path: str, job_concurrency: bool) -> None:
+        Thread.__init__(self, daemon=True, name=f"rti.adapter:{proc_id[0:8]}...")
 
         self._mutex = Lock()
         self._proc_id = proc_id
+        self._proc_short_id = shorten_id(proc_id)
         self._gpp = gpp
-        self._job_wd_path = job_wd_path
+        self._db_wrapper = db_wrapper
         self._node = node
+        self._job_wd_path = job_wd_path
+        self._job_concurrency = job_concurrency
+        self._stop_signal_received = False
 
         self._input_interface = {item.name: item for item in gpp.proc_descriptor.input}
         self._output_interface = {item.name: item for item in gpp.proc_descriptor.output}
-        self._pending: List[Tuple[str, JobContext]] = []
-        self._active: Optional[JobContext] = None
-        self._state = ProcessorState.UNINITIALISED
+        self._pending: List[JobContext] = []
+        self._active: Dict[str, JobRunner] = {}
 
     @property
     def id(self) -> str:
         return self._proc_id
+
+    @property
+    def short_id(self) -> str:
+        return self._proc_short_id
 
     @property
     def gpp(self) -> GitProcessorPointer:
@@ -408,7 +686,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
     @property
     def state(self) -> ProcessorState:
-        return self._state
+        return self._db_wrapper.state()
 
     @abstractmethod
     def startup(self) -> None:
@@ -419,16 +697,116 @@ class RTIProcessorAdapter(Thread, ABC):
         pass
 
     @abstractmethod
-    def execute(self, working_directory: str, context: JobContext) -> None:
+    def begin_job_execution(self, wd_path: str, context: JobContext) -> None:
         pass
 
     @abstractmethod
-    def connect_and_monitor(self, context: JobContext) -> None:
+    def monitor_job_execution(self, context: JobContext) -> None:
         pass
 
-    def stop(self) -> None:
-        logger.info(f"[adapter:{self._proc_id}] received stop signal.")
-        self._state = ProcessorState.STOPPING
+    @abstractmethod
+    def cancel_job_execution(self, context: JobContext) -> None:
+        pass
+
+    def run(self) -> None:
+        def update_state(new_state: ProcessorState) -> ProcessorState:
+            with self._mutex:
+                return self._db_wrapper.update_state(new_state)
+
+        # get the current state
+        state = self._db_wrapper.state()
+
+        # uninitialised? do startup...
+        if state in [ProcessorState.UNINITIALISED, ProcessorState.STARTING]:
+            if state == ProcessorState.STARTING:
+                logger.warning(f"[adapter:{self._proc_short_id}:{state.value}] appears to have been interrupted "
+                               f"while performing startup routine. trying again...")
+            else:
+                logger.info(f"[adapter:{self._proc_short_id}:{state.value}] performing startup routine...")
+
+            try:
+                update_state(ProcessorState.STARTING)
+                self.startup()
+
+            except SaaSRuntimeException as e:
+                state = update_state(ProcessorState.FAILED)
+                logger.error(
+                    f"[adapter:{self._proc_short_id}:{state.value}] start-up failed: [{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = update_state(ProcessorState.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[adapter:{self._proc_short_id}:{state.value}] start-up failed: {e}\n{trace}")
+
+            else:
+                state = update_state(ProcessorState.OPERATIONAL)
+                logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has started up.")
+
+        # while the processor is not stopped, and there are pending jobs, execute them
+        # (either in sequence or concurrently)
+        while state == ProcessorState.OPERATIONAL:
+            try:
+                # can we add a job? do we have a job?
+                if (self._job_concurrency or len(self._active) == 0) and len(self._pending) > 0:
+                    # get the job
+                    with self._mutex:
+                        context = self._pending.pop(0)
+
+                        # create a job runner
+                        runner = JobRunner(self, context)
+                        self._active[context.job_id()] = runner
+
+                    # start the job runner
+                    logger.info(f"[adapter:{self._proc_short_id}:{state.value}] starting job runner "
+                                f"for {runner.job.id}:{context.job().proc_name}.")
+                    runner.start()
+
+                    # try if there is another job pending right away
+                    continue
+
+                else:
+                    # wait a bit...
+                    time.sleep(0.5)
+
+            except SaaSRuntimeException as e:
+                state = update_state(ProcessorState.FAILED)
+                logger.error(
+                    f"[adapter:{self._proc_short_id}:{state.value}] processing jobs failed: "
+                    f"[{e.id}] {e.reason} {e.details}")
+
+            except Exception as e:
+                state = update_state(ProcessorState.FAILED)
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                logger.error(f"[adapter:{self._proc_short_id}:{state.value}] processing jobs failed: {e}\n{trace}")
+
+        if state == ProcessorState.STOPPING:
+            # purge jobs before shutting down
+            with self._mutex:
+                for job_type, context in self._pending:
+                    logger.info(
+                        f"[adapter:{self._proc_short_id}:{state.value}] purged pending job: "
+                        f"{job_type} {context.status.job}"
+                    )
+                self._pending = []
+
+                for job_id, runner in self._active.items():
+                    runner.cancel()
+                    logger.info(f"[adapter:{self._proc_short_id}:{state.value}] purged active job: {runner.job}")
+                self._active = {}
+
+            logger.info(f"[adapter:{self._proc_short_id}:{state.value}] performing shutdown routine...")
+            self.shutdown()
+
+            state = update_state(ProcessorState.STOPPED)
+            logger.info(f"[adapter:{self._proc_short_id}:{state.value}] has stopped.")
+
+            # delete the processor
+            logger.info(f"[adapter:{self._proc_short_id}] deleting processor..")
+            self.delete()
+
+            # delete the db record
+            logger.info(f"[adapter:{self._proc_short_id}] deleting DB record...")
+            self._db_wrapper.delete()
 
     @abstractmethod
     def delete(self) -> None:
@@ -437,14 +815,14 @@ class RTIProcessorAdapter(Thread, ABC):
     def status(self) -> ProcessorStatus:
         with self._mutex:
             return ProcessorStatus(
-                state=self._state.value,
-                pending=[context.job for _, context in self._pending],
-                active=self._active.job if self._active else None
+                state=str(self._db_wrapper.state().value),
+                pending=[context.job() for context in self._pending],
+                active=[runner.job for _, runner in self._active.items()]
             )
 
     def pre_execute(self, working_directory: str, context: JobContext) -> None:
-
-        logger.info(f"[adapter:{self._proc_id}][{context.job.id}] perform pre-execute routine...")
+        logger.info(f"[adapter:{self._proc_short_id}:{self.state.value}] "
+                    f"[job:{shorten_id(context.job().id)}] performing pre-execution routine...")
 
         # store by-value input data objects (if any)
         self._store_value_input_data_objects(working_directory, context)
@@ -467,180 +845,56 @@ class RTIProcessorAdapter(Thread, ABC):
         self._verify_outputs(context)
 
     def post_execute(self, job_id: str) -> None:
-        logger.info(f"[adapter:{self._proc_id}][{job_id}] perform post-execute routine...")
+        logger.info(f"[adapter:{self._proc_short_id}:{self.state.value}] "
+                    f"[job:{shorten_id(job_id)}] performing post-execution routine...")
 
     def add(self, context: JobContext) -> None:
         with self._mutex:
             # are we accepting jobs?
-            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
+            if self.state in [ProcessorState.STOPPING, ProcessorState.STOPPED]:
                 raise ProcessorNotAcceptingJobsError({
                     'proc_id': self._proc_id,
-                    'job': context.job.dict()
+                    'job': context.job().dict()
                 })
 
-            self._pending.append(("new", context))
+            # create working directory (if it doesn't already exist)
+            if not os.path.exists(context.wd_path()):
+                os.makedirs(context.wd_path(), exist_ok=True)
 
-    def resume(self, context: JobContext) -> None:
-        with self._mutex:
-            # are we accepting jobs?
-            if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
-                raise ProcessorNotAcceptingJobsError({
-                    'proc_id': self._proc_id,
-                    'job': context.job.dict()
-                })
+            # write the job descriptor  (if it doesn't already exist)
+            if not os.path.isfile(context.descriptor_path()):
+                with open(context.descriptor_path(), 'w') as f:
+                    f.write(json.dumps(context.job().dict(), indent=4))
 
-            self._pending.append(('resume', context))
+            # add the job to the pending queue
+            self._pending.append(context)
 
     def pending_jobs(self) -> List[Job]:
         with self._mutex:
-            return [context.job for _, context in self._pending]
+            return [job_state.job() for job_state in self._pending]
 
-    def active_job(self) -> Optional[Job]:
+    def active_jobs(self) -> List[Job]:
         with self._mutex:
-            return self._active.job if self._active else None
+            return [runner.job for _, runner in self._active.items()]
 
-    def run(self) -> None:
-        try:
-            logger.info(f"[adapter:{self._proc_id}] starting up...")
-            self._state = ProcessorState.STARTING
-            self.startup()
-
-        except SaaSRuntimeException as e:
-            logger.error(f"[adapter:{self._proc_id}] starting up failed: [{e.id}] {e.reason} {e.details}")
-            self._state = ProcessorState.FAILED
-
-        except Exception as e:
-            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logger.error(f"[adapter:{self._proc_id}] starting up failed: {e}\n{trace}")
-            self._state = ProcessorState.FAILED
-
-        else:
-            self._state = ProcessorState.WAITING
-            logger.info(f"[adapter:{self._proc_id}] started.")
-
-        while self._state != ProcessorState.STOPPING and self._state != ProcessorState.STOPPED:
-            # wait for a pending job (or for adapter to become inactive)
-            self._active = None
-            self._state = ProcessorState.WAITING
-            pending_job = self._wait_for_pending_job()
-            if not pending_job:
-                break
-
-            # process a job
-            job_type, context = pending_job
-            self._active = context
-            self._state = ProcessorState.BUSY
-
-            # set job state
-            context.state = JobStatus.State.RUNNING
-            wd_path = os.path.join(self._job_wd_path, context.job.id)
-
-            try:
-                if job_type == 'new':
-                    # perform pre-execute routine
-                    self.pre_execute(wd_path, context)
-
-                    # instruct processor adapter to execute the job
-                    self.execute(wd_path, context)
-
-                elif job_type == 'resume':
-                    # instruct processor adapter to resume the job
-                    self.connect_and_monitor(context)
-
-                else:
-                    raise SaaSRuntimeException(f"unexpected job type '{pending_job[0]}'")
-
-                # perform post-execute routine
-                self.post_execute(context.job.id)
-
-                # if we reach here the job is either running or cancelled
-                assert(context.state in [JobStatus.State.RUNNING, JobStatus.State.CANCELLED])
-                if context.state == JobStatus.State.RUNNING:
-                    context.state = JobStatus.State.SUCCESSFUL
-
-            except RunCommandError as e:
-                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                print("!!!")
-                print(trace)
-                print("!!!")
-                context.add_error('timeout while running job', e.content)
-                context.state = JobStatus.State.TIMEOUT
-
-            except SaaSRuntimeException as e:
-                context.add_error('error while running job', e.content)
-                context.state = JobStatus.State.FAILED
-
-            except Exception as e:
-                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-                context.add_error('unexpected exception while running job',
-                                  ExceptionContent(id='none', reason=f"{e}", details={
-                                      'trace': trace
-                                  }))
-                context.state = JobStatus.State.FAILED
-
-            # if the job history is not to be retained, delete its contents (with exception of the status and
-            # the job descriptor)
-            if not context.job.retain:
-                exclusions = ['job_descriptor.json', 'job_status.json', 'execute_sh.stderr', 'execute_sh.stdout',
-                              'execute_sh.pid', 'execute.sh']
-                logger.info(f"[adapter:{self._proc_id}][{context.job.id}] delete working directory contents "
-                            f"at {wd_path} (exclusions: {exclusions})...")
-
-                # collect all files in the directory
-                files = os.listdir(wd_path)
-                for file in files:
-                    # if the item is not in the exclusion list, delete it
-                    if not file.endswith(tuple(exclusions)):
-                        path = os.path.join(wd_path, file)
-                        if os.path.isfile(path):
-                            os.remove(path)
-                        elif os.path.isdir(path):
-                            shutil.rmtree(path)
-                        elif os.path.islink(path):
-                            os.unlink(path)
-                        else:
-                            logger.warning(f"Encountered neither file nor directory: {path}")
-
-        logger.info(f"[adapter:{self._proc_id}] shutting down...")
-        self._state = ProcessorState.STOPPING
-        self._purge_pending_jobs()
-        self.shutdown()
-
-        logger.info(f"[adapter:{self._proc_id}] shut down.")
-        self._state = ProcessorState.STOPPED
-
-    def _wait_for_pending_job(self) -> Optional[tuple[str, JobContext]]:
-        while True:
-            with self._mutex:
-                # if the adapter has become inactive, return immediately.
-                if self._state == ProcessorState.STOPPING or self._state == ProcessorState.STOPPED:
-                    return None
-
-                # if there is a job, return it
-                elif len(self._pending) > 0:
-                    return self._pending.pop(0)
-
-            time.sleep(0.1)
-
-    def _purge_pending_jobs(self) -> None:
+    def pop_job_runner(self, job_id: str) -> Optional[JobRunner]:
         with self._mutex:
-            while len(self._pending) > 0:
-                job_type, status_logger = self._pending.pop(0)
-                logger.info(f"purged pending job: {job_type} {status_logger.status.job}")
+            runner = self._active.pop(job_id) if job_id in self._active else None
+            return runner
 
     def _lookup_reference_input_data_objects(self, context: JobContext) -> dict:
-        context.make_note('step', "lookup by-reference input data objects")
+        context.put_note('step', "lookup by-reference input data objects")
 
         # do we have any by-reference input data objects in the first place?
         pending = {item.obj_id: item.user_signature if item.user_signature else None
-                   for item in context.job.task.input if item.type == 'reference'}
+                   for item in context.job().task.input if item.type == 'reference'}
         if len(pending) == 0:
             return {}
 
         # get the user identity
-        user = self._node.db.get_identity(context.job.task.user_iid)
+        user = self._node.db.get_identity(context.job().task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(context.job.task.user_iid)
+            raise IdentityNotFoundError(context.job().task.user_iid)
 
         # lookup all referenced data objects using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -693,7 +947,7 @@ class RTIProcessorAdapter(Thread, ABC):
     def _fetch_reference_input_data_objects(self, ephemeral_key: KeyPair, obj_records: dict, working_directory: str,
                                             context: JobContext) -> list[dict]:
 
-        context.make_note('step', "fetch by-reference input data objects")
+        context.put_note('step', "fetch by-reference input data objects")
 
         # do we have any data objects to fetch to begin with?
         if len(obj_records) == 0:
@@ -701,9 +955,9 @@ class RTIProcessorAdapter(Thread, ABC):
             return []
 
         # get the user identity
-        user = self._node.db.get_identity(context.job.task.user_iid)
+        user = self._node.db.get_identity(context.job().task.user_iid)
         if user is None:
-            raise IdentityNotFoundError(context.job.task.user_iid)
+            raise IdentityNotFoundError(context.job().task.user_iid)
 
         # fetch input data objects one by one using the P2P protocol
         protocol = DataObjectRepositoryP2PProtocol(self._node)
@@ -716,7 +970,7 @@ class RTIProcessorAdapter(Thread, ABC):
             # fetch the data object
             custodian: NodeInfo = record['custodian']
             protocol.fetch(custodian.p2p_address, obj_id, meta_path, content_path,
-                           context.job.task.user_iid if record['access_restricted'] else None,
+                           context.job().task.user_iid if record['access_restricted'] else None,
                            record['user_signature'] if record['access_restricted'] else None)
 
             # obtain the content hash for this data object
@@ -750,7 +1004,7 @@ class RTIProcessorAdapter(Thread, ABC):
                     'receiver': user.id,
                     'request': request
                 })
-                context.make_note('requests', requests)
+                context.put_note('requests', requests)
 
                 # add on to the list of pending items
                 pending_content_keys.append({
@@ -760,7 +1014,7 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
 
         # create symbolic links to the contents for every input AND update references with c_hash
-        for item in context.job.task.input:
+        for item in context.job().task.input:
             if item.type == 'reference':
                 create_symbolic_link(item.name, f"{item.obj_id}.content",
                                      working_directory=working_directory)
@@ -775,7 +1029,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
     def _decrypt_reference_input_data_objects(self, ephemeral_key: KeyPair, pending_content_keys: list[dict],
                                               context: JobContext) -> None:
-        context.make_note('step', "decrypt by-reference input data objects")
+        context.put_note('step', "decrypt by-reference input data objects")
         while len(pending_content_keys) > 0:
             need_sleep = True
             for item in pending_content_keys:
@@ -798,8 +1052,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _store_value_input_data_objects(self, working_directory: str, context: JobContext) -> None:
-        context.make_note('step', "store by-value input data objects")
-        for item in context.job.task.input:
+        context.put_note('step', "store by-value input data objects")
+        for item in context.job().task.input:
             # if it is a 'value' input then store it to the working directory
             if item.type == 'value':
                 input_content_path = os.path.join(working_directory, item.name)
@@ -816,8 +1070,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _verify_inputs(self, working_directory: str, context: JobContext) -> None:
-        context.make_note('step', 'verify inputs: data object types and formats')
-        for item in context.job.task.input:
+        context.put_note('step', 'verify inputs: data object types and formats')
+        for item in context.job().task.input:
             obj_name = item.name
 
             # check if data type/format indicated in processor descriptor and data object descriptor match
@@ -848,8 +1102,8 @@ class RTIProcessorAdapter(Thread, ABC):
         context.remove_note('step')
 
     def _verify_outputs(self, context: JobContext) -> None:
-        context.make_note('step', 'verify outputs: data object owner identities')
-        for item in context.job.task.output:
+        context.put_note('step', 'verify outputs: data object owner identities')
+        for item in context.job().task.output:
             owner = self._node.db.get_identity(item.owner_iid)
             if owner is None:
                 raise DataObjectOwnerNotFoundError({
@@ -858,14 +1112,14 @@ class RTIProcessorAdapter(Thread, ABC):
                 })
         context.remove_note('step')
 
-    def _push_data_object(self, obj_name: str, working_directory: str, context: JobContext) -> None:
+    def push_data_object(self, obj_name: str, wd_path: str, context: JobContext) -> None:
         # convenience variables
-        task_out_items = {item.name: item for item in context.job.task.output}
+        task_out_items = {item.name: item for item in context.job().task.output}
         task_out = task_out_items[obj_name]
         proc_out = self._output_interface[obj_name]
 
         # check if the output data object exists
-        output_content_path = os.path.join(working_directory, obj_name)
+        output_content_path = os.path.join(wd_path, obj_name)
         if not os.path.isfile(output_content_path):
             raise DataObjectContentNotFoundError({
                 'output_name': obj_name,
@@ -933,7 +1187,7 @@ class RTIProcessorAdapter(Thread, ABC):
         }
 
         # update recipe inputs
-        for item0 in context.job.task.input:
+        for item0 in context.job().task.input:
             spec = self._input_interface[item0.name]
             if item0.type == 'value':
                 recipe['consumes'][item0.name] = {
@@ -952,17 +1206,17 @@ class RTIProcessorAdapter(Thread, ABC):
         # upload the data object to the DOR (the owner is the node for now
         # so we can update tags in the next step)
         proxy = DORProxy(target_address)
-        meta = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
-                                     proc_out.data_type, proc_out.data_format, recipe=recipe)
+        obj = proxy.add_data_object(output_content_path, self._node.identity, restricted_access, content_encrypted,
+                                    proc_out.data_type, proc_out.data_format, recipe=recipe)
 
         # update tags with information from the job
-        meta = proxy.update_tags(meta.obj_id, self._node.keystore, [
+        obj = proxy.update_tags(obj.obj_id, self._node.keystore, [
             DataObject.Tag(key='name', value=obj_name),
-            DataObject.Tag(key='job_id', value=context.job.id)
+            DataObject.Tag(key='job_id', value=context.job().id)
         ])
 
         # transfer ownership to the new owner
-        meta = proxy.transfer_ownership(meta.obj_id, self._node.keystore, owner)
+        obj = proxy.transfer_ownership(obj.obj_id, self._node.keystore, owner)
 
         # set the output data object ids in the status
-        context.set_output(obj_name, meta)
+        context.pop_pending_output(obj_name, obj)

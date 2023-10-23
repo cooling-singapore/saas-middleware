@@ -4,11 +4,12 @@ import traceback
 from datetime import datetime, timezone
 from typing import Union, Optional, BinaryIO, Tuple
 
+import canonicaljson
 import requests
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 from snappy import snappy
 
-from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
 from saas.core.keystore import Keystore
 from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
     UnsuccessfulConnectionError
@@ -37,13 +38,10 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
             content = response.json()
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            raise SaaSRuntimeException("Unexpected error", details={
-                'exception': e,
-                'trace': trace
-            })
+            raise UnsuccessfulRequestError(response.reason, details={'trace': trace})
 
         raise UnsuccessfulRequestError(
-            content['reason'], content['id'], content['details'] if 'details' in content else None
+            content['reason'], exception_id=content['id'], details=content['details'] if 'details' in content else None
         )
 
     else:
@@ -52,25 +50,16 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
         })
 
 
-def generate_authorisation_token(authority: Keystore, url: str, body: dict = None, precision: int = 5) -> str:
-    slot = int(time.time() / precision)
+def generate_authorisation_token(authority: Keystore, url: str, body: dict = None, precision: int = 30) -> str:
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
-    # logger.info("sign_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-    token = hash_string_object(url).hex()
-
+    digest.update(url.encode('utf-8'))
     if body:
-        # logger.info("sign_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-        token += hash_json_object(body).hex()
+        digest.update(canonicaljson.encode_canonical_json(body))
+    slot = int(time.time() / precision)
+    digest.update(slot.to_bytes(4, byteorder='big'))
 
-    # logger.info("sign_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-    token += hash_bytes_object(bytes(slot)).hex()
-
-    # logger.info("sign_authorisation_token\tH(self.public_as_string())={}".format(hash_string_object(self.public_as_string()).hex()))
-    token += hash_string_object(authority.signing_key.public_as_string()).hex()
-
-    token = hash_string_object(token)
-    # logger.info("sign_authorisation_token\ttoken={}".format(token.hex()))
-
+    token = digest.finalize()
     return authority.sign(token)
 
 

@@ -5,6 +5,8 @@ import time
 from threading import Lock
 from typing import Optional
 
+from saas.meta import __version__
+
 import saas.p2p.service as p2p_service
 import saas.dor.service as dor_service
 import saas.rest.service as rest_service
@@ -56,13 +58,17 @@ class Node:
             p2p_address=self.p2p.address(),
             rest_address=self.rest.address() if self.rest else None,
             retain_job_history=self.rti.retain_job_history if self.rti else None,
-            strict_deployment=self.rti.strict_deployment if self.rti else None
+            strict_deployment=self.rti.strict_deployment if self.rti else None,
+            job_concurrency=self.rti.job_concurrency if self.rti else None
         )
 
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
                 retain_job_history: bool = False, strict_deployment: bool = True,
-                bind_all_address: bool = False) -> None:
+                bind_all_address: bool = False, job_concurrency: bool = False) -> None:
+
+        logger.info(f"saas-middleware {__version__}")
+
         logger.info("starting P2P service.")
         self.p2p = p2p_service.P2PService(self, server_address, bind_all_address)
         self.p2p.start_service()
@@ -83,8 +89,10 @@ class Node:
             endpoints += self.dor.endpoints()
 
         if enable_rti:
-            self.rti = rti_service.RTIService(self, retain_job_history, strict_deployment)
-            logger.info("enabling RTI service.")
+            db_path = f"sqlite:///{os.path.join(self._datastore_path, 'rti.db')}"
+            self.rti = rti_service.RTIService(self, db_path, retain_job_history=retain_job_history,
+                                              strict_deployment=strict_deployment, job_concurrency=job_concurrency)
+            logger.info(f"enabling RTI service using {db_path}.")
             endpoints += self.rti.endpoints()
 
         if rest_address is not None:
@@ -166,14 +174,15 @@ class Node:
     @classmethod
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
-               enable_dor=False, enable_rti=False, retain_job_history=False, strict_deployment=True,
-               bind_all_address=False) -> Node:
+               enable_dor: bool = False, enable_rti: bool = False, retain_job_history: bool = False,
+               strict_deployment: bool = True, bind_all_address: bool = False, job_concurrency: bool = False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
                      rest_address=rest_address, boot_node_address=boot_node_address,
                      retain_job_history=retain_job_history,
                      strict_deployment=strict_deployment,
-                     bind_all_address=bind_all_address)
+                     bind_all_address=bind_all_address,
+                     job_concurrency=job_concurrency)
 
         return node

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,5 +36,7 @@ class SSHCredentials(BaseModel):
     """
     host: str = Field(..., title="Host", description="The host name or IP of the remote machine.", example="35.34.55.2")
     login: str = Field(..., title="Login", description="The login for the remote machine.")
-    key: str = Field(..., title="Key/Password", description="The key or the password needed to login to the remote machine.")
-    key_is_password: bool = Field(..., title="Key is Password", description="Indicates if the key represents a password.", example=False)
+    key: str = Field(..., title="Key", description="The key content.")
+    key_path: Optional[str] = Field(title="Key Path", description="An optional path to where the key has be stored.")
+    is_cygwin: Optional[bool] = Field(title="Is Cygwin", description="An optional flag that indicates if the remote machine usies cygwin.")
+    home_path: Optional[str] = Field(title="Home Path", description="An optional path to the home folder.")

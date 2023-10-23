@@ -2,9 +2,11 @@ import json
 import os
 import time
 
+import canonicaljson
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 from fastapi import Request
 
-from saas.core.helpers import hash_string_object, hash_json_object, hash_bytes_object
 from saas.core.identity import Identity
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import AuthorisationFailedError
@@ -13,35 +15,18 @@ from saas.rti.schemas import Job
 
 
 def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None,
-                               precision: int = 5) -> bool:
-    # determine time slots (we allow for some variation before and after)
-    ref = int(time.time() / precision)
-    slots = [ref - 1, ref, ref + 1]
+                               precision: int = 30) -> bool:
 
-    # generate the token for each time slot and check if for one the signature is valid.
-    for slot in slots:
-        # logger.info("verify_authorisation_token\tH(url)={}".format(hash_json_object(url).hex()))
-        token = hash_string_object(url).hex()
+    digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
-        if body:
-            # logger.info("verify_authorisation_token\tH(body)={}".format(hash_json_object(body).hex()))
-            token += hash_json_object(body).hex()
+    digest.update(url.encode('utf-8'))
+    if body:
+        digest.update(canonicaljson.encode_canonical_json(body))
+    slot = int(time.time() / precision)
+    digest.update(slot.to_bytes(4, byteorder='big'))
 
-        # logger.info("verify_authorisation_token\tH(bytes(slot))={}".format(hash_bytes_object(bytes(slot)).hex()))
-        token += hash_bytes_object(bytes(slot)).hex()
-
-        # logger.info("verify_authorisation_token\tH(self.public_as_string())={}".format(
-        #     hash_string_object(self.public_as_string()).hex()))
-        token += hash_string_object(identity.s_public_key).hex()
-
-        token = hash_string_object(token)
-        # logger.info("verify_authorisation_token\ttoken={}".format(token.hex()))
-
-        if identity.verify(token, signature):
-            return True
-
-    # no valid signature for any of the eligible timeslots
-    return False
+    token = digest.finalize()
+    return identity.verify(token, signature)
 
 
 class VerifyAuthorisation:

@@ -1,8 +1,12 @@
+import json
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from saas.core.helpers import generate_random_string
+from saas.core.logging import Logging
+
+logger = Logging.get('saas.core')
 
 
 class ExceptionContent(BaseModel):
@@ -15,8 +19,22 @@ class ExceptionContent(BaseModel):
 
 
 class SaaSRuntimeException(Exception):
-    def __init__(self, reason: str, details: dict = None):
-        self._content = ExceptionContent(id=generate_random_string(16), reason=reason, details=details)
+    def __init__(self, reason: str, details: dict = None, id: str = None):
+        self._content = ExceptionContent(id=id if id else generate_random_string(16), reason=reason, details=details)
+
+        # check if the details can be JSON encoded
+        try:
+            json.dumps(self._content.dict())
+        except TypeError:
+            logger.warning(f"Encountered JSON incompatible exception details: class={self.__class__.__name__} "
+                           f"id={self._content.id} details: {self._content.details}")
+
+            # convert detail values into strings as a fallback
+            self._content.details = {
+                k: str(v) for k, v in self._content.details.items()
+            }
+        except Exception as e:
+            logger.error(f"Encountered JSON incompatible exception content: {e} {reason} {details}")
 
     @property
     def id(self):

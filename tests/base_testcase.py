@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import traceback
 
 from multiprocessing import Lock
 from typing import List
@@ -102,20 +103,14 @@ def update_keystore_from_credentials(keystore: Keystore, credentials_path: str =
     # do we have SSH credentials?
     if 'ssh-credentials' in credentials:
         for item in credentials['ssh-credentials']:
-            # password or key path?
-            if 'password' in item:
-                keystore.ssh_credentials.update(item['name'],
-                                                SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=item['password'], key_is_password=True))
-
-            elif 'key_path' in item:
+            if 'key_path' in item:
                 # read the ssh key from file
                 with open(item['key_path'], 'r') as f:
                     ssh_key = f.read()
 
                 keystore.ssh_credentials.update(item['name'],
                                                 SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=ssh_key, key_is_password=False))
+                                                               key=ssh_key, key_path=item['key_path']))
 
             else:
                 raise RuntimeError(f"Unexpected SSH credentials format: {item}")
@@ -178,7 +173,11 @@ class TestContext:
             node = self.nodes[name]
             node.shutdown(leave_network=False)
 
-        shutil.rmtree(self._temp_testing_dir)
+        try:
+            shutil.rmtree(self._temp_testing_dir)
+        except OSError as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.error(f"exception during cleanup() -> {e} {trace}")
 
     def create_keystores(self, n: int, use_credentials: bool = False) -> List[Keystore]:
         keystores = []
@@ -223,7 +222,7 @@ class TestContext:
 
     def get_node(self, keystore: Keystore, enable_rest: bool = False,
                  use_dor: bool = True, use_rti: bool = True, retain_job_history: bool = True,
-                 strict_deployment: bool = False, wd_path: str = None) -> Node:
+                 strict_deployment: bool = False, job_concurrency: bool = False, wd_path: str = None) -> Node:
         name = keystore.identity.id
         if name in self.nodes:
             return self.nodes[name]
@@ -239,7 +238,8 @@ class TestContext:
         node.startup(p2p_address, enable_dor=use_dor, enable_rti=use_rti,
                      rest_address=rest_address if enable_rest else None,
                      retain_job_history=retain_job_history if use_rti else None,
-                     strict_deployment=strict_deployment if use_rti else None)
+                     strict_deployment=strict_deployment if use_rti else None,
+                     job_concurrency=job_concurrency if use_rti else None)
 
         self.nodes[name] = node
 
