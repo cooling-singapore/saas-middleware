@@ -174,8 +174,16 @@ class RTIProcUndeploy(CLICommand):
                 print(f"Processor {proc_id} is not deployed at {args['address']}. Skipping.")
                 continue
 
+            # are there any jobs pending for this processor?
+            status: ProcessorStatus = rti.get_status(proc_id)
+            if len(status.pending) > 0 or len(status.active) > 0:
+                if not prompt_for_confirmation(f"Processor {proc_id} has pending/active jobs. Proceed to undeploy "
+                                               f"processor? If yes, all pending/active jobs will be purged.",
+                                               default=False):
+                    continue
+
             # undeploy the processor
-            print(f"Undeploy processor {proc_id}...", end='')
+            print(f"Undeploying processor {proc_id}...", end='')
             try:
                 rti.undeploy(proc_id, keystore)
                 print("Done")
