@@ -99,7 +99,7 @@ def main():
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
         default_log_level = 'INFO'
 
-        cli = CLIParser('DUCT Dashboard command line interface (CLI)', arguments=[
+        cli = CLIParser('Dashboard command line interface (CLI)', arguments=[
             Argument('--datastore', dest='datastore', action='store', default=default_datastore,
                      help=f"path to the datastore (default: '{default_datastore}')"),
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
