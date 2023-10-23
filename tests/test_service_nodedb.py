@@ -53,6 +53,14 @@ def execution_node(test_context, extra_keystores):
     return node
 
 
+@pytest.fixture(scope='function')
+def transient_node(test_context, keystore, known_users):
+    node = test_context.get_node(keystore, use_dor=True, use_rti=True, enable_rest=True)
+    for keystore in known_users:
+        node.db.update_identity(keystore.identity)
+    return node
+
+
 def test_rest_get_node(node_db_proxy):
     node = node_db_proxy.get_node()
     assert (node is not None)
@@ -110,16 +118,16 @@ def test_rest_update_identity_extra(test_context, node_db_proxy):
     assert(len(identities1) == len(identities0) + 1)
 
 
-def test_node_self_awareness(node, known_users):
-    identities = node.db.get_identities()
+def test_node_self_awareness(transient_node, keystore, known_users):
+    identities = transient_node.db.get_identities()
     assert(len(identities) == 1 + len(known_users))
     identities = {i.id: i for i in identities}
     print(identities)
-    assert(identities[node.identity.id].name == 'node')
+    assert(identities[transient_node.identity.id].name == keystore.identity.name)
 
-    network = node.db.get_network()
+    network = transient_node.db.get_network()
     assert(len(network) == 1)
-    assert(network[0].identity.id == node.identity.id)
+    assert(network[0].identity.id == transient_node.identity.id)
 
 
 def test_different_address(test_context, known_users, node, node_db_proxy):

@@ -3,8 +3,10 @@ import os
 from typing import List, Union, Optional, Dict
 
 from fastapi import Depends, Form, UploadFile, File
+from fastapi.responses import Response, StreamingResponse
 from snappy import snappy
 
+from saas.meta import __version__
 from saas.core.exceptions import ExceptionContent
 from saas.core.helpers import generate_random_string, get_timestamp_now
 from saas.core.identity import Identity
@@ -20,15 +22,13 @@ from saas.rti.schemas import Processor, Job, ProcessorStatus, JobStatus, DeployP
     Permission
 from saas.sdk.app.auth import User
 from saas.sdk.app.base import Application, get_current_active_user
-from starlette.responses import Response, StreamingResponse
 
-from relay.meta import __title__, __version__, __description__
 from relay.checks import CheckIfUser
 
 logger = Logging.get('relay.server')
 
 
-RELAY_ENDPOINT_PREFIX_BASE = '/relay/v1'
+endpoint_prefix_base = '/relay/v1'
 
 
 class RelayRuntimeError(Exception):
@@ -72,8 +72,9 @@ def _stream_contents(content_path: str, delete_content_file: bool = True) -> Res
 
 class RelayServer(Application):
     def __init__(self, server_address: (str, int), node_address: (str, int), wd_path: str) -> None:
-        super().__init__(server_address, node_address, (RELAY_ENDPOINT_PREFIX_BASE, None), wd_path,
-                         __title__, __version__, __description__)
+        super().__init__(server_address, node_address, (endpoint_prefix_base, None), wd_path,
+                         'Simulation-as-a-Service Relay', __version__, 'JWT-based authentication wrapper for SaaS'
+                                                                       'infrastructure.')
 
         self._job_mapping: Dict[str, NodeInfo] = {}
         self._user_to_proxy: Dict[str, Identity] = {}
@@ -81,9 +82,9 @@ class RelayServer(Application):
     def endpoints(self) -> List[EndpointDefinition]:
         check_if_user = Depends(CheckIfUser(self))
 
-        db_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'db')
-        dor_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'dor')
-        rti_endpoint_prefix = (RELAY_ENDPOINT_PREFIX_BASE, 'rti')
+        db_endpoint_prefix = (endpoint_prefix_base, 'db')
+        dor_endpoint_prefix = (endpoint_prefix_base, 'dor')
+        rti_endpoint_prefix = (endpoint_prefix_base, 'rti')
 
         return [
             EndpointDefinition('GET', db_endpoint_prefix, 'node',

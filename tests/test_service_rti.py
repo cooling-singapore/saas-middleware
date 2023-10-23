@@ -630,9 +630,9 @@ def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_proc
     print(json.dumps(provenance.dict(), indent=2))
 
 
-def test_job_concurrency(test_context, concurrent_node, dor_proxy, rti_proxy, deployed_test_processor):
+def test_job_concurrency(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
     wd_path = test_context.testing_dir
-    owner = concurrent_node.keystore
+    owner = node.keystore
     results = {}
     failed = {}
     rnd = random.Random()
@@ -903,7 +903,7 @@ def deployed_test_processor_docker(test_processor_info, rti_proxy, node):
     prune_image(test_proc_id)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def remote_docker_credentials(keystore):
     cred = keystore.ssh_credentials.get('docker')
     if cred is None:

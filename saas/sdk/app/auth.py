@@ -85,6 +85,12 @@ class UserDB:
         cls.migrate_v0_to_v1()
 
     @classmethod
+    def delete(cls, wd_path: str) -> None:
+        for path in [os.path.join(wd_path, 'keystores'), os.path.join(wd_path, 'user.db')]:
+            if os.path.isfile(path):
+                os.remove(path)
+
+    @classmethod
     def publish_all_user_identities(cls, node_address: (str, int)) -> None:
         for user in UserDB.all_users():
             publish_identity(node_address, user.identity)

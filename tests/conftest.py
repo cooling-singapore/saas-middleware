@@ -4,9 +4,10 @@ import pytest
 
 from saas.core.keystore import Keystore
 from saas.dor.proxy import DORProxy
+from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
-from tests.base_testcase import TestContext, update_keystore_from_credentials
+from tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
 
 
 @pytest.fixture()
@@ -17,30 +18,26 @@ def test_context():
     context.cleanup()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def keystore():
     with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, "node", "no-email-provided", "password")
+        _keystore = Keystore.create(tempdir, "keystore1", "no-email-provided", "password")
         update_keystore_from_credentials(_keystore)
         yield _keystore
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
+def another_keystore():
+    with tempfile.TemporaryDirectory() as tempdir:
+        _keystore = Keystore.create(tempdir, "keystore2", "no-email-provided", "password")
+        update_keystore_from_credentials(_keystore)
+        yield _keystore
+
+
+@pytest.fixture(scope="module")
 def temp_directory():
     with tempfile.TemporaryDirectory() as tempdir:
         yield tempdir
-
-
-@pytest.fixture()
-def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
-    return _node
-
-
-@pytest.fixture()
-def concurrent_node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=True)
-    return _node
 
 
 @pytest.fixture()
@@ -69,3 +66,19 @@ def extra_keystores():
             keystore = Keystore.create(tempdir, f"keystore-{i}", "no-email-provided", "password")
             keystores.append(keystore)
         yield keystores
+
+
+@pytest.fixture(scope="module")
+def node(keystore):
+    with tempfile.TemporaryDirectory() as tempdir:
+        rest_address = PortMaster.generate_rest_address()
+        p2p_address = PortMaster.generate_p2p_address()
+
+        _node = Node.create(keystore=keystore, storage_path=tempdir,
+                            p2p_address=p2p_address, boot_node_address=p2p_address, rest_address=rest_address,
+                            enable_dor=True, enable_rti=True, strict_deployment=False, job_concurrency=True,
+                            retain_job_history=True)
+
+        yield _node
+
+        _node.shutdown()
