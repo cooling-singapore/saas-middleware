@@ -573,31 +573,38 @@ class DORService:
         # determine the content hash for the GPP
         c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config, proc_descriptor.dict())
 
-        # determine the object id
-        created_t = get_timestamp_now()
-        obj_id = _generate_object_id(c_hash, GPP_DATA_TYPE, GPP_DATA_FORMAT, p.creators_iid, created_t)
+        # determine the object id (in case of a GPP, it's simply the content hash)
+        obj_id = c_hash
 
         with self._db_mutex:
             with self._Session() as session:
-                # add a new data object record
-                session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
-                                             data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
-                                             created={
-                                                 'timestamp': created_t,
-                                                 'creators_iid': p.creators_iid
-                                             },
-                                             owner_iid=owner.id, access_restricted=False, access=[owner.id],
-                                             tags={},
-                                             details={
-                                                 'source': p.source,
-                                                 'commit_id': p.commit_id,
-                                                 'proc_path': p.proc_path,
-                                                 'proc_config': p.proc_config,
-                                                 'proc_descriptor': proc_descriptor.dict()
-                                             },
-                                             last_accessed=created_t))
+                # do we already have a record for this GPP?
+                if session.query(DataObjectRecord).get(obj_id) is not None:
+                    logger.info(f"GPP object '{obj_id}' already exists -> not adding.")
 
-                session.commit()
+                else:
+                    logger.info(f"GPP object '{obj_id}' does not exist -> adding.")
+
+                    # add a new data object record
+                    created_t = get_timestamp_now()
+                    session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
+                                                 data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
+                                                 created={
+                                                     'timestamp': created_t,
+                                                     'creators_iid': p.creators_iid
+                                                 },
+                                                 owner_iid=owner.id, access_restricted=False, access=[owner.id],
+                                                 tags={},
+                                                 details={
+                                                     'source': p.source,
+                                                     'commit_id': p.commit_id,
+                                                     'proc_path': p.proc_path,
+                                                     'proc_config': p.proc_config,
+                                                     'proc_descriptor': proc_descriptor.dict()
+                                                 },
+                                                 last_accessed=created_t))
+
+                    session.commit()
 
         return self.get_meta(obj_id)
 
