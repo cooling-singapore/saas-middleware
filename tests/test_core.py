@@ -3,6 +3,7 @@ import os
 
 import pytest
 
+from saas.core.exceptions import SaaSRuntimeException
 from saas.core.schemas import GithubCredentials, SSHCredentials
 from saas.core.keystore import Keystore
 from saas.core.eckeypair import ECKeyPair
@@ -314,3 +315,25 @@ def test_rollover(logging, temp_directory):
     assert(os.path.isfile(log_path0))
     assert(os.path.isfile(log_path1))
     assert(os.path.isfile(log_path2))
+
+
+def test_json_incompatible_exception():
+    class SomeClass:
+        pass
+
+    instance = SomeClass()
+
+    # create an exception with details that cannot be JSON encoded. it should still work but everything in details
+    # is turned into a string.
+    e = SaaSRuntimeException('something happened...', details={
+        'a': 34,
+        'b': 4.5,
+        'c': 'sdfs',
+        'd': {
+            'd1': 'sd'
+        },
+        'e': instance
+    })
+
+    for k, v in e.details.items():
+        assert isinstance(v, str)
