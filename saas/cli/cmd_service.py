@@ -1,15 +1,61 @@
 import os
-import sys
+import signal
 import time
+import traceback
 
 from InquirerPy.base import Choice
 
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_for_confirmation, prompt_if_missing, \
     default_if_missing, initialise_storage_folder, prompt_for_selection, load_keystore, extract_address
+from saas.core.exceptions import SaaSRuntimeException
 from saas.core.logging import Logging
 from saas.node import Node
 
 logger = Logging.get('cli.service')
+
+
+class WaitForTermination:
+    def __init__(self, node: Node) -> None:
+        self._node = node
+        self._running = True
+
+    def terminate(self) -> None:
+        self._running = False
+
+    def wait_for_termination(self):
+        def handle_sigterm(signum, frame):
+            print("SIGTERM signal received.")
+            self.terminate()
+
+        def handle_keyboard_interruption(signum, frame):
+            print("Keyboard interruption (CTRL+C) received.")
+            self.terminate()
+
+        # register signal handler
+        signal.signal(signal.SIGTERM, handle_sigterm)
+        signal.signal(signal.SIGINT, handle_keyboard_interruption)
+
+        # keep looping until instructed to terminate...
+        while self._running:
+            try:
+                time.sleep(0.5)
+
+            except Exception as e:
+                trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+                print(f"Unexpected exception while waiting to receive termination signals: {e} {trace}")
+                self.terminate()
+
+        # shut down the node gracefully...
+        try:
+            print("Shutting down the node...")
+            self._node.shutdown()
+
+        except SaaSRuntimeException as e:
+            print(f"Exception while shutting down node: {e}")
+
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            print(f"Unexpected exception while shutting down node: {e} {trace}")
 
 
 class Service(CLICommand):
@@ -128,18 +174,5 @@ class Service(CLICommand):
         else:
             print(f"Created '{args['type']}' node instance at {args['rest-address']}/{args['p2p-address']}")
 
-        try:
-            # wait for confirmation to terminate the server
-            terminate = False
-            while not terminate:
-                # only show prompt if shell is interactive
-                if sys.stdin.isatty():
-                    terminate = prompt_for_confirmation("Terminate the server?", default=False)
-                else:
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            print("Received stop signal")
-        finally:
-            print("Shutting down the node...")
-            node.shutdown()
-
+        # wait for termination...
+        WaitForTermination(node).wait_for_termination()
