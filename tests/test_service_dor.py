@@ -166,6 +166,29 @@ def test_add_gpp_with_schema(keystore, dor_proxy):
     assert(result is not None)
 
 
+def test_add_gpp_duplicate(keystore, dor_proxy):
+    owner = keystore.identity
+
+    source = 'https://github.com/cooling-singapore/saas-middleware'
+    commit_id = 'e107901'
+    proc_path = 'examples/adapters/proc_example'
+    proc_config = 'default'
+
+    github_credentials: GithubCredentials = keystore.github_credentials.get(source)
+
+    meta0 = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
+                                          github_credentials=github_credentials)
+    assert(meta0 is not None)
+
+    meta1 = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
+                                          github_credentials=github_credentials)
+    assert(meta1 is not None)
+
+    # uploading the same GPP should result in the same content hash and, in case of a GPP, also in identical obj ids.
+    assert meta0.c_hash == meta1.c_hash
+    assert meta0.obj_id == meta1.obj_id
+
+
 def test_remove(dor_proxy, random_content, known_users):
     c0 = known_users[0]
     c1 = known_users[1]
