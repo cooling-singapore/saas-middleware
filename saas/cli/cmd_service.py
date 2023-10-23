@@ -24,11 +24,11 @@ class WaitForTermination:
 
     def wait_for_termination(self):
         def handle_sigterm(signum, frame):
-            print(f"SIGTERM signal received.")
+            print("SIGTERM signal received.")
             self.terminate()
 
         def handle_keyboard_interruption(signum, frame):
-            print(f"Keyboard interruption (CTRL+C) received.")
+            print("Keyboard interruption (CTRL+C) received.")
             self.terminate()
 
         # register signal handler
