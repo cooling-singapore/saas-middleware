@@ -12,7 +12,7 @@ from saas.dor.proxy import DORProxy
 from saas.dor.schemas import DataObject
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
-from saas.rest.exceptions import AuthorisationFailedError
+from saas.rest.exceptions import AuthorisationFailedError, UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.sdk.app.auth import UserDB, UserAuth
@@ -117,7 +117,17 @@ def gpp(relay_context):
 
     yield gpp
 
-    gpp.delete()
+    try:
+        gpp.delete()
+
+    except UnsuccessfulRequestError as e:
+        if 'Data object not found' in e.reason:
+            # this can happen because we only work with one test processor and its GPP may have already been deleted
+            # elsewhere.
+            pass
+        else:
+            # if it's anything else -> propagate the exception
+            raise e
 
 
 @pytest.fixture()

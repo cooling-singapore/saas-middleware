@@ -199,7 +199,7 @@ def test_remove(dor_proxy, random_content, known_users):
     # try to delete non-existent object
     with pytest.raises(UnsuccessfulRequestError) as e:
         dor_proxy.delete_data_object('invalid obj id', with_authorisation_by=c0)
-    assert('data object does not exist' in e.value.details['reason'])
+    assert('Data object not found' in e.value.reason)
 
     # try to delete with wrong authority
     with pytest.raises(UnsuccessfulRequestError) as e:
