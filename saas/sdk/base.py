@@ -284,17 +284,27 @@ class SDKJob:
             return status
 
     def wait(self, pace: float = 5.0, callback_progress: Callable[[int], None] = None,
-             callback_message: Callable[[LogMessage], None] = None) -> Optional[Dict[str, SDKCDataObject]]:
+             callback_message: Callable[[LogMessage], None] = None,
+             max_no_status: int = 5) -> Optional[Dict[str, SDKCDataObject]]:
         # wait until the job has finished
         prev_progress = None
         prev_message = None
+        no_status_count = 0
         while True:
             # wait for a bit...
             time.sleep(pace)
 
             # check the status (if we have one)
             status = self.status
-            if status is not None:
+            if status is None:
+                no_status_count += 1
+                if no_status_count >= max_no_status:
+                    raise SaaSRuntimeException('Maximum number of consecutive unsuccessful job status requests '
+                                               'exceeded')
+
+            else:
+                no_status_count = 0
+
                 # only update progress if we have a callback and if necessary
                 if callback_progress and (prev_progress is None or prev_progress != status.progress):
                     callback_progress(status.progress)
