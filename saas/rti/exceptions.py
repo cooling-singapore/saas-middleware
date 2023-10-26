@@ -17,9 +17,9 @@ class ProcessorNotDeployedError(RTIException):
         super().__init__('Processor not deployed', details=details)
 
 
-class JobDescriptorNotFoundError(RTIException):
+class JobDBRecordNotFoundError(RTIException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Job descriptor not found', details=details)
+        super().__init__('Job database record not found', details=details)
 
 
 class JobStatusNotFoundError(RTIException):
