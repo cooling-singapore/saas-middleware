@@ -4,11 +4,18 @@ services:
     build: .
     # network_mode "host" does not work on mac, need to map ports manually
     # network_mode: "host"
+    networks:
+      - network
     ports:
       - "5001:5001"
       - "4001:4001"
     environment:
       # TODO: Use docker secrets for password
+      NODE_ID: 1
+      LOG_PATH: /logs/node.log
+      USERSTORE: db
+      DATASTORE: datastore
+      KEYSTORE: /keystore
       PASSWORD: 1234
       KEYSTORE_ID: hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz
       REST_ADDRESS: boot_node:5001
@@ -21,10 +28,17 @@ services:
       - ${HOME}/.logs/boot:/logs
   node_2:
     build: .
+    networks:
+      - network
     ports:
       - "5002:5002"
       - "4002:4002"
     environment:
+      NODE_ID: 2
+      LOG_PATH: /logs/node.log
+      USERSTORE: db
+      DATASTORE: datastore
+      KEYSTORE: /keystore
       PASSWORD: 1234
       KEYSTORE_ID: qpjyum07zdt1lipsg2trt0jnsb0ysies49pa8felbs56lfxir57ofjdddw2eex9g
       REST_ADDRESS: node_2:5002
@@ -37,3 +51,22 @@ services:
       - ${HOME}/.logs/node2:/logs
     depends_on:
       - boot_node
+  # relay_service:
+  #   build:
+  #     context: .
+  #     dockerfile: relay/Dockerfile
+  #   ports:
+  #     - "5003:5003"
+  #     - "4003:4003"
+  #   environment:
+  #     TODO: Use docker secrets for password
+  #     NODE_ID: 1
+  #     PASSWORD: 1234
+  #     KEYSTORE_ID: hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz
+  #     REST_ADDRESS: boot_node:5001
+  #     P2P_ADDRESS: boot_node:4001
+  #     BOOT_NODE: boot_node:4001
+
+networks:
+  network:
+    driver: bridge
