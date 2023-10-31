@@ -23,9 +23,9 @@ services:
       BOOT_NODE: boot_node:4001
     # keystore and datastore are found in /keystore and /datastore of the container
     volumes:
-      - ${HOME}/.keystore:/keystore
-      - ${HOME}/.datastore:/datastore
-      - ${HOME}/.logs/boot:/logs
+      - ${HOME}/.duct/saas-middleware/.keystore:/keystore
+      - ${HOME}/.duct/saas-middleware/.datastore:/datastore
+      - ${HOME}/.duct/saas-middleware/.logs/boot:/logs
   node_2:
     build: .
     networks:
@@ -46,9 +46,9 @@ services:
       BOOT_NODE: boot_node:4001
       STRICT: false
     volumes:
-      - ${HOME}/.keystore:/keystore
-      - ${HOME}/.datastore2:/datastore
-      - ${HOME}/.logs/node2:/logs
+      - ${HOME}/.duct/saas-middleware/.keystore:/keystore
+      - ${HOME}/.duct/saas-middleware/.datastore2:/datastore
+      - ${HOME}/.duct/saas-middleware/.logs/node2:/logs
     depends_on:
       - boot_node
   # relay_service:
