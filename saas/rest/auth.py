@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import hashes
 from fastapi import Request
 
 from saas.core.identity import Identity
+from saas.dor.exceptions import DataObjectNotFoundError
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import AuthorisationFailedError
 from saas.rti.exceptions import ProcessorNotDeployedError, JobDBRecordNotFoundError
@@ -77,10 +78,7 @@ class VerifyIsOwner:
         # get the meta information of the object
         meta = self.node.dor.get_meta(obj_id)
         if meta is None:
-            raise AuthorisationFailedError({
-                'reason': 'data object does not exist',
-                'obj_id': obj_id
-            })
+            raise DataObjectNotFoundError(obj_id)
 
         # check if the identity is the owner of that data object
         if meta.owner_iid != identity.id:

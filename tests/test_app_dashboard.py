@@ -9,6 +9,7 @@ import pytest
 from saas.core.logging import Logging
 from saas.dor.schemas import DataObject, GPP_DATA_TYPE
 from saas.node import Node
+from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.schemas import Task, JobStatus
 from saas.sdk.app.auth import UserDB, UserAuth
 from saas.sdk.base import SDKProcessor, connect, SDKContext, SDKCDataObject, SDKGPPDataObject
@@ -113,7 +114,17 @@ def proc_example(dashboard_context) -> SDKProcessor:
     yield proc
 
     proc.undeploy()
-    gpp.delete()
+    try:
+        gpp.delete()
+
+    except UnsuccessfulRequestError as e:
+        if 'Data object not found' in e.reason:
+            # this can happen because we only work with one test processor and its GPP may have already been deleted
+            # elsewhere.
+            pass
+        else:
+            # if it's anything else -> propagate the exception
+            raise e
 
 
 @pytest.fixture(scope='module')
@@ -286,13 +297,13 @@ def test_upload_data_search_delete(proxy, proc_example, test_obj_b, test_gpp, us
     assert(len(result) == 1)
 
     result = proxy.search_data(c_hashes=[test_gpp.meta.c_hash], owned_by_user=True)
-    assert(len(result) == 2)
+    assert(len(result) == 1)
 
     result = proxy.search_data(c_hashes=[test_obj_b.meta.c_hash, test_gpp.meta.c_hash], owned_by_user=True)
-    assert(len(result) == 3)
+    assert(len(result) == 2)
 
     result = proxy.search_data(data_type=GPP_DATA_TYPE, owned_by_user=True)
-    assert(len(result) == 2)
+    assert(len(result) == 1)
 
     result = proxy.search_data(data_format='json', owned_by_user=True)
     assert(len(result) >= 3)
