@@ -7,8 +7,8 @@ services:
     networks:
       - network
     ports:
-      - "5001:5001"
-      - "4001:4001"
+      - "5400:5400"
+      - "4400:4000"
     environment:
       # TODO: Use docker secrets for password
       NODE_ID: 1
@@ -18,9 +18,9 @@ services:
       KEYSTORE: /keystore
       PASSWORD: 1234
       KEYSTORE_ID: hnx0rxlhv2bsovj65xu2w4oz682xbeo1hfakad3jhheh2qzlbfm01nq7w38vcauz
-      REST_ADDRESS: boot_node:5001
-      P2P_ADDRESS: boot_node:4001
-      BOOT_NODE: boot_node:4001
+      REST_ADDRESS: boot_node:5400
+      P2P_ADDRESS: boot_node:4400
+      BOOT_NODE: boot_node:4400
     # keystore and datastore are found in /keystore and /datastore of the container
     volumes:
       - ${HOME}/.duct/saas-middleware/.keystore:/keystore
@@ -31,8 +31,8 @@ services:
     networks:
       - network
     ports:
-      - "5002:5002"
-      - "4002:4002"
+      - "5401:5401"
+      - "4401:4401"
     environment:
       NODE_ID: 2
       LOG_PATH: /logs/node.log
@@ -41,9 +41,9 @@ services:
       KEYSTORE: /keystore
       PASSWORD: 1234
       KEYSTORE_ID: qpjyum07zdt1lipsg2trt0jnsb0ysies49pa8felbs56lfxir57ofjdddw2eex9g
-      REST_ADDRESS: node_2:5002
-      P2P_ADDRESS: node_2:4002
-      BOOT_NODE: boot_node:4001
+      REST_ADDRESS: node_2:5401
+      P2P_ADDRESS: node_2:4401
+      BOOT_NODE: boot_node:4401
       STRICT: false
     volumes:
       - ${HOME}/.duct/saas-middleware/.keystore:/keystore
