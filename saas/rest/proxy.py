@@ -5,14 +5,16 @@ from datetime import datetime, timezone
 from typing import Union, Optional, BinaryIO, Tuple
 
 import canonicaljson
+import pydantic
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from snappy import snappy
 
+from saas.core.exceptions import ExceptionContent
 from saas.core.keystore import Keystore
 from saas.rest.exceptions import UnexpectedHTTPError, UnsuccessfulRequestError, UnexpectedContentType, \
-    UnsuccessfulConnectionError
+    UnsuccessfulConnectionError, AuthorisationFailedError
 from saas.rest.schemas import Token
 
 
@@ -35,18 +37,41 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
 
     elif response.status_code == 500:
         try:
+            # try to parse the response as JSON and then the JSON as as ExceptionContent
             content = response.json()
+            content = ExceptionContent.parse_obj(content)
+            exception = UnsuccessfulRequestError(content.reason, exception_id=content.id, details=content.details)
+
+        # the content is not even JSON...
+        except requests.exceptions.JSONDecodeError:
+            exception = UnsuccessfulRequestError(response.reason, details={
+                'status_code': 500,
+            })
+
+        # the content is JSON but not of ExceptionContent type
+        except pydantic.ValidationError:
+            exception = UnsuccessfulRequestError(response.reason, details={
+                'content': response.json(),
+                'status_code': 500,
+            })
+
+        # something unexpected went wrong
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            raise UnsuccessfulRequestError(response.reason, details={'trace': trace})
+            exception = UnsuccessfulRequestError(response.reason, details={
+                'trace': trace,
+                'status_code': 500,
+            })
 
-        raise UnsuccessfulRequestError(
-            content['reason'], exception_id=content['id'], details=content['details'] if 'details' in content else None
-        )
+        raise exception
+
+    elif response.status_code == 401:
+        raise AuthorisationFailedError()
 
     else:
         raise UnexpectedHTTPError({
-            'response': response
+            'reason': response.reason,
+            'status_code': response.status_code
         })
 
 

@@ -36,5 +36,5 @@ class UnsuccessfulConnectionError(RESTException):
 
 
 class AuthorisationFailedError(RESTException):
-    def __init__(self, details: dict) -> None:
+    def __init__(self, details: dict = None) -> None:
         super().__init__('Authorisation failed', details=details)

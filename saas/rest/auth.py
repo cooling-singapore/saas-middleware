@@ -1,5 +1,4 @@
 import json
-import os
 import time
 
 import canonicaljson
@@ -8,9 +7,10 @@ from cryptography.hazmat.primitives import hashes
 from fastapi import Request
 
 from saas.core.identity import Identity
+from saas.dor.exceptions import DataObjectNotFoundError
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import AuthorisationFailedError
-from saas.rti.exceptions import JobDescriptorNotFoundError, ProcessorNotDeployedError
+from saas.rti.exceptions import ProcessorNotDeployedError, JobDBRecordNotFoundError
 from saas.rti.schemas import Job
 
 
@@ -78,10 +78,7 @@ class VerifyIsOwner:
         # get the meta information of the object
         meta = self.node.dor.get_meta(obj_id)
         if meta is None:
-            raise AuthorisationFailedError({
-                'reason': 'data object does not exist',
-                'obj_id': obj_id
-            })
+            raise DataObjectNotFoundError(obj_id)
 
         # check if the identity is the owner of that data object
         if meta.owner_iid != identity.id:
@@ -138,16 +135,15 @@ class VerifyUserIsJobOwnerOrNodeOwner:
     async def __call__(self, job_id: str, request: Request):
         identity, _ = await VerifyAuthorisation(self.node).__call__(request)
 
-        # does the descriptor exist?
-        descriptor_path = self.node.rti.job_descriptor_path(job_id)
-        if not os.path.isfile(descriptor_path):
-            raise JobDescriptorNotFoundError({
-                'job_id': job_id
-            })
+        from saas.rti.service import DBJobContext
+        with self.node.rti._Session() as session:
+            # do we have a job record?
+            record = session.query(DBJobContext).get(job_id)
+            if record is None:
+                raise JobDBRecordNotFoundError({'job_id': job_id})
 
-        with open(descriptor_path, 'r') as f:
-            job = Job.parse_obj(json.load(f))
-
+            # get the job and check if the user iids check out
+            job = Job.parse_obj(record.job)
             if job.task.user_iid != identity.id and identity.id != self.node.identity.id:
                 raise AuthorisationFailedError({
                     'reason': 'user is not the job owner or the node owner',

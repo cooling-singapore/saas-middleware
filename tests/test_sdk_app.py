@@ -1,4 +1,3 @@
-import tempfile
 import time
 from threading import Thread
 from typing import List
@@ -7,13 +6,12 @@ import pytest
 from fastapi import Depends
 from pydantic import BaseModel
 
-from saas.rest.exceptions import UnsuccessfulRequestError, UnexpectedHTTPError
+from saas.rest.exceptions import UnsuccessfulRequestError, AuthorisationFailedError
 from saas.rest.proxy import EndpointProxy
 
-from saas.core.keystore import Keystore
 from saas.rest.schemas import EndpointDefinition
 from saas.sdk.app.base import Application, User, UserDB, UserAuth, get_current_active_user, UserProfile
-from saas.sdk.helper import create_rnd_hex_string
+from tests.base_testcase import create_rnd_hex_string, PortMaster
 
 
 class TestResponse(BaseModel):
@@ -101,12 +99,7 @@ class Server(Thread):
             time.sleep(0.2)
 
 
-@pytest.fixture()
-def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
-    return _node
-
-server_address = ('127.0.0.1', 5101)
+server_address = PortMaster.generate_rest_address()
 server_endpoint_prefix = ('/v1', 'test')
 user_name = 'Foo Bar'
 user_email = 'foo.bar@somewhere.com'
@@ -114,19 +107,8 @@ user_password = 'password'
 
 
 @pytest.fixture(scope="module")
-def temp_working_directory():
-    with tempfile.TemporaryDirectory() as tempdir:
-        yield tempdir
-
-
-@pytest.fixture(scope="module")
-def keystore(temp_working_directory):
-    return Keystore.create(temp_working_directory, user_name, user_email, user_password)
-
-
-@pytest.fixture(scope="module")
-def sdk_test_server(temp_working_directory, keystore):
-    server = Server(server_address, None, server_endpoint_prefix, temp_working_directory)
+def sdk_test_server(temp_directory, keystore):
+    server = Server(server_address, None, server_endpoint_prefix, temp_directory)
     server.start()
     time.sleep(20)
     yield server
@@ -199,7 +181,7 @@ def test_update_user_password(sdk_test_server, base_proxy):
 
     # should fail now
     proxy0 = TestAppBaseProxy(server_address, (server_endpoint_prefix[0], None), user_email, user_password)
-    with pytest.raises(UnexpectedHTTPError) as e:
+    with pytest.raises(AuthorisationFailedError) as e:
         proxy0.profile()
     print(e)
 

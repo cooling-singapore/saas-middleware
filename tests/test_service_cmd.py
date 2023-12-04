@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import sys
 import traceback
 import pytest
 
@@ -12,7 +13,7 @@ Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def remote_linux_credentials(keystore):
     cred = keystore.ssh_credentials.get('vm-test-linux')
     if cred is None:
@@ -21,7 +22,7 @@ def remote_linux_credentials(keystore):
     return cred
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def remote_cygwin_credentials(keystore):
     cred = keystore.ssh_credentials.get('vm-test-cygwin')
     if cred is None:
@@ -41,6 +42,23 @@ def create_pid_file(folder_path: str, pid: str) -> str:
 
 def remove_pid_file(folder_path: str) -> str:
     return f"cd {folder_path} && rm pid.txt && cd .. && rmdir {folder_path}"
+
+
+def delete_folder(folder_path: str) -> str:
+    return f"cd {folder_path} && rm * && cd .. && rmdir {folder_path}"
+
+
+def test_join_paths():
+    components = ['a', 'b', 'c.tmp']
+
+    # are we on windows or unix?
+    if sys.platform.startswith('win'):
+        path = join_paths(components)
+        assert path == 'a\\b\\c.tmp'
+
+    else:
+        path = join_paths(components)
+        assert path == 'a/b/c.tmp'
 
 
 def test_run_command_local(echo_hello):
@@ -221,7 +239,8 @@ def test_get_pid_remote_linux(remote_linux_credentials):
     home_path = determine_home_path(remote_linux_credentials)
     folder = '__test_get_pid_remote_linux'
     folder_path = join_paths([home_path, folder], ssh_credentials=remote_linux_credentials)
-    assert(not check_if_path_exists(folder_path, ssh_credentials=remote_linux_credentials))
+    if check_if_path_exists(folder_path, ssh_credentials=remote_linux_credentials):
+        run_command(delete_folder(folder_path), ssh_credentials=remote_linux_credentials)
 
     try:
         run_command(create_pid_file(folder_path, '123'), ssh_credentials=remote_linux_credentials)
@@ -243,7 +262,8 @@ def test_get_pid_remote_cygwin(remote_cygwin_credentials):
     home_path = determine_home_path(remote_cygwin_credentials)
     folder = '__test_get_pid_remote_cygwin'
     folder_path = join_paths([home_path, folder], ssh_credentials=remote_cygwin_credentials)
-    assert(not check_if_path_exists(folder_path, ssh_credentials=remote_cygwin_credentials))
+    if check_if_path_exists(folder_path, ssh_credentials=remote_cygwin_credentials):
+        run_command(delete_folder(folder_path), ssh_credentials=remote_cygwin_credentials)
 
     try:
         run_command(create_pid_file(folder_path, '123'), ssh_credentials=remote_cygwin_credentials)
@@ -265,11 +285,13 @@ def test_scp_local_to_remote_to_local_linux(remote_linux_credentials):
 
     home_path_local = determine_home_path()
     local_path = join_paths([home_path_local, filename], ssh_credentials=None)
-    assert(not check_if_path_exists(local_path, ssh_credentials=None))
+    if check_if_path_exists(local_path, ssh_credentials=None):
+        run_command(delete_folder(local_path), ssh_credentials=None)
 
     home_path_remote = determine_home_path(ssh_credentials=remote_linux_credentials)
     remote_path = join_paths([home_path_remote, filename], ssh_credentials=remote_linux_credentials)
-    assert(not check_if_path_exists(remote_path, ssh_credentials=remote_linux_credentials))
+    if check_if_path_exists(remote_path, ssh_credentials=remote_linux_credentials):
+        run_command(delete_folder(remote_path), ssh_credentials=remote_linux_credentials)
 
     # create test file
     with open(local_path, 'w') as f:
@@ -311,11 +333,13 @@ def test_scp_local_to_remote_to_local_cygwin(remote_cygwin_credentials):
 
     home_path_local = determine_home_path()
     local_path = join_paths([home_path_local, filename], ssh_credentials=None)
-    assert(not check_if_path_exists(local_path, ssh_credentials=None))
+    if check_if_path_exists(local_path, ssh_credentials=None):
+        run_command(delete_folder(local_path), ssh_credentials=None)
 
     home_path_remote = determine_home_path(ssh_credentials=remote_cygwin_credentials)
     remote_path = join_paths([home_path_remote, filename], ssh_credentials=remote_cygwin_credentials)
-    assert(not check_if_path_exists(remote_path, ssh_credentials=remote_cygwin_credentials))
+    if check_if_path_exists(remote_path, ssh_credentials=remote_cygwin_credentials):
+        run_command(delete_folder(remote_path), ssh_credentials=remote_cygwin_credentials)
 
     # create test file
     with open(local_path, 'w') as f:
@@ -359,7 +383,8 @@ def test_run_command_async_local():
     # ensure the test folder doesn't exist!
     local_home_path = determine_home_path()
     local_folder_path = join_paths([local_home_path, folder])
-    assert not check_if_path_exists(local_folder_path)
+    if check_if_path_exists(local_folder_path, ssh_credentials=None):
+        run_command(delete_folder(local_folder_path), ssh_credentials=None)
 
     command = 'sleep 20 && echo trigger:progress 100'
 
@@ -393,7 +418,8 @@ def test_run_command_async_remote_linux(remote_linux_credentials):
     # ensure the test folder doesn't exist!
     local_home_path = determine_home_path()
     local_folder_path = join_paths([local_home_path, folder])
-    assert not check_if_path_exists(local_folder_path)
+    if check_if_path_exists(local_folder_path, ssh_credentials=None):
+        run_command(delete_folder(local_folder_path), ssh_credentials=None)
 
     command = 'sleep 20 && echo trigger:progress 100'
 
@@ -430,7 +456,8 @@ def test_run_command_async_remote_cygwin(remote_cygwin_credentials):
     # ensure the test folder doesn't exist!
     local_home_path = determine_home_path()
     local_folder_path = join_paths([local_home_path, folder])
-    assert not check_if_path_exists(local_folder_path)
+    if check_if_path_exists(local_folder_path, ssh_credentials=None):
+        run_command(delete_folder(local_folder_path), ssh_credentials=None)
 
     command = 'sleep 20'
 

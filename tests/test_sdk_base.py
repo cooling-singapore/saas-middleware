@@ -1,36 +1,10 @@
 import json
 import os
-import tempfile
-
-import pytest
 
 from saas.core.exceptions import SaaSRuntimeException
-from saas.core.keystore import Keystore
 from saas.dor.schemas import DataObject
 from saas.sdk.base import connect, SDKGPPDataObject
-from saas.sdk.helper import generate_random_file
-
-
-@pytest.fixture()
-def node(test_context, keystore):
-    _node = test_context.get_node(keystore, enable_rest=True, strict_deployment=False, job_concurrency=False)
-    return _node
-
-
-@pytest.fixture(scope="module")
-def temp_working_directory():
-    with tempfile.TemporaryDirectory() as tempdir:
-        yield tempdir
-
-
-@pytest.fixture(scope="module")
-def keystore(temp_working_directory):
-    return Keystore.create(temp_working_directory, 'Foo Bar', 'foo.bar@somewhere.com', 'password')
-
-
-@pytest.fixture(scope="module")
-def another_keystore(temp_working_directory):
-    return Keystore.create(temp_working_directory, 'Foo Bar-2', 'foo.bar.2@somewhere.com', 'password')
+from tests.base_testcase import generate_random_file
 
 
 def test_context(keystore, node):
@@ -47,7 +21,6 @@ def test_context(keystore, node):
     assert(context is not None)
 
 
-# FIXME: Test passes local but fails in GitHub Actions
 def test_upload_gpp_delete(keystore, node):
     node_address = node.rest.address()
     context = connect(node_address, keystore)
@@ -76,12 +49,13 @@ def test_upload_gpp_delete(keystore, node):
     assert(result is None)
 
 
-def test_upload_content_access_tags_ownership_delete(keystore, another_keystore, temp_working_directory, node):
+def test_upload_content_access_tags_ownership_delete(keystore, another_keystore, temp_directory,
+                                                     node):
     node_address = node.rest.address()
     context = connect(node_address, keystore)
 
     # generate file with random content
-    content_path = os.path.join(temp_working_directory, 'content.dat')
+    content_path = os.path.join(temp_directory, 'content.dat')
     generate_random_file(content_path, 1024*1024)
 
     # upload
@@ -101,7 +75,7 @@ def test_upload_content_access_tags_ownership_delete(keystore, another_keystore,
     context2 = connect(node_address, another_keystore)
     obj2 = context2.find_data_object(obj.meta.obj_id)
     try:
-        obj2.download(temp_working_directory)
+        obj2.download(temp_directory)
         assert False
 
     except SaaSRuntimeException:
@@ -116,7 +90,7 @@ def test_upload_content_access_tags_ownership_delete(keystore, another_keystore,
     context2 = connect(node_address, another_keystore)
     obj2 = context2.find_data_object(obj.meta.obj_id)
     try:
-        obj2.download(temp_working_directory)
+        obj2.download(temp_directory)
 
     except SaaSRuntimeException:
         assert False
@@ -144,7 +118,7 @@ def test_upload_content_access_tags_ownership_delete(keystore, another_keystore,
         assert False
 
 
-def test_deploy_execute_provenance(keystore, temp_working_directory, node):
+def test_deploy_execute_provenance(keystore, temp_directory, node):
     node_address = node.rest.address()
     context = connect(node_address, keystore)
 
@@ -186,7 +160,7 @@ def test_deploy_execute_provenance(keystore, temp_working_directory, node):
 
     # download 'c'
     c = output['c']
-    download_path = os.path.join(temp_working_directory, 'c')
+    download_path = os.path.join(temp_directory, 'c')
     c.download(download_path)
     assert(os.path.isfile(download_path))
 
