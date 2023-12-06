@@ -11,7 +11,7 @@ logger = Logging.get('saas.core')
 
 class ExceptionContent(BaseModel):
     """
-    The content of a SaaS exception.
+    The content of an exception.
     """
     id: str = Field(..., title="Id", description="The unique identifier of this exception.")
     reason: str = Field(..., title="Reason", description="The reason that caused this exception.")

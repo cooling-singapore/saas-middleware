@@ -54,11 +54,18 @@ class Job(BaseModel):
 
 class ReconnectInfo(BaseModel):
     """
-    Necessary information how an RTI can reconnect to a job that is executed by a remotely-deployed processor.
+    Necessary information how an RTI can reconnect to a job.
     """
     paths: Dict[str, str] = Field(..., title="Paths", description="A mapping of paths used by the job.")
     pid: str = Field(..., title="PID", description="The process id of the job as assigned by the operating system.", example=3453)
     pid_paths: Dict[str, str] = Field(..., title="PID Paths", description="A mapping of paths used by the process that executes the job.")
+
+
+class Severity(Enum):
+    DEBUG = 'debug'
+    INFO = 'info'
+    WARNING = 'warning'
+    ERROR = 'error'
 
 
 class JobStatus(BaseModel):
@@ -69,9 +76,10 @@ class JobStatus(BaseModel):
         """
         The possible states of a job.
         """
-        UNINITIALISED = 'uninitialised'
+        UNINITIALISED = 'uninitialised'  # DEPRECATED
         INITIALISED = 'initialised'
         RUNNING = 'running'
+
         POSTPROCESSING = 'postprocessing'
 
         SUCCESSFUL = 'successful'
@@ -89,14 +97,14 @@ class JobStatus(BaseModel):
         """
         A message with severity level.
         """
-        severity: str
+        severity: Severity
         content: str
 
     state: Literal[State.UNINITIALISED, State.INITIALISED, State.RUNNING, State.POSTPROCESSING, State.SUCCESSFUL, State.FAILED, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
-    output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
+    output: Dict[str, Optional[CDataObject]] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
-    job: Job = Field(..., title="Job", description="The job information.")
+    job: Optional[Job] = Field(title="Job", description="The job information.")
     reconnect: Optional[ReconnectInfo] = Field(title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
     errors: Optional[List[Error]] = Field(title="Errors", description="A list of errors that occurred during job execution (if any)")
     message: Optional[Message] = Field(title="Message", description="A message providing more details about its current status (if any)")
