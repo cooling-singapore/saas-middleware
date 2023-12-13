@@ -211,15 +211,17 @@ class UserDisable(CLICommand):
         print(f"User account disabled: {user.login} ({user.name})")
 
 
-class UserUpdateName(CLICommand):
+class UserUpdate(CLICommand):
     def __init__(self) -> None:
-        super().__init__('update', 'update user display name', arguments=[
+        super().__init__('update', 'update user display name and/or password', arguments=[
             Argument('--userstore', dest='userstore', action='store', default=default_userstore,
                      help=f"path to the userstore (default: '{default_userstore}')"),
             Argument('--login', dest='login', action='store', required=False,
                      help="the login of the account"),
-            Argument('--new_display_name', dest='user_display_name', action='store', required=True,
-                     help="the new display name of the account")
+            Argument('--new_display_name', dest='new_display_name', action='store', required=False,
+                     help="the new display name of the account"),
+            Argument('--new_password', dest='new_password', action='store', required=False,
+                     help="the new password of the account")
         ])
 
     def execute(self, args: dict) -> None:
@@ -237,9 +239,31 @@ class UserUpdateName(CLICommand):
 
             args['login'] = prompt_for_selection(choices, "Select the user to be updated:", allow_multiple=False)
 
-        # update the user
-        user = UserDB.update_user(args['login'], True, user_display_name=args['user_display_name'])
-        print(f"User updated: {user.login} ({user.name})")
+        # get the user
+        user = UserDB.get_user(args['login'])
+        if user is None:
+            raise CLIRuntimeError(f"No user found with login {args['login']}")
+
+        # prompt for change of profile name
+        prompt_if_missing(args, 'new_display_name', prompt_for_string, allow_empty=True, hide=False,
+                          message=f"Enter the new username [leave empty to keep current display name: {user.name}]:")
+
+        # prompt for change of password
+        prompt_if_missing(args, 'new_password', prompt_for_string, allow_empty=True, hide=True,
+                          message=f"Enter the new password [leave empty to keep current password "
+                                  f"hash: {user.hashed_password}]:")
+
+        # figure out what to update (if anything)
+        user_display_name = args['new_display_name'] if len(args['new_display_name']) > 0 else None
+        password = args['new_password'] if len(args['new_password']) > 0 else None
+        if user_display_name or password:
+            user = UserDB.update_user(args['login'], True, user_display_name=user_display_name, password=password)
+            if user_display_name:
+                print(f"Updating display name: {user.name}")
+            if password:
+                print(f"Updating password: {user.hashed_password} (hash only)")
+        else:
+            print(f"Nothing to update.")
 
 
 class UserUpdatePassword(CLICommand):
