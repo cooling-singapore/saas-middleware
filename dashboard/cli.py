@@ -5,7 +5,7 @@ from saas.core.logging import Logging
 from saas.sdk.app.auth import UserAuth, UserDB
 from saas.sdk.app.exceptions import AppRuntimeError
 
-from saas.sdk.cli.commands import UserInit, UserCreate, UserRemove, UserEnable, UserDisable, UserList
+from saas.sdk.cli.commands import UserInit, UserCreate, UserRemove, UserEnable, UserDisable, UserList, UserUpdate
 from saas.sdk.cli.exceptions import CLIRuntimeError
 from saas.sdk.cli.helpers import CLIParser, CLICommand, CLICommandGroup, Argument, prompt_if_missing,\
     prompt_for_string, extract_address, prompt_for_confirmation
@@ -126,7 +126,8 @@ def main():
                 UserCreate(),
                 UserRemove(),
                 UserEnable(),
-                UserDisable()
+                UserDisable(),
+                UserUpdate()
             ]),
             Service()
         ])
