@@ -189,7 +189,7 @@ class Application(abc.ABC):
     def endpoints(self) -> List[EndpointDefinition]:
         pass
 
-    def startup(self, n_attempts: int = 10) -> None:
+    def startup(self, n_attempts: int = 100) -> None:
         if self._thread is None:
             self._api.on_event("shutdown")(self._close)
 
