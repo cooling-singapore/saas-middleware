@@ -246,6 +246,8 @@ class Application(abc.ABC):
 
                     logger.info(f"{self._address[0]}:{self._address[1]} seems to be available -> "
                                 f"starting REST service.")
+
+                    server_socket.close()
                     port_available = True
                     break
 
