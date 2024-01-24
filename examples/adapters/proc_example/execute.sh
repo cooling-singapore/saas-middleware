@@ -6,7 +6,7 @@ if [ "$1" == "default" ]; then
 	source venv/bin/activate
 
 	echo "Run processor.py on $2"
-	python3 processor.py $2
+	saas-cli run --job-path $2 --proc-path `pwd` --proc-name example-processor --rest-address $3
 
 elif [ "$1" == "nscc" ]; then
 
