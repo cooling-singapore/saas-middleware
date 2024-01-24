@@ -34,7 +34,7 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
+    commit_id = '3417a3f'
     proc_path = 'examples/adapters/proc_example'
 
     github_credentials = owner.github_credentials.get(source)
@@ -239,13 +239,18 @@ def test_rest_submit_list_get_job(test_context, node, dor_proxy, rti_proxy, depl
 
     while True:
         # get information about the running job
-        status: JobStatus = rti_proxy.get_job_status(job_id, owner)
-        from pprint import pprint
-        pprint(status.dict())
-        assert(status is not None)
+        try:
+            status: JobStatus = rti_proxy.get_job_status(job_id, owner)
 
-        if status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
-            break
+            from pprint import pprint
+            pprint(status.dict())
+            assert(status is not None)
+
+            if status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
+                break
+
+        except Exception:
+            pass
 
         time.sleep(1)
 

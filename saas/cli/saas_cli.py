@@ -8,6 +8,7 @@ from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DO
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
     CredentialsAddGithubCredentials, CredentialsTestSSHCredentials, CredentialsTestGithubCredentials
+from saas.cli.cmd_job_runner import JobRunner
 from saas.cli.cmd_network import NetworkList
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
     RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
@@ -63,6 +64,7 @@ def main():
                 ]),
             ]),
             Service(),
+            JobRunner(),
             CLICommandGroup('dor', 'interact with a Data Object Repository (DOR)', arguments=[
                 Argument('--address', dest='address', action='store',
                          help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")

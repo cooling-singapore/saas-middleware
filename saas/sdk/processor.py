@@ -83,16 +83,22 @@ class ProcessorBase(abc.ABC):
 
 def find_processors(search_path: str) -> Dict[str, ProcessorBase]:
     result = {}
+
     for root, dirs, files in os.walk(search_path):
         for file in files:
-            if file.endswith(".py"):
+            if file == "processor.py":
                 module_path = os.path.join(root, file)
                 module_name = os.path.splitext(os.path.basename(module_path))[0]
 
                 spec = importlib.util.spec_from_file_location(module_name, module_path)
                 module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
 
+                try:
+                    spec.loader.exec_module(module)
+                except Exception:
+                    continue
+
+                # module = importlib.import_module(module_name)
                 for name, obj in inspect.getmembers(module):
                     if inspect.isclass(obj) and obj != ProcessorBase and issubclass(obj, ProcessorBase):
                         try:
