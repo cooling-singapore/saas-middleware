@@ -12,6 +12,7 @@ from saas.dor.schemas import GitProcessorPointer
 from saas.core.schemas import GithubCredentials, SSHCredentials
 
 RTI_ENDPOINT_PREFIX = "/api/v1/rti"
+JOB_ENDPOINT_PREFIX = "/api/v1/job"
 
 
 class RTIProxy(EndpointProxy):
@@ -129,3 +130,17 @@ class RTIProxy(EndpointProxy):
             'req_id': req_id,
             'content_key': content_key
         })
+
+
+class JobRESTProxy(EndpointProxy):
+    def __init__(self, remote_address: (str, int), credentials: (str, str) = None,
+                 endpoint_prefix: Tuple[str, str] = get_proxy_prefix(JOB_ENDPOINT_PREFIX)):
+        super().__init__(endpoint_prefix, remote_address, credentials=credentials)
+
+    def job_status(self) -> JobStatus:
+        result = self.get("status")
+        return JobStatus.parse_obj(result)
+
+    def job_cancel(self) -> JobStatus:
+        result = self.put("cancel")
+        return JobStatus.parse_obj(result)

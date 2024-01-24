@@ -1,4 +1,5 @@
 import os
+import socket
 import tempfile
 import threading
 import time
@@ -7,9 +8,11 @@ from typing import Any
 import pytest
 
 from examples.adapters.proc_example.processor import write_value
+from saas.cli.cmd_job_runner import JobRunner
 from saas.core.helpers import get_timestamp_now
 from saas.core.logging import Logging
-from saas.rti.proc_wrapper import ProcessorRESTWrapper, ProcessorRESTProxy
+from saas.rti.adapters.native import find_open_port
+from saas.rti.proxy import JobRESTProxy
 from saas.rti.schemas import JobStatus
 from saas.sdk.processor import find_processors, ProgressListener, Severity
 from tests.base_testcase import PortMaster
@@ -142,26 +145,42 @@ def test_example_proc_cancelled(temp_dir):
     assert dt < 10000
 
 
-def test_rest_wrapper_success(temp_dir):
-    # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
-    proc = result.get('example-processor')
-    assert(result is not None)
+def test_find_open_port():
+    # block port 5995
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind(('localhost', 5995))
+    server_socket.listen(1)
 
-    # create the wrapper
-    rest_address = PortMaster.generate_rest_address()
-    wrapper = ProcessorRESTWrapper(proc, rest_address, temp_dir)
-    wrapper.startup()
+    port = find_open_port(host='localhost', port_range=(5990, 5994))
+    assert(port == 5990)
 
+    port = find_open_port(host='localhost', port_range=(5995, 5999))
+    assert(port == 5996)
+
+
+def test_cli_runner_success(temp_dir):
     # prepare the job folder
     job_id = '398h36g3'
-    prepare_job_folder(temp_dir, job_id, a=1, b=1)
+    job_path = prepare_job_folder(temp_dir, job_id, a=1, b=1)
+
+    # determine REST address
+    rest_address = PortMaster.generate_rest_address()
+
+    # execute the job runner command
+    def run_job():
+        cmd = JobRunner()
+        args = {
+            'job_path': job_path,
+            'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples'),
+            'proc_name': 'example-processor',
+            'rest_address': f"{rest_address[0]}:{rest_address[1]}"
+        }
+        cmd.execute(args)
+
+    threading.Thread(target=run_job).start()
 
     # submit a job
-    proxy = ProcessorRESTProxy(rest_address)
-    proxy.job_submit(job_id)
-
+    proxy = JobRESTProxy(rest_address)
     while True:
         time.sleep(0.5)
         status: JobStatus = proxy.job_status()
@@ -173,26 +192,29 @@ def test_rest_wrapper_success(temp_dir):
     assert status.state == JobStatus.State.POSTPROCESSING
 
 
-def test_rest_wrapper_failing(temp_dir):
-    # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
-    proc = result.get('example-processor')
-    assert(result is not None)
-
-    # create the wrapper
-    rest_address = PortMaster.generate_rest_address()
-    wrapper = ProcessorRESTWrapper(proc, rest_address, temp_dir)
-    wrapper.startup()
-
+def test_cli_runner_failing(temp_dir):
     # prepare the job folder
     job_id = '398h36g3'
-    prepare_job_folder(temp_dir, job_id, a='wrong_type', b=1)
+    job_path = prepare_job_folder(temp_dir, job_id, a='one', b=1)
+
+    # determine REST address
+    rest_address = PortMaster.generate_rest_address()
+
+    # execute the job runner command
+    def run_job():
+        cmd = JobRunner()
+        args = {
+            'job_path': job_path,
+            'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples'),
+            'proc_name': 'example-processor',
+            'rest_address': f"{rest_address[0]}:{rest_address[1]}"
+        }
+        cmd.execute(args)
+
+    threading.Thread(target=run_job).start()
 
     # submit a job
-    proxy = ProcessorRESTProxy(rest_address)
-    proxy.job_submit(job_id)
-
+    proxy = JobRESTProxy(rest_address)
     while True:
         time.sleep(0.5)
         status: JobStatus = proxy.job_status()
@@ -202,30 +224,33 @@ def test_rest_wrapper_failing(temp_dir):
             break
 
     assert status.state == JobStatus.State.FAILED
-    assert "invalid literal for int() with base 10: 'wrong_type'" in status.errors[0].message
+    assert "invalid literal for int() with base 10: 'one'" in status.errors[0].message
 
 
-def test_rest_wrapper_cancelled(temp_dir):
-    # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
-    proc = result.get('example-processor')
-    assert(result is not None)
-
-    # create the wrapper
-    rest_address = PortMaster.generate_rest_address()
-    wrapper = ProcessorRESTWrapper(proc, rest_address, temp_dir)
-    wrapper.startup()
-
+def test_cli_runner_cancelled(temp_dir):
     # prepare the job folder
     job_id = '398h36g3'
-    prepare_job_folder(temp_dir, job_id, a=5, b=5)
+    job_path = prepare_job_folder(temp_dir, job_id, a=5, b=6)
 
-    # submit a job
-    proxy = ProcessorRESTProxy(rest_address)
+    # determine REST address
+    rest_address = PortMaster.generate_rest_address()
+
+    # execute the job runner command
+    def run_job():
+        cmd = JobRunner()
+        args = {
+            'job_path': job_path,
+            'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples'),
+            'proc_name': 'example-processor',
+            'rest_address': f"{rest_address[0]}:{rest_address[1]}"
+        }
+        cmd.execute(args)
 
     t0 = get_timestamp_now()
-    proxy.job_submit(job_id)
+    threading.Thread(target=run_job).start()
+
+    # submit a job
+    proxy = JobRESTProxy(rest_address)
     time.sleep(0.5)
     proxy.job_cancel()
 
