@@ -90,14 +90,23 @@ def test_update_user(temp_directory):
 def test_update_user_password(temp_directory):
     UserDB.initialise(temp_directory)
 
+    password0 = 'password0'
+    password1 = 'password1'
+
     login = 'user@somehwere.com'
-    user = UserDB.add_user(login, 'name', 'password')
+    user = UserDB.add_user(login, 'name', password0)
     print(user)
     assert (user is not None)
     assert (os.path.isfile(user.keystore.path))
 
-    user = UserDB.update_user(user.login, password='newpassword')
+    assert UserAuth.verify_password(password0, user.hashed_password)
+    assert not UserAuth.verify_password(password1, user.hashed_password)
+
+    user = UserDB.update_user(user.login, password=password1)
     print(user)
+
+    assert not UserAuth.verify_password(password0, user.hashed_password)
+    assert UserAuth.verify_password(password1, user.hashed_password)
 
     user = UserDB.delete_user(login)
     print(user)
