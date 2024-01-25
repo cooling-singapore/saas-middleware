@@ -277,8 +277,7 @@ class UserDB:
                 })
 
     @classmethod
-    def update_user(cls, login: str, is_admin: bool, password: Tuple[str, str] = None,
-                    user_display_name: str = None) -> User:
+    def update_user(cls, login: str, password: str = None, user_display_name: str = None) -> User:
         with cls._Session() as session:
             # check if this username exists
             record = session.query(UserRecord).get(login)
@@ -289,16 +288,8 @@ class UserDB:
 
                 # do we have a new password? if so, check privileges first, then update it.
                 if password:
-                    # if we are not admin, we need to have a matching password
-                    if not is_admin:
-                        # verify if the hashes of the current password match
-                        if not UserAuth.verify_password(password[0], record.hashed_password):
-                            raise AppRuntimeError("Password does not match", details={
-                                'login': login
-                            })
-
                     # at this point we are either admin or we have a matching password -> update the record
-                    record.hashed_password = UserAuth.get_password_hash(password[1])
+                    record.hashed_password = UserAuth.get_password_hash(password)
 
                 # update the user record and return and updated user object
                 session.commit()
