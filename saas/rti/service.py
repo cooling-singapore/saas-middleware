@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import pkgutil
+import shutil
 import subprocess
 from threading import Lock
 from typing import Optional, Dict, List, Any, Union
@@ -293,7 +294,7 @@ class RTIService:
     infix_path = 'rti'
 
     def __init__(self, node, db_path: str, retain_job_history: bool = False, strict_deployment: bool = True,
-                 job_concurrency: bool = False):
+                 job_concurrency: bool = False, purge_inactive_jobs: bool = False):
         # initialise properties
         self._mutex = Lock()
         self._db_mutex = Lock()
@@ -326,7 +327,7 @@ class RTIService:
 
         # check for deployed processors
         self._deployed: Dict[str, RTIProcessorAdapter] = {}
-        with self._Session() as session:
+        with (self._Session() as session):
             for record in session.query(DBProcessorState).all():
                 if record.proc_adapter in self._adapter_classes:
                     # do we have SSH credentials for this processor?
@@ -357,18 +358,38 @@ class RTIService:
                     self._deployed[record.proc_id] = adapter
 
                     # search for existing jobs and add them
-                    for job_state in session.query(DBJobContext).filter_by(proc_id=record.proc_id).all():
-                        if job_state.state in [JobStatus.State.CANCELLED.value, JobStatus.State.FAILED.value,
+                    inactive = {}
+                    for job in session.query(DBJobContext).filter_by(proc_id=record.proc_id).all():
+                        if job.state in [JobStatus.State.CANCELLED.value, JobStatus.State.FAILED.value,
                                                JobStatus.State.SUCCESSFUL.value]:
-                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job_state.job_id} with "
-                                        f"terminal state {job_state.state} -> skipping.")
+                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job.job_id} with "
+                                        f"terminal state {job.state} -> skipping.")
+                            inactive[job.job_id] = job.wd_path
 
                         else:
-                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job_state.job_id} with "
-                                        f"state {job_state.state} -> adding.")
+                            logger.info(f"[init] found job {shorten_id(record.proc_id)}/{job.job_id} with "
+                                        f"state {job.state} -> adding.")
 
-                            context = DBJobContextWrapper(self, self._mutex, self._Session, job_state.job_id)
+                            context = DBJobContextWrapper(self, self._mutex, self._Session, job.job_id)
                             adapter.add(context)
+
+                    # purge inactive jobs (if required)
+                    for job_id, wd_path in inactive.items():
+                        try:
+                            # delete the working directory
+                            if os.path.isdir(wd_path):
+                                shutil.rmtree(wd_path)
+
+                            # delete the db record
+                            record = session.query(DBJobContext).get(job_id)
+                            if record is not None:
+                                session.delete(record)
+                                session.commit()
+
+                            logger.info(f"[init] purging inactive job {job_id} at '{wd_path}' -> done.")
+
+                        except Exception as e:
+                            logger.warning(f"[init] purging inactive job {job_id} at '{wd_path}' -> failed: {e}")
 
                 else:
                     logger.warning(f"[init] found processor {shorten_id(record.proc_id)}:{record.state} "
