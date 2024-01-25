@@ -8,7 +8,7 @@ from tabulate import tabulate
 
 from saas.sdk.cli.exceptions import CLIRuntimeError
 from saas.sdk.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, extract_address, \
-    prompt_for_selection
+    prompt_for_selection, prompt_for_confirmation
 
 default_userstore = os.path.join(os.environ['HOME'], '.userstore')
 
@@ -149,8 +149,10 @@ class UserRemove(CLICommand):
         if not user:
             raise CLIRuntimeError(f"No user with username '{args['login']}'")
 
-        user: User = UserDB.delete_user(args['login'])
-        print(f"User account removed: login={user.login}")
+        # ask for confirmation
+        if prompt_for_confirmation(f"Delete user '{user.login}'?", False):
+            user: User = UserDB.delete_user(args['login'])
+            print(f"User account removed: login={user.login}")
 
 
 class UserEnable(CLICommand):
