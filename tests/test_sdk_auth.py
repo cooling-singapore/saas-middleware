@@ -78,7 +78,7 @@ def test_update_user(temp_directory):
     assert (user is not None)
     assert (os.path.isfile(user.keystore.path))
 
-    user = UserDB.update_user(user.login, False, user_display_name='New Username')
+    user = UserDB.update_user(user.login, user_display_name='New Username')
     assert (user.name == 'New Username')
     print(user)
 
@@ -96,7 +96,7 @@ def test_update_user_password(temp_directory):
     assert (user is not None)
     assert (os.path.isfile(user.keystore.path))
 
-    user = UserDB.update_user(user.login, False, password=('password', 'newpassword'))
+    user = UserDB.update_user(user.login, password='newpassword')
     print(user)
 
     user = UserDB.delete_user(login)

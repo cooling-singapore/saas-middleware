@@ -257,52 +257,10 @@ class UserUpdate(CLICommand):
         user_display_name = args['new_display_name'] if len(args['new_display_name']) > 0 else None
         password = args['new_password'] if len(args['new_password']) > 0 else None
         if user_display_name or password:
-            user = UserDB.update_user(args['login'], True, user_display_name=user_display_name, password=password)
+            user = UserDB.update_user(args['login'], password=password, user_display_name=user_display_name)
             if user_display_name:
                 print(f"Updating display name: {user.name}")
             if password:
                 print(f"Updating password: {user.hashed_password} (hash only)")
         else:
             print(f"Nothing to update.")
-
-
-class UserUpdatePassword(CLICommand):
-    def __init__(self) -> None:
-        super().__init__('update', 'update user password', arguments=[
-            Argument('--userstore', dest='userstore', action='store', default=default_userstore,
-                     help=f"path to the userstore (default: '{default_userstore}')"),
-            Argument('--login', dest='login', action='store', required=False,
-                     help="the login of the account"),
-            Argument('--new_password', dest='new_password', action='store', required=False,
-                     help="the new password of the account")
-        ])
-
-    def execute(self, args: dict) -> None:
-        # get the user directory and initialise user database
-        if not os.path.isdir(args['userstore']):
-            raise CLIRuntimeError(f"Directory does not exist: {args['userstore']}")
-        UserDB.initialise(args['userstore'])
-
-        # determine the username (if we don't have one already)
-        if not args['login']:
-            # determine the choices of user to be updated
-            choices = [Choice(user.login, user.login) for user in UserDB.all_users()]
-            if not choices:
-                raise CLIRuntimeError(f"No users found in {args['userstore']}")
-
-            args['login'] = prompt_for_selection(choices, "Select the user to be updated:", allow_multiple=False)
-
-        # check the password
-        prompt_if_missing(args, 'new_password', prompt_for_string, allow_empty=True, hide=True,
-                          message="Enter the new password [leave empty to generate]:")
-        if len(args['new_password']) == 0:
-            args['new_password'] = generate_random_string(8)
-            print(f"Using generated new password: {args['new_password']}")
-
-        # update the user
-        user = UserDB.update_user(args['login'], True, password=("", args['new_password']))
-        print(f"User updated: {user.login} ({user.name})")
-
-
-
-
