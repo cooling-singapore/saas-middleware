@@ -192,6 +192,39 @@ def test_cli_runner_success(temp_dir):
     assert status.state == JobStatus.State.POSTPROCESSING
 
 
+def test_cli_runner_success_no_name(temp_dir):
+    # prepare the job folder
+    job_id = '398h36g3'
+    job_path = prepare_job_folder(temp_dir, job_id, a=1, b=1)
+
+    # determine REST address
+    rest_address = PortMaster.generate_rest_address()
+
+    # execute the job runner command
+    def run_job():
+        cmd = JobRunner()
+        args = {
+            'job_path': job_path,
+            'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples', 'adapters', 'proc_example'),
+            'rest_address': f"{rest_address[0]}:{rest_address[1]}"
+        }
+        cmd.execute(args)
+
+    threading.Thread(target=run_job).start()
+
+    # submit a job
+    proxy = JobRESTProxy(rest_address)
+    while True:
+        time.sleep(0.5)
+        status: JobStatus = proxy.job_status()
+        print(status.dict())
+
+        if status.state not in [JobStatus.State.INITIALISED, JobStatus.State.RUNNING]:
+            break
+
+    assert status.state == JobStatus.State.POSTPROCESSING
+
+
 def test_cli_runner_failing(temp_dir):
     # prepare the job folder
     job_id = '398h36g3'

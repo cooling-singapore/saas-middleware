@@ -147,7 +147,7 @@ class JobRunner(CLICommand):
             with open(descriptor_path) as f:
                 # try to get the processor by the descriptor name
                 descriptor = ProcessorDescriptor.parse_obj(json.load(f))
-                args['proc_name'] = descriptor.proc_name
+                args['proc_name'] = descriptor.name
 
         # do we have the processor we are looking for?
         proc: ProcessorBase = procs_by_name.get(args['proc_name'], None)
