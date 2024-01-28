@@ -1,3 +1,5 @@
+import json
+import logging
 import os
 import threading
 import traceback
@@ -9,29 +11,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing
 from saas.core.logging import Logging
+from saas.dor.schemas import ProcessorDescriptor
 from saas.rti.proxy import JOB_ENDPOINT_PREFIX
 from saas.rti.schemas import JobStatus, Severity
 from saas.sdk.processor import find_processors, ProcessorBase, ProgressListener, ProcessorRuntimeError
 
-logger = Logging.get('cli.job_runner')
-
 
 class JobWorker(threading.Thread):
     class ProgressListener(ProgressListener):
-        def __init__(self, job_status: JobStatus) -> None:
+        def __init__(self, job_status: JobStatus, logger: logging.Logger) -> None:
+            self._logger = logger
             self._job_status = job_status
 
         def on_progress_update(self, progress: int) -> None:
+            self._logger.info(f"on_progress_update: progress={progress}")
             self._job_status.progress = progress
 
         def on_output_available(self, output_name: str) -> None:
             if output_name not in self._job_status.output:
+                self._logger.info(f"on_output_available: output_name={output_name}")
                 self._job_status.output[output_name] = None
 
         def on_message(self, severity: Severity, message: str) -> None:
+            self._logger.info(f"on_message: severity={severity} message={message}")
             self._job_status.message = JobStatus.Message(severity=severity, content=message)
 
-    def __init__(self, proc: ProcessorBase, wd_path: str) -> None:
+    def __init__(self, proc: ProcessorBase, wd_path: str, log_level: int = logging.INFO) -> None:
         super().__init__()
 
         self._mutex = threading.Lock()
@@ -40,23 +45,27 @@ class JobWorker(threading.Thread):
         self._status = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={},
                                  job=None, reconnect=None, errors=[], message=None)
 
+        # setup logger
+        log_path = os.path.join(wd_path, 'log')
+        self._logger = Logging.get('cli.job_runner', level=log_level, custom_log_path=log_path)
+
     def run(self) -> None:
         try:
-            logger.info(f"begin processing job at {self._wd_path}")
+            self._logger.info(f"begin processing job at {self._wd_path}")
             self._status.state = JobStatus.State.RUNNING
 
-            self._proc.run(self._wd_path, JobWorker.ProgressListener(self._status), logger)
+            self._proc.run(self._wd_path, JobWorker.ProgressListener(self._status, self._logger), self._logger)
 
             with self._mutex:
                 if self._status.state == JobStatus.State.CANCELLED:
-                    logger.info(f"end processing job at {self._wd_path} -> CANCELLED")
+                    self._logger.info(f"end processing job at {self._wd_path} -> CANCELLED")
 
                 else:
-                    logger.info(f"end processing job at {self._wd_path} -> POSTPROCESSING")
+                    self._logger.info(f"end processing job at {self._wd_path} -> POSTPROCESSING")
                     self._status.state = JobStatus.State.POSTPROCESSING
 
         except ProcessorRuntimeError as e:
-            logger.error(f"end processing job at {self._wd_path} -> UNSUCCESSFUL: {e.reason}")
+            self._logger.error(f"end processing job at {self._wd_path} -> UNSUCCESSFUL: {e.reason}")
             with self._mutex:
                 self._status.errors.append(JobStatus.Error(message=e.reason, content=e.content))
                 self._status.state = JobStatus.State.FAILED
@@ -65,7 +74,7 @@ class JobWorker(threading.Thread):
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             e = ProcessorRuntimeError(f'Unexpected Error: {str(e)}', details={'trace': trace})
 
-            logger.error(f"end processing job at {self._wd_path} -> UNSUCCESSFUL: {e.reason}")
+            self._logger.error(f"end processing job at {self._wd_path} -> UNSUCCESSFUL: {e.reason}")
             with self._mutex:
                 self._status.errors.append(JobStatus.Error(message=e.reason, exception=e.content))
                 self._status.state = JobStatus.State.FAILED
@@ -76,9 +85,14 @@ class JobWorker(threading.Thread):
 
     def interrupt(self) -> None:
         with self._mutex:
-            logger.info(f"attempt to interrupt job at {self._wd_path}...")
+            self._logger.info(f"attempt to interrupt job at {self._wd_path}...")
             self._status.state = JobStatus.State.CANCELLED
             self._proc.interrupt()
+
+    def write_exitcode(self, exitcode: int) -> None:
+        exitcode_path = os.path.join(self._wd_path, 'exitcode')
+        with open(exitcode_path, 'w') as f:
+            f.write()
 
 
 class JobRunner(CLICommand):
@@ -106,7 +120,6 @@ class JobRunner(CLICommand):
     def execute(self, args: dict) -> None:
         prompt_if_missing(args, 'job_path', prompt_for_string, message="Enter path to the job:")
         prompt_if_missing(args, 'proc_path', prompt_for_string, message="Enter path to the processor:")
-        prompt_if_missing(args, 'proc_name', prompt_for_string, message="Enter the name of the processor:")
         prompt_if_missing(args, 'rest_address', prompt_for_string, message="Enter address for REST service:")
 
         # does the job path exist?
@@ -121,7 +134,20 @@ class JobRunner(CLICommand):
 
         # find processors at the given location
         procs_by_name = find_processors(args['proc_path'])
-        print(f"Found the following processors: {procs_by_name.keys()}")
+        print(f"Found the following processors: {list(procs_by_name.keys())}")
+
+        # do we have a processor name?
+        if 'proc_name' not in args or args['proc_name'] is None:
+            # try to read the descriptor in the proc path
+            descriptor_path = os.path.join(args['proc_path'], 'descriptor.json')
+            if not os.path.isfile(descriptor_path):
+                raise CLIRuntimeError(f"No processor descriptor found at '{args['proc_path']}'.")
+
+            # read the descriptor
+            with open(descriptor_path) as f:
+                # try to get the processor by the descriptor name
+                descriptor = ProcessorDescriptor.parse_obj(json.load(f))
+                args['proc_name'] = descriptor.proc_name
 
         # do we have the processor we are looking for?
         proc: ProcessorBase = procs_by_name.get(args['proc_name'], None)
