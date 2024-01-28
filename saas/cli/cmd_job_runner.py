@@ -89,11 +89,6 @@ class JobWorker(threading.Thread):
             self._status.state = JobStatus.State.CANCELLED
             self._proc.interrupt()
 
-    def write_exitcode(self, exitcode: int) -> None:
-        exitcode_path = os.path.join(self._wd_path, 'exitcode')
-        with open(exitcode_path, 'w') as f:
-            f.write()
-
 
 class JobRunner(CLICommand):
     def __init__(self):
