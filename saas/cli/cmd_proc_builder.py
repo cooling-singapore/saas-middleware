@@ -9,12 +9,12 @@ from git import Repo, NoSuchPathError, GitCommandError
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing, load_keystore
-from saas.dor.schemas import ProcessorDescriptor, DataObject, GitProcessorPointer
+from saas.dor.schemas import ProcessorDescriptor, DataObject
 from saas.sdk.base import connect
 
 
 def clone_repository(repository_url: str, repository_path: str, commit_id: str = None,
-                     credentials: Optional[Tuple[str, str]] = None) -> None:
+                     credentials: Optional[Tuple[str, str]] = None) -> int:
     # do we have credentials? inject it into the repo URL
     if credentials:
         idx = repository_url.index('github.com')
@@ -32,6 +32,12 @@ def clone_repository(repository_url: str, repository_path: str, commit_id: str =
 
         # checkout a specific commit
         repo.git.checkout(commit_id)
+
+        # determine the commit timestamp
+        commit = repo.commit(commit_id)
+        commit_timestamp = commit.authored_datetime.timestamp()
+
+        return int(commit_timestamp)
 
     except NoSuchPathError as e:
         raise CLIRuntimeError(reason=str(e))
@@ -156,7 +162,8 @@ class ProcBuilder(CLICommand):
         with tempfile.TemporaryDirectory() as tempdir:
             # clone the repository and checkout the specified commit
             repo_path = os.path.join(tempdir, 'repository')
-            clone_repository(args['repository'], repo_path, commit_id=args['commit_id'], credentials=credentials)
+            commit_timestamp = clone_repository(args['repository'], repo_path, commit_id=args['commit_id'],
+                                                credentials=credentials)
             print(f"Done cloning {args['repository']}.")
 
             # build the image
@@ -169,13 +176,13 @@ class ProcBuilder(CLICommand):
             print(f"Done exporting image to '{export_path}'.")
 
             # upload the image to the DOR and set GPP tags
-            gpp = GitProcessorPointer(repository=args['repository'],
-                                      commit_id=args['commit_id'],
-                                      proc_path=args['proc_path'],
-                                      proc_descriptor=descriptor)
             obj = context.upload_content(export_path, 'ProcessorDockerImage', 'tar', False)
             obj.update_tags([
-                DataObject.Tag(key='gpp', value=gpp.dict()),
+                DataObject.Tag(key='repository', value=args['repository']),
+                DataObject.Tag(key='commit_id', value=args['commit_id']),
+                DataObject.Tag(key='commit_timestamp', value=commit_timestamp),
+                DataObject.Tag(key='proc_path', value=args['proc_path']),
+                DataObject.Tag(key='proc_descriptor', value=descriptor.dict()),
                 DataObject.Tag(key='name', value=image_name)
             ])
             print(f"Done uploading image to DOR -> object id: {obj.meta.obj_id}")

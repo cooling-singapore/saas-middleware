@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import List, Union, Dict, Optional, Callable, Literal
+from typing import List, Union, Dict, Optional, Callable, Literal, Tuple
 
 from pydantic import BaseModel
 
@@ -347,6 +347,12 @@ class SDKContext:
         """
         return (get_timestamp_now() - self._created) / 60000.0
 
+    def has_dor_node(self) -> bool:
+        return len(self._dor_nodes) > 0
+
+    def has_rti_node(self) -> bool:
+        return len(self._rti_nodes) > 0
+
     def dor(self, preferred_iid: str = None) -> NodeInfo:
         # do we have any DOR?
         n = len(self._dor_nodes)
@@ -510,7 +516,15 @@ def publish_identity(address: (str, int), identity: Identity) -> None:
     db.update_identity(identity)
 
 
-def connect(address: (str, int), authority: Keystore) -> SDKContext:
+def connect(address: Union[str, Tuple[str, int]], authority: Keystore) -> SDKContext:
+    # parse the address (if necessary)
+    if isinstance(address, str):
+        if ':' in address:
+            address = address.split(':')
+            address = (address[0], int(address[1]))
+        else:
+            address = (address, None)
+
     # publish the user identity (may not be needed but just to be sure)
     publish_identity(address, authority.identity)
 

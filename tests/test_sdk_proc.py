@@ -361,20 +361,20 @@ def test_cli_builder_build_image(temp_dir, github_credentials):
     proc_path = "examples/adapters/proc_example"
 
     try:
-        build_processor_image(temp_dir, repo_path+"_wrong", proc_path)
+        build_processor_image(repo_path+"_wrong", proc_path)
         assert False
     except CLIRuntimeError:
         assert True
 
     try:
         proc_path_wrong = "examples/adapters"
-        build_processor_image(temp_dir, repo_path, proc_path_wrong)
+        build_processor_image(repo_path, proc_path_wrong)
         assert False
     except CLIRuntimeError:
         assert True
 
     try:
-        build_processor_image(temp_dir, repo_path, proc_path)
+        build_processor_image(repo_path, proc_path)
     except CLIRuntimeError:
         assert False
 
@@ -398,7 +398,7 @@ def test_cli_builder_export_image(temp_dir, github_credentials):
 
     # build image
     proc_path = "examples/adapters/proc_example"
-    image_name = build_processor_image(repo_path, proc_path)
+    image_name, _ = build_processor_image(repo_path, proc_path)
 
     # export image
     try:
