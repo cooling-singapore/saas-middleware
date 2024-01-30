@@ -75,14 +75,12 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
         })
 
 
-def generate_authorisation_token(authority: Keystore, url: str, body: dict = None, precision: int = 30) -> str:
+def generate_authorisation_token(authority: Keystore, url: str, body: dict = None) -> str:
     digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
     digest.update(url.encode('utf-8'))
     if body:
         digest.update(canonicaljson.encode_canonical_json(body))
-    slot = int(time.time() / precision)
-    digest.update(slot.to_bytes(4, byteorder='big'))
 
     token = digest.finalize()
     return authority.sign(token)
