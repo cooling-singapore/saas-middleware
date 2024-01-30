@@ -1,5 +1,5 @@
 import os.path
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status

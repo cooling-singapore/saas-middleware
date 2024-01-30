@@ -1,5 +1,4 @@
 import json
-import time
 
 import canonicaljson
 from cryptography.hazmat.backends import default_backend
@@ -14,16 +13,12 @@ from saas.rti.exceptions import ProcessorNotDeployedError, JobDBRecordNotFoundEr
 from saas.rti.schemas import Job
 
 
-def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None,
-                               precision: int = 30) -> bool:
-
+def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None) -> bool:
     digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
     digest.update(url.encode('utf-8'))
     if body:
         digest.update(canonicaljson.encode_canonical_json(body))
-    slot = int(time.time() / precision)
-    digest.update(slot.to_bytes(4, byteorder='big'))
 
     token = digest.finalize()
     return identity.verify(token, signature)
