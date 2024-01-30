@@ -265,4 +265,4 @@ class UserUpdate(CLICommand):
             if password:
                 print(f"Updating password: {user.hashed_password} (hash only)")
         else:
-            print(f"Nothing to update.")
+            print("Nothing to update.")
