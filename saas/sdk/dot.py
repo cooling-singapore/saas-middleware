@@ -37,6 +37,7 @@ class DOTVerificationMessage(BaseModel):
 class DOTVerificationResult(BaseModel):
     messages: List[DOTVerificationMessage]
     is_verified: bool
+    data_format: str
 
 
 class DataObjectType(abc.ABC):
@@ -52,7 +53,7 @@ class DataObjectType(abc.ABC):
     def supported_formats(self) -> List[str]:
         pass
 
-    def verify_content(self, content_path: str, data_format: str) -> DOTVerificationResult:
+    def verify_content(self, content_path: str) -> DOTVerificationResult:
         return DOTVerificationResult(
             messages=[
                 DOTVerificationMessage(severity='error', message=f'verify_content() not implemented for {self.name()}')
