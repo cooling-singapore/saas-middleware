@@ -1,15 +1,17 @@
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 from typing import Optional, Tuple
 
+import docker
 from git import Repo, NoSuchPathError, GitCommandError
 
 from saas.cli.exceptions import CLIRuntimeError
-from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing, load_keystore
-from saas.dor.schemas import ProcessorDescriptor, DataObject
+from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing, load_keystore, \
+    default_if_missing
+from saas.dor.schemas import ProcessorDescriptor, DataObject, GitProcessorPointer
+from saas.helpers import docker_export_image
 from saas.sdk.base import connect
 
 
@@ -50,7 +52,7 @@ def clone_repository(repository_url: str, repository_path: str, commit_id: str =
 
 
 def build_processor_image(repository_path: str, processor_path: str,
-                          use_cache: bool = True) -> Tuple[str, ProcessorDescriptor]:
+                          use_cache: bool = True) -> Tuple[str, ProcessorDescriptor, bool]:
     # does the path exist?
     processor_path = os.path.join(repository_path, processor_path)
     if not os.path.isdir(processor_path):
@@ -86,56 +88,56 @@ def build_processor_image(repository_path: str, processor_path: str,
     commit_id = repo.head.commit.hexsha
     image_name = f"{username}/{repo_name}/{descriptor.name}:{commit_id}"
 
-    # determine command
-    command = ['docker', 'build']
-    if not use_cache:
-        command.append('--no-cache')
-    command.extend(['-t', image_name, '.'])
+    # if the image already exists, delete it
+    client = docker.from_env()
+    image_existed = False
+    try:
+        # get a list of all images and check if it has the name. if so, delete it.
+        for image in client.images.list():
+            if image_name in image.tags:
+                image_existed = True
+                client.images.remove(image.id, force=True)
 
-    # build the docker image
-    result = subprocess.run(command, cwd=processor_path, capture_output=True)
-    if result.returncode != 0:
+    except Exception as e:
+        raise CLIRuntimeError(f"Deleting existing docker image failed.", details={
+            'exception': e
+        })
+
+    # build the processor docker image
+    try:
+        image, _ = client.images.build(path=processor_path, tag=image_name, nocache=not use_cache, rm=True)
+
+    except Exception as e:
         raise CLIRuntimeError(f"Creating docker image failed.", details={
-            'returncode': result.returncode,
-            'stdout': result.stdout.decode('utf-8'),
-            'stderr': result.stderr.decode('utf-8')
+            'exception': e
         })
 
-    return image_name, descriptor
-
-
-def export_processor_image(image_name: str, output_path: str, delete_from_docker: bool = True) -> None:
-    # save the docker image
-    result = subprocess.run(['docker', 'save', '-o', output_path, image_name], capture_output=True)
-    if result.returncode != 0:
-        raise CLIRuntimeError(f"Saving docker image '{image_name}' failed.", details={
-            'returncode': result.returncode,
-            'stdout': result.stdout.decode('utf-8'),
-            'stderr': result.stderr.decode('utf-8')
-        })
-
-    # delete the image (if applicable)
-    if delete_from_docker:
-        result = subprocess.run(['docker', 'rmi', image_name], capture_output=True)
-        if result.returncode != 0:
-            raise CLIRuntimeError(f"Removing docker image '{image_name}' failed.", details={
-                'returncode': result.returncode,
-                'stdout': result.stdout.decode('utf-8'),
-                'stderr': result.stderr.decode('utf-8')
-            })
+    return image_name, descriptor, image_existed
 
 
 class ProcBuilder(CLICommand):
+    default_store_image = False
+    default_use_cache = True
+    default_keep_image = True
+
     def __init__(self):
         super().__init__('build', 'build a processor', arguments=[
             Argument('--repository', dest='repository', action='store', help=f"URL of the repository"),
             Argument('--commit-id', dest='commit_id', action='store', help=f"the commit id"),
             Argument('--proc-path', dest='proc_path', action='store', help=f"path to the processor"),
             Argument('--git-username', dest='git_username', action='store', help=f"GitHub username"),
-            Argument('--git-token', dest='git_token', action='store', help=f"GitHub personal access token")
+            Argument('--git-token', dest='git_token', action='store', help=f"GitHub personal access token"),
+            Argument('--store-image', dest="store_image", action='store_const', const=True,
+                     help="Store the image in the DOR not just a reference."),
+            Argument('--no-cache', dest="use_cache", action='store_const', const=False,
+                     help="Don't use cache when building the processor docker image"),
+            Argument('--delete-image', dest="keep_image", action='store_const', const=False,
+                     help="Deletes the newly created image after exporting it - note: if an image with the same "
+                          "name already existed, this flag will be ignored, effectively resulting in the existing "
+                          "image being replaced with the newly created one.")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> str:
         # load keystore
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -147,6 +149,9 @@ class ProcBuilder(CLICommand):
         prompt_if_missing(args, 'repository', prompt_for_string, message="Enter URL of the repository:")
         prompt_if_missing(args, 'commit_id', prompt_for_string, message="Enter the commit id:")
         prompt_if_missing(args, 'proc_path', prompt_for_string, message="Enter path to the processor:")
+        default_if_missing(args, 'store_image', self.default_store_image)
+        default_if_missing(args, 'use_cache', self.default_use_cache)
+        default_if_missing(args, 'keep_image', self.default_keep_image)
 
         print(f"Using repository at {args['repository']} with commit id {args['commit_id']}.")
         print(f"Using processor path '{args['proc_path']}'.")
@@ -167,22 +172,48 @@ class ProcBuilder(CLICommand):
             print(f"Done cloning {args['repository']}.")
 
             # build the image
-            image_name, descriptor = build_processor_image(repo_path, args['proc_path'], use_cache=True)
+            image_name, descriptor, image_existed = \
+                build_processor_image(repo_path, args['proc_path'], use_cache=args['use_cache'])
             print(f"Done building image '{image_name}'.")
 
-            # export the image
-            export_path = os.path.join(tempdir, 'image.tar')
-            export_processor_image(image_name, export_path, delete_from_docker=True)
-            print(f"Done exporting image to '{export_path}'.")
+            if args['store_image']:
+                # export the image
+                export_path = os.path.join(tempdir, 'image.tar')
+                docker_export_image(image_name, export_path, keep_image=image_existed or args['keep_image'])
+                print(f"Done exporting image to '{export_path}'.")
 
-            # upload the image to the DOR and set GPP tags
-            obj = context.upload_content(export_path, 'ProcessorDockerImage', 'tar', False)
-            obj.update_tags([
-                DataObject.Tag(key='repository', value=args['repository']),
-                DataObject.Tag(key='commit_id', value=args['commit_id']),
-                DataObject.Tag(key='commit_timestamp', value=commit_timestamp),
-                DataObject.Tag(key='proc_path', value=args['proc_path']),
-                DataObject.Tag(key='proc_descriptor', value=descriptor.dict()),
-                DataObject.Tag(key='name', value=image_name)
-            ])
-            print(f"Done uploading image to DOR -> object id: {obj.meta.obj_id}")
+                # upload the image to the DOR and set GPP tags
+                obj = context.upload_content(export_path, 'ProcessorDockerImage', 'tar', False)
+                obj.update_tags([
+                    DataObject.Tag(key='repository', value=args['repository']),
+                    DataObject.Tag(key='commit_id', value=args['commit_id']),
+                    DataObject.Tag(key='commit_timestamp', value=commit_timestamp),
+                    DataObject.Tag(key='proc_path', value=args['proc_path']),
+                    DataObject.Tag(key='proc_descriptor', value=descriptor.dict()),
+                    DataObject.Tag(key='image_name', value=image_name)
+                ])
+                print(f"Done uploading image to DOR -> object id: {obj.meta.obj_id}")
+                os.remove(export_path)
+                return obj.meta.obj_id
+
+            else:
+                # store the GPP information in a file
+                gpp_path = os.path.join(tempdir, 'gpp.json')
+                with open(gpp_path, 'w') as f:
+                    gpp = GitProcessorPointer(repository=args['repository'], commit_id=args['commit_id'],
+                                              proc_path=args['proc_path'], proc_descriptor=descriptor)
+                    json.dump(gpp.dict(), f)
+
+                # upload the image to the DOR and set GPP tags
+                obj = context.upload_content(gpp_path, 'ProcessorDockerImage', 'json', False)
+                obj.update_tags([
+                    DataObject.Tag(key='repository', value=args['repository']),
+                    DataObject.Tag(key='commit_id', value=args['commit_id']),
+                    DataObject.Tag(key='commit_timestamp', value=commit_timestamp),
+                    DataObject.Tag(key='proc_path', value=args['proc_path']),
+                    DataObject.Tag(key='proc_descriptor', value=descriptor.dict()),
+                    DataObject.Tag(key='image_name', value=image_name)
+                ])
+                print(f"Done uploading GPP to DOR -> object id: {obj.meta.obj_id}")
+                os.remove(gpp_path)
+                return obj.meta.obj_id

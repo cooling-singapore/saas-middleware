@@ -278,7 +278,7 @@ def prompt_if_missing(args: dict, key: str, function, **func_args) -> Any:
 
 
 def default_if_missing(args: dict, key: str, default: Any) -> Any:
-    if args[key] is None:
+    if args.get(key, None) is None:
         args[key] = default
     return args[key]
 
