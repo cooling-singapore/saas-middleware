@@ -2,12 +2,7 @@ from typing import List, Optional, Dict, Union
 
 from pydantic import BaseModel, Field
 
-from saas.core.schemas import GithubCredentials
 from saas.nodedb.schemas import NodeInfo
-
-
-GPP_DATA_TYPE = 'GitProcessorPointer'
-GPP_DATA_FORMAT = 'json'
 
 
 class DORStatistics(BaseModel):
@@ -32,7 +27,6 @@ class ProcessorDescriptor(BaseModel):
     name: str = Field(..., title="Processor Name", description="The name of the processor", example="urban-climate-sim")
     input: List[IODataObject] = Field(..., title="Input Data Objects", description="A list of data objects that are consumed by the processor when executing a job.")
     output: List[IODataObject] = Field(..., title="Output Data Objects", description="A list of data objects that are produced by the processor when executing a job.")
-    configurations: List[str] = Field(..., title="Configurations", description="A list of configurations supported by the processor", example=['default', 'ubuntu-20.04'])
 
 
 class GitProcessorPointer(BaseModel):
@@ -40,10 +34,9 @@ class GitProcessorPointer(BaseModel):
     Contains all the necessary information to refer to a specific version of a processor and where it can be located.
     For convenience, it also contains the descriptor of the processor that is being referenced.
     """
-    source: str = Field(..., title="Source", description="The source where the code can be found. Typically, this is a URL pointing at a Github repository.", example="https://github.com/the-repo")
+    repository: str = Field(..., title="Repository", description="The respoitory URL where the processor sourcecode can be found.", example="https://github.com/my-repo")
     commit_id: str = Field(..., title="Commit Id", description="The commit id to be used. This allows to refer to a specific version of the code.", example="833e8f7")
-    proc_path: str = Field(..., title="", description="The relative path in the repository where the processor can be found.", example="/processor/proc_simulator")
-    proc_config: str = Field(..., title="", description="The configuration that should be used.", example="default")
+    proc_path: str = Field(..., title="", description="The relative path in the repository where the processor can be found.", example="/my_processor")
     proc_descriptor: ProcessorDescriptor = Field(..., title="Processor Descriptor", description="The processor descriptor is stored in the repository at the location indicated with `proc_path`. For convenience this descriptor is included in the GPP.")
 
 
@@ -119,30 +112,6 @@ class DataObject(BaseModel):
         key: str = Field(..., title="Key", description="The key of the tag.", example="module")
         value: Optional[Union[str, int, float, bool, List, Dict]] = Field(title="Value", description="The value of the tag", example="D1.2")
 
-    obj_id: str = Field(..., title="Object Id", description="The id of the data object.", example="f25c8b96679aaf74eb41b17fbf7951d790423b6208a5d0efb1cd2a124c1f9cb4")
-    c_hash: str = Field(..., title="Content Hash", description="The content hash of the data object.", example="9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1")
-    data_type: str = Field(..., title="Data Type", description="The data type of the data object.", example="JSONObject")
-    data_format: str = Field(..., title="Data Format", description="The data format of the data object.", example="json")
-    created: CreationDetails = Field(..., title="Creation Details", description="Information about the creation of this data object.")
-    owner_iid: str = Field(..., title="Owner IId", description="Owner IId", example="vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2")
-    access_restricted: bool = Field(..., title="Access Restriction", description="Indicates if this data object has restricted access to its content.", example=False)
-    access: List[str] = Field(..., title="Access", description="A list of ids of identities that have access to the contents of the data object.", example=["vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2"])
-    tags: Dict[str, Union[str, int, float, bool, List, Dict]] = Field(..., title="Tags", description="The tags of this data object.")
-    last_accessed: int = Field(..., title="Last Accessed", description="The timestamp (in UTC milliseconds since the beginning of the epoch) when the data object has been accessed the last time.", example=1664849510076)
-    custodian: Optional[NodeInfo] = Field(title='Custodian', description="Information about the node that hosts this data object.")
-
-
-class GPPDataObject(DataObject):
-    """
-    Meta information specific to a GPP data object.
-    """
-    gpp: GitProcessorPointer = Field(..., title="GPP", description="The Git Processor Pointer for the data object.")
-
-
-class CDataObject(DataObject):
-    """
-    Meta information specific to a content data object.
-    """
     class License(BaseModel):
         """
         Basic licensing information, following Creative Commons. Boolean flags are used to indicate whether the
@@ -154,6 +123,17 @@ class CDataObject(DataObject):
         nc: bool = Field(..., title="Non-Commercial", description="Indicates if commercial use is prohibited.", example=False)
         nd: bool = Field(..., title="Non-Derive", description="Indicates if creating derivatives is prohibited.", example=False)
 
+    obj_id: str = Field(..., title="Object Id", description="The id of the data object.", example="f25c8b96679aaf74eb41b17fbf7951d790423b6208a5d0efb1cd2a124c1f9cb4")
+    c_hash: str = Field(..., title="Content Hash", description="The content hash of the data object.", example="9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1")
+    data_type: str = Field(..., title="Data Type", description="The data type of the data object.", example="JSONObject")
+    data_format: str = Field(..., title="Data Format", description="The data format of the data object.", example="json")
+    created: CreationDetails = Field(..., title="Creation Details", description="Information about the creation of this data object.")
+    owner_iid: str = Field(..., title="Owner IId", description="Owner IId", example="vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2")
+    access_restricted: bool = Field(..., title="Access Restriction", description="Indicates if this data object has restricted access to its content.", example=False)
+    access: List[str] = Field(..., title="Access", description="A list of ids of identities that have access to the contents of the data object.", example=["vx4a3180m97msbi3q11xtcav6v65swoi34bvqggvtj0itzsbargbuxdzzok7xjz2"])
+    tags: Dict[str, Union[str, int, float, bool, List, Dict]] = Field(..., title="Tags", description="The tags of this data object.")
+    last_accessed: int = Field(..., title="Last Accessed", description="The timestamp (in UTC milliseconds since the beginning of the epoch) when the data object has been accessed the last time.", example=1664849510076)
+    custodian: Optional[NodeInfo] = Field(title='Custodian', description="Information about the node that hosts this data object.")
     content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content of the data object is encrypted.", example=False)
     license: License = Field(..., title="License", description="The license information for this data object.")
     recipe: Optional[DataObjectRecipe] = Field(title="Recipe", description="If this data object has been produced by a processor, a recipe is provided. Data objects that are uploaded by users typically do not come with a recipe unless the user provides one manually when uploading the content to the DOR.")
@@ -176,26 +156,9 @@ class AddDataObjectParameters(BaseModel):
     """
     owner_iid: str = Field(..., title="Owner IId", description="The id of the identity that should be assigned ownership to this data object.")
     creators_iid: List[str] = Field(..., title="", description="")
-
-
-class AddGPPDataObjectParameters(AddDataObjectParameters):
-    """
-    Parameters for creating a new GPP data object.
-    """
-    source: str = Field(..., title="Source", description="The source where the code can be found. Typically, this is a URL pointing at a Github repository.", example="https://github.com/the-repo")
-    commit_id: str = Field(..., title="Commit Id", description="The commit id to be used. This allows to refer to a specific version of the code.", example="833e8f7")
-    proc_path: str = Field(..., title="", description="The relative path in the repository where the processor can be found.", example="/processor/proc_simulator")
-    proc_config: str = Field(..., title="", description="The configuration that should be used.", example="default")
-    github_credentials: Optional[GithubCredentials] = Field(title="Github Credentials", description="The credentials needed to access the Github repository that contains the code for the processor. This information is not needed if the repository is public.")
-
-
-class AddCDataObjectParameters(AddDataObjectParameters):
-    """
-    Parameters for creating a new content data object.
-    """
     data_type: str = Field(..., title="Data Type", description="The data type of the data object.")
     data_format: str = Field(..., title="Data Format", description="The data format of the data object.")
     access_restricted: bool = Field(..., title="Access Restricted", description="Indicates if the access to this data object should be restricted.")
     content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content has been encrypted.")
-    license: CDataObject.License = Field(..., title="License", description="License information for this data object.")
+    license: DataObject.License = Field(..., title="License", description="License information for this data object.")
     recipe: Optional[DataObjectRecipe] = Field(title="Recipe", description="Recipe for this data object (if any).")

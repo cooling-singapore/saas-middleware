@@ -29,11 +29,6 @@ class InvalidProcessorDescriptorError(DORException):
         super().__init__('Processor descriptor not valid', details=details)
 
 
-class InvalidGPPDataObjectError(DORException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('GPP data object not valid', details=details)
-
-
 class CloneRepositoryError(DORException):
     def __init__(self, details: dict) -> None:
         super().__init__('Error encountered while trying to clone repository', details=details)

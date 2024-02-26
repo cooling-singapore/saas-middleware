@@ -13,7 +13,7 @@ from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.dor.proxy import DORProxy
-from saas.dor.schemas import CDataObject, DataObjectProvenance, GPPDataObject, DataObject
+from saas.dor.schemas import DataObject, DataObjectProvenance
 from saas.nodedb.proxy import NodeDBProxy
 from saas.nodedb.schemas import NodeInfo
 from saas.rest.proxy import Session
@@ -57,7 +57,7 @@ class SDKProcessor:
     def status(self) -> ProcessorStatus:
         return self._rti.get_status(self._processor.proc_id)
 
-    def submit(self, consume_specs: Dict[str, Union[SDKCDataObject, Dict]],
+    def submit(self, consume_specs: Dict[str, Union[SDKDataObject, Dict]],
                product_specs: Dict[str, SDKProductSpecification] = None,
                name: str = None, description: str = None) -> SDKJob:
 
@@ -70,7 +70,7 @@ class SDKProcessor:
 
             # is it by-reference or by-value?
             obj = consume_specs[obj_desc.name]
-            if isinstance(obj, SDKCDataObject):
+            if isinstance(obj, SDKDataObject):
                 meta = consume_specs[obj_desc.name].meta
 
                 # create a signature (if needed)
@@ -132,8 +132,8 @@ class SDKProcessor:
                                         name=name, description=description)
         return SDKJob(self, job, self._authority, self._session)
 
-    def submit_and_wait(self, consume_specs: Dict[str, Union[SDKCDataObject, Dict]],
-                        product_specs: Dict[str, SDKProductSpecification] = None) -> Dict[str, SDKCDataObject]:
+    def submit_and_wait(self, consume_specs: Dict[str, Union[SDKDataObject, Dict]],
+                        product_specs: Dict[str, SDKProductSpecification] = None) -> Dict[str, SDKDataObject]:
 
         # submit and wait
         job = self.submit(consume_specs, product_specs=product_specs)
@@ -141,13 +141,17 @@ class SDKProcessor:
 
 
 class SDKDataObject:
-    def __init__(self, meta: Union[CDataObject, GPPDataObject], authority: Keystore, session: Session) -> None:
+    def __init__(self, meta: DataObject, authority: Keystore, session: Optional[Session] = None) -> None:
         self._meta = meta
         self._authority = authority
         self._session = session
         self._dor = DORProxy.from_session(session) if session else DORProxy(meta.custodian.rest_address)
 
-    def delete(self) -> Union[CDataObject, GPPDataObject]:
+    @property
+    def meta(self) -> DataObject:
+        return self._meta
+
+    def delete(self) -> DataObject:
         return self._dor.delete_data_object(self._meta.obj_id, self._authority)
 
     def grant_access(self, identity: Identity) -> None:
@@ -164,50 +168,6 @@ class SDKDataObject:
 
     def remove_tags(self, keys: List[str]) -> None:
         self._meta = self._dor.remove_tags(self._meta.obj_id, self._authority, keys)
-
-
-class SDKGPPDataObject(SDKDataObject):
-    def __init__(self, meta: GPPDataObject, authority: Keystore, session: Session = None) -> None:
-        super().__init__(meta, authority, session)
-
-    @property
-    def meta(self) -> GPPDataObject:
-        return self._meta
-
-    def deploy(self, node: NodeInfo, ssh_profile: str = None) -> SDKProcessor:
-        # does the node have an RTI?
-        if not node.rti_service:
-            raise SaaSRuntimeException("Node does not have an RTI service", details={
-                'node': node
-            })
-
-        # do we have SSH credentials for this profile (if applicable)
-        ssh_credentials = None
-        if ssh_profile:
-            ssh_credentials = self._authority.ssh_credentials.get(ssh_profile)
-            if not ssh_credentials:
-                raise SaaSRuntimeException("No SSH credentials found for profile", details={
-                    'profile': ssh_profile
-                })
-
-        # do we have GitHub credentials for this repo?
-        github_credentials = self._authority.github_credentials.get(self.meta.gpp.source)
-
-        # try to deploy the processor
-        rti = RTIProxy.from_session(self._session) if self._session else RTIProxy(node.rest_address)
-        proc = rti.deploy(self.meta.obj_id, self._authority, gpp_custodian=self.meta.custodian.identity.id,
-                          ssh_credentials=ssh_credentials, github_credentials=github_credentials)
-
-        return SDKProcessor(proc, self._authority, node, self._session)
-
-
-class SDKCDataObject(SDKDataObject):
-    def __init__(self, meta: CDataObject, authority: Keystore, session: Session = None) -> None:
-        super().__init__(meta, authority, session)
-
-    @property
-    def meta(self) -> CDataObject:
-        return self._meta
 
     def download(self, download_path: str) -> str:
         # if the download path is a directory, use a default filename
@@ -285,7 +245,7 @@ class SDKJob:
 
     def wait(self, pace: float = 5.0, callback_progress: Callable[[int], None] = None,
              callback_message: Callable[[LogMessage], None] = None,
-             max_no_status: int = 5) -> Optional[Dict[str, SDKCDataObject]]:
+             max_no_status: int = 5) -> Optional[Dict[str, SDKDataObject]]:
         # wait until the job has finished
         prev_progress = None
         prev_message = None
@@ -319,7 +279,7 @@ class SDKJob:
                 # are we done?
                 if status.state == JobStatus.State.SUCCESSFUL:
                     result = {
-                        name: SDKCDataObject(meta=meta, authority=self._authority, session=self._session)
+                        name: SDKDataObject(meta=meta, authority=self._authority, session=self._session)
                         for name, meta in status.output.items()
                     }
                     return result
@@ -382,7 +342,7 @@ class SDKContext:
     def upload_content(self, content_path: str, data_type: str, data_format: str, access_restricted: bool,
                        content_encrypted: bool = False, creators: List[Identity] = None, license_by: bool = False,
                        license_sa: bool = False, license_nc: bool = False, license_nd: bool = False,
-                       preferred_dor_iid: str = None) -> SDKCDataObject:
+                       preferred_dor_iid: str = None) -> SDKDataObject:
 
         # get DOR node
         dor = self.dor(preferred_iid=preferred_dor_iid)
@@ -393,23 +353,7 @@ class SDKContext:
                                    data_type, data_format, creators=creators, license_by=license_by,
                                    license_sa=license_sa, license_nc=license_nc, license_nd=license_nd)
 
-        return SDKCDataObject(meta, self._authority)
-
-    def upload_gpp(self, source: str, commit_id: str, proc_path: str, proc_config: str,
-                   creators: List[Identity] = None, preferred_dor_iid: str = None) -> SDKGPPDataObject:
-
-        # get DOR node
-        dor = self.dor(preferred_iid=preferred_dor_iid)
-
-        # do we have GitHub credentials?
-        github_credentials = self._authority.github_credentials.get(source)
-
-        # upload data object to DOR
-        dor = DORProxy(dor.rest_address)
-        meta = dor.add_gpp_data_object(source, commit_id, proc_path, proc_config, self._authority.identity,
-                                       creators=creators, github_credentials=github_credentials)
-
-        return SDKGPPDataObject(meta, self._authority)
+        return SDKDataObject(meta, self._authority)
 
     def find_processor_by_id(self, proc_id: str) -> Optional[SDKProcessor]:
         for node in self._rti_nodes.values():
@@ -436,32 +380,25 @@ class SDKContext:
                     result.append(SDKProcessor(proc, self._authority, node))
         return result
 
-    def find_data_object(self, obj_id: str) -> Optional[Union[SDKCDataObject, SDKGPPDataObject]]:
+    def find_data_object(self, obj_id: str) -> Optional[SDKDataObject]:
         for node in self._dor_nodes.values():
             dor = DORProxy(node.rest_address)
             meta = dor.get_meta(obj_id)
             if meta:
-                if isinstance(meta, CDataObject):
-                    return SDKCDataObject(meta, self._authority)
-                else:
-                    return SDKGPPDataObject(meta, self._authority)
+                return SDKDataObject(meta, self._authority)
 
         return None
 
     def find_data_objects(self, patterns: list[str] = None, owner_iid: str = None, data_type: str = None,
-                          data_format: str = None, c_hashes: list[str] = None) -> List[Union[SDKCDataObject,
-                                                                                             SDKGPPDataObject]]:
+                          data_format: str = None, c_hashes: list[str] = None) -> List[SDKDataObject]:
 
         result = []
         for node in self._dor_nodes.values():
             dor = DORProxy(node.rest_address)
             for meta in dor.search(patterns=patterns, owner_iid=owner_iid, data_type=data_type,
                                    data_format=data_format, c_hashes=c_hashes):
+                result.append(SDKDataObject(meta, self._authority))
 
-                if isinstance(meta, CDataObject):
-                    result.append(SDKCDataObject(meta, self._authority))
-                else:
-                    result.append(SDKGPPDataObject(meta, self._authority))
         return result
 
     def find_all_jobs_with_status(self) -> List[SDKJob]:
@@ -554,7 +491,7 @@ class SDKRelayContext:
 
     def upload_content(self, content_path: str, data_type: str, data_format: str, access_restricted: bool,
                        content_encrypted: bool = False, creators: List[Identity] = None, license_by: bool = False,
-                       license_sa: bool = False, license_nc: bool = False, license_nd: bool = False) -> SDKCDataObject:
+                       license_sa: bool = False, license_nc: bool = False, license_nd: bool = False) -> SDKDataObject:
 
         # upload data object to DOR
         dor = DORProxy.from_session(self._session)
@@ -562,7 +499,7 @@ class SDKRelayContext:
                                    data_type, data_format, creators=creators, license_by=license_by,
                                    license_sa=license_sa, license_nc=license_nc, license_nd=license_nd)
 
-        return SDKCDataObject(meta, self._authority, self._session)
+        return SDKDataObject(meta, self._authority, self._session)
 
     def find_processor_by_id(self, proc_id: str) -> Optional[SDKProcessor]:
         rti = RTIProxy.from_session(self._session)
@@ -586,30 +523,23 @@ class SDKRelayContext:
                 result.append(SDKProcessor(proc, self._authority, self._node, self._session))
         return result
 
-    def find_data_object(self, obj_id: str) -> Optional[Union[SDKCDataObject, SDKGPPDataObject]]:
+    def find_data_object(self, obj_id: str) -> Optional[SDKDataObject]:
         dor = DORProxy.from_session(self._session)
         meta = dor.get_meta(obj_id)
         if meta:
-            if isinstance(meta, CDataObject):
-                return SDKCDataObject(meta, self._authority, self._session)
-            else:
-                return SDKGPPDataObject(meta, self._authority, self._session)
+            return SDKDataObject(meta, self._authority, self._session)
 
         return None
 
     def find_data_objects(self, patterns: list[str] = None, owner_iid: str = None, data_type: str = None,
-                          data_format: str = None, c_hashes: list[str] = None) -> List[Union[SDKCDataObject,
-                                                                                             SDKGPPDataObject]]:
+                          data_format: str = None, c_hashes: list[str] = None) -> List[SDKDataObject]:
 
         result = []
         dor = DORProxy.from_session(self._session)
         for meta in dor.search(patterns=patterns, owner_iid=owner_iid, data_type=data_type,
                                data_format=data_format, c_hashes=c_hashes):
 
-            if isinstance(meta, CDataObject):
-                result.append(SDKCDataObject(meta, self._authority, self._session))
-            else:
-                result.append(SDKGPPDataObject(meta, self._authority, self._session))
+            result.append(SDKDataObject(meta, self._authority, self._session))
         return result
 
     def find_all_jobs_with_status(self) -> List[SDKJob]:
