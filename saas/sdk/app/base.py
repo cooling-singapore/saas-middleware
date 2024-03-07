@@ -291,5 +291,5 @@ class Application(abc.ABC):
         """
         Updates a user information (name and/or password) and returns the user profile.
         """
-        user = UserDB.update_user(user.login, False, password=p.password, user_display_name=p.name)
+        user = UserDB.update_user(user.login, password=p.password, user_display_name=p.name)
         return UserProfile(login=user.login, name=user.name, disabled=user.disabled)
