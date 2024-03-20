@@ -51,6 +51,10 @@ class SDKProcessor:
     def descriptor(self) -> Processor:
         return self._processor
 
+    @property
+    def node(self) -> NodeInfo:
+        return self._node
+
     def undeploy(self) -> None:
         self._rti.undeploy(self._processor.proc_id, self._authority)
 
@@ -535,6 +539,10 @@ class SDKRelayContext:
         self._node = node
         self._dors = dors
 
+    @property
+    def authority(self) -> Keystore:
+        return self._authority
+
     def close(self) -> None:
         # delete the ephemeral keystore
         os.remove(self._authority.path)
@@ -660,7 +668,7 @@ def connect_to_relay(wd_path: str, server_address: Union[str, Tuple[str, int]],
     authority = Keystore.create(wd_path, f"relay_proxy:{session.credentials[0]}", 'none', session.credentials[1])
     user_identity = db.update_identity(authority.identity)
 
-    print(f"Using ephemeral identity: {authority.identity.id}")
-    print(f"Actual user identity: {user_identity.id}")
+    print(f"Using ephemeral identity: {authority.identity.id} {authority.identity.name}")
+    print(f"Actual user identity: {user_identity.id} {user_identity.name}")
 
     return SDKRelayContext(session, authority, node, dors)

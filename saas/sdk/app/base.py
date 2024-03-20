@@ -27,7 +27,6 @@ from saas.rest.schemas import EndpointDefinition, Token
 from saas.sdk.app.auth import UserAuth, UserDB, User
 from saas.sdk.app.exceptions import AppRuntimeError
 from saas.sdk.base import SDKContext, connect
-from saas.sdk.dot import DataObjectType
 
 logger = Logging.get('saas.sdk.app')
 
@@ -109,7 +108,6 @@ class Application(abc.ABC):
         self._thread = None
 
         self._context: Dict[str, SDKContext] = {}
-        self._dots: Dict[str, DataObjectType] = {}
 
         self._invalidate_thread = threading.Thread(target=self._invalidate_contexts,
                                                    args=(context_expiry,),
@@ -164,14 +162,6 @@ class Application(abc.ABC):
 
     async def _close(self) -> None:
         logger.info("REST app is shutting down.")
-
-    def add_dot(self, dot: DataObjectType) -> None:
-        with self._mutex:
-            self._dots[dot.name()] = dot
-
-    def supported_dots(self) -> List[str]:
-        with self._mutex:
-            return list(self._dots.keys())
 
     @property
     def address(self) -> (str, int):
