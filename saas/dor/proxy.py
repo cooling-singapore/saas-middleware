@@ -49,8 +49,8 @@ class DORProxy(EndpointProxy):
 
     def add_data_object(self, content_path: str, owner: Identity, access_restricted: bool, content_encrypted: bool,
                         data_type: str, data_format: str, creators: List[Identity] = None, recipe: dict = None,
-                        license_by: bool = False, license_sa: bool = False, license_nc: bool = False,
-                        license_nd: bool = False) -> DataObject:
+                        tags: List[DataObject.Tag] = None, license_by: bool = False, license_sa: bool = False,
+                        license_nc: bool = False, license_nd: bool = False) -> DataObject:
         body = {
             'owner_iid': owner.id,
             'creators_iid': [creator.id for creator in creators] if creators else [owner.id],
@@ -58,13 +58,14 @@ class DORProxy(EndpointProxy):
             'data_format': data_format,
             'access_restricted': access_restricted,
             'content_encrypted': content_encrypted,
-            'recipe': recipe if recipe else None,
             'license': {
                 'by': license_by,
                 'sa': license_sa,
                 'nc': license_nc,
                 'nd': license_nd
-            }
+            },
+            'recipe': recipe if recipe else None,
+            'tags': {tag.key: tag.value for tag in tags} if tags else None
         }
 
         result = self.post('add', body=body, attachment_path=content_path)

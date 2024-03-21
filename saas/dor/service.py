@@ -428,7 +428,7 @@ class DORService:
                                                  'creators_iid': p.creators_iid
                                              },
                                              owner_iid=owner.id, access_restricted=p.access_restricted,
-                                             access=[owner.id], tags={},
+                                             access=[owner.id], tags=p.tags if p.tags else {},
                                              details={
                                                  'content_encrypted': p.content_encrypted,
                                                  'license': p.license.dict(),
