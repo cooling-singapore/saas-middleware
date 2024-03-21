@@ -13,7 +13,6 @@ from saas.core.schemas import GithubCredentials, SSHCredentials, KeystoreContent
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
-from saas.rti.adapters.base import run_command
 
 logger = Logging.get('cli.identity')
 
