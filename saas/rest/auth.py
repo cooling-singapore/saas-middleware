@@ -10,8 +10,8 @@ from saas.core.identity import Identity
 from saas.dor.exceptions import DataObjectNotFoundError
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import AuthorisationFailedError
-from saas.rti.exceptions import ProcessorNotDeployedError, JobDBRecordNotFoundError
-from saas.rti.schemas import Job
+from saas.rti.exceptions import ProcessorNotDeployedError, ProcessorBusyError, ProcessorDeployedError
+from saas.rti.schemas import Processor
 
 
 def verify_authorisation_token(identity: Identity, signature: str, url: str, body: dict = None,
@@ -118,14 +118,33 @@ class VerifyProcessorDeployed:
         self.node = node
 
     async def __call__(self, proc_id: str):
-        # is the processor already deployed?
-        for deployed in self.node.rti.deployed():
-            if deployed.proc_id == proc_id:
-                return
+        if not self.node.rti.is_deployed(proc_id):
+            raise ProcessorNotDeployedError({
+                'proc_id': proc_id
+            })
 
-        raise ProcessorNotDeployedError({
-            'proc_id': proc_id
-        })
+
+class VerifyProcessorNotDeployed:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, proc_id: str):
+        if self.node.rti.is_deployed(proc_id):
+            raise ProcessorDeployedError({
+                'proc_id': proc_id
+            })
+
+
+class VerifyProcessorNotBusy:
+    def __init__(self, node):
+        self.node = node
+
+    async def __call__(self, proc_id: str):
+        proc: Processor = self.node.rti.get_proc(proc_id)
+        if proc.state in [Processor.State.BUSY_DEPLOY, Processor.State.BUSY_UNDEPLOY]:
+            raise ProcessorBusyError({
+                'proc_id': proc_id
+            })
 
 
 class VerifyUserIsJobOwnerOrNodeOwner:
@@ -135,23 +154,16 @@ class VerifyUserIsJobOwnerOrNodeOwner:
     async def __call__(self, job_id: str, request: Request):
         identity, _ = await VerifyAuthorisation(self.node).__call__(request)
 
-        from saas.rti.service import DBJobContext
-        with self.node.rti._Session() as session:
-            # do we have a job record?
-            record = session.query(DBJobContext).get(job_id)
-            if record is None:
-                raise JobDBRecordNotFoundError({'job_id': job_id})
-
-            # get the job and check if the user iids check out
-            job = Job.parse_obj(record.job)
-            if job.task.user_iid != identity.id and identity.id != self.node.identity.id:
-                raise AuthorisationFailedError({
-                    'reason': 'user is not the job owner or the node owner',
-                    'job_id': job_id,
-                    'user_iid': identity.id,
-                    'owner_iid': job.task.user_iid,
-                    'node_iid': self.node.identity.id
-                })
+        # get the job user (i.e., owner) and check if the caller user ids check out
+        job_owner_iid = self.node.rti.get_job_owner_iid(job_id)
+        if job_owner_iid != identity.id and identity.id != self.node.identity.id:
+            raise AuthorisationFailedError({
+                'reason': 'user is not the job owner or the node owner',
+                'job_id': job_id,
+                'job_owner_iid': job_owner_iid,
+                'request_user_iid': identity.id,
+                'node_iid': self.node.identity.id
+            })
 
 
 class VerifyUserIsNodeOwner:
