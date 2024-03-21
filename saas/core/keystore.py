@@ -63,9 +63,12 @@ class Keystore:
         self._update_identity()
 
     @classmethod
-    def create(cls, path: str, name: str, email: str, password: str) -> Keystore:
+    def create(cls, path: str, name: str, email: str = 'no-password', password: str = None) -> Keystore:
         # create random keystore id
         iid = generate_random_string(64, characters=string.ascii_lowercase+string.digits)
+
+        # create random password if required (for ephemeral keys)
+        password = password if password else generate_random_string(64)
 
         # create required assets
         master_key = MasterKeyPairAsset(RSAKeyPair.create_new())
