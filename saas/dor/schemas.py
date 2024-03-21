@@ -162,3 +162,4 @@ class AddDataObjectParameters(BaseModel):
     content_encrypted: bool = Field(..., title="Content Encrypted", description="Indicates if the content has been encrypted.")
     license: DataObject.License = Field(..., title="License", description="License information for this data object.")
     recipe: Optional[DataObjectRecipe] = Field(title="Recipe", description="Recipe for this data object (if any).")
+    tags: Optional[Dict[str, Union[str, int, float, bool, List, Dict]]] = Field(title="Tags", description="The tags of this data object.")
