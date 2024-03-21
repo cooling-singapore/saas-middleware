@@ -52,10 +52,10 @@ class SDKProcessor:
         return self._processor
 
     def undeploy(self) -> None:
-        self._rti.undeploy(self._processor.proc_id, self._authority)
+        self._rti.undeploy(self._processor.id, self._authority)
 
     def status(self) -> ProcessorStatus:
-        return self._rti.get_status(self._processor.proc_id)
+        return self._rti.get_status(self._processor.id)
 
     def submit(self, consume_specs: Dict[str, Union[SDKDataObject, Dict]],
                product_specs: Dict[str, SDKProductSpecification] = None,
@@ -127,7 +127,7 @@ class SDKProcessor:
             ))
 
         # try to submit the job
-        job: Job = self._rti.submit_job(self._processor.proc_id, job_input, job_output,
+        job: Job = self._rti.submit_job(self._processor.id, job_input, job_output,
                                         with_authorisation_by=self._authority,
                                         name=name, description=description)
         return SDKJob(self, job, self._authority, self._session)
@@ -144,7 +144,6 @@ class SDKDataObject:
     def __init__(self, meta: DataObject, authority: Keystore, session: Optional[Session] = None) -> None:
         self._meta = meta
         self._authority = authority
-        self._session = session
         self._dor = DORProxy.from_session(session) if session else DORProxy(meta.custodian.rest_address)
 
     @property
@@ -358,15 +357,15 @@ class SDKContext:
     def find_processor_by_id(self, proc_id: str) -> Optional[SDKProcessor]:
         for node in self._rti_nodes.values():
             rti = RTIProxy(node.rest_address)
-            for proc in rti.get_deployed():
-                if proc.proc_id == proc_id:
+            for proc in rti.get_all_procs():
+                if proc.id == proc_id:
                     return SDKProcessor(proc, self._authority, node)
         return None
 
     def find_processor_by_name(self, proc_name: str) -> Optional[SDKProcessor]:
         for node in self._rti_nodes.values():
             rti = RTIProxy(node.rest_address)
-            for proc in rti.get_deployed():
+            for proc in rti.get_all_procs():
                 if proc.gpp.proc_descriptor.name == proc_name:
                     return SDKProcessor(proc, self._authority, node)
         return None
@@ -375,7 +374,7 @@ class SDKContext:
         result = []
         for node in self._rti_nodes.values():
             rti = RTIProxy(node.rest_address)
-            for proc in rti.get_deployed():
+            for proc in rti.get_all_procs():
                 if not pattern or pattern in proc.gpp.proc_descriptor.name:
                     result.append(SDKProcessor(proc, self._authority, node))
         return result
@@ -408,8 +407,8 @@ class SDKContext:
             jobs = rti.get_jobs_by_user(self._authority)
             for job in jobs:
                 # get the corresponding processor
-                for proc in rti.get_deployed():
-                    if proc.proc_id == job.task.proc_id:
+                for proc in rti.get_all_procs():
+                    if proc.id == job.task.proc_id:
                         proc = SDKProcessor(proc, self._authority, node)
                         results.append(SDKJob(proc, job, self._authority))
                         break
@@ -424,8 +423,8 @@ class SDKContext:
                 # does the job id match?
                 if job.id == job_id:
                     # get the corresponding processor
-                    for proc in rti.get_deployed():
-                        if proc.proc_id == job.task.proc_id:
+                    for proc in rti.get_all_procs():
+                        if proc.id == job.task.proc_id:
                             proc = SDKProcessor(proc, self._authority, node)
                             return SDKJob(proc, job, self._authority)
 
@@ -503,14 +502,14 @@ class SDKRelayContext:
 
     def find_processor_by_id(self, proc_id: str) -> Optional[SDKProcessor]:
         rti = RTIProxy.from_session(self._session)
-        for proc in rti.get_deployed():
-            if proc.proc_id == proc_id:
+        for proc in rti.get_all_procs():
+            if proc.id == proc_id:
                 return SDKProcessor(proc, self._authority, self._node, self._session)
         return None
 
     def find_processor_by_name(self, proc_name: str) -> Optional[SDKProcessor]:
         rti = RTIProxy.from_session(self._session)
-        for proc in rti.get_deployed():
+        for proc in rti.get_all_procs():
             if proc.gpp.proc_descriptor.name == proc_name:
                 return SDKProcessor(proc, self._authority, self._node, self._session)
         return None
@@ -518,7 +517,7 @@ class SDKRelayContext:
     def find_processors(self, pattern: str = None) -> List[SDKProcessor]:
         result = []
         rti = RTIProxy.from_session(self._session)
-        for proc in rti.get_deployed():
+        for proc in rti.get_all_procs():
             if not pattern or pattern in proc.gpp.proc_descriptor.name:
                 result.append(SDKProcessor(proc, self._authority, self._node, self._session))
         return result
@@ -548,8 +547,8 @@ class SDKRelayContext:
         jobs = rti.get_jobs_by_user(self._authority)
         for job in jobs:
             # get the corresponding processor
-            for proc in rti.get_deployed():
-                if proc.proc_id == job.task.proc_id:
+            for proc in rti.get_all_procs():
+                if proc.id == job.task.proc_id:
                     proc = SDKProcessor(proc, self._authority, self._node, self._session)
                     results.append(SDKJob(proc, job, self._authority, self._session))
                     break
@@ -563,8 +562,8 @@ class SDKRelayContext:
             # does the job id match?
             if job.id == job_id:
                 # get the corresponding processor
-                for proc in rti.get_deployed():
-                    if proc.proc_id == job.task.proc_id:
+                for proc in rti.get_all_procs():
+                    if proc.id == job.task.proc_id:
                         proc = SDKProcessor(proc, self._authority, self._node, self._session)
                         return SDKJob(proc, job, self._authority, self._session)
 
