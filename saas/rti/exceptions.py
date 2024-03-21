@@ -7,35 +7,19 @@ class RTIException(SaaSRuntimeException):
     """
 
 
-class UnexpectedGPPMetaInformation(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Unexpected meta information for GPP data object', details=details)
-
-
 class ProcessorNotDeployedError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Processor not deployed', details=details)
 
 
-class JobDBRecordNotFoundError(RTIException):
+class ProcessorDeployedError(RTIException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Job database record not found', details=details)
+        super().__init__('Processor already deployed', details=details)
 
 
-class JobStatusNotFoundError(RTIException):
+class ProcessorBusyError(RTIException):
     def __init__(self, details: dict) -> None:
-        super().__init__('Job status not found', details=details)
-
-
-class GPPDataObjectNotFound(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('GPP data object not found', details=details)
-
-
-class ProcessorNotAcceptingJobsError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Processor is not accepting job submissions (probably because it is shutting down)',
-                         details=details)
+        super().__init__('Processor is busy, try again later.', details=details)
 
 
 class UnresolvedInputDataObjectsError(RTIException):
@@ -53,9 +37,12 @@ class MissingUserSignatureError(RTIException):
         super().__init__('Missing user signature for access to data object', details=details)
 
 
-class AdapterRuntimeError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Error while executing shell command by adapter', details=details)
+class InputDataObjectMissing(RTIException):
+    def __init__(self, obj_name: str, meta_path: str, content_path: str) -> None:
+        super().__init__(f"Input data object '{obj_name}' not found", details={
+            'meta_path': meta_path,
+            'content_path': content_path
+        })
 
 
 class MismatchingDataTypeOrFormatError(RTIException):
@@ -68,11 +55,6 @@ class InvalidJSONDataObjectError(RTIException):
         super().__init__('Data object JSON content does not comply with schema', details=details)
 
 
-class SSHConnectionError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('SSH connection cannot be established', details=details)
-
-
 class DataObjectContentNotFoundError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Content of data object not found', details=details)
@@ -81,28 +63,3 @@ class DataObjectContentNotFoundError(RTIException):
 class DataObjectOwnerNotFoundError(RTIException):
     def __init__(self, details: dict) -> None:
         super().__init__('Identity of data object owner not found', details=details)
-
-
-class DockerRuntimeError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Error while running Docker processor', details=details)
-
-
-class BuildDockerImageError(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Error while building Docker image', details=details)
-
-
-class UnexpectedObjectName(RTIException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Unexpected object name encountered when processing push triggers', details=details)
-
-
-class RunCommandError(RTIException):
-    def __init__(self, details: dict, reason: str = 'Error while running command') -> None:
-        super().__init__(reason, details=details)
-
-
-class RunCommandTimeoutError(RunCommandError):
-    def __init__(self, details: dict) -> None:
-        super().__init__(details=details, reason='Timeout while running command')
