@@ -24,8 +24,10 @@ class P2PProtocol:
     needed regardless of the specific protocol implementation.
     """
 
-    def __init__(self, node, protocol_name: str, mapping: list[tuple]):
-        self._node = node
+    def __init__(self, identity: Identity, datastore: str, protocol_name: str, mapping: list[tuple]):
+        # self._node = node
+        self._identity = identity
+        self._datastore = datastore
         self._protocol_name = protocol_name
         self._function_mapping = {item[0].__name__: item for item in mapping}
         self._seq_id_counter = 0
@@ -34,9 +36,9 @@ class P2PProtocol:
         self._seq_id_counter += 1
         return self._seq_id_counter
 
-    @property
-    def node(self):
-        return self._node
+    # @property
+    # def node(self):
+    #     return self._node
 
     @property
     def name(self) -> str:
@@ -83,15 +85,15 @@ class P2PProtocol:
                                  attachment=attachment, sequence_id=self._next_seq_id())
 
         # send the message...
-        peer, messenger = SecureMessenger.connect(address, self._node.identity, self._node.datastore)
-        logger.debug(f"[req:{message_out.sequence_id:06d}] ({self._node.identity.id[:8]}) -> ({peer.id[:8]}) "
+        peer, messenger = SecureMessenger.connect(address, self._identity, self._datastore)
+        logger.debug(f"[req:{message_out.sequence_id:06d}] ({self._identity.id[:8]}) -> ({peer.id[:8]}) "
                      f"{message_out.protocol} {message_out.type} {message_out.attachment is not None}")
 
         # ...and wait for the response
         message_in = messenger.send_message(message_out)
         if message_in:
             messenger.close()
-            logger.debug(f"[res:{message_in.sequence_id:06d}] ({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
+            logger.debug(f"[res:{message_in.sequence_id:06d}] ({self._identity.id[:8]}) <- ({peer.id[:8]})")
 
             # convert the incoming message in the response
             _, _, resp_class = self._function_mapping[request_type]
@@ -102,7 +104,7 @@ class P2PProtocol:
             messenger.close()
             return None, None, peer
 
-    def broadcast(self, request: BaseModel, attachment: str = None, exclude: list[str] = None,
+    def broadcast(self, network: List[NodeInfo], request: BaseModel, attachment: str = None, exclude: list[str] = None,
                   exclude_self: bool = True) -> Optional[BroadcastResponse]:
 
         # convert the request into the outgoing message
@@ -113,12 +115,12 @@ class P2PProtocol:
         # determine the exclude list
         exclude = exclude if exclude else []
         if exclude_self:
-            exclude.append(self._node.identity.id)
+            exclude.append(self._identity.id)
 
         # send requests to all peers we know of and collect the responses
         responses = {}
         unavailable = []
-        for node in self._node.db.get_network():
+        for node in network:
             # is this peer iid in the exclusion list?
             if node.identity.id in exclude:
                 continue
@@ -127,15 +129,15 @@ class P2PProtocol:
             # we just skip it (as this is a broadcast we can't expect every peer in the list to be online/reachable).
             try:
                 # send the message...
-                peer, messenger = SecureMessenger.connect(node.p2p_address, self._node.identity, self._node.datastore)
-                logger.debug(f"[Breq:{message_out.sequence_id:06d}] ({self._node.identity.id[:8]}) -> ({peer.id[:8]}) "
+                peer, messenger = SecureMessenger.connect(node.p2p_address, self._identity, self._datastore)
+                logger.debug(f"[Breq:{message_out.sequence_id:06d}] ({self._identity.id[:8]}) -> ({peer.id[:8]}) "
                              f"{message_out.protocol} {message_out.type} {message_out.attachment is not None}")
 
                 # ...and wait for the response
                 message_in = messenger.send_message(message_out)
                 if message_in:
                     logger.debug(f"[Bres:{message_in.sequence_id:06d}] "
-                                 f"({self._node.identity.id[:8]}) <- ({peer.id[:8]})")
+                                 f"({self._identity.id[:8]}) <- ({peer.id[:8]})")
 
                     # convert the incoming message in the response and keep it
                     _, _, resp_class = self._function_mapping[request_type]

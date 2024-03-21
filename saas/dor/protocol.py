@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union, Any
 
 from pydantic import BaseModel
 
@@ -37,11 +37,21 @@ class FetchResponse(BaseModel):
 class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
-    def __init__(self, node) -> None:
-        super().__init__(node, DataObjectRepositoryP2PProtocol.id, [
-            (LookupRequest, self._handle_lookup, LookupResponse),
-            (FetchRequest, self._handle_fetch, FetchResponse)
-        ])
+    def __init__(self, args: Union[Any, Union[Identity, str]]) -> None:
+        from saas.node import Node
+        if isinstance(args, Node):
+            self._node: Node = args
+            super().__init__(self._node.identity, self._node.datastore, DataObjectRepositoryP2PProtocol.id, [
+                (LookupRequest, self._handle_lookup, LookupResponse),
+                (FetchRequest, self._handle_fetch, FetchResponse)
+            ])
+        else:
+            self._node = None
+            identity, datastore = args
+            super().__init__(identity, datastore, DataObjectRepositoryP2PProtocol.id, [
+                (LookupRequest, self._handle_lookup, LookupResponse),
+                (FetchRequest, self._handle_fetch, FetchResponse)
+            ])
 
     def lookup(self, peer_address: (str, int), obj_ids: List[str]) -> Dict[str, DataObject]:
         response, _, _ = self.request(peer_address, LookupRequest(obj_ids=obj_ids))
@@ -50,7 +60,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         return result
 
     def _handle_lookup(self, request: LookupRequest, _) -> LookupResponse:
-        records = {obj_id: self.node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
+        records = {obj_id: self._node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
         return LookupResponse(records=records)
 
     def fetch(self, peer_address: (str, int), obj_id: str,
@@ -84,7 +94,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
 
     def _handle_fetch(self, request: FetchRequest, peer: Identity) -> (FetchResponse, str):
         # check if we have that data object
-        meta = self.node.dor.get_meta(request.obj_id)
+        meta = self._node.dor.get_meta(request.obj_id)
         if not meta:
             return FetchResponse(successful=False, details={
                 'reason': 'object not found',
@@ -94,7 +104,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # check if the data object access is restricted and (if so) if the user has the required permission
         if meta.access_restricted:
             # get the identity of the user
-            user = self.node.db.get_identity(request.user_iid)
+            user = self._node.db.get_identity(request.user_iid)
             if user is None:
                 return FetchResponse(successful=False, details={
                     'reason': 'identity of user not found',
@@ -121,7 +131,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 })
 
         # we should have the data object content in our local DOR
-        content_path = self.node.dor.obj_content_path(meta.c_hash)
+        content_path = self._node.dor.obj_content_path(meta.c_hash)
         if not os.path.isfile(content_path):
             return FetchResponse(successful=False, details={
                 'reason': 'data object content not found',
@@ -131,7 +141,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # touch data object
-        self.node.dor.touch_data_object(meta.obj_id)
+        self._node.dor.touch_data_object(meta.obj_id)
 
         # if all is good, send a reply with the meta information followed by the data object content as attachment
         return FetchResponse(successful=True, meta=meta), content_path

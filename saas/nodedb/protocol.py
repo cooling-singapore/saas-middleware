@@ -36,14 +36,15 @@ class NodeDBP2PProtocol(P2PProtocol):
     id = "node_db"
 
     def __init__(self, node) -> None:
-        super().__init__(node, NodeDBP2PProtocol.id, [
+        super().__init__(node.identity, node.datastore, NodeDBP2PProtocol.id, [
             (UpdateMessage, self._handle_update, UpdateMessage),
             (LeaveRequest, self._handle_leave, None),
             (PingRequest, self._handle_ping, PingRequest)
         ])
+        self._node = node
 
     def ping_node(self, boot_node_address: (str, int)) -> Identity:
-        response, _, peer = self.request(boot_node_address, PingRequest(identity=self.node.identity))
+        response, _, peer = self.request(boot_node_address, PingRequest(identity=self._node.identity))
         return response.identity
 
     def perform_join(self, boot_node_address: (str, int)) -> None:
@@ -58,9 +59,9 @@ class NodeDBP2PProtocol(P2PProtocol):
             # contact them directly)
             try:
                 response, _, peer = self.request(peer_address, UpdateMessage(
-                    origin_who=self.node.identity,
-                    origin_node=self.node.db.get_node(),
-                    snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id]),
+                    origin_who=self._node.identity,
+                    origin_node=self._node.db.get_node(),
+                    snapshot=self._node.db.get_snapshot(exclude=[self._node.identity.id]),
                     reciprocate=True
                 ))
                 logger.debug(f"Adding peer at {peer_address} to db: {peer.name} | {peer.id}")
@@ -68,17 +69,17 @@ class NodeDBP2PProtocol(P2PProtocol):
 
             except PeerUnavailableError:
                 logger.debug(f"Peer at {peer_address} unavailable -> Removing from NodeDB.")
-                self.node.db.remove_node_by_address(peer_address)
+                self._node.db.remove_node_by_address(peer_address)
 
             # get all nodes in the network and add any nodes that we may not have been aware of
-            for node in self.node.db.get_network():
+            for node in self._node.db.get_network():
                 if node.p2p_address not in processed and node.p2p_address not in remaining and \
-                        node.p2p_address != self.node.p2p.address():
+                        node.p2p_address != self._node.p2p.address():
                     remaining.append(node.p2p_address)
 
     def perform_leave(self) -> None:
-        self.broadcast(LeaveRequest())
-        self.node.db.reset_network()
+        self.broadcast(self._node.db.get_network(), LeaveRequest())
+        self._node.db.reset_network()
 
     def _handle_update(self, request: UpdateMessage, peer: Identity) -> Optional[UpdateMessage]:
         # does the identity check out?
@@ -90,41 +91,41 @@ class NodeDBP2PProtocol(P2PProtocol):
 
         # FIXME: node will not check if the peer hostname is reachable before adding to db
         # update the db information about the originator
-        self.node.db.update_identity(request.origin_who)
-        self.node.db.update_network(request.origin_node)
+        self._node.db.update_identity(request.origin_who)
+        self._node.db.update_network(request.origin_node)
 
         # process the snapshot identities (if any)
         if request.snapshot.update_identity:
             for identity in request.snapshot.update_identity:
-                self.node.db.update_identity(identity)
+                self._node.db.update_identity(identity)
 
         # process the snapshot nodes (if any)
         if request.snapshot.update_network:
             for node in request.snapshot.update_network:
-                self.node.db.update_network(node)
+                self._node.db.update_network(node)
 
         # reciprocate with an update message (if requested)
         return UpdateMessage(
-            origin_who=self.node.identity,
-            origin_node=self.node.db.get_node(),
-            snapshot=self.node.db.get_snapshot(exclude=[self.node.identity.id, peer.id]),
+            origin_who=self._node.identity,
+            origin_node=self._node.db.get_node(),
+            snapshot=self._node.db.get_snapshot(exclude=[self._node.identity.id, peer.id]),
             reciprocate=False
         ) if request.reciprocate else None
 
     def _handle_leave(self, _: LeaveRequest, peer: Identity) -> None:
-        self.node.db.update_identity(peer)
-        self.node.db.remove_node_by_id(peer)
+        self._node.db.update_identity(peer)
+        self._node.db.remove_node_by_id(peer)
 
     def _handle_ping(self, _: PingRequest, peer: Identity) -> PingRequest:
         logger.info(f"Received ping request from node: {peer.name} | {peer.id}")
-        return PingRequest(identity=self.node.identity)
+        return PingRequest(identity=self._node.identity)
 
     def broadcast_identity_update(self, identity: Identity) -> None:
         # this is a simple update. we expect the peer to NOT reciprocate and to NOT forward our message (because we are
         # broadcasting to everyone we know)
-        self.broadcast(UpdateMessage(
-            origin_who=self.node.identity,
-            origin_node=self.node.db.get_node(),
+        self.broadcast(self._node.db.get_network(), UpdateMessage(
+            origin_who=self._node.identity,
+            origin_node=self._node.db.get_node(),
             snapshot=NodeDBSnapshot(update_identity=[identity]),
             reciprocate=False
         ))
