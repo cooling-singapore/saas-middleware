@@ -12,9 +12,9 @@ from saas.cli.exceptions import CLIRuntimeError
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.helpers import find_available_port, docker_export_image
+from tests.conftest import commit_id
 
 logger = Logging.get(__name__)
-
 
 @pytest.fixture(scope="function")
 def temp_dir():
@@ -54,7 +54,6 @@ def test_find_open_port():
 
 def test_cli_builder_clone_repo(temp_dir, github_credentials):
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'fbc2bd7'
     credentials = github_credentials.get(repo_url)
     repo_path = os.path.join(temp_dir, 'repository')
 
@@ -82,7 +81,6 @@ def test_cli_builder_clone_repo(temp_dir, github_credentials):
 def test_cli_builder_build_image(temp_dir, github_credentials):
     # clone the repository
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'fbc2bd7'
     credentials = github_credentials.get(repo_url)
     repo_path = os.path.join(temp_dir, 'repository')
     clone_repository(repo_url, repo_path, commit_id=commit_id, credentials=credentials)
@@ -119,7 +117,6 @@ def test_cli_builder_export_image(temp_dir, github_credentials):
 
     # clone the repository
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'fbc2bd7'
     credentials = github_credentials.get(repo_url)
     repo_path = os.path.join(temp_dir, 'repository')
     clone_repository(repo_url, repo_path, commit_id=commit_id, credentials=credentials)
@@ -144,7 +141,7 @@ def test_cli_builder_cmd(node, temp_dir, github_credentials):
     # define arguments
     args = {
         'repository': repo_url,
-        'commit_id': 'fbc2bd7',
+        'commit_id': commit_id,
         'proc_path': 'examples/adapters/proc_example',
         'address': f"{address[0]}:{address[1]}",
         'git_username': credentials[0],
@@ -182,7 +179,7 @@ def test_cli_builder_cmd_store_image(node, temp_dir, github_credentials):
     # define arguments
     args = {
         'repository': repo_url,
-        'commit_id': 'fbc2bd7',
+        'commit_id':  commit_id,
         'proc_path': 'examples/adapters/proc_example',
         'address': f"{address[0]}:{address[1]}",
         'git_username': credentials[0],
