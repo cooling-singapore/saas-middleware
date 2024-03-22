@@ -270,7 +270,7 @@ class RTIService:
             try:
                 sock.connect((host, port))
             except socket.error as e:
-                if isinstance(e, ConnectionRefusedError):
+                if isinstance(e, (TimeoutError, ConnectionRefusedError)):
                     return host, port
 
             finally:
