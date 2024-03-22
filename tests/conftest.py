@@ -9,6 +9,7 @@ from saas.cli.cmd_proc_builder import clone_repository
 from saas.core.keystore import Keystore
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import ProcessorDescriptor, GitProcessorPointer, DataObject
+from saas.helpers import determine_local_ip
 from saas.node import Node, logger
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
@@ -78,8 +79,9 @@ def extra_keystores():
 @pytest.fixture(scope="session")
 def node(keystore):
     with tempfile.TemporaryDirectory() as tempdir:
-        rest_address = PortMaster.generate_rest_address()
-        p2p_address = PortMaster.generate_p2p_address()
+        local_ip = determine_local_ip()
+        rest_address = PortMaster.generate_rest_address(host=local_ip)
+        p2p_address = PortMaster.generate_p2p_address(host=local_ip)
 
         _node = Node.create(keystore=keystore, storage_path=tempdir,
                             p2p_address=p2p_address, boot_node_address=p2p_address, rest_address=rest_address,

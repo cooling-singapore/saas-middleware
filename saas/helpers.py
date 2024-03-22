@@ -9,6 +9,12 @@ from docker.models.images import Image
 from saas.nodedb.schemas import NodeInfo
 
 
+def determine_local_ip() -> str:
+    hostname = socket.gethostname()
+    ip_address = socket.gethostbyname(hostname)
+    return ip_address
+
+
 def find_available_port(host: str = 'localhost', port_range: (int, int) = (6000, 7000)) -> Optional[int]:
     for port in range(port_range[0], port_range[1], 1):
         # create a socket object and set a timeout to avoid blocking indefinitely
