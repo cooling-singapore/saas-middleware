@@ -175,29 +175,29 @@ class JobRunner(CLICommand, ProgressListener):
         print(f"Using logger with: level={log_level} path={log_path}")
         self._logger = Logging.get('cli.job_runner', level=log_level_mapping[log_level], custom_log_path=log_path)
 
-    def _read_address_port_mapping(self) -> None:
-        mapping_path = os.path.join(self._wd_path, 'address_mapping.json')
-        if os.path.isfile(mapping_path):
-            # read the mapping
-            with open(mapping_path, 'r') as f:
-                self._address_mapping = json.load(f)
+    # def _read_address_port_mapping(self) -> None:
+    #     mapping_path = os.path.join(self._wd_path, 'address_mapping.json')
+    #     if os.path.isfile(mapping_path):
+    #         # read the mapping
+    #         with open(mapping_path, 'r') as f:
+    #             self._address_mapping = json.load(f)
+    #
+    #         print(f"Using address mapping at {mapping_path}:")
+    #         for address, port in self._address_mapping.items():
+    #             print(f" {address} -> {port}")
+    #
+    #     else:
+    #         print(f"No address mapping found.")
 
-            print(f"Using address mapping at {mapping_path}:")
-            for address, port in self._address_mapping.items():
-                print(f" {address} -> {port}")
-
-        else:
-            print(f"No address mapping found.")
-
-    def _resolve(self, address: Tuple[str, int]) -> Tuple[str, int]:
-        if self._address_mapping:
-            key = f"{address[0]}:{address[1]}"
-            if key in self._address_mapping:
-                return '127.0.0.1', self._address_mapping[key]
-            else:
-                raise CLIRuntimeError(f"Address not mapped: {key}")
-
-        return address[0], address[1]
+    # def _resolve(self, address: Tuple[str, int]) -> Tuple[str, int]:
+    #     if self._address_mapping:
+    #         key = f"{address[0]}:{address[1]}"
+    #         if key in self._address_mapping:
+    #             return '127.0.0.1', self._address_mapping[key]
+    #         else:
+    #             raise CLIRuntimeError(f"Address not mapped: {key}")
+    #
+    #     return address[0], address[1]
 
     def _initialise_job(self, proc_path: str, proc_name: str = None) -> None:
         # does the processor path exist?
@@ -330,7 +330,7 @@ class JobRunner(CLICommand, ProgressListener):
         for peer in network:
             # does the remote DOR have any of the pending data objects?
             try:
-                result: Dict[str, DataObject] = protocol.lookup(self._resolve(peer.p2p_address), list(pending.keys()))
+                result: Dict[str, DataObject] = protocol.lookup(peer.p2p_address, list(pending.keys()))
             except Exception:
                 continue
 
@@ -360,12 +360,11 @@ class JobRunner(CLICommand, ProgressListener):
                         })
 
                     # try to download it
-                    protocol.fetch(self._resolve(peer.p2p_address), obj_id, meta_path, content_path,
-                                   self._user.id, signature)
+                    protocol.fetch(peer.p2p_address, obj_id, meta_path, content_path, self._user.id, signature)
 
                 else:
                     # try to download it
-                    protocol.fetch(self._resolve(peer.p2p_address), obj_id, meta_path, content_path)
+                    protocol.fetch(peer.p2p_address, obj_id, meta_path, content_path)
 
                 found[obj_id] = meta.c_hash
                 pending.pop(obj_id)
@@ -440,7 +439,7 @@ class JobRunner(CLICommand, ProgressListener):
                     })
 
         # check if the owner identity exists for each output data object
-        db_proxy = NodeDBProxy(self._resolve(self._job.custodian.rest_address))
+        db_proxy = NodeDBProxy(self._job.custodian.rest_address)
         for o in self._job.task.output:
             owner = db_proxy.get_identity(o.owner_iid)
             if owner is None:
@@ -479,7 +478,7 @@ class JobRunner(CLICommand, ProgressListener):
             })
 
         # get the owner
-        db_proxy = NodeDBProxy(self._resolve(self._job.custodian.rest_address))
+        db_proxy = NodeDBProxy(self._job.custodian.rest_address)
         owner = db_proxy.get_identity(task_out.owner_iid)
         if owner is None:
             raise DataObjectOwnerNotFoundError({
@@ -506,7 +505,7 @@ class JobRunner(CLICommand, ProgressListener):
             content_key = encrypt_file(output_content_path, encrypt_for=owner, delete_source=True)
 
         # do we have a target node specified for storing the data object?
-        target_address = self._resolve(self._job.custodian.rest_address)
+        target_address = self._job.custodian.rest_address
         if task_out.target_node_iid:
             # check with the node db to see if we know about this node
             network = {item.identity.id: item for item in db_proxy.get_network()}
@@ -518,10 +517,10 @@ class JobRunner(CLICommand, ProgressListener):
 
             # extract the rest address from that node record
             node = network[task_out.target_node_iid]
-            target_address = self._resolve(node.rest_address)
+            target_address = node.rest_address
 
         # check if the target node has DOR capabilities
-        dor_proxy = NodeDBProxy(self._resolve(target_address))
+        dor_proxy = NodeDBProxy(target_address)
         node = dor_proxy.get_node()
         if not node.dor_service:
             raise CLIRuntimeError("Target node does not support DOR capabilities", details={
@@ -559,7 +558,7 @@ class JobRunner(CLICommand, ProgressListener):
                 }
 
         # upload the data object to the DOR
-        dor_proxy = DORProxy(self._resolve(target_address))
+        dor_proxy = DORProxy(target_address)
         obj = dor_proxy.add_data_object(output_content_path, owner, restricted_access, content_encrypted,
                                         output_spec.data_type, output_spec.data_format, recipe=recipe,
                                         tags=[
@@ -579,8 +578,8 @@ class JobRunner(CLICommand, ProgressListener):
         self._wd_path = args['job_path']
         print(f"Using job path at {self._wd_path}")
 
-        # read address <-> port mapping (if any)
-        self._read_address_port_mapping()
+        # # read address <-> port mapping (if any)
+        # self._read_address_port_mapping()
 
         # setup logger
         self._setup_logger(args.get('log_level'))

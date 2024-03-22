@@ -34,13 +34,13 @@ def generate_address_port_mapping(network: List[NodeInfo], ports: Dict[str, Tupl
     mapping: Dict[str, int] = {}
     for idx, node in enumerate(network):
         if node.rest_address:
-            rest_port = 7000 + idx
+            rest_port = 6000 + idx
             mapping[f"{node.rest_address[0]}:{node.rest_address[1]}"] = rest_port
             if ports:
                 ports[f"{rest_port}/tcp"] = node.rest_address
 
         if node.p2p_address:
-            p2p_port = 6000 + idx
+            p2p_port = 7000 + idx
             mapping[f"{node.p2p_address[0]}:{node.p2p_address[1]}"] = p2p_port
             if ports:
                 ports[f"{p2p_port}/tcp"] = node.p2p_address
