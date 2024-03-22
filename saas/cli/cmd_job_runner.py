@@ -77,9 +77,7 @@ class JobRunner(CLICommand, ProgressListener):
             Argument('--proc-name', dest='proc_name', action='store', help=f"name of the processor"),
             Argument('--log-level', dest='log_level', action='store', help=f"log level: debug, info, warning, error"),
             Argument('--rest-address', dest='rest_address', action='store',
-                     help=f"address used by the REST job interface"),
-            Argument('--rti-rest-address', dest='rti_rest_address', action='store',
-                     help=f"address of RTI for push updates")
+                     help=f"address used by the REST job interface")
         ])
 
         self._mutex = threading.Lock()
@@ -141,12 +139,11 @@ class JobRunner(CLICommand, ProgressListener):
         with open(job_status_path, 'w') as f:
             json.dump(self._job_status.dict(), f, indent=2)
 
-        if self._rti_proxy is not None:
-            # try to push the status to the RTI (if any)
-            try:
-                self._rti_proxy.update_job_status(self._job.id, self._job_status)
-            except Exception as e:
-                self._logger.warning(f"pushing job status failed: {e}")
+        # try to push the status to the RTI (if any)
+        try:
+            self._rti_proxy.update_job_status(self._job.id, self._job_status)
+        except Exception as e:
+            self._logger.warning(f"pushing job status failed: {e}")
 
     def _write_exitcode(self, exitcode: ExitCode, e: Exception = None) -> None:
         exitcode_path = os.path.join(self._wd_path, 'job.exitcode')
@@ -254,6 +251,10 @@ class JobRunner(CLICommand, ProgressListener):
         if self._user is None:
             raise CLIRuntimeError(f"User with id={self._job.task.user_iid} not known to node.")
         print(f"Using user identity with id={self._user.id}")
+
+        # setup the custodian RTI proxy
+        self._rti_proxy = RTIProxy(self._job.custodian.rest_address)
+        print(f"Using {self._job.custodian.rest_address} to update custodian about job status changes.")
 
         # update the job status
         self._job_status = JobStatus(state=JobStatus.JobState.INITIALISED, progress=0, output={}, notes={},
@@ -583,13 +584,6 @@ class JobRunner(CLICommand, ProgressListener):
 
         # setup logger
         self._setup_logger(args.get('log_level'))
-
-        # do we have an RTI address?
-        rti_address = args.get('rti_rest_address')
-        if rti_address is not None:
-            rti_address = rti_address.split(':')
-            rti_address = (rti_address[0], rti_address[1])
-            self._rti_proxy = RTIProxy(self._resolve(rti_address))
 
         try:
             self._logger.info(f"begin processing job at {self._wd_path}")
