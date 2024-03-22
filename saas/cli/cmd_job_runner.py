@@ -43,11 +43,11 @@ class OutputObjectHandler(threading.Thread):
             for i in range(self._max_attempts):
                 try:
                     # upload the data object to the target DOR
-                    self._owner.push_data_object(self._obj_name)
+                    obj = self._owner.push_data_object(self._obj_name)
 
                     # remove the output from the pending set
                     self._logger.info(f"pushing output data object '{self._obj_name}' SUCCESSFUL.")
-                    self._owner.remove_pending_output(self._obj_name, True)
+                    self._owner.remove_pending_output(self._obj_name, obj)
 
                     return
 
@@ -62,7 +62,7 @@ class OutputObjectHandler(threading.Thread):
 
         except SaaSRuntimeException as e:
             self._logger.error(f"pushing output data object '{self._obj_name}' FAILED: {e.reason}")
-            self._owner.remove_pending_output(self._obj_name, False)
+            self._owner.remove_pending_output(self._obj_name, None)
 
         except Exception as e:
             self._logger.error(f"pushing output data object '{self._obj_name}' FAILED: {e}")
@@ -425,12 +425,12 @@ class JobRunner(CLICommand, ProgressListener):
                     'owner_iid': o.owner_iid
                 })
 
-    def remove_pending_output(self, obj_name: str, successful: bool) -> None:
+    def remove_pending_output(self, obj_name: str, obj: DataObject) -> None:
         with self._mutex:
             self._pending_output.remove(obj_name)
 
-            if successful:
-                self._job_status.output[obj_name] = None
+            if obj:
+                self._job_status.output[obj_name] = obj
                 self._store_job_status()
 
             else:
@@ -542,10 +542,6 @@ class JobRunner(CLICommand, ProgressListener):
                                             DataObject.Tag(key='name', value=obj_name),
                                             DataObject.Tag(key='job_id', value=self._job.id)
                                         ])
-
-        # update job status
-        self._job_status.output[obj_name] = obj
-        self._store_job_status()
 
         return obj
 
