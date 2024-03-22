@@ -144,7 +144,7 @@ class RTIService:
                                self.get_job_status, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),
 
             EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'job/{job_id}/status',
-                               self.update_job_status, None, [VerifyUserIsJobOwnerOrNodeOwner]),
+                               self.update_job_status, None, None),
 
             EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'job/{job_id}',
                                self.job_cancel, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),

@@ -172,30 +172,6 @@ class JobRunner(CLICommand, ProgressListener):
         print(f"Using logger with: level={log_level} path={log_path}")
         self._logger = Logging.get('cli.job_runner', level=log_level_mapping[log_level], custom_log_path=log_path)
 
-    # def _read_address_port_mapping(self) -> None:
-    #     mapping_path = os.path.join(self._wd_path, 'address_mapping.json')
-    #     if os.path.isfile(mapping_path):
-    #         # read the mapping
-    #         with open(mapping_path, 'r') as f:
-    #             self._address_mapping = json.load(f)
-    #
-    #         print(f"Using address mapping at {mapping_path}:")
-    #         for address, port in self._address_mapping.items():
-    #             print(f" {address} -> {port}")
-    #
-    #     else:
-    #         print(f"No address mapping found.")
-
-    # def _resolve(self, address: Tuple[str, int]) -> Tuple[str, int]:
-    #     if self._address_mapping:
-    #         key = f"{address[0]}:{address[1]}"
-    #         if key in self._address_mapping:
-    #             return '127.0.0.1', self._address_mapping[key]
-    #         else:
-    #             raise CLIRuntimeError(f"Address not mapped: {key}")
-    #
-    #     return address[0], address[1]
-
     def _initialise_job(self, proc_path: str, proc_name: str = None) -> None:
         # does the processor path exist?
         if not os.path.isdir(proc_path):
@@ -566,6 +542,11 @@ class JobRunner(CLICommand, ProgressListener):
                                             DataObject.Tag(key='name', value=obj_name),
                                             DataObject.Tag(key='job_id', value=self._job.id)
                                         ])
+
+        # update job status
+        self._job_status.output[obj_name] = obj
+        self._store_job_status()
+
         return obj
 
     def execute(self, args: dict) -> None:
@@ -578,9 +559,6 @@ class JobRunner(CLICommand, ProgressListener):
             raise CLIRuntimeError(f"Job path '{args['job_path']}' does not exist.")
         self._wd_path = args['job_path']
         print(f"Using job path at {self._wd_path}")
-
-        # # read address <-> port mapping (if any)
-        # self._read_address_port_mapping()
 
         # setup logger
         self._setup_logger(args.get('log_level'))
