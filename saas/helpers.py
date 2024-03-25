@@ -1,5 +1,7 @@
 import json
 import socket
+import netifaces
+import ipaddress
 from typing import List, Optional, Tuple, Dict
 
 import docker
@@ -8,10 +10,21 @@ from docker.models.images import Image
 from saas.nodedb.schemas import NodeInfo
 
 
-def determine_local_ip() -> str:
-    hostname = socket.gethostname()
-    ip_address = socket.gethostbyname(hostname)
-    return ip_address
+def determine_local_ip() -> Optional[str]:
+    # determine all private IPv4 addresses that are not loopback devices
+    private_ipv4_addresses = []
+    for interface in netifaces.interfaces():
+        addresses = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addresses:
+            for entry in addresses[netifaces.AF_INET]:
+                ip_address = entry['addr']
+
+                # check if the address is private and not a loopback device
+                addr = ipaddress.IPv4Address(ip_address)
+                if addr.is_private and not addr.is_loopback:
+                    private_ipv4_addresses.append(ip_address)
+
+    return private_ipv4_addresses[0] if private_ipv4_addresses else None
 
 
 def find_available_port(host: str = 'localhost', port_range: (int, int) = (6000, 7000)) -> Optional[int]:
