@@ -127,5 +127,6 @@ def docker_run_job_container(image_name: str, job_path: str, job_address: Tuple[
             '5000/tcp': job_address,
         },
         detach=True,
+        stderr=True, stdout=True,
         auto_remove=True
     )
