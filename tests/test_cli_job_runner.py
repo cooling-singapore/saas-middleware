@@ -146,7 +146,7 @@ class ProcessorRunner(threading.Thread, ProgressListener):
         self._logger = Logging.get('cli.job_runner', level=log_level, custom_log_path=log_path)
 
         # initialise job status
-        self._job_status = JobStatus(state=JobStatus.JobState.UNINITIALISED, progress=0, output={}, notes={},
+        self._job_status = JobStatus(state=JobStatus.State.UNINITIALISED, progress=0, output={}, notes={},
                                      errors=[], message=None)
         self._store_job_status()
 

@@ -424,7 +424,7 @@ class RTIService:
             json.dump(proc.gpp.dict(), f, indent=2)
 
         # create the initial job status and write to file
-        status = JobStatus(state=JobStatus.JobState.UNINITIALISED, progress=0, output={}, notes={},
+        status = JobStatus(state=JobStatus.State.UNINITIALISED, progress=0, output={}, notes={},
                            errors=[], message=None)
         status_path = os.path.join(job_path, 'job.status')
         with open(status_path, 'w') as f:
@@ -462,9 +462,9 @@ class RTIService:
         result: List[Job] = []
         for record in records:
             status = JobStatus.parse_obj(record.status)
-            if status.state in [JobStatus.JobState.UNINITIALISED, JobStatus.JobState.INITIALISED,
-                                JobStatus.JobState.PREPROCESSING, JobStatus.JobState.RUNNING,
-                                JobStatus.JobState.POSTPROCESSING]:
+            if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                JobStatus.State.POSTPROCESSING]:
                 job = Job.parse_obj(record.job)
                 result.append(job)
 
@@ -487,9 +487,9 @@ class RTIService:
         result: List[Job] = []
         for record in records:
             status = JobStatus.parse_obj(record.status)
-            if status.state in [JobStatus.JobState.UNINITIALISED, JobStatus.JobState.INITIALISED,
-                                JobStatus.JobState.PREPROCESSING, JobStatus.JobState.RUNNING,
-                                JobStatus.JobState.POSTPROCESSING]:
+            if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                JobStatus.State.POSTPROCESSING]:
                 job = Job.parse_obj(record.job)
                 result.append(job)
 
@@ -509,9 +509,9 @@ class RTIService:
 
                 # check the status
                 status = JobStatus.parse_obj(record.status)
-                if status.state not in [JobStatus.JobState.UNINITIALISED, JobStatus.JobState.INITIALISED,
-                                        JobStatus.JobState.PREPROCESSING, JobStatus.JobState.RUNNING,
-                                        JobStatus.JobState.POSTPROCESSING]:
+                if status.state not in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                        JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                        JobStatus.State.POSTPROCESSING]:
                     raise RTIException(f"Job {job_id} is not active -> status cannot be updated.")
 
                 # update the status
@@ -554,15 +554,16 @@ class RTIService:
 
         # check the status
         status = JobStatus.parse_obj(record.status)
-        if status.state not in [JobStatus.JobState.UNINITIALISED, JobStatus.JobState.INITIALISED,
-                                JobStatus.JobState.PREPROCESSING, JobStatus.JobState.RUNNING,
-                                JobStatus.JobState.POSTPROCESSING]:
+        if status.state not in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                JobStatus.State.POSTPROCESSING]:
             raise RTIException(f"Job {job_id} is not active -> job cannot be cancelled.")
 
         # attempt to cancel the job
         try:
-            job: Job = Job.parse_obj(record.job)
-            job_proxy = JobRESTProxy(job.rest_address)
+            rest_address = record.rest_address.split(':')
+            rest_address = (rest_address[0], int(rest_address[1]))
+            job_proxy = JobRESTProxy(rest_address)
             job_proxy.job_cancel()
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))

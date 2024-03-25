@@ -89,7 +89,7 @@ class JobStatus(BaseModel):
         severity: Severity
         content: str
 
-    class JobState(str, Enum):
+    class State(str, Enum):
         """
         The possible states of a job.
         """
@@ -103,7 +103,7 @@ class JobStatus(BaseModel):
         FAILED = 'failed'
         CANCELLED = 'cancelled'
 
-    state: JobState = Field(..., title="State", description="The state of the job.", example='running')
+    state: State = Field(..., title="State", description="The state of the job.", example='running')
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
     output: Dict[str, Optional[DataObject]] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")

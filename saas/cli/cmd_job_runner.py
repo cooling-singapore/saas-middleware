@@ -108,6 +108,10 @@ class JobRunner(CLICommand, ProgressListener):
             self._logger.info(f"received request to cancel job...")
             self._interrupted = True
             self._proc.interrupt()
+
+            # update state
+            self._job_status.state = JobStatus.State.CANCELLED
+            self._store_job_status()
             return self._job_status
 
     def on_progress_update(self, progress: int) -> None:
@@ -233,7 +237,7 @@ class JobRunner(CLICommand, ProgressListener):
         print(f"Using {self._job.custodian.rest_address} to update custodian about job status changes.")
 
         # update the job status
-        self._job_status = JobStatus(state=JobStatus.JobState.INITIALISED, progress=0, output={}, notes={},
+        self._job_status = JobStatus(state=JobStatus.State.INITIALISED, progress=0, output={}, notes={},
                                      errors=[], message=None)
         self._store_job_status()
 
@@ -572,7 +576,7 @@ class JobRunner(CLICommand, ProgressListener):
             self._setup_rest_server(args['rest_address'])
 
             # update state
-            self._job_status.state = JobStatus.JobState.PREPROCESSING
+            self._job_status.state = JobStatus.State.PREPROCESSING
             self._store_job_status()
 
             # store by-value input data objects (if any)
@@ -585,7 +589,7 @@ class JobRunner(CLICommand, ProgressListener):
             self._verify_inputs_and_outputs()
 
             # update state
-            self._job_status.state = JobStatus.JobState.RUNNING
+            self._job_status.state = JobStatus.State.RUNNING
             self._store_job_status()
 
             # run the processor
@@ -597,10 +601,6 @@ class JobRunner(CLICommand, ProgressListener):
 
             # write exit code
             if self._interrupted:
-                # update state
-                self._job_status.state = JobStatus.JobState.CANCELLED
-                self._store_job_status()
-
                 self._logger.info(f"end processing job at {self._wd_path} -> INTERRUPTED")
                 self._write_exitcode(ExitCode.INTERRUPTED)
 
@@ -609,7 +609,7 @@ class JobRunner(CLICommand, ProgressListener):
 
             else:
                 # update state
-                self._job_status.state = JobStatus.JobState.SUCCESSFUL
+                self._job_status.state = JobStatus.State.SUCCESSFUL
                 self._store_job_status()
 
                 self._logger.info(f"end processing job at {self._wd_path} -> DONE")
@@ -618,7 +618,7 @@ class JobRunner(CLICommand, ProgressListener):
         except SaaSRuntimeException as e:
             # update state
             if self._job_status:
-                self._job_status.state = JobStatus.JobState.FAILED
+                self._job_status.state = JobStatus.State.FAILED
                 self._store_job_status()
 
             self._logger.error(f"end processing job at {self._wd_path} -> FAILED: {e.reason}")
@@ -627,7 +627,7 @@ class JobRunner(CLICommand, ProgressListener):
         except Exception as e:
             # update state
             if self._job_status:
-                self._job_status.state = JobStatus.JobState.FAILED
+                self._job_status.state = JobStatus.State.FAILED
                 self._store_job_status()
 
             self._logger.error(f"end processing job at {self._wd_path} -> FAILED: {e}")
