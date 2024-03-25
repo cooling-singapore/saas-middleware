@@ -16,7 +16,7 @@ from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Processor
 from tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
 
-commit_id = '192bf8039a1df52849ad5f378bcd33b03d7bd948'
+commit_id = '94f6a07fa58a9e82180d0ba0211838d7b62513fc'
 
 @pytest.fixture(scope='session')
 def test_context():
