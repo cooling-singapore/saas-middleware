@@ -745,6 +745,11 @@ class RTIProcessorAdapter(Thread, ABC):
         # while the processor is not stopped, and there are pending jobs, execute them
         # (either in sequence or concurrently)
         while state == ProcessorState.OPERATIONAL:
+            # get the latest state from the db to check if we are still operational
+            state = self._db_wrapper.state()
+            if state != ProcessorState.OPERATIONAL:
+                break
+
             try:
                 # can we add a job? do we have a job?
                 if (self._job_concurrency or len(self._active) == 0) and len(self._pending) > 0:
