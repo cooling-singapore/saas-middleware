@@ -1,11 +1,10 @@
 import abc
-import importlib
 import inspect
 import logging
 import os
 import threading
+from importlib.util import spec_from_file_location, module_from_spec
 
-from importlib.util import spec_from_file_location
 from typing import Dict
 
 from saas.core.exceptions import ExceptionContent
@@ -90,8 +89,8 @@ def find_processors(search_path: str) -> Dict[str, ProcessorBase]:
                 module_path = os.path.join(root, file)
                 module_name = os.path.splitext(os.path.basename(module_path))[0]
 
-                spec = importlib.util.spec_from_file_location(module_name, module_path)
-                module = importlib.util.module_from_spec(spec)
+                spec = spec_from_file_location(module_name, module_path)
+                module = module_from_spec(spec)
 
                 try:
                     spec.loader.exec_module(module)

@@ -277,7 +277,7 @@ class RTIService:
                 sock.close()
 
         # if we reach here we haven't found an available port after exhausting the maximum attempts
-        raise RTIException(f"No available port found for REST address.")
+        raise RTIException("No available port found for REST address.")
 
     def is_deployed(self, proc_id: str) -> bool:
         with self._session_maker() as session:

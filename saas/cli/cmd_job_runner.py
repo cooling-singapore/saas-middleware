@@ -58,7 +58,7 @@ class OutputObjectHandler(threading.Thread):
                     )
 
             # if we reach here it didn't work
-            raise CLIRuntimeError(f"Number of attempts to push output data object exceeded limit.")
+            raise CLIRuntimeError("Number of attempts to push output data object exceeded limit.")
 
         except SaaSRuntimeException as e:
             self._logger.error(f"pushing output data object '{self._obj_name}' FAILED: {e.reason}")
@@ -76,12 +76,12 @@ class OutputObjectHandler(threading.Thread):
 class JobRunner(CLICommand, ProgressListener):
     def __init__(self):
         super().__init__('run', 'runs a job with a processor', arguments=[
-            Argument('--job-path', dest='job_path', action='store', help=f"path to the job"),
-            Argument('--proc-path', dest='proc_path', action='store', help=f"path to the processor"),
-            Argument('--proc-name', dest='proc_name', action='store', help=f"name of the processor"),
-            Argument('--log-level', dest='log_level', action='store', help=f"log level: debug, info, warning, error"),
+            Argument('--job-path', dest='job_path', action='store', help="path to the job"),
+            Argument('--proc-path', dest='proc_path', action='store', help="path to the processor"),
+            Argument('--proc-name', dest='proc_name', action='store', help="name of the processor"),
+            Argument('--log-level', dest='log_level', action='store', help="log level: debug, info, warning, error"),
             Argument('--rest-address', dest='rest_address', action='store',
-                     help=f"address used by the REST job interface")
+                     help="address used by the REST job interface")
         ])
 
         self._mutex = threading.Lock()
@@ -109,7 +109,7 @@ class JobRunner(CLICommand, ProgressListener):
         # interrupt the processor. note: whether this request is honored or even implemented depends on the
         # actual processor.
         with self._mutex:
-            self._logger.info(f"received request to cancel job...")
+            self._logger.info("received request to cancel job...")
             self._interrupted = True
             self._proc.interrupt()
 
@@ -486,9 +486,9 @@ class JobRunner(CLICommand, ProgressListener):
         restricted_access = task_out.restricted_access
         content_encrypted = task_out.content_encrypted
 
-        if content_encrypted:
-            # TODO: figure out what is supposed to happen with the content key here
-            content_key = encrypt_file(output_content_path, encrypt_for=owner, delete_source=True)
+        # TODO: figure out what is supposed to happen with the content key here
+        # if content_encrypted:
+        #     content_key = encrypt_file(output_content_path, encrypt_for=owner, delete_source=True)
 
         # do we have a target node specified for storing the data object?
         target_address = self._job.custodian.rest_address

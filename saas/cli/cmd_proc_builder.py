@@ -99,7 +99,7 @@ def build_processor_image(repository_path: str, processor_path: str,
                 client.images.remove(image.id, force=True)
 
     except Exception as e:
-        raise CLIRuntimeError(f"Deleting existing docker image failed.", details={
+        raise CLIRuntimeError("Deleting existing docker image failed.", details={
             'exception': e
         })
 
@@ -108,7 +108,7 @@ def build_processor_image(repository_path: str, processor_path: str,
         image, _ = client.images.build(path=processor_path, tag=image_name, nocache=not use_cache, rm=True)
 
     except Exception as e:
-        raise CLIRuntimeError(f"Creating docker image failed.", details={
+        raise CLIRuntimeError("Creating docker image failed.", details={
             'exception': e
         })
 
@@ -122,11 +122,11 @@ class ProcBuilder(CLICommand):
 
     def __init__(self):
         super().__init__('build', 'build a processor', arguments=[
-            Argument('--repository', dest='repository', action='store', help=f"URL of the repository"),
-            Argument('--commit-id', dest='commit_id', action='store', help=f"the commit id"),
-            Argument('--proc-path', dest='proc_path', action='store', help=f"path to the processor"),
-            Argument('--git-username', dest='git_username', action='store', help=f"GitHub username"),
-            Argument('--git-token', dest='git_token', action='store', help=f"GitHub personal access token"),
+            Argument('--repository', dest='repository', action='store', help="URL of the repository"),
+            Argument('--commit-id', dest='commit_id', action='store', help="the commit id"),
+            Argument('--proc-path', dest='proc_path', action='store', help="path to the processor"),
+            Argument('--git-username', dest='git_username', action='store', help="GitHub username"),
+            Argument('--git-token', dest='git_token', action='store', help="GitHub personal access token"),
             Argument('--store-image', dest="store_image", action='store_const', const=True,
                      help="Store the image in the DOR not just a reference."),
             Argument('--no-cache', dest="use_cache", action='store_const', const=False,
@@ -144,7 +144,7 @@ class ProcBuilder(CLICommand):
         # connect to network
         context = connect(args['address'], keystore)
         if not context.has_dor_node():
-            raise CLIRuntimeError(f"No DOR-enabled node found.")
+            raise CLIRuntimeError("No DOR-enabled node found.")
 
         prompt_if_missing(args, 'repository', prompt_for_string, message="Enter URL of the repository:")
         prompt_if_missing(args, 'commit_id', prompt_for_string, message="Enter the commit id:")
@@ -162,7 +162,7 @@ class ProcBuilder(CLICommand):
             print(f"Using GitHub credentials for user '{credentials[0]}'.")
         else:
             credentials = None
-            print(f"Not using any GitHub credentials.")
+            print("Not using any GitHub credentials.")
 
         with tempfile.TemporaryDirectory() as tempdir:
             # clone the repository and checkout the specified commit
