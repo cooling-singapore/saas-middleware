@@ -107,7 +107,7 @@ class JobStatus(BaseModel):
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
     output: Dict[str, Optional[DataObject]] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
-    errors: Optional[List[Error]] = Field(title="Errors", description="A list of errors that occurred during job execution (if any)")
+    errors: List[Error] = Field(..., title="Errors", description="A list of errors that occurred during job execution (if any)")
     message: Optional[Message] = Field(title="Message", description="A message providing more details about its current status (if any)")
 
 
