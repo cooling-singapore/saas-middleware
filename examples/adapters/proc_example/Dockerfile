@@ -9,7 +9,7 @@ RUN apt install -y python3.10 python3.10-distutils python3-pip git
 
 RUN git clone https://github.com/cooling-singapore/saas-middleware /saas-middleware
 WORKDIR /saas-middleware
-RUN git checkout a875fb3a0463537d390e264bed6296251cce9860
+RUN git checkout f2382266001e3b83ee36b7d4c5951aacdb2f00cf
 
 WORKDIR /processor
 COPY . .
