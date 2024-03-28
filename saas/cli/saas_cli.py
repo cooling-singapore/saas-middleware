@@ -2,13 +2,14 @@ import os
 import sys
 import traceback
 
-from saas.cli.cmd_compose import Compose
 from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
     CredentialsAddGithubCredentials, CredentialsTestSSHCredentials, CredentialsTestGithubCredentials
+from saas.cli.cmd_job_runner import JobRunner
 from saas.cli.cmd_network import NetworkList
+from saas.cli.cmd_proc_builder import ProcBuilder
 from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
     RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
 from saas.cli.cmd_service import Service
@@ -63,6 +64,8 @@ def main():
                 ]),
             ]),
             Service(),
+            JobRunner(),
+            ProcBuilder(),
             CLICommandGroup('dor', 'interact with a Data Object Repository (DOR)', arguments=[
                 Argument('--address', dest='address', action='store',
                          help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
@@ -105,8 +108,7 @@ def main():
                          help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
             ], commands=[
                 NetworkList()
-            ]),
-            Compose()
+            ])
         ])
 
         cli.execute(sys.argv[1:])

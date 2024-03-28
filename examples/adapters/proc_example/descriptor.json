@@ -39,9 +39,5 @@
         "required": ["v"]
       }
     }
-  ],
-  "configurations": [
-    "default", 
-    "nscc"
   ]
 }

@@ -92,8 +92,7 @@ class Node:
         if enable_rti:
             db_path = f"sqlite:///{os.path.join(self._datastore_path, 'rti.db')}"
             self.rti = rti_service.RTIService(self, db_path, retain_job_history=retain_job_history,
-                                              strict_deployment=strict_deployment, job_concurrency=job_concurrency,
-                                              purge_inactive_jobs=purge_inactive_jobs)
+                                              strict_deployment=strict_deployment, job_concurrency=job_concurrency)
             logger.info(f"enabling RTI service using {db_path}.")
             endpoints += self.rti.endpoints()
 

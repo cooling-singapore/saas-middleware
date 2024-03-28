@@ -17,12 +17,11 @@ from pydantic import ValidationError
 from saas.cli.exceptions import CLIRuntimeError
 from saas.core.exceptions import SaaSRuntimeException
 from saas.dor.proxy import DORProxy
-from saas.dor.service import GPP_DATA_TYPE
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
-from saas.dor.schemas import DataObject, GPPDataObject
+from saas.dor.schemas import DataObject
 from saas.nodedb.schemas import NodeInfo
 from saas.core.schemas import KeystoreContent
 from saas.rest.exceptions import UnsuccessfulRequestError
@@ -113,18 +112,6 @@ def label_data_object(meta: DataObject) -> str:
             tags.append(key)
 
     return f"{meta.obj_id} C[{meta.data_type}:{meta.data_format}] {tags}"
-
-
-def label_gpp_data_object(meta: GPPDataObject) -> str:
-    tags = []
-    for key, value in meta.tags.items():
-        if value:
-            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
-        else:
-            tags.append(key)
-
-    return f"{meta.obj_id} GPP[{meta.gpp.proc_descriptor.name}] " \
-           f"[{meta.gpp.proc_config}:{meta.gpp.commit_id[:6]}] {tags}"
 
 
 def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
@@ -278,12 +265,7 @@ def prompt_for_data_objects(address: (str, int), message: str, filter_by_owner: 
     # determine choices
     choices = []
     for item in result:
-        if item.data_type == GPP_DATA_TYPE:
-            meta = dor.get_meta(item.obj_id)
-            choices.append(Choice(item.obj_id, label_gpp_data_object(meta)))
-
-        else:
-            choices.append(Choice(item.obj_id, label_data_object(item)))
+        choices.append(Choice(item.obj_id, label_data_object(item)))
 
     # prompt for selection
     return prompt_for_selection(choices, message, allow_multiple)
@@ -296,7 +278,7 @@ def prompt_if_missing(args: dict, key: str, function, **func_args) -> Any:
 
 
 def default_if_missing(args: dict, key: str, default: Any) -> Any:
-    if args[key] is None:
+    if args.get(key, None) is None:
         args[key] = default
     return args[key]
 

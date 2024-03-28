@@ -4,7 +4,7 @@ from typing import Literal, Optional, List, Union, Dict
 from pydantic import BaseModel, Field
 
 from saas.core.exceptions import ExceptionContent
-from saas.dor.schemas import GitProcessorPointer, CDataObject
+from saas.dor.schemas import GitProcessorPointer, DataObject
 from saas.nodedb.schemas import NodeInfo
 
 
@@ -52,31 +52,28 @@ class Job(BaseModel):
     t_submitted: int = Field(..., title="Time Submitted", description="The timestamp (UTC in milliseconds since the beginning of the epoch) when the job was submitted.")
 
 
-class ReconnectInfo(BaseModel):
-    """
-    Necessary information how an RTI can reconnect to a job that is executed by a remotely-deployed processor.
-    """
-    paths: Dict[str, str] = Field(..., title="Paths", description="A mapping of paths used by the job.")
-    pid: str = Field(..., title="PID", description="The process id of the job as assigned by the operating system.", example=3453)
-    pid_paths: Dict[str, str] = Field(..., title="PID Paths", description="A mapping of paths used by the process that executes the job.")
+class ExitCode(str, Enum):
+    DONE = 'done',
+    INTERRUPTED = 'interrupted',
+    ERROR = 'error'
+
+
+class JobResult(BaseModel):
+    exitcode: ExitCode
+    trace: Optional[str]
+
+
+class Severity(str, Enum):
+    DEBUG = 'debug'
+    INFO = 'info'
+    WARNING = 'warning'
+    ERROR = 'error'
 
 
 class JobStatus(BaseModel):
     """
     Status information about a job.
     """
-    class State(str, Enum):
-        """
-        The possible states of a job.
-        """
-        UNINITIALISED = 'uninitialised'
-        INITIALISED = 'initialised'
-        RUNNING = 'running'
-        POSTPROCESSING = 'postprocessing'
-
-        SUCCESSFUL = 'successful'
-        FAILED = 'failed'
-        CANCELLED = 'cancelled'
 
     class Error(BaseModel):
         """
@@ -89,25 +86,49 @@ class JobStatus(BaseModel):
         """
         A message with severity level.
         """
-        severity: str
+        severity: Severity
         content: str
 
-    state: Literal[State.UNINITIALISED, State.INITIALISED, State.RUNNING, State.POSTPROCESSING, State.SUCCESSFUL, State.FAILED, State.CANCELLED] = Field(..., title="State", description="The state of the job.")
+    class State(str, Enum):
+        """
+        The possible states of a job.
+        """
+        UNINITIALISED = 'uninitialised'
+        INITIALISED = 'initialised'
+        PREPROCESSING = 'preprocessing'
+        RUNNING = 'running'
+        POSTPROCESSING = 'postprocessing'
+        # ----
+        SUCCESSFUL = 'successful'
+        FAILED = 'failed'
+        CANCELLED = 'cancelled'
+
+    state: State = Field(..., title="State", description="The state of the job.", example='running')
     progress: int = Field(..., title="Progress", description="An integer value indicating the progress in %.", example=55)
-    output: Dict[str, CDataObject] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
+    output: Dict[str, Optional[DataObject]] = Field(..., title="Output", description="A mapping of product names (i.e., the outputs of the job) and the corresponding object meta information.")
     notes: dict = Field(..., title="Notes", description="Any notes that may have been logged during the execution.")
-    job: Job = Field(..., title="Job", description="The job information.")
-    reconnect: Optional[ReconnectInfo] = Field(title="Reconnect Info", description="Information that would allow the user to reconnect to a job in case the connection was lost.")
-    errors: Optional[List[Error]] = Field(title="Errors", description="A list of errors that occurred during job execution (if any)")
+    errors: List[Error] = Field(..., title="Errors", description="A list of errors that occurred during job execution (if any)")
     message: Optional[Message] = Field(title="Message", description="A message providing more details about its current status (if any)")
 
 
 class Processor(BaseModel):
+    class State(str, Enum):
+        """
+        The possible states of a processor.
+        """
+        BUSY_DEPLOY = 'busy_deploy'
+        BUSY_UNDEPLOY = 'busy_undeploy'
+        READY = 'ready'
+        FAILED = 'failed'
+
     """
-    Information about a deployed processor. This includes its id and the GPP.
+    Information about a processor.
     """
-    proc_id: str = Field(..., title="Processor Id", description="The processor id.", example="d01d069675bcaaeb90b46273ccc4ae9818a2667957045d0f0f15901ffcf807de")
-    gpp: GitProcessorPointer = Field(..., title="GPP", description="The Git Processor Pointer information.")
+    id: str = Field(..., title="Processor Id", description="The processor id.", example="d01d069675bcaaeb90b46273ccc4ae9818a2667957045d0f0f15901ffcf807de")
+    state: Literal[State.BUSY_DEPLOY, State.BUSY_UNDEPLOY, State.READY, State.FAILED] = Field(..., title="State", description="The state of the processor.")
+    image_name: Optional[str] = Field(title="Image Name", description="The name of the docker image that contains the processor.")
+    gpp: Optional[GitProcessorPointer] = Field(title="GPP", description="The Git Processor Pointer information.")
+    error: Optional[str] = Field(..., title="Error", description="Information about the error encountered (only if state is 'failed').")
 
 
 class ProcessorStatus(BaseModel):

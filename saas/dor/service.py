@@ -2,37 +2,31 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import tempfile
 from stat import S_IREAD, S_IRGRP
 from threading import Lock
-from typing import Optional, List, Union
+from typing import Optional, List
 
 import snappy
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from fastapi import UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import Column, String, Boolean, BigInteger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy_json import NestedMutableJson
 
 from saas.core.helpers import hash_string_object, hash_json_object
-from saas.dor.exceptions import CloneRepositoryError, CheckoutCommitError, ProcessorDescriptorNotFoundError, \
-    InvalidProcessorDescriptorError, DataObjectContentNotFoundError, DataObjectNotFoundError, \
-    DORException
+from saas.dor.exceptions import DataObjectContentNotFoundError, DataObjectNotFoundError, DORException
 from saas.dor.proxy import DORProxy, DOR_ENDPOINT_PREFIX
-from saas.core.helpers import get_timestamp_now, generate_random_string, read_json_from_file, validate_json
+from saas.core.helpers import get_timestamp_now, generate_random_string
 from saas.core.logging import Logging
 from saas.nodedb.exceptions import IdentityNotFoundError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.nodedb.schemas import NodeInfo
 from saas.rest.auth import VerifyIsOwner, VerifyUserHasAccess
 from saas.dor.schemas import DORStatistics, CObjectNode, DataObjectRecipe, DataObjectProvenance, DataObject, \
-    GPPDataObject, CDataObject, ProcessorDescriptor, GPP_DATA_TYPE, GPP_DATA_FORMAT, SearchParameters, \
-    AddCDataObjectParameters, AddGPPDataObjectParameters
-from saas.core.schemas import GithubCredentials
+    SearchParameters, AddDataObjectParameters
 from saas.rest.schemas import EndpointDefinition
 
 logger = Logging.get('dor.service')
@@ -43,18 +37,11 @@ DOR_INFIX_MASTER_PATH = 'dor-master'
 DOR_INFIX_TEMP_PATH = 'dor-temp'
 
 
-def _generate_object_id(c_hash: str, data_type: str, data_format: str, creators_iid: List[str], created_t: int) -> str:
-    # TODO: since timestamp is included the resulting object id is very much random -> consider replacing deriving
-    #  object id based on hashing with generating actual random ids instead.
-    return hash_string_object(f"{c_hash}{data_type}{data_format}{''.join(creators_iid)}{created_t}").hex()
-
-
-def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_config: str, proc_descriptor: dict) -> str:
+def _generate_gpp_hash(source: str, commit_id: str, proc_path: str, proc_descriptor: dict) -> str:
     return hash_json_object({
         'source': source,
         'commit_id': commit_id,
         'proc_path': proc_path,
-        'proc_config': proc_config,
         'proc_descriptor': proc_descriptor
     }).hex()
 
@@ -92,113 +79,26 @@ def _generate_by_value_provenance(c_hash: str, data_type: str, data_format: str,
     return provenance
 
 
-def _extract_data_object(record: DataObjectRecord, custodian: NodeInfo) -> Union[CDataObject, GPPDataObject]:
+def _extract_data_object(record: DataObjectRecord, custodian: NodeInfo) -> DataObject:
     # is it a GPP data object?
     details = dict(record.details)
     created = dict(record.created)
-    if record.data_type == GPP_DATA_TYPE:
-        return GPPDataObject.parse_obj({
-            'obj_id': record.obj_id,
-            'c_hash': record.c_hash,
-            'data_type': record.data_type,
-            'data_format': record.data_format,
-            'created': created,
-            'owner_iid': record.owner_iid,
-            'access_restricted': record.access_restricted,
-            'access': record.access,
-            'tags': record.tags,
-            'last_accessed': record.last_accessed,
-            'custodian': custodian,
-
-            'gpp': {
-                'source': details['source'],
-                'commit_id': details['commit_id'],
-                'proc_path': details['proc_path'],
-                'proc_config': details['proc_config'],
-                'proc_descriptor': details['proc_descriptor']
-            }
-        })
-
-    else:
-        return CDataObject.parse_obj({
-            'obj_id': record.obj_id,
-            'c_hash': record.c_hash,
-            'data_type': record.data_type,
-            'data_format': record.data_format,
-            'created': created,
-            'owner_iid': record.owner_iid,
-            'access_restricted': record.access_restricted,
-            'access': record.access,
-            'tags': record.tags,
-            'last_accessed': record.last_accessed,
-            'custodian': custodian,
-
-            'content_encrypted': details['content_encrypted'],
-            'license': details['license'],
-            'recipe': details['recipe'] if 'recipe' in details else None
-        })
-
-
-def fetch_proc_descriptor(source: str, commit_id: str, proc_path: str, proc_config: str,
-                          credentials: GithubCredentials = None) -> ProcessorDescriptor:
-    """
-    Clone repo in gpp and returns the proc descriptor
-    """
-    # determine URL including credentials (if any)
-    url = source
-    if credentials:
-        insert = f"{credentials.login}:{credentials.personal_access_token}@"
-        index = url.find('github.com')
-        url = url[:index] + insert + url[index:]
-
-    # try to clone the repository
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo_path = tmpdir
-        result = subprocess.run(['git', 'clone', url, repo_path], capture_output=True)
-        if result.returncode != 0:
-            raise CloneRepositoryError({
-                'url': url,
-                'stdout': result.stdout.decode('utf-8'),
-                'stderr': result.stderr.decode('utf-8')
-            })
-
-        # try to check out the specific commit
-        result = subprocess.run(['git', 'checkout', commit_id], capture_output=True, cwd=repo_path)
-        if result.returncode != 0:
-            raise CheckoutCommitError({
-                'commit_id': commit_id,
-                'stdout': result.stdout.decode('utf-8'),
-                'stderr': result.stderr.decode('utf-8')
-            })
-
-        # does the processor descriptor exist?
-        proc_descriptor_path = os.path.join(repo_path, proc_path, 'descriptor.json')
-        if not os.path.isfile(proc_descriptor_path):
-            raise ProcessorDescriptorNotFoundError({
-                'source': source,
-                'commit_id': commit_id,
-                'proc_path': proc_path
-            })
-
-        # read the processor descriptor
-        proc_descriptor = read_json_from_file(proc_descriptor_path)
-        if not validate_json(proc_descriptor, ProcessorDescriptor.schema()):
-            raise InvalidProcessorDescriptorError({
-                'source': source,
-                'commit_id': commit_id,
-                'proc_path': proc_path,
-                'proc_descriptor': proc_descriptor
-            })
-        proc_descriptor = ProcessorDescriptor.parse_obj(proc_descriptor)
-
-        # check if the config is valid
-        if proc_config not in proc_descriptor.configurations:
-            raise DORException(reason=f"Processor configuration '{proc_config}' not supported by processor.",
-                               details={
-                                   'proc_config': proc_config,
-                                   'proc_descriptor': proc_descriptor.dict()
-                               })
-    return proc_descriptor
+    return DataObject.parse_obj({
+        'obj_id': record.obj_id,
+        'c_hash': record.c_hash,
+        'data_type': record.data_type,
+        'data_format': record.data_format,
+        'created': created,
+        'owner_iid': record.owner_iid,
+        'access_restricted': record.access_restricted,
+        'access': record.access,
+        'tags': record.tags,
+        'last_accessed': record.last_accessed,
+        'custodian': custodian,
+        'content_encrypted': details['content_encrypted'],
+        'license': details['license'],
+        'recipe': details['recipe'] if 'recipe' in details else None
+    })
 
 
 class DataObjectRecord(Base):
@@ -281,7 +181,7 @@ class DORService:
         data_nodes = {}
         proc_nodes = {}
         steps = []
-        missing = []
+        missing = set()
 
         # handle the product
         product_node = CObjectNode(
@@ -313,7 +213,7 @@ class DORService:
                 # is the provenance information missing?
                 if provenance is None:
                     provenance = _generate_missing_provenance(obj.c_hash, obj.data_type, obj.data_format)
-                    missing.append(obj.c_hash)
+                    missing.add(obj.c_hash)
 
                 # add to step
                 step['consumes'][name] = obj.c_hash
@@ -322,7 +222,8 @@ class DORService:
                 data_nodes.update(provenance.data_nodes)
                 proc_nodes.update(provenance.proc_nodes)
                 steps += provenance.steps
-                missing += provenance.missing
+                for m in provenance.missing:
+                    missing.add(m)
 
             else:
                 # by-value objects are not uploaded to the DOR, so their provenance information is not generated
@@ -339,9 +240,8 @@ class DORService:
                 data_nodes[obj.c_hash] = obj_node
 
         # calculate c_hash for processor and keep the GPP in the dict that keeps all unique processors involved
-        step['processor'] = _generate_gpp_hash(recipe.processor.source, recipe.processor.commit_id,
-                                               recipe.processor.proc_path, recipe.processor.proc_config,
-                                               recipe.processor.proc_descriptor.dict())
+        step['processor'] = _generate_gpp_hash(recipe.processor.repository, recipe.processor.commit_id,
+                                               recipe.processor.proc_path, recipe.processor.proc_descriptor.dict())
         if step['processor'] not in proc_nodes:
             proc_nodes[step['processor']] = recipe.processor
 
@@ -352,7 +252,7 @@ class DORService:
             data_nodes=data_nodes,
             proc_nodes=proc_nodes,
             steps=steps,
-            missing=missing
+            missing=list(missing)
         )
 
         return provenance
@@ -360,22 +260,19 @@ class DORService:
     def endpoints(self) -> List[EndpointDefinition]:
         return [
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '',
-                               self.search, List[Union[CDataObject, GPPDataObject]], None),
+                               self.search, List[DataObject], None),
 
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, 'statistics',
                                self.statistics, DORStatistics, None),
 
-            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-c',
-                               self.add_c, CDataObject, None),
-
-            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add-gpp',
-                               self.add_gpp, GPPDataObject, None),
+            EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, 'add',
+                               self.add, DataObject, None),
 
             EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}',
-                               self.remove, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
+                               self.remove, DataObject, [VerifyIsOwner]),
 
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/meta',
-                               self.get_meta, Optional[Union[CDataObject, GPPDataObject]], None),
+                               self.get_meta, Optional[DataObject], None),
 
             EndpointDefinition('GET', DOR_ENDPOINT_PREFIX, '{obj_id}/content',
                                self.get_content, None, [VerifyUserHasAccess]),
@@ -384,23 +281,22 @@ class DORService:
                                self.get_provenance, Optional[DataObjectProvenance], None),
 
             EndpointDefinition('POST', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
-                               self.grant_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
+                               self.grant_access, DataObject, [VerifyIsOwner]),
 
             EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/access/{user_iid}',
-                               self.revoke_access, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
+                               self.revoke_access, DataObject, [VerifyIsOwner]),
 
             EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/owner/{new_owner_iid}',
-                               self.transfer_ownership, Union[CDataObject, GPPDataObject], [VerifyIsOwner]),
+                               self.transfer_ownership, DataObject, [VerifyIsOwner]),
 
             EndpointDefinition('PUT', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
-                               self.update_tags, Union[CDataObject, GPPDataObject],
-                               [VerifyIsOwner]),
+                               self.update_tags, DataObject, [VerifyIsOwner]),
 
             EndpointDefinition('DELETE', DOR_ENDPOINT_PREFIX, '{obj_id}/tags',
-                               self.remove_tags, Union[CDataObject, GPPDataObject], [VerifyIsOwner])
+                               self.remove_tags, DataObject, [VerifyIsOwner])
         ]
 
-    def search(self, p: SearchParameters) -> List[Union[CDataObject, GPPDataObject]]:
+    def search(self, p: SearchParameters) -> List[DataObject]:
         """
         Searches a DOR for data objects that match the search criteria. There are two kinds of criteria: constraints
         and patterns. Search constraints are conjunctive, i.e., all constraints have to be matched in order for a data
@@ -412,7 +308,7 @@ class DORService:
         """
         with self._Session() as session:
             # build the query and get the results
-            q = session.query(DataObjectRecord).filter()
+            q = session.query(DataObjectRecord)
 
             # first, apply the search constraints (if any)
             if p.owner_iid is not None:
@@ -455,14 +351,14 @@ class DORService:
                 data_formats=[value[0] for value in session.query(DataObjectRecord.data_format).distinct()]
             )
 
-    def add_c(self, body: str = Form(...), attachment: UploadFile = File(...)) -> CDataObject:
+    def add(self, body: str = Form(...), attachment: UploadFile = File(...)) -> DataObject:
         """
         Adds a new content data object to the DOR and returns the meta information for this data object. The content
         of the data object itself is uploaded as an attachment (binary). There is no restriction as to the nature or
         size of the content.
         """
         # create parameters object
-        p = AddCDataObjectParameters.parse_obj(json.loads(body))
+        p = AddDataObjectParameters.parse_obj(json.loads(body))
 
         # get the owner identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
@@ -506,7 +402,7 @@ class DORService:
 
         # determine the object id
         created_t = get_timestamp_now()
-        obj_id = _generate_object_id(c_hash, p.data_type, p.data_format, p.creators_iid, created_t)
+        obj_id = hash_string_object(f"{c_hash}{p.data_type}{p.data_format}{''.join(p.creators_iid)}{created_t}").hex()
 
         with self._db_mutex:
             with self._Session() as session:
@@ -533,7 +429,7 @@ class DORService:
                                                  'creators_iid': p.creators_iid
                                              },
                                              owner_iid=owner.id, access_restricted=p.access_restricted,
-                                             access=[owner.id], tags={},
+                                             access=[owner.id], tags=p.tags if p.tags else {},
                                              details={
                                                  'content_encrypted': p.content_encrypted,
                                                  'license': p.license.dict(),
@@ -551,64 +447,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def add_gpp(self, p: AddGPPDataObjectParameters) -> GPPDataObject:
-        """
-        Adds a Git-Processor-Pointer (GPP) data object to the DOR and returns the meta information for this data object.
-        If the repository specified in the GPP information is private, valid  credentials need to be provided. The DOR
-        will use these credentials to access (i.e., clone) the repository. Note that the credentials information will
-        not be stored by the DOR.
-        """
-        # get the owner and creator identity
-        owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)
-
-        # check if we know the creator identities
-        # TODO: decide whether or not to remove this check. removing it allows to use creator ids that the
-        #  node isn't aware of.
-        for creator_iid in p.creators_iid:
-            self._node.db.get_identity(creator_iid, raise_if_unknown=True)
-
-        # fetch proc descriptor
-        proc_descriptor = fetch_proc_descriptor(p.source, p.commit_id, p.proc_path, p.proc_config, p.github_credentials)
-
-        # determine the content hash for the GPP
-        c_hash = _generate_gpp_hash(p.source, p.commit_id, p.proc_path, p.proc_config, proc_descriptor.dict())
-
-        # determine the object id (in case of a GPP, it's simply the content hash)
-        obj_id = c_hash
-
-        with self._db_mutex:
-            with self._Session() as session:
-                # do we already have a record for this GPP?
-                if session.query(DataObjectRecord).get(obj_id) is not None:
-                    logger.info(f"GPP object '{obj_id}' already exists -> not adding.")
-
-                else:
-                    logger.info(f"GPP object '{obj_id}' does not exist -> adding.")
-
-                    # add a new data object record
-                    created_t = get_timestamp_now()
-                    session.add(DataObjectRecord(obj_id=obj_id, c_hash=c_hash,
-                                                 data_type=GPP_DATA_TYPE, data_format=GPP_DATA_FORMAT,
-                                                 created={
-                                                     'timestamp': created_t,
-                                                     'creators_iid': p.creators_iid
-                                                 },
-                                                 owner_iid=owner.id, access_restricted=False, access=[owner.id],
-                                                 tags={},
-                                                 details={
-                                                     'source': p.source,
-                                                     'commit_id': p.commit_id,
-                                                     'proc_path': p.proc_path,
-                                                     'proc_config': p.proc_config,
-                                                     'proc_descriptor': proc_descriptor.dict()
-                                                 },
-                                                 last_accessed=created_t))
-
-                    session.commit()
-
-        return self.get_meta(obj_id)
-
-    def remove(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
+    def remove(self, obj_id: str) -> Optional[DataObject]:
         """
         Deletes a data object from the DOR and returns the meta information of that data object. Authorisation by the
         data object owner is required.
@@ -625,27 +464,25 @@ class DORService:
                 session.query(DataObjectRecord).filter_by(obj_id=obj_id).delete()
                 session.commit()
 
-        # is it a C data object?
-        if meta.data_type != GPP_DATA_TYPE:
-            # if it's a content data object, we need to check if there are other data objects that point to the same
-            # content (unlikely but not impossible).
-            with self._db_mutex:
-                with self._Session() as session:
-                    referenced = session.query(DataObjectRecord).filter_by(c_hash=meta.c_hash).all()
-                    referenced = [record.obj_id for record in referenced]
+        # if it's a content data object, we need to check if there are other data objects that point to the same
+        # content (unlikely but not impossible).
+        with self._db_mutex:
+            with self._Session() as session:
+                referenced = session.query(DataObjectRecord).filter_by(c_hash=meta.c_hash).all()
+                referenced = [record.obj_id for record in referenced]
 
-            # only delete if we have not found any other data objects that reference this content.
-            if len(referenced) == 0:
-                logger.info(f"data object content '{meta.c_hash}' not referenced by any data object -> delete.")
-                content_path = self.obj_content_path(meta.c_hash)
-                os.remove(content_path)
-            else:
-                logger.info(f"data object content '{meta.c_hash}' referenced by data objects ({referenced}) -> "
-                            f"do not delete.")
+        # only delete if we have not found any other data objects that reference this content.
+        if len(referenced) == 0:
+            logger.info(f"data object content '{meta.c_hash}' not referenced by any data object -> delete.")
+            content_path = self.obj_content_path(meta.c_hash)
+            os.remove(content_path)
+        else:
+            logger.info(f"data object content '{meta.c_hash}' referenced by data objects ({referenced}) -> "
+                        f"do not delete.")
 
         return meta
 
-    def get_meta(self, obj_id: str) -> Optional[Union[CDataObject, GPPDataObject]]:
+    def get_meta(self, obj_id: str) -> Optional[DataObject]:
         """
         Retrieves the meta information of a data object. Depending on the type of the data object, either a
         `CDataObject` or a `GPPDataObject` is returned, providing meta information for content and GPP data objects,
@@ -670,28 +507,17 @@ class DORService:
         if meta is None:
             raise DataObjectNotFoundError(obj_id)
 
-        # is it a GPP
-        if meta.data_type == GPP_DATA_TYPE:
-            async def gpp_streamer():
-                yield json.dumps(meta.gpp.dict(), indent=4).encode('utf-8')
+        # check if we have the content
+        content_path = self.obj_content_path(meta.c_hash)
+        if not os.path.isfile(content_path):
+            raise DataObjectContentNotFoundError({
+                'path': content_path
+            })
 
-            return StreamingResponse(
-                content=gpp_streamer(),
-                media_type='application/octet-stream'
-            )
+        # touch data object
+        self.touch_data_object(obj_id)
 
-        else:
-            # check if we have the content
-            content_path = self.obj_content_path(meta.c_hash)
-            if not os.path.isfile(content_path):
-                raise DataObjectContentNotFoundError({
-                    'path': content_path
-                })
-
-            # touch data object
-            self.touch_data_object(obj_id)
-
-            return FileResponse(content_path, media_type='application/octet-stream')
+        return FileResponse(content_path, media_type='application/octet-stream')
 
     def get_provenance(self, c_hash: str) -> Optional[DataObjectProvenance]:
         """
@@ -708,7 +534,7 @@ class DORService:
                 (DataObjectProvenanceRecord.c_hash == c_hash)).all()
             return DataObjectProvenance.parse_obj(records[0].provenance) if records else None
 
-    def grant_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
+    def grant_access(self, obj_id: str, user_iid: str) -> DataObject:
         """
         Grants a user the right to access the contents of a restricted data object. Authorisation required by the owner
         of the data object. Note that access rights only matter if the data object has access restrictions.
@@ -735,7 +561,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def revoke_access(self, obj_id: str, user_iid: str) -> Union[CDataObject, GPPDataObject]:
+    def revoke_access(self, obj_id: str, user_iid: str) -> DataObject:
         """
         Revokes the right to access the contents of a restricted data object from a user. Authorisation required by the
         owner of the data object. Note that access rights only matter if the data object has access restrictions.
@@ -762,7 +588,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def transfer_ownership(self, obj_id: str, new_owner_iid: str) -> Union[CDataObject, GPPDataObject]:
+    def transfer_ownership(self, obj_id: str, new_owner_iid: str) -> DataObject:
         """
         Transfers the ownership of a data object to another user. Authorisation required by the current owner of the
         data object.
@@ -788,7 +614,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def update_tags(self, obj_id: str, tags: List[DataObject.Tag]) -> Union[CDataObject, GPPDataObject]:
+    def update_tags(self, obj_id: str, tags: List[DataObject.Tag]) -> DataObject:
         """
         Adds tags to a data object or updates tags in case they already exist. Authorisation required by the owner of
         the data object.
@@ -810,7 +636,7 @@ class DORService:
 
         return self.get_meta(obj_id)
 
-    def remove_tags(self, obj_id: str, keys: List[str]) -> Union[CDataObject, GPPDataObject]:
+    def remove_tags(self, obj_id: str, keys: List[str]) -> DataObject:
         """
         Removes tags from a data object. Authorisation required by the owner of the data object.
         """

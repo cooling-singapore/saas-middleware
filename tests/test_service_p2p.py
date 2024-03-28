@@ -3,7 +3,7 @@ import os
 import socket
 import time
 from threading import Thread
-from typing import Optional
+from typing import Optional, List
 
 import pytest
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from saas.core.helpers import hash_file_content
 from saas.core.identity import Identity
 from saas.core.logging import Logging
+from saas.nodedb.schemas import NodeInfo
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage
 from saas.p2p.protocol import P2PProtocol, BroadcastResponse
@@ -39,7 +40,8 @@ class OneWayMessage(BaseModel):
 
 class SimpleProtocol(P2PProtocol):
     def __init__(self, node):
-        P2PProtocol.__init__(self, node, 'simple_protocol', [
+        self._node = node
+        super().__init__(node.identity, node.datastore, 'simple_protocol', [
             (BounceRequest, self._handle_bounce, BounceResponse),
             (OneWayMessage, self._handle_oneway, None)
         ])
@@ -54,8 +56,8 @@ class SimpleProtocol(P2PProtocol):
         assert(attachment is None)
         assert(peer is not None)
 
-    def broadcast_bounce(self, value: int) -> BroadcastResponse:
-        return self.broadcast(BounceRequest(value=value), exclude_self=False)
+    def broadcast_bounce(self, network: List[NodeInfo], value: int) -> BroadcastResponse:
+        return self.broadcast(network, BounceRequest(value=value), exclude_self=False)
 
     def _handle_bounce(self, request: BounceRequest, _: Identity) -> BounceResponse:
         return BounceResponse(value=request.value+1)
@@ -87,7 +89,7 @@ def test_simple_protocol(p2p_node):
     value = protocol.send_bounce(p2p_node.info.p2p_address, 42)
     assert(value == 43)
 
-    b_response = protocol.broadcast_bounce(42)
+    b_response = protocol.broadcast_bounce(p2p_node.db.get_network(), 42)
     assert(len(b_response.responses) == 1)
     assert(p2p_node.identity.id in b_response.responses)
     for response, attachment, peer in b_response.responses.values():

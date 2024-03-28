@@ -13,13 +13,12 @@ from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object
 from saas.core.helpers import get_timestamp_now
 from saas.dor.proxy import DORProxy
-from saas.dor.service import GPP_DATA_TYPE
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Processor, ProcessorStatus, Task, JobStatus
-from saas.dor.schemas import GPPDataObject, ProcessorDescriptor
+from saas.dor.schemas import ProcessorDescriptor
 
 logger = Logging.get('cli.rti')
 

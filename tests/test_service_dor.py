@@ -10,7 +10,6 @@ from saas.core.helpers import hash_json_object, symmetric_decrypt, symmetric_enc
     hash_file_content
 from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.dor.schemas import DataObject
-from saas.core.schemas import GithubCredentials
 from saas.core.helpers import get_timestamp_now, generate_random_string
 from saas.core.logging import Logging
 from saas.rest.exceptions import UnsuccessfulRequestError
@@ -151,44 +150,6 @@ def test_add_c_large(test_context, keystore, dor_proxy):
         print(f"{result[0]}\t{result[1]}\t{result[2]}\t{result[3]}")
 
 
-def test_add_gpp_with_schema(keystore, dor_proxy):
-    owner = keystore.identity
-
-    source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
-    proc_path = 'examples/adapters/proc_example'
-    proc_config = 'default'
-
-    github_credentials: GithubCredentials = keystore.github_credentials.get(source)
-
-    result = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
-                                           github_credentials=github_credentials)
-    assert(result is not None)
-
-
-def test_add_gpp_duplicate(keystore, dor_proxy):
-    owner = keystore.identity
-
-    source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
-    proc_path = 'examples/adapters/proc_example'
-    proc_config = 'default'
-
-    github_credentials: GithubCredentials = keystore.github_credentials.get(source)
-
-    meta0 = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
-                                          github_credentials=github_credentials)
-    assert(meta0 is not None)
-
-    meta1 = dor_proxy.add_gpp_data_object(source, commit_id, proc_path, proc_config, owner,
-                                          github_credentials=github_credentials)
-    assert(meta1 is not None)
-
-    # uploading the same GPP should result in the same content hash and, in case of a GPP, also in identical obj ids.
-    assert meta0.c_hash == meta1.c_hash
-    assert meta0.obj_id == meta1.obj_id
-
-
 def test_remove(dor_proxy, random_content, known_users):
     c0 = known_users[0]
     c1 = known_users[1]
@@ -261,10 +222,9 @@ def test_get_content(test_context, keystore, dor_proxy, random_content, unknown_
 
 def test_get_provenance(test_context, keystore, dor_proxy):
     processor = {
-        'source': 'github.com/source',
+        'repository': 'github.com/source',
         'commit_id': '34534ab',
         'proc_path': '/proc',
-        'proc_config': 'default',
         'proc_descriptor': {
             'name': 'proc0',
             'input': [{
@@ -280,8 +240,7 @@ def test_get_provenance(test_context, keystore, dor_proxy):
                 'name': 'c',
                 'data_type': 'JSON',
                 'data_format': 'json',
-            }],
-            'configurations': ['default']
+            }]
         }
     }
 
@@ -330,7 +289,7 @@ def test_get_provenance(test_context, keystore, dor_proxy):
     assert(result is not None)
     assert(len(result.steps) == 1)
     step = result.steps[0]
-    assert(step.processor == '5e4871029fd3a88f72f43377223e7efc37aa5a579ad464c59c593695a40c79aa')
+    assert(step.processor == '93703a2148633f409c2189e56d0e78cf491345b0a4b40873c7b7e6242baea96a')
     assert(step.consumes['a'] == '9ab2253fc38981f5be9c25cf0a34b62cdf334652344bdef16b3d5dbc0b74f2f1')
     assert(step.consumes['b'] == '2b5442799fccc3af2e7e790017697373913b7afcac933d72fb5876de994f659a')
     assert(step.produces['c'] == 'b460644a73d5df6998c57c4eaf43ebc3e595bd06930af6e42d0008f84d91c849')

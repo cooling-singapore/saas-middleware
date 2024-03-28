@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union, Any
 
 from pydantic import BaseModel
 
@@ -7,9 +7,9 @@ from saas.dor.exceptions import FetchDataObjectFailedError
 from saas.core.helpers import write_json_to_file
 from saas.core.identity import Identity
 from saas.core.logging import Logging
+from saas.dor.schemas import DataObject
 from saas.p2p.exceptions import AttachmentNotFoundError
 from saas.p2p.protocol import P2PProtocol
-from saas.dor.schemas import GPPDataObject, CDataObject, GitProcessorPointer
 
 logger = Logging.get('dor.protocol')
 
@@ -20,16 +20,6 @@ class LookupRequest(BaseModel):
 
 class LookupResponse(BaseModel):
     records: Dict[str, dict]
-
-
-class LookupGPPRequest(BaseModel):
-    obj_id: str
-
-
-class LookupGPPResponse(BaseModel):
-    successful: bool
-    meta: Optional[GPPDataObject]
-    details: Optional[Dict]
 
 
 class FetchRequest(BaseModel):
@@ -47,47 +37,35 @@ class FetchResponse(BaseModel):
 class DataObjectRepositoryP2PProtocol(P2PProtocol):
     id = "data_object_repository"
 
-    def __init__(self, node) -> None:
-        super().__init__(node, DataObjectRepositoryP2PProtocol.id, [
-            (LookupRequest, self._handle_lookup, LookupResponse),
-            (LookupGPPRequest, self._handle_lookup_gpp, LookupGPPResponse),
-            (FetchRequest, self._handle_fetch, FetchResponse)
-        ])
+    def __init__(self, args: Union[Any, Union[Identity, str]]) -> None:
+        from saas.node import Node
+        if isinstance(args, Node):
+            self._node: Node = args
+            super().__init__(self._node.identity, self._node.datastore, DataObjectRepositoryP2PProtocol.id, [
+                (LookupRequest, self._handle_lookup, LookupResponse),
+                (FetchRequest, self._handle_fetch, FetchResponse)
+            ])
+        else:
+            self._node = None
+            identity, datastore = args
+            super().__init__(identity, datastore, DataObjectRepositoryP2PProtocol.id, [
+                (LookupRequest, self._handle_lookup, LookupResponse),
+                (FetchRequest, self._handle_fetch, FetchResponse)
+            ])
 
-    def lookup(self, peer_address: (str, int), obj_ids: List[str]) -> Dict[str, dict]:
+    def lookup(self, peer_address: (str, int), obj_ids: List[str]) -> Dict[str, DataObject]:
         response, _, _ = self.request(peer_address, LookupRequest(obj_ids=obj_ids))
-        return response.records
+        result: Dict[str, dict] = response.records
+        result: Dict[str, DataObject] = {key: DataObject.parse_obj(value) for key, value in result.items()}
+        return result
 
     def _handle_lookup(self, request: LookupRequest, _) -> LookupResponse:
-        records = {obj_id: self.node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
+        records = {obj_id: self._node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
         return LookupResponse(records=records)
-
-    def lookup_gpp(self, peer_address: (str, int), obj_id: str) -> Optional[GitProcessorPointer]:
-        response, _, _ = self.request(peer_address, LookupGPPRequest(obj_id=obj_id))
-        return response.meta.gpp if response.successful else None
-
-    def _handle_lookup_gpp(self, request: LookupGPPRequest, _) -> LookupGPPResponse:
-        # get the meta information for this object id
-        meta = self.node.dor.get_meta(request.obj_id)
-        if meta is None or isinstance(meta, CDataObject):
-            return LookupGPPResponse(successful=False, details={
-                'reason': 'object not found or not a GPP',
-                'obj_id': request.obj_id,
-                'meta': meta
-            })
-
-        # check if the user has access to the object
-        if meta.access_restricted:
-            return LookupGPPResponse(successful=False, details={
-                'reason': 'access to this GPP is restricted',
-                'obj_id': request.obj_id
-            })
-
-        return LookupGPPResponse(successful=True, meta=meta)
 
     def fetch(self, peer_address: (str, int), obj_id: str,
               destination_meta_path: str, destination_content_path: str,
-              user_iid: str = None, user_signature: str = None) -> None:
+              user_iid: str = None, user_signature: str = None) -> DataObject:
 
         response, attachment, _ = self.request(peer_address, FetchRequest(obj_id=obj_id, user_iid=user_iid,
                                                                           user_signature=user_signature))
@@ -112,9 +90,11 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # move the data object content to the destination path
         os.rename(attachment, destination_content_path)
 
+        return DataObject.parse_obj(response.meta)
+
     def _handle_fetch(self, request: FetchRequest, peer: Identity) -> (FetchResponse, str):
         # check if we have that data object
-        meta = self.node.dor.get_meta(request.obj_id)
+        meta = self._node.dor.get_meta(request.obj_id)
         if not meta:
             return FetchResponse(successful=False, details={
                 'reason': 'object not found',
@@ -124,7 +104,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # check if the data object access is restricted and (if so) if the user has the required permission
         if meta.access_restricted:
             # get the identity of the user
-            user = self.node.db.get_identity(request.user_iid)
+            user = self._node.db.get_identity(request.user_iid)
             if user is None:
                 return FetchResponse(successful=False, details={
                     'reason': 'identity of user not found',
@@ -151,7 +131,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
                 })
 
         # we should have the data object content in our local DOR
-        content_path = self.node.dor.obj_content_path(meta.c_hash)
+        content_path = self._node.dor.obj_content_path(meta.c_hash)
         if not os.path.isfile(content_path):
             return FetchResponse(successful=False, details={
                 'reason': 'data object content not found',
@@ -161,7 +141,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # touch data object
-        self.node.dor.touch_data_object(meta.obj_id)
+        self._node.dor.touch_data_object(meta.obj_id)
 
         # if all is good, send a reply with the meta information followed by the data object content as attachment
         return FetchResponse(successful=True, meta=meta), content_path
