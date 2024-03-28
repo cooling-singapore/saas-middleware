@@ -1,3 +1,4 @@
+import socket
 import time
 from threading import Thread
 from typing import List
@@ -11,6 +12,7 @@ from saas.rest.proxy import EndpointProxy
 
 from saas.rest.schemas import EndpointDefinition
 from saas.sdk.app.base import Application, User, UserDB, UserAuth, get_current_active_user, UserProfile
+from saas.sdk.app.exceptions import AppRuntimeError
 from tests.base_testcase import create_rnd_hex_string, PortMaster
 
 
@@ -123,6 +125,27 @@ def server_proxy():
 @pytest.fixture()
 def base_proxy():
     return TestAppBaseProxy(server_address, (server_endpoint_prefix[0], None), user_email, user_password)
+
+
+def test_server_port(temp_directory):
+    # block the port
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        server_socket.bind((server_address[0], server_address[1]))
+    except Exception as e:
+        print(e)
+
+    # start up the app
+    app = TestApp(server_address, None, temp_directory, server_endpoint_prefix)
+    try:
+        app.startup(n_attempts=1)
+        assert False
+
+    except AppRuntimeError:
+        assert True
+
+    finally:
+        server_socket.close()
 
 
 def test_get_token(sdk_test_server, server_proxy):

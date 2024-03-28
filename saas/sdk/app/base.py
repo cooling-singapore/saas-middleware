@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import os
+import socket
 import threading
 import time
 from threading import Lock
@@ -24,8 +25,8 @@ from saas.core.logging import Logging
 from saas.rest.exceptions import UnsupportedRESTMethod
 from saas.rest.schemas import EndpointDefinition, Token
 from saas.sdk.app.auth import UserAuth, UserDB, User
+from saas.sdk.app.exceptions import AppRuntimeError
 from saas.sdk.base import SDKContext, connect
-from saas.sdk.dot import DataObjectType
 
 logger = Logging.get('saas.sdk.app')
 
@@ -107,7 +108,6 @@ class Application(abc.ABC):
         self._thread = None
 
         self._context: Dict[str, SDKContext] = {}
-        self._dots: Dict[str, DataObjectType] = {}
 
         self._invalidate_thread = threading.Thread(target=self._invalidate_contexts,
                                                    args=(context_expiry,),
@@ -163,14 +163,6 @@ class Application(abc.ABC):
     async def _close(self) -> None:
         logger.info("REST app is shutting down.")
 
-    def add_dot(self, dot: DataObjectType) -> None:
-        with self._mutex:
-            self._dots[dot.name()] = dot
-
-    def supported_dots(self) -> List[str]:
-        with self._mutex:
-            return list(self._dots.keys())
-
     @property
     def address(self) -> (str, int):
         return self._address
@@ -187,7 +179,7 @@ class Application(abc.ABC):
     def endpoints(self) -> List[EndpointDefinition]:
         pass
 
-    def startup(self) -> None:
+    def startup(self, n_attempts: int = 100) -> None:
         if self._thread is None:
             self._api.on_event("shutdown")(self._close)
 
@@ -234,6 +226,31 @@ class Application(abc.ABC):
                 allow_headers=["*"],
             )
 
+            # check if the port is available
+            port_available = False
+            for attempt in range(n_attempts):
+                # try to create a socket on the desired port
+                try:
+                    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    server_socket.bind((self._address[0], self._address[1]))
+
+                    logger.info(f"{self._address[0]}:{self._address[1]} seems to be available -> "
+                                f"starting REST service.")
+
+                    server_socket.close()
+                    port_available = True
+                    break
+
+                except socket.error:
+                    logger.warning(f"[attempt:{attempt+1}] {self._address[0]}:{self._address[1]} seems to be in use -> "
+                                   f"trying again in 5 seconds...")
+                    time.sleep(5)
+
+            # is the port available?
+            if not port_available:
+                raise AppRuntimeError(f"{self._address[0]}:{self._address[1]} not available after "
+                                      f"{n_attempts} attempts, giving up.")
+
             logger.info("REST service starting up...")
             self._thread = Thread(target=uvicorn.run, args=(self._api,),
                                   kwargs={"host": self._address[0], "port": self._address[1], "log_level": "info"},
@@ -264,5 +281,5 @@ class Application(abc.ABC):
         """
         Updates a user information (name and/or password) and returns the user profile.
         """
-        user = UserDB.update_user(user.login, False, password=p.password, user_display_name=p.name)
+        user = UserDB.update_user(user.login, password=p.password, user_display_name=p.name)
         return UserProfile(login=user.login, name=user.name, disabled=user.disabled)

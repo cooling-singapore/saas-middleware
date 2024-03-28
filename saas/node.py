@@ -65,7 +65,8 @@ class Node:
     def startup(self, server_address: (str, int), enable_dor: bool, enable_rti: bool, enable_db: bool = True,
                 rest_address: (str, int) = None, boot_node_address: (str, int) = None,
                 retain_job_history: bool = False, strict_deployment: bool = True,
-                bind_all_address: bool = False, job_concurrency: bool = False) -> None:
+                bind_all_address: bool = False, job_concurrency: bool = False,
+                purge_inactive_jobs: bool = False) -> None:
 
         logger.info(f"saas-middleware {__version__}")
 
@@ -91,7 +92,8 @@ class Node:
         if enable_rti:
             db_path = f"sqlite:///{os.path.join(self._datastore_path, 'rti.db')}"
             self.rti = rti_service.RTIService(self, db_path, retain_job_history=retain_job_history,
-                                              strict_deployment=strict_deployment, job_concurrency=job_concurrency)
+                                              strict_deployment=strict_deployment, job_concurrency=job_concurrency,
+                                              purge_inactive_jobs=purge_inactive_jobs)
             logger.info(f"enabling RTI service using {db_path}.")
             endpoints += self.rti.endpoints()
 
@@ -175,7 +177,8 @@ class Node:
     def create(cls, keystore: Keystore, storage_path: str, p2p_address: (str, int),
                boot_node_address: (str, int) = None, rest_address: (str, int) = None,
                enable_dor: bool = False, enable_rti: bool = False, retain_job_history: bool = False,
-               strict_deployment: bool = True, bind_all_address: bool = False, job_concurrency: bool = False) -> Node:
+               strict_deployment: bool = True, bind_all_address: bool = False, job_concurrency: bool = False,
+               purge_inactive_jobs: bool = False) -> Node:
 
         node = Node(keystore, storage_path)
         node.startup(p2p_address, enable_dor=enable_dor, enable_rti=enable_rti,
@@ -183,6 +186,7 @@ class Node:
                      retain_job_history=retain_job_history,
                      strict_deployment=strict_deployment,
                      bind_all_address=bind_all_address,
-                     job_concurrency=job_concurrency)
+                     job_concurrency=job_concurrency,
+                     purge_inactive_jobs=purge_inactive_jobs)
 
         return node

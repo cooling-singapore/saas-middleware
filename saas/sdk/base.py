@@ -51,6 +51,10 @@ class SDKProcessor:
     def descriptor(self) -> Processor:
         return self._processor
 
+    @property
+    def node(self) -> NodeInfo:
+        return self._node
+
     def undeploy(self) -> None:
         self._rti.undeploy(self._processor.id, self._authority)
 
@@ -479,14 +483,22 @@ def connect(address: Union[str, Tuple[str, int]], authority: Keystore) -> SDKCon
 
 
 class SDKRelayContext:
-    def __init__(self, session: Session, authority: Keystore, node: NodeInfo):
+    def __init__(self, session: Session, authority: Keystore, node: NodeInfo, dors: List[NodeInfo]):
         self._authority = authority
         self._session = session
         self._node = node
+        self._dors = dors
+
+    @property
+    def authority(self) -> Keystore:
+        return self._authority
 
     def close(self) -> None:
         # delete the ephemeral keystore
         os.remove(self._authority.path)
+
+    def dor(self) -> Optional[NodeInfo]:
+        return self._dors[0] if self._dors else None
 
     def upload_content(self, content_path: str, data_type: str, data_format: str, access_restricted: bool,
                        content_encrypted: bool = False, creators: List[Identity] = None, license_by: bool = False,
@@ -580,17 +592,26 @@ class SDKRelayContext:
         db.update_identity(identity)
 
 
-def connect_to_relay(wd_path: str, relay_address: (str, int), credentials: (str, str)) -> SDKRelayContext:
+def connect_to_relay(wd_path: str, server_address: Union[str, Tuple[str, int]],
+                     credentials: (str, str)) -> SDKRelayContext:
+    remote_address = (server_address, None) if isinstance(server_address, str) else server_address
+
     # connect to the node and get info about it
-    session = Session(endpoint_prefix_base='/relay/v1', remote_address=relay_address, credentials=credentials)
+    session = Session(endpoint_prefix_base='/relay/v1', remote_address=remote_address, credentials=credentials)
     db = NodeDBProxy.from_session(session)
     node = db.get_node()
+
+    # get network information and identify DORs
+    dors = []
+    for node in db.get_network():
+        if node.dor_service:
+            dors.append(node)
 
     # create an ephemeral keystore that is only used for the Relay
     authority = Keystore.create(wd_path, f"relay_proxy:{session.credentials[0]}", 'none', session.credentials[1])
     user_identity = db.update_identity(authority.identity)
 
-    print(f"Using ephemeral identity: {authority.identity.id}")
-    print(f"Actual user identity: {user_identity.id}")
+    print(f"Using ephemeral identity: {authority.identity.id} {authority.identity.name}")
+    print(f"Actual user identity: {user_identity.id} {user_identity.name}")
 
-    return SDKRelayContext(session, authority, node)
+    return SDKRelayContext(session, authority, node, dors)

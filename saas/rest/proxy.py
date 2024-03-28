@@ -1,5 +1,4 @@
 import json
-import time
 import traceback
 from datetime import datetime, timezone
 from typing import Union, Optional, BinaryIO, Tuple
@@ -75,14 +74,12 @@ def extract_response(response: requests.Response) -> Optional[Union[dict, list]]
         })
 
 
-def generate_authorisation_token(authority: Keystore, url: str, body: dict = None, precision: int = 30) -> str:
+def generate_authorisation_token(authority: Keystore, url: str, body: dict = None) -> str:
     digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
 
     digest.update(url.encode('utf-8'))
     if body:
         digest.update(canonicaljson.encode_canonical_json(body))
-    slot = int(time.time() / precision)
-    digest.update(slot.to_bytes(4, byteorder='big'))
 
     token = digest.finalize()
     return authority.sign(token)
@@ -125,7 +122,7 @@ class Session:
     def __init__(self, endpoint_prefix_base: str, remote_address: Union[tuple[str, str, int], tuple[str, int]],
                  credentials: (str, str)) -> None:
         self._endpoint_prefix_base = endpoint_prefix_base
-        self._remote_address = remote_address
+
         self._remote_address = \
             remote_address if len(remote_address) == 3 else ('http', remote_address[0], remote_address[1])
 
@@ -154,8 +151,10 @@ class Session:
         }
 
         # get the token
-        url = f"{self._remote_address[0]}://{self._remote_address[1]}:{self._remote_address[2]}" \
-              f"{self._endpoint_prefix_base}/token"
+        url = f"{self._remote_address[0]}://{self._remote_address[1]}" if self._remote_address[2] is None else \
+            f"{self._remote_address[0]}://{self._remote_address[1]}:{self._remote_address[2]}"
+        url = f"{url}{self._endpoint_prefix_base}/token"
+
         try:
             response = requests.post(url, data=data)
             result = extract_response(response)
@@ -289,10 +288,16 @@ class EndpointProxy:
             raise UnsuccessfulConnectionError(url)
 
     def _make_url(self, endpoint: str, parameters: dict = None) -> str:
-        url = f"{self._remote_address[0]}://{self._remote_address[1]}:{self._remote_address[2]}"
+        # create base URL
+        url = f"{self._remote_address[0]}://{self._remote_address[1]}"
+        if self._remote_address[2]:
+            url = f"{url}:{self.remote_address[2]}"
+
+        # add endpoint prefix
         url += f"{self._endpoint_prefix[0]}/{self._endpoint_prefix[1]}" if self._endpoint_prefix[1] \
             else self._endpoint_prefix[0]
 
+        # add endpoint
         url += f"/{endpoint}"
 
         if parameters:
