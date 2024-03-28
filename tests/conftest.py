@@ -93,6 +93,26 @@ def node(keystore):
         _node.shutdown()
 
 
+@pytest.fixture(scope="session")
+def exec_only_node(extra_keystores, node):
+    with tempfile.TemporaryDirectory() as tempdir:
+        local_ip = determine_local_ip()
+        rest_address = PortMaster.generate_rest_address(host=local_ip)
+        p2p_address = PortMaster.generate_p2p_address(host=local_ip)
+
+        _node = Node.create(keystore=extra_keystores[1], storage_path=tempdir,
+                            p2p_address=p2p_address, boot_node_address=p2p_address, rest_address=rest_address,
+                            enable_dor=False, enable_rti=True, strict_deployment=False, job_concurrency=True,
+                            retain_job_history=True)
+
+        #  make exec-only node known to node
+        _node.join_network(node.p2p.address())
+
+        yield _node
+
+        _node.shutdown()
+
+
 def add_test_processor(dor: DORProxy, keystore: Keystore) -> DataObject:
     org = 'cooling-singapore'
     repo_name = 'saas-middleware'
@@ -100,8 +120,6 @@ def add_test_processor(dor: DORProxy, keystore: Keystore) -> DataObject:
     proc_name = 'example-processor'
     proc_path = 'examples/adapters/proc_example'
     image_name = f'{org}/{repo_name}/{proc_name}:{commit_id}'
-    credentials = keystore.github_credentials.get(repo_url)
-    credentials = (credentials.login, credentials.personal_access_token)
 
     # does it exist in DOR? if not, build and add it
     result = dor.search(data_type='ProcessorDockerImage')
@@ -110,7 +128,7 @@ def add_test_processor(dor: DORProxy, keystore: Keystore) -> DataObject:
         with tempfile.TemporaryDirectory() as tempdir:
             # clone the repository and checkout the specified commit
             repo_path = os.path.join(tempdir, 'repository')
-            commit_timestamp = clone_repository(repo_url, repo_path, commit_id=commit_id, credentials=credentials)
+            commit_timestamp = clone_repository(repo_url, repo_path, commit_id=commit_id)
 
             # read he processor descriptor
             descriptor_path = os.path.join(repo_path, proc_path, 'descriptor.json')

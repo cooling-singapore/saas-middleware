@@ -133,19 +133,16 @@ def test_cli_builder_export_image(temp_dir, github_credentials):
         assert False
 
 
-def test_cli_builder_cmd(node, temp_dir, github_credentials):
+def test_cli_builder_cmd(node, temp_dir):
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
-    credentials = github_credentials.get(repo_url)
 
     # define arguments
     args = {
         'repository': repo_url,
         'commit_id': commit_id,
         'proc_path': 'examples/adapters/proc_example',
-        'address': f"{address[0]}:{address[1]}",
-        'git_username': credentials[0],
-        'git_token': credentials[1]
+        'address': f"{address[0]}:{address[1]}"
     }
 
     # create keystore
@@ -171,10 +168,9 @@ def test_cli_builder_cmd(node, temp_dir, github_credentials):
         assert False
 
 
-def test_cli_builder_cmd_store_image(node, temp_dir, github_credentials):
+def test_cli_builder_cmd_store_image(node, temp_dir):
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
-    credentials = github_credentials.get(repo_url)
 
     # define arguments
     args = {
@@ -182,8 +178,6 @@ def test_cli_builder_cmd_store_image(node, temp_dir, github_credentials):
         'commit_id':  commit_id,
         'proc_path': 'examples/adapters/proc_example',
         'address': f"{address[0]}:{address[1]}",
-        'git_username': credentials[0],
-        'git_token': credentials[1],
         'store_image': True
     }
 

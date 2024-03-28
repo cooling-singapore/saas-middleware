@@ -16,7 +16,6 @@ from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import GitProcessorPointer, ProcessorDescriptor, DataObject
-from saas.helpers import generate_address_port_mapping
 from saas.node import Node
 from saas.rti.proxy import JobRESTProxy
 from saas.rti.schemas import JobResult, ExitCode, Job, JobStatus, Severity, Task
@@ -63,7 +62,7 @@ def prepare_plain_job_folder(jobs_root_path: str, job_id: str, a: Any = 1, b: An
 
 def prepare_full_job_folder(jobs_root_path: str, node: Node, user: Identity, proc: DataObject, job_id: str,
                             a: Union[dict, int, str, DataObject], b: Union[dict, int, str, DataObject],
-                            sig_a: str = None, sig_b: str = None) -> str:
+                            sig_a: str = None, sig_b: str = None, target_node: Node = None) -> str:
     proc_descriptor = ProcessorDescriptor.parse_obj(proc.tags['proc_descriptor'])
 
     if a is None:
@@ -83,7 +82,7 @@ def prepare_full_job_folder(jobs_root_path: str, node: Node, user: Identity, pro
         if isinstance(b, DataObject) else Task.InputValue(name='b', type='value', value=b)
 
     c = Task.Output(name='c', owner_iid=user.id, restricted_access=False, content_encrypted=False,
-                    target_node_iid=node.identity.id)
+                    target_node_iid=target_node.identity.id if target_node else node.identity.id)
 
     task = Task(proc_id=proc.obj_id, user_iid=user.id, input=[a, b], output=[c], name='test', description='')
 
@@ -539,3 +538,28 @@ def test_cli_runner_cancelled(temp_dir, node, deployed_test_processor):
     # wait for the job to be finished
     job_result, status = wait_for_job_runner(job_path, rest_address)
     assert job_result.exitcode == ExitCode.INTERRUPTED
+
+
+def test_cli_runner_success_non_dor_target(temp_dir, node, exec_only_node, deployed_test_processor):
+    # prepare input data objects
+    a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1)
+    b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
+
+    # prepare the job folder
+    job_id = '398h36g3'
+    job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
+                                       a=a, b=b, target_node=exec_only_node)
+
+    # determine REST address
+    rest_address = PortMaster.generate_rest_address()
+
+    # execute the job runner command
+    job_process = multiprocessing.Process(target=run_job_cmd, args=(job_path, rest_address[0], rest_address[1]))
+    job_process.start()
+
+    # wait for the job to be finished
+    job_result, status = wait_for_job_runner(job_path, rest_address)
+    assert status.state == JobStatus.State.FAILED
+    assert "Pushing output data object 'c' failed." in status.errors[0].message
+    assert status.errors[0].exception.reason == 'Target node does not support DOR capabilities'
+    assert job_result.exitcode == ExitCode.ERROR
