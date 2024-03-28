@@ -4,7 +4,7 @@ import os
 import threading
 import time
 import traceback
-from typing import  Dict, Tuple, Set
+from typing import Dict, Tuple, Set, Union
 
 import uvicorn
 from fastapi import FastAPI
@@ -62,11 +62,15 @@ class OutputObjectHandler(threading.Thread):
 
         except SaaSRuntimeException as e:
             self._logger.error(f"pushing output data object '{self._obj_name}' FAILED: {e.reason}")
-            self._owner.remove_pending_output(self._obj_name, None)
+            error = JobStatus.Error(message=f"Pushing output data object '{self._obj_name}' failed.",
+                                    exception=e.content)
+            self._owner.remove_pending_output(self._obj_name, error)
 
         except Exception as e:
             self._logger.error(f"pushing output data object '{self._obj_name}' FAILED: {e}")
-            self._owner.remove_pending_output(self._obj_name, False)
+            error = JobStatus.Error(message=f"Pushing output data object '{self._obj_name}' failed.",
+                                    exception=SaaSRuntimeException(str(e)).content)
+            self._owner.remove_pending_output(self._obj_name, error)
 
 
 class JobRunner(CLICommand, ProgressListener):
@@ -429,15 +433,16 @@ class JobRunner(CLICommand, ProgressListener):
                     'owner_iid': o.owner_iid
                 })
 
-    def remove_pending_output(self, obj_name: str, obj: DataObject) -> None:
+    def remove_pending_output(self, obj_name: str, result: Union[DataObject, JobStatus.Error]) -> None:
         with self._mutex:
             self._pending_output.remove(obj_name)
 
-            if obj:
-                self._job_status.output[obj_name] = obj
+            if isinstance(result, DataObject):
+                self._job_status.output[obj_name] = result
                 self._store_job_status()
 
             else:
+                self._job_status.errors.append(result)
                 self._failed_output.add(obj_name)
 
     def has_pending_output(self) -> bool:
