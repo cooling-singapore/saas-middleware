@@ -181,7 +181,7 @@ class DORService:
         data_nodes = {}
         proc_nodes = {}
         steps = []
-        missing = []
+        missing = set()
 
         # handle the product
         product_node = CObjectNode(
@@ -213,7 +213,7 @@ class DORService:
                 # is the provenance information missing?
                 if provenance is None:
                     provenance = _generate_missing_provenance(obj.c_hash, obj.data_type, obj.data_format)
-                    missing.append(obj.c_hash)
+                    missing.add(obj.c_hash)
 
                 # add to step
                 step['consumes'][name] = obj.c_hash
@@ -222,7 +222,8 @@ class DORService:
                 data_nodes.update(provenance.data_nodes)
                 proc_nodes.update(provenance.proc_nodes)
                 steps += provenance.steps
-                missing += provenance.missing
+                for m in provenance.missing:
+                    missing.add(m)
 
             else:
                 # by-value objects are not uploaded to the DOR, so their provenance information is not generated
@@ -251,7 +252,7 @@ class DORService:
             data_nodes=data_nodes,
             proc_nodes=proc_nodes,
             steps=steps,
-            missing=missing
+            missing=list(missing)
         )
 
         return provenance
