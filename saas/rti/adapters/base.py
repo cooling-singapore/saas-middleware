@@ -771,7 +771,7 @@ class RTIProcessorAdapter(Thread, ABC):
 
                 else:
                     # wait a bit...
-                    time.sleep(0.5)
+                    time.sleep(1.0)
 
             except SaaSRuntimeException as e:
                 state = update_state(ProcessorState.FAILED)
