@@ -281,5 +281,29 @@ class Application(abc.ABC):
         """
         Updates a user information (name and/or password) and returns the user profile.
         """
-        user = UserDB.update_user(user.login, password=p.password, user_display_name=p.name)
-        return UserProfile(login=user.login, name=user.name, disabled=user.disabled)
+        # change password only if current pw and new pw are provided
+        if p.password and len(p.password) > 1:
+            updating_user = UserDB.get_user(user.login)
+            if updating_user:
+                password_match = UserAuth.verify_password(p.password[0], updating_user.hashed_password)
+                if password_match:
+                    updating_user = UserDB.update_user(user.login, password=p.password[1], user_display_name=p.name)
+                    return UserProfile(login=updating_user.login, name=updating_user.name,
+                                       disabled=updating_user.disabled)
+                else:
+                    raise AppRuntimeError("Incorrect current password", details={
+                        'login': user.login
+                    })
+            else:
+                raise AppRuntimeError("Username does not exist", details={
+                    'login': user.login
+                })
+        # change user display name if name is provided
+        elif p.name:
+            updating_user = UserDB.update_user(user.login, user_display_name=p.name)
+            return UserProfile(login=updating_user.login, name=updating_user.name, disabled=updating_user.disabled)
+        else:
+            raise AppRuntimeError("User update failed", details={
+                'login': user.login
+            })
+
