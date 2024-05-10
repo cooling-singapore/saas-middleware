@@ -10,6 +10,8 @@ from saas.core.eckeypair import ECKeyPair
 from saas.core.rsakeypair import RSAKeyPair
 from saas.core.logging import Logging
 
+from unittest.mock import patch, MagicMock
+
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
@@ -337,3 +339,24 @@ def test_json_incompatible_exception():
 
     for k, v in e.details.items():
         assert isinstance(v, str)
+
+def test_logging_aws_cloudwatch_integration():
+    # Set the environment variable to simulate AWS deployment
+    os.environ['deployment_env'] = 'aws'
+
+    # Use patch to mock the CloudWatchLogHandler to avoid actual AWS calls
+    with patch('saas.core.logging.CloudWatchLogHandler') as mock_cloudwatch_handler:
+        mock_handler_instance = MagicMock()
+        mock_cloudwatch_handler.return_value = mock_handler_instance
+
+        # Initialize logging
+        Logging.initialise()
+
+        # Retrieve logger and check if CloudWatchLogHandler is added
+        logger = Logging.get('test_aws_logger')
+        has_cloudwatch_handler = any(isinstance(handler, MagicMock) for handler in logger.handlers)
+
+        assert has_cloudwatch_handler, "CloudWatchLogHandler should be added in AWS environment"
+
+    # Clean up environment variable
+    del os.environ['deployment_env']

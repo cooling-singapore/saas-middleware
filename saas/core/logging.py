@@ -1,5 +1,7 @@
 import logging
 import time
+import os
+from watchtower import CloudWatchLogHandler
 
 from logging.handlers import RotatingFileHandler
 from threading import Lock
@@ -54,6 +56,12 @@ class Logging:
             file_handler = logging.FileHandler(custom_log_path)
             file_handler.setFormatter(logging.Formatter(Logging._default_format))
             logger.addHandler(file_handler)
+
+        # check if deployment_env is 'aws'
+        if os.environ.get('deployment_env') == 'aws':
+            cloudwatch_handler = CloudWatchLogHandler()
+            cloudwatch_handler.setFormatter(logging.Formatter(Logging._default_format))
+            logger.addHandler(cloudwatch_handler)
 
         return logger
 
