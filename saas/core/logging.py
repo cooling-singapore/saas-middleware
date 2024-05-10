@@ -59,7 +59,14 @@ class Logging:
 
         # check if deployment_env is 'aws'
         if os.environ.get('deployment_env') == 'aws':
-            cloudwatch_handler = CloudWatchLogHandler()
+            # Fetch log group and stream name from environment variables
+            log_group = os.environ.get('LOG_GROUP_NAME', 'DefaultLogGroupName')
+            stream_name = os.environ.get('STREAM_NAME', 'DefaultStreamName')
+
+            cloudwatch_handler = CloudWatchLogHandler(
+                log_group=log_group,
+                stream_name=stream_name
+            )
             cloudwatch_handler.setFormatter(logging.Formatter(Logging._default_format))
             logger.addHandler(cloudwatch_handler)
 
