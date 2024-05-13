@@ -1,11 +1,11 @@
 import logging
 import time
-import os
-from watchtower import CloudWatchLogHandler
-
 from logging.handlers import RotatingFileHandler
 from threading import Lock
 
+import os
+import boto3
+from watchtower import CloudWatchLogHandler
 
 class Logging:
     _lock: Lock = Lock()
@@ -13,9 +13,9 @@ class Logging:
     _default_datefmt: str = '%Y-%m-%d %H:%M:%S'
 
     @classmethod
-    def initialise(cls, level: int = logging.INFO, log_path: str = None, console_log_enabled: bool = True,
+    def initialise(cls, level: int = logging.INFO, log_path: str = None, console_log_enabled: bool = True, 
                    custom_format: str = None, custom_datefmt: str = None,
-                   max_bytes: int = 1*1024*1024, backup_count: int = 10) -> None:
+                   max_bytes: int = 1*1024*1024, backup_count: int = 10, log_to_aws: bool = False) -> None:
         with Logging._lock:
             # set formatting and use GMT/UTC timezone
             formatter = logging.Formatter(
@@ -43,6 +43,15 @@ class Logging:
                 console_handler.setFormatter(formatter)
                 root_logger.addHandler(console_handler)
 
+            # do we have AWS logging enabled?
+            if log_to_aws:
+                default_region = os.environ.get('AWS_REGION', 'ap-southeast-1')
+                log_group_name = os.environ.get('LOG_GROUP_NAME', 'test-saas-aws-log')
+                boto3.setup_default_session(region_name=default_region)
+                cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name)
+                cloudwatch_handler.setFormatter(formatter)
+                root_logger.addHandler(cloudwatch_handler)
+
     @classmethod
     def get(cls, name: str, level: int = None, custom_log_path: str = None) -> logging.Logger:
         logger = logging.getLogger(name)
@@ -56,19 +65,6 @@ class Logging:
             file_handler = logging.FileHandler(custom_log_path)
             file_handler.setFormatter(logging.Formatter(Logging._default_format))
             logger.addHandler(file_handler)
-
-        # check if deployment_env is 'aws'
-        if os.environ.get('deployment_env') == 'aws':
-            # Fetch log group and stream name from environment variables
-            log_group = os.environ.get('LOG_GROUP_NAME', 'DefaultLogGroupName')
-            stream_name = os.environ.get('STREAM_NAME', 'DefaultStreamName')
-
-            cloudwatch_handler = CloudWatchLogHandler(
-                log_group=log_group,
-                stream_name=stream_name
-            )
-            cloudwatch_handler.setFormatter(logging.Formatter(Logging._default_format))
-            logger.addHandler(cloudwatch_handler)
 
         return logger
 
