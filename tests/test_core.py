@@ -10,6 +10,7 @@ from saas.core.eckeypair import ECKeyPair
 from saas.core.rsakeypair import RSAKeyPair
 from saas.core.logging import Logging
 
+
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
 
@@ -337,3 +338,19 @@ def test_json_incompatible_exception():
 
     for k, v in e.details.items():
         assert isinstance(v, str)
+
+
+def test_logging_aws_cloudwatch_integration(logging):
+    # Before running this test, ensure that [default] in credentials file is available in .aws directory
+    # Initialize logging with AWS CloudWatch enabled
+    Logging.initialise(log_to_aws=True)
+
+    # Get a logger instance
+    logger = Logging.get('test_logger')
+
+    # Log a message
+    logger.info("This message should be logged to AWS CloudWatch")
+
+    # Assert that the message was logged to CloudWatch
+    # You can check the CloudWatch logs in the AWS Management Console
+    # to verify that the message was indeed logged.

@@ -1,9 +1,12 @@
 import logging
 import time
-
 from logging.handlers import RotatingFileHandler
 from threading import Lock
 
+import os
+import boto3
+from botocore.exceptions import NoCredentialsError
+from watchtower import CloudWatchLogHandler
 
 class Logging:
     _lock: Lock = Lock()
@@ -11,9 +14,9 @@ class Logging:
     _default_datefmt: str = '%Y-%m-%d %H:%M:%S'
 
     @classmethod
-    def initialise(cls, level: int = logging.INFO, log_path: str = None, console_log_enabled: bool = True,
+    def initialise(cls, level: int = logging.INFO, log_path: str = None, console_log_enabled: bool = True, 
                    custom_format: str = None, custom_datefmt: str = None,
-                   max_bytes: int = 1*1024*1024, backup_count: int = 10) -> None:
+                   max_bytes: int = 1*1024*1024, backup_count: int = 10, log_to_aws: bool = False) -> None:
         with Logging._lock:
             # set formatting and use GMT/UTC timezone
             formatter = logging.Formatter(
@@ -40,6 +43,19 @@ class Logging:
                 console_handler = logging.StreamHandler()
                 console_handler.setFormatter(formatter)
                 root_logger.addHandler(console_handler)
+
+            # do we have AWS logging enabled?
+            if log_to_aws:
+                default_region = os.environ.get('AWS_REGION', 'ap-southeast-1')
+                log_group_name = os.environ.get('LOG_GROUP_NAME', 'test-saas-aws-log')
+                boto3.setup_default_session(region_name=default_region)
+
+                try:
+                    cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name)
+                    cloudwatch_handler.setFormatter(formatter)
+                    root_logger.addHandler(cloudwatch_handler)
+                except NoCredentialsError:
+                    root_logger.error(f"No credentials found for AWS cloud watch.")
 
     @classmethod
     def get(cls, name: str, level: int = None, custom_log_path: str = None) -> logging.Logger:

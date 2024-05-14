@@ -35,6 +35,8 @@ def main():
             Argument('--log-level', dest='log-level', action='store',
                      choices=['INFO', 'DEBUG'], default=default_log_level,
                      help=f"set the log level (default: '{default_log_level}')"),
+            Argument('--log-to-aws', dest='log-to-aws', action='store_const', const=True,
+                     help="enables logging to AWS CloudWatch"),
             Argument('--log-path', dest='log-path', action='store',
                      help="enables logging to file using the given path"),
             Argument('--log-console', dest="log-console", action='store_const', const=False,
