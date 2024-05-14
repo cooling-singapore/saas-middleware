@@ -418,9 +418,10 @@ class CLIParser(CLICommandGroup):
                 level = logging.INFO
 
             console_enabled = args['log-console'] is not None
+            log_to_aws = args['log-to-aws'] is not None
             log_path = args['log-path']
             # print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
-            Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
+            Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled, log_to_aws=log_to_aws)
             super().execute(args)
 
         except argparse.ArgumentError:
