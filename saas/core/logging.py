@@ -5,6 +5,7 @@ from threading import Lock
 
 import os
 import boto3
+from botocore.exceptions import NoCredentialsError
 from watchtower import CloudWatchLogHandler
 
 class Logging:
@@ -48,9 +49,13 @@ class Logging:
                 default_region = os.environ.get('AWS_REGION', 'ap-southeast-1')
                 log_group_name = os.environ.get('LOG_GROUP_NAME', 'test-saas-aws-log')
                 boto3.setup_default_session(region_name=default_region)
-                cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name)
-                cloudwatch_handler.setFormatter(formatter)
-                root_logger.addHandler(cloudwatch_handler)
+
+                try:
+                    cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name)
+                    cloudwatch_handler.setFormatter(formatter)
+                    root_logger.addHandler(cloudwatch_handler)
+                except NoCredentialsError:
+                    root_logger.error(f"No credentials found for AWS cloud watch.")
 
     @classmethod
     def get(cls, name: str, level: int = None, custom_log_path: str = None) -> logging.Logger:

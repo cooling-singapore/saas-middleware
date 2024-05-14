@@ -339,6 +339,7 @@ def test_json_incompatible_exception():
     for k, v in e.details.items():
         assert isinstance(v, str)
 
+
 def test_logging_aws_cloudwatch_integration(logging):
     # Before running this test, ensure that [default] in credentials file is available in .aws directory
     # Initialize logging with AWS CloudWatch enabled
