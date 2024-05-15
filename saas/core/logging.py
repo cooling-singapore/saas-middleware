@@ -48,14 +48,15 @@ class Logging:
             if log_to_aws:
                 default_region = os.environ.get('AWS_REGION', 'ap-southeast-1')
                 log_group_name = os.environ.get('LOG_GROUP_NAME', 'test-saas-aws-log')
+                log_stream_name = os.environ.get('AWS_TASK_ID', 'test-log-stream')
                 boto3.setup_default_session(region_name=default_region)
 
                 try:
-                    cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name)
+                    cloudwatch_handler = CloudWatchLogHandler(log_group_name=log_group_name, log_stream_name=log_stream_name)
                     cloudwatch_handler.setFormatter(formatter)
                     root_logger.addHandler(cloudwatch_handler)
                 except NoCredentialsError:
-                    root_logger.error(f"No credentials found for AWS cloud watch.")
+                    root_logger.error("No credentials found for AWS cloud watch.")
 
     @classmethod
     def get(cls, name: str, level: int = None, custom_log_path: str = None) -> logging.Logger:
