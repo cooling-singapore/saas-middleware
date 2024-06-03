@@ -37,6 +37,4 @@ class SSHCredentials(BaseModel):
     host: str = Field(..., title="Host", description="The host name or IP of the remote machine.", example="35.34.55.2")
     login: str = Field(..., title="Login", description="The login for the remote machine.")
     key: str = Field(..., title="Key", description="The key content.")
-    key_path: Optional[str] = Field(title="Key Path", description="An optional path to where the key has be stored.")
-    is_cygwin: Optional[bool] = Field(title="Is Cygwin", description="An optional flag that indicates if the remote machine usies cygwin.")
-    home_path: Optional[str] = Field(title="Home Path", description="An optional path to the home folder.")
+    passphrase: Optional[str] = Field(title="Passphrase", description="An optional passphrase in case the key is protected.")
