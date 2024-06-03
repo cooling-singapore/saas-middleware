@@ -1,7 +1,7 @@
 import json
 import os
 from json import JSONDecodeError
-from typing import List, Union
+from typing import List, Union, Optional
 
 import jsonschema
 from InquirerPy.base import Choice
@@ -11,14 +11,13 @@ from tabulate import tabulate
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object
-from saas.core.helpers import get_timestamp_now
 from saas.dor.proxy import DORProxy
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
-from saas.rti.schemas import Processor, ProcessorStatus, Task, JobStatus
-from saas.dor.schemas import ProcessorDescriptor
+from saas.rti.schemas import Processor, Task, JobStatus
+from saas.dor.schemas import ProcessorDescriptor, DataObject
 
 logger = Logging.get('cli.rti')
 
@@ -40,18 +39,22 @@ def shorten_id(long_id: str) -> str:
     return f'{long_id[:4]}...{long_id[-4:]}'
 
 
+def proc_info(proc: Processor) -> str:
+    if proc.gpp:
+        return (f"{shorten_id(proc.id)}/{proc.gpp.proc_descriptor.name} [{proc.state}] "
+                f"{proc.gpp.repository}:{proc.gpp.commit_id}")
+    else:
+        return f"{shorten_id(proc.id)} [{proc.state}] (no GPP available yet)"
+
+
 class RTIProcDeploy(CLICommand):
     def __init__(self) -> None:
         super().__init__('deploy', 'deploys a processor', arguments=[
-            Argument('--type', dest='type', action='store', choices=['native', 'docker'],
-                     help="indicate the type of deployment: 'native' or 'docker'."),
-            Argument('--ssh-profile', dest='ssh-profile', action='store',
-                     help="indicate the SSH profile to be used (if any)."),
             Argument('proc-id', metavar='proc-id', type=str, nargs='?',
-                     help="the id of the GPP data object of the processor to be deployed")
+                     help="the id of the PDI data object of the processor to be deployed")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=False)
 
@@ -60,19 +63,19 @@ class RTIProcDeploy(CLICommand):
         if len(nodes) == 0:
             raise CLIRuntimeError("Could not find any nodes with DOR service in the network. Try again later.")
 
-        # lookup all the GPP data objects
+        # lookup all the PDI data objects
         choices = []
         custodian = {}
-        gpp = {}
         for node in nodes:
             dor = DORProxy(node.rest_address)
-            result = dor.search(data_type=GPP_DATA_TYPE)
+            result = dor.search(data_type='ProcessorDockerImage')
             for item in result:
-                meta: GPPDataObject = dor.get_meta(item.obj_id)
-                choices.append(Choice(meta.obj_id, f"{meta.obj_id} [{meta.gpp.proc_descriptor.name}] "
-                                                   f"{meta.gpp.proc_config}:{meta.gpp.commit_id}"))
+                pdi: DataObject = dor.get_meta(item.obj_id)
+                proc_descriptor = ProcessorDescriptor.parse_obj(pdi.tags['proc_descriptor'])
+
+                choices.append(Choice(pdi.obj_id, f"{pdi.obj_id} [{proc_descriptor.name}] "
+                                                  f"{pdi.tags['repository']}:{pdi.tags['commit_id']}"))
                 custodian[item.obj_id] = node
-                gpp[item.obj_id] = meta.gpp
 
         # do we have any processors to choose from?
         if len(choices) == 0:
@@ -87,55 +90,17 @@ class RTIProcDeploy(CLICommand):
         if args['proc-id'] not in custodian:
             raise CLIRuntimeError(f"Custodian of processor {args['proc-id']} not found. Aborting.")
 
-        # do we have a type?
-        if not args['type']:
-            args['type'] = prompt_for_selection([
-                Choice('native', 'Native Deployment'),
-                Choice('docker', 'Docker Deployment')
-            ], message="Select the deployment type:", allow_multiple=False)
-
-        # should we use an SSH profile?
-        ssh_credentials = None
-        if args['ssh-profile'] is None:
-            if prompt_for_confirmation("Use an SSH profile for deployment?", default=False):
-                # get the SSH credentials
-                choices = []
-                for key in keystore.ssh_credentials.list():
-                    ssh_cred = keystore.ssh_credentials.get(key)
-                    choices.append(Choice(ssh_cred, f"{key}: {ssh_cred.login}@{ssh_cred.host}"))
-
-                # do we have any profiles to choose from?
-                if len(choices) == 0:
-                    raise CLIRuntimeError("No SSH profiles found. Aborting.")
-
-                ssh_credentials = prompt_for_selection(
-                    choices, "Select the SSH profile to be used for deployment:", allow_multiple=False)
-
-        else:
-            # do we have these SSH credentials?
-            ssh_credentials = keystore.ssh_credentials.get(args['ssh_profile'])
-            if ssh_credentials is None:
-                raise CLIRuntimeError(f"SSH profile '{args['ssh_profile']}' found. Aborting.")
-
-        # check if we have Github credentials for this URL
-        url = gpp[args['proc-id']].source
-        github_credentials = keystore.github_credentials.get(url)
-        if github_credentials is not None:
-            if not prompt_for_confirmation(f"Found Github credentials '{github_credentials.login}' for {url}. "
-                                           f"Use for deployment?", default=True):
-                github_credentials = None
-
         # deploy the processor
         print(f"Deploying processor {args['proc-id']}...", end='')
+        result = {}
         try:
-            rti.deploy(args['proc-id'], keystore,
-                       deployment=args['type'],
-                       gpp_custodian=custodian[args['proc-id']].identity.id,
-                       ssh_credentials=ssh_credentials,
-                       github_credentials=github_credentials)
+            result['proc'] = rti.deploy(args['proc-id'], keystore)
             print("Done")
+
         except UnsuccessfulRequestError as e:
             print(f"{e.reason} details: {e.details}")
+
+        return result
 
 
 class RTIProcUndeploy(CLICommand):
@@ -145,19 +110,18 @@ class RTIProcUndeploy(CLICommand):
                      help="the ids of the processors to be undeployed")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=False)
 
         # get the deployed processors
-        deployed = {proc.proc_id: proc for proc in rti.get_deployed()}
+        deployed = {proc.id: proc for proc in rti.get_all_procs()}
         if len(deployed) == 0:
             raise CLIRuntimeError(f"No processors deployed at {args['address']}. Aborting.")
 
         # do we have a proc_id?
         if not args['proc-id']:
-            choices = [Choice(proc.proc_id, f"{proc.gpp.proc_descriptor.name} {proc.gpp.proc_config}:"
-                                            f"{proc.gpp.commit_id}") for proc in rti.get_deployed()]
+            choices = [Choice(proc.id, proc_info(proc)) for proc in rti.get_all_procs()]
             if not choices:
                 raise CLIRuntimeError(f"No processors deployed at {args['address']}")
 
@@ -168,14 +132,15 @@ class RTIProcUndeploy(CLICommand):
             raise CLIRuntimeError("No processors selected. Aborting.")
 
         # are the processors deployed?
+        result = {}
         for proc_id in args['proc-id']:
             if proc_id not in deployed:
                 print(f"Processor {proc_id} is not deployed at {args['address']}. Skipping.")
                 continue
 
             # are there any jobs pending for this processor?
-            status: ProcessorStatus = rti.get_status(proc_id)
-            if len(status.pending) > 0 or len(status.active) > 0:
+            jobs = rti.get_jobs_by_proc(proc_id)
+            if len(jobs) > 0:
                 if not prompt_for_confirmation(f"Processor {proc_id} has pending/active jobs. Proceed to undeploy "
                                                f"processor? If yes, all pending/active jobs will be purged.",
                                                default=False):
@@ -184,26 +149,31 @@ class RTIProcUndeploy(CLICommand):
             # undeploy the processor
             print(f"Undeploying processor {proc_id}...", end='')
             try:
-                rti.undeploy(proc_id, keystore)
+                result[proc_id] = rti.undeploy(proc_id, keystore)
                 print("Done")
             except UnsuccessfulRequestError as e:
                 print(f"{e.reason} details: {e.details}")
+
+        return result
 
 
 class RTIProcList(CLICommand):
     def __init__(self) -> None:
         super().__init__('list', 'retrieves a list of all deployed processors', arguments=[])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
-        deployed = rti.get_deployed()
+        deployed = rti.get_all_procs()
         if len(deployed) == 0:
             print(f"No processors deployed at {args['address']}")
         else:
-            print(f"Found {len(deployed)} processor(s) deployed at {args['address'][0]}:{args['address'][1]}:")
-            for item in deployed:
-                gpp = rti.get_gpp(item.proc_id)
-                print(f"{item.proc_id}: [{gpp.proc_descriptor.name}] {gpp.proc_config}:{gpp.commit_id}")
+            print(f"Found {len(deployed)} processor(s) deployed at {args['address']}:")
+            for proc in deployed:
+                print(f"- {proc_info(proc)}")
+
+        return {
+            'deployed': deployed
+        }
 
 
 class RTIProcShow(CLICommand):
@@ -213,69 +183,50 @@ class RTIProcShow(CLICommand):
                      help="the id of the processor")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
 
         # do we have a proc_id?
         if not args['proc-id']:
-            choices = [Choice(proc.proc_id, f"{proc.gpp.proc_descriptor.name} {proc.gpp.proc_config}:"
-                                            f"{proc.gpp.commit_id}") for proc in rti.get_deployed()]
+            choices = [Choice(proc.id, proc_info(proc)) for proc in rti.get_all_procs()]
             if not choices:
                 raise CLIRuntimeError(f"No processors deployed at {args['address']}")
 
             args['proc-id'] = prompt_for_selection(choices, message="Select the processor:", allow_multiple=False)
 
-        # get the GPP for the proc
-        gpp = rti.get_gpp(args['proc-id'])
-        print(json.dumps(gpp.proc_descriptor.dict(), indent=4))
+        # get the proc and the jobs
+        proc = rti.get_proc(args['proc-id'])
+        jobs = rti.get_jobs_by_proc(proc.id)
 
+        # print detailed information
+        print(f"Processor {proc.id} Information:")
+        print(f"Jobs: {[job.id for job in jobs] if len(jobs) > 0 else '(none)'}")
+        print(f"Descriptor: {proc.gpp.proc_descriptor.dict() if proc.gpp else '(no GPP available yet)'}")
 
-class RTIProcStatus(CLICommand):
-    def __init__(self) -> None:
-        super().__init__('status', 'retrieves the status of all deployed processor and their active and pending '
-                                   'jobs (if any)',
-                         arguments=[])
-
-    def execute(self, args: dict) -> None:
-        rti = _require_rti(args)
-
-        deployed = rti.get_deployed()
-        if len(deployed) == 0:
-            print(f"No processors deployed at {args['address']}")
-        else:
-            print(f"Found {len(deployed)} processor(s) deployed at {args['address']}:")
-            for item in deployed:
-                proc_id = item.proc_id
-
-                status: ProcessorStatus = rti.get_status(proc_id)
-                print(f"{proc_id}:{item.gpp.proc_descriptor.name} [{status.state.upper()}] "
-                      f"pending={[job.id for job in status.pending] if status.pending else '(none)'} "
-                      f"active={[job.id for job in status.active] if status.active else '(none)'}")
+        return {
+            'processor': proc,
+            'jobs': jobs
+        }
 
 
 class RTIJobSubmit(CLICommand):
     def __init__(self) -> None:
         super().__init__('submit', 'submit a new job', arguments=[
-            Argument('--job', dest='job', action='store',
-                     help="path to the job descriptor")
+            Argument('--task', dest='task', action='store',
+                     help="path to the task descriptor")
         ])
 
     def _prepare(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string,
-                          message="Enter the target node's REST address:",
-                          default="127.0.0.1:5001")
-
-        self._address = extract_address(args['address'])
-        self._db = NodeDBProxy(extract_address(args['address']))
-        self._rti = RTIProxy(extract_address(args['address']))
-        self._dor = None
+        address = extract_address(args['address'])
 
         # create identity choices
+        self._db = NodeDBProxy(address)
         self._identity_choices = {}
         for identity in self._db.get_identities().values():
             self._identity_choices[identity.id] = Choice(identity, f"{identity.name}/{identity.email}/{identity.id}")
 
         # create node choices
+        self._dor = None
         self._node_choices = []
         for node in self._db.get_network():
             # does the node have a DOR?
@@ -295,17 +246,26 @@ class RTIJobSubmit(CLICommand):
             )
 
         # create processor choices
+        self._rti = RTIProxy(address)
+        no_gpp_procs = []
         self._proc_choices = {}
-        for proc in self._rti.get_deployed():
-            self._proc_choices[proc.proc_id] = Choice(proc, f"{proc.proc_id}: [{proc.gpp.proc_descriptor.name}] "
-                                                            f"{proc.gpp.proc_config}:{proc.gpp.commit_id}")
-        if not self._proc_choices:
-            raise CLIRuntimeError(f"No processors deployed at {self._address[0]}:{self._address[1]}. Aborting.")
+        for proc in self._rti.get_all_procs():
+            if proc.gpp is None:
+                no_gpp_procs.append(shorten_id(proc.id))
+            else:
+                self._proc_choices[proc.id] = Choice(proc, proc_info(proc))
 
-    def _create_job_input(self, proc_descriptor: ProcessorDescriptor) -> List[Union[Task.InputReference,
-                                                                                    Task.InputValue]]:
+        # do we have processors without GPPs?
+        if len(no_gpp_procs) > 0:
+            print(f"Ignoring processors without GPP (they are probably still deploying): {', '.join(no_gpp_procs)}")
+
+        # do we have processor choices?
+        if not self._proc_choices:
+            raise CLIRuntimeError(f"No processors deployed at {address[0]}:{address[1]}. Aborting.")
+
+    def _create_job_input(self, proc_desc: ProcessorDescriptor) -> List[Union[Task.InputReference, Task.InputValue]]:
         job_input = []
-        for item in proc_descriptor.input:
+        for item in proc_desc.input:
             selection = prompt_for_selection([Choice('value', 'by-value'), Choice('reference', 'by-reference')],
                                              f"How to set input '{item.name}' ({item.data_type}:{item.data_format})?")
 
@@ -361,7 +321,7 @@ class RTIJobSubmit(CLICommand):
 
         return job_input
 
-    def _create_job_output(self, proc_descriptor: ProcessorDescriptor) -> List[Task.Output]:
+    def _create_job_output(self, proc_desc: ProcessorDescriptor) -> List[Task.Output]:
         # select the owner for the output data objects
         owner = prompt_for_selection(list(self._identity_choices.values()),
                                      message="Select the owner for the output data objects:",
@@ -378,7 +338,7 @@ class RTIJobSubmit(CLICommand):
 
         # create the job output
         job_output = []
-        for item in proc_descriptor.output:
+        for item in proc_desc.output:
             job_output.append(Task.Output(
                 name=item.name, owner_iid=owner.id, restricted_access=restricted_access, content_encrypted=False,
                 target_node_iid=target.identity.id
@@ -386,28 +346,32 @@ class RTIJobSubmit(CLICommand):
 
         return job_output
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=True)
 
-        # prepare a number of things...
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address:",
+                          default="127.0.0.1:5001")
+
+        # do some preparation
         self._prepare(args)
 
-        # do we have a job descriptor?
-        if args['job']:
+        # do we have a task descriptor?
+        if args['task']:
             # does the file exist?
-            if not os.path.isfile(args['job']):
-                raise CLIRuntimeError(f"No job descriptor at '{args['job']}'. Aborting.")
+            if not os.path.isfile(args['task']):
+                raise CLIRuntimeError(f"No task descriptor at '{args['task']}'. Aborting.")
 
+            # read the job descriptor
             try:
-                # read the job descriptor
-                task = Task.parse_file(args['job'])
+                task = Task.parse_file(args['task'])
             except ValidationError as e:
-                raise CLIRuntimeError(f"Invalid job descriptor: {e.errors()}. Aborting.")
+                raise CLIRuntimeError(f"Invalid task descriptor: {e.errors()}. Aborting.")
 
             # is the processor deployed?
             if task.proc_id not in self._proc_choices:
-                raise CLIRuntimeError(f"Processor {task.proc_id} is not "
-                                      f"deployed at {self._address[0]}:{self._address[1]}. Aborting.")
+                raise CLIRuntimeError(f"Processor {task.proc_id} is not deployed at {args['address']}. "
+                                      f"Aborting.")
 
             proc_id = task.proc_id
             job_input = task.input
@@ -424,13 +388,17 @@ class RTIJobSubmit(CLICommand):
             print(f"Processor descriptor: {json.dumps(proc.gpp.proc_descriptor.dict(), indent=4)}")
 
             # create the job input and output
-            proc_id = proc.proc_id
+            proc_id = proc.id
             job_input = self._create_job_input(proc.gpp.proc_descriptor)
             job_output = self._create_job_output(proc.gpp.proc_descriptor)
 
         # submit the job
-        new_job_descriptor = self._rti.submit_job(proc_id, job_input, job_output, with_authorisation_by=keystore)
-        print(f"Job submitted: job-id={new_job_descriptor.id}")
+        job = self._rti.submit_job(proc_id, job_input, job_output, with_authorisation_by=keystore)
+        print(f"Job submitted: {job.id}")
+
+        return {
+            'job': job
+        }
 
 
 class RTIJobList(CLICommand):
@@ -438,7 +406,7 @@ class RTIJobList(CLICommand):
         super().__init__('list', 'retrieve a list of all jobs by the user (or all jobs if the user is the node owner)',
                          arguments=[])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -449,8 +417,7 @@ class RTIJobList(CLICommand):
                 print(f"Found {len(jobs)} jobs:")
 
                 # get all deployed procs
-                deployed: list[Processor] = rti.get_deployed()
-                deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+                deployed: dict[str, Processor] = {proc.id: proc for proc in rti.get_all_procs()}
 
                 # headers
                 lines = [
@@ -473,6 +440,10 @@ class RTIJobList(CLICommand):
             else:
                 print("No jobs found.")
 
+            return {
+                'jobs': jobs
+            }
+
         except UnsuccessfulRequestError as e:
             print(e.reason)
 
@@ -480,48 +451,44 @@ class RTIJobList(CLICommand):
 class RTIJobStatus(CLICommand):
     def __init__(self):
         super().__init__('status', 'retrieve the status of a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
-            Argument('--show-inactive', dest="show-inactive", action='store_const', const=True,
-                     help="include inactive jobs (i.e., jobs that are no longer running)")
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have a job id?
         if not args['job-id']:
             # get all deployed procs
-            deployed: list[Processor] = rti.get_deployed()
-            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+            deployed: dict[str, Processor] = {proc.id: proc for proc in rti.get_all_procs()}
 
             # get all jobs by this user and select
             choices = []
             for job in rti.get_jobs_by_user(keystore):
                 status = rti.get_job_status(job.id, with_authorisation_by=keystore)
 
-                is_active = status.state not in [JobStatus.State.SUCCESSFUL.value, JobStatus.State.FAILED.value,
-                                                 JobStatus.State.CANCELLED.value]
-                include_inactive = 'show-inactive' in args and args['show-inactive'] is True
+                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
+                    if job.task.proc_id in deployed else 'unknown processor'
 
-                if is_active or include_inactive:
-                    proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
-                        if job.task.proc_id in deployed else 'unknown processor'
-
-                    choices.append(Choice(job.id, f"{job.id}  {shorten_id(job.task.user_iid)}  {proc_name}  "
-                                                  f"{status.state}  {job.task.description}"))
+                choices.append(Choice(job.id, f"{job.id} [{status.state}] {proc_name}  {shorten_id(job.task.user_iid)}"
+                                              f"  {job.task.description}"))
 
             if not choices:
                 raise CLIRuntimeError("No jobs found.")
 
             args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
 
+        result = {}
         try:
             status = rti.get_job_status(args['job-id'], with_authorisation_by=keystore)
-            print(f"Status: {json.dumps(status.dict(), indent=4)}")
+            result['status'] = status
+            print(f"Job {args['job-id']} found. Status:\n{json.dumps(status.dict(), indent=4)}")
 
         except UnsuccessfulRequestError:
             print(f"Job {args['job-id']} not found.")
+
+        return result
 
 
 class RTIJobCancel(CLICommand):
@@ -530,15 +497,14 @@ class RTIJobCancel(CLICommand):
             Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
 
         # do we have a job id?
         if not args['job-id']:
             # get all deployed procs
-            deployed: list[Processor] = rti.get_deployed()
-            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
+            deployed: dict[str, Processor] = {proc.id: proc for proc in rti.get_all_procs()}
 
             # get all jobs by this user and select
             choices = []
@@ -560,59 +526,13 @@ class RTIJobCancel(CLICommand):
 
             args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=True)
 
+        result = {}
         try:
-            for job_id in args['job-id']:
-                status = rti.cancel_job(args['job-id'], keystore)
-                print(f"Cancelled {job_id} -> state={status.state}")
-            print('Done.')
+            status = rti.cancel_job(args['job-id'], with_authorisation_by=keystore)
+            result['status'] = status
+            print(f"Job {args['job-id']} cancelled. Last status:\n{json.dumps(status.dict(), indent=4)}")
 
-        except UnsuccessfulRequestError as e:
-            print(f"{e.reason} details={e.details}")
+        except UnsuccessfulRequestError:
+            print(f"Job {args['job-id']} not found.")
 
-
-class RTIJobLogs(CLICommand):
-    def __init__(self):
-        super().__init__('logs', 'retrieve the logs of a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
-            Argument('destination', metavar='destination', type=str, nargs=1, help="directory where to store the logs")
-        ])
-
-    def execute(self, args: dict) -> None:
-        # do we have a valid destination directory?
-        if not args['destination']:
-            raise CLIRuntimeError("No download path provided")
-        elif not os.path.isdir(args['destination'][0]):
-            raise CLIRuntimeError("Destination path provided is not a directory")
-
-        rti = _require_rti(args)
-        keystore = load_keystore(args, ensure_publication=True)
-
-        # do we have a job id?
-        if not args['job-id']:
-            # get all deployed procs
-            deployed: list[Processor] = rti.get_deployed()
-            deployed: dict[str, Processor] = {proc.proc_id: proc for proc in deployed}
-
-            # get all jobs by this user and select
-            choices = []
-            for job in rti.get_jobs_by_user(keystore):
-                status = rti.get_job_status(job.id, with_authorisation_by=keystore)
-
-                proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
-                    if job.task.proc_id in deployed else 'unknown processor'
-
-                choices.append(Choice(job.id, f"{job.id}  {shorten_id(job.task.user_iid)}  {proc_name}  "
-                                              f"{status.state}  {job.task.description}"))
-
-            if not choices:
-                raise CLIRuntimeError("No jobs found.")
-
-            args['job-id'] = prompt_for_selection(choices, message="Select job:", allow_multiple=False)
-
-        try:
-            download_path = os.path.join(args['destination'][0], f"{args['job-id']}.{get_timestamp_now()}.tar.gz")
-            rti.get_job_logs(args['job-id'], keystore, download_path)
-            print(f"Done. Logs downloaded to {download_path}")
-
-        except UnsuccessfulRequestError as e:
-            print(f"{e.reason} details={e.details}")
+        return result

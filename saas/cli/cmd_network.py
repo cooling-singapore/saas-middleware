@@ -1,4 +1,5 @@
 import datetime
+from typing import Optional
 
 from tabulate import tabulate
 
@@ -13,7 +14,7 @@ class NetworkList(CLICommand):
     def __init__(self) -> None:
         super().__init__('show', 'retrieves a list of all known nodes in the network', arguments=[])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
                           default='127.0.0.1:5001')
@@ -40,3 +41,7 @@ class NetworkList(CLICommand):
             ])
 
         print(tabulate(lines, tablefmt="plain"))
+
+        return {
+            'network': network
+        }

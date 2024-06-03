@@ -140,15 +140,8 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
             # check if node knows about identity
             db = NodeDBProxy(args[address_arg].split(":"))
             if db.get_identity(keystore.identity.id) is None:
-                if prompt_for_confirmation(
-                        message=f"Identity {keystore.identity.id} is not known to the node at {args[address_arg]}. "
-                                f"Publish identity?",
-                        default=True
-                ):
-                    db.update_identity(keystore.identity)
-                    print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
-                else:
-                    raise CLIRuntimeError("Cannot proceed without node ")
+                db.update_identity(keystore.identity)
+                print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
 
         except UnsuccessfulRequestError as e:
             raise CLIRuntimeError(f"Could not ensure identity is known to node at {args[address_arg]}. Aborting. "
@@ -317,7 +310,7 @@ class CLIExecutable(ABC):
         pass
 
     @abstractmethod
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         pass
 
 

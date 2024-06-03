@@ -1,7 +1,9 @@
 import os
 import subprocess
-from stat import S_IREAD, S_IWRITE
+from io import StringIO
+from typing import Optional
 
+import paramiko
 from InquirerPy.base import Choice
 from tabulate import tabulate
 
@@ -24,7 +26,7 @@ class IdentityCreate(CLICommand):
             Argument('--email', dest='email', action='store', help="email of the identity")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         prompt_if_missing(args, 'name', prompt_for_string, message="Enter name:")
         prompt_if_missing(args, 'email', prompt_for_string, message="Enter email:")
         prompt_if_missing(args, 'password', prompt_for_password)
@@ -37,6 +39,10 @@ class IdentityCreate(CLICommand):
         print(f"- Signing Key: {keystore.signing_key.info()}")
         print(f"- Encryption Key: {keystore.encryption_key.info()}")
 
+        return {
+            'keystore': keystore
+        }
+
 
 class IdentityRemove(CLICommand):
     def __init__(self):
@@ -45,7 +51,7 @@ class IdentityRemove(CLICommand):
                      help="do not require user confirmation to delete keystore"),
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         load_keystore(args, ensure_publication=False)
 
         # confirm removal (if applicable)
@@ -60,21 +66,28 @@ class IdentityRemove(CLICommand):
         else:
             print("Aborting.")
 
+        return None
+
 
 class IdentityShow(CLICommand):
     def __init__(self):
         super().__init__('show', 'shows details about a keystore', arguments=[])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
                           path=args['keystore'],
                           message="Select the keystore:")
 
         # read the keystore file
         keystore_path = os.path.join(args['keystore'], f"{args['keystore-id']}.json")
-        content = KeystoreContent.parse_file(keystore_path)
+        if not os.path.exists(keystore_path):
+            print(f"No keystore found file found at {keystore_path}")
+            return {
+                'content': None
+            }
 
         # show the public information
+        content = KeystoreContent.parse_file(keystore_path)
         print("Keystore details:")
         print(f"- Id: {content.iid}")
         print(f"- Name: {content.profile.name}")
@@ -87,12 +100,16 @@ class IdentityShow(CLICommand):
             else:
                 print(f"    - {key}")
 
+        return {
+            'content': content
+        }
+
 
 class IdentityList(CLICommand):
     def __init__(self):
         super().__init__('list', 'lists all identities found in the keystore directory')
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         available = get_available_keystores(args['keystore'])
         if len(available) > 0:
             print(f"Found {len(available)} keystores in '{args['keystore']}':")
@@ -112,6 +129,10 @@ class IdentityList(CLICommand):
         else:
             print(f"No keystores found in '{args['keystore']}'.")
 
+        return {
+            'available': available
+        }
+
 
 class IdentityPublish(CLICommand):
     def __init__(self):
@@ -120,7 +141,7 @@ class IdentityPublish(CLICommand):
                      help="the address (host:port) of the node")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         # prompt for the address (if missing)
@@ -132,6 +153,8 @@ class IdentityPublish(CLICommand):
         proxy.update_identity(keystore.identity)
         print(f"Published identity of keystore {args['keystore-id']}")
 
+        return None
+
 
 class IdentityDiscover(CLICommand):
     def __init__(self):
@@ -140,7 +163,7 @@ class IdentityDiscover(CLICommand):
                      help="the address (host:port) of the node")
         ])
 
-    def execute(self, args):
+    def execute(self, args) -> Optional[dict]:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter address of node for discovery:",
                           default="127.0.0.1:5001")
@@ -165,6 +188,8 @@ class IdentityDiscover(CLICommand):
 
             print(tabulate(lines, tablefmt="plain"))
 
+        return identities
+
 
 class IdentityUpdate(CLICommand):
     def __init__(self):
@@ -173,21 +198,37 @@ class IdentityUpdate(CLICommand):
             Argument('--email', dest='email', action='store', help="email of the identity")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         print("Keystore details:")
         print(f"- Name: {keystore.identity.name}")
         print(f"- Email: {keystore.identity.email}")
 
-        name = prompt_for_string("Enter name:", default=keystore.identity.name)
-        email = prompt_for_string("Enter email address:", default=keystore.identity.email)
+        name = args['name'] if 'name' in args else None
+        email = args['email'] if 'email' in args else None
+
+        # do we have an updated name and/or email?
+        if name or email:
+            name = name if name else keystore.identity.name
+            email = email if email else keystore.identity.email
+
+        # if we have neither, ask interactively
+        else:
+            name = prompt_for_string("Enter name:", default=keystore.identity.name)
+            email = prompt_for_string("Enter email address:", default=keystore.identity.email)
+
+        # update if and as needed
         if keystore.identity.name != name or keystore.identity.email != email:
             print("Updating profile.")
             keystore.update_profile(name=name, email=email)
 
         else:
             print("Nothing to update.")
+
+        return {
+            'keystore': keystore
+        }
 
 
 class CredentialsAddSSHCredentials(CLICommand):
@@ -196,38 +237,36 @@ class CredentialsAddSSHCredentials(CLICommand):
             Argument('--name', dest='name', action='store', help="name used to identify this SSH credential"),
             Argument('--host', dest='host', action='store', help="host used to connect the remote machine"),
             Argument('--login', dest='login', action='store', help="login used for connecting to remote machine"),
-            Argument('--key-is-password', dest="key_is_password", action='store_const', const=True,
-                     help="indicates that the key of this credential is a password"),
-            Argument('--key', dest='key', action='store', help="key for this credentials items (or password in"
-                                                               "case --key-is-password is set)")
+            Argument('--key', dest='key', action='store', help="path to the key file"),
+            Argument('--passphrase', dest='passphrase', action='store', help="passphrase for the key")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         prompt_if_missing(args, 'name', prompt_for_string, message="Enter name:")
         prompt_if_missing(args, 'host', prompt_for_string, message="Enter host:")
         prompt_if_missing(args, 'login', prompt_for_string, message="Enter login:")
+        prompt_if_missing(args, 'key', prompt_for_string, message="Enter path to key file:")
+        prompt_if_missing(args, 'passphrase', prompt_for_string, message="Enter key passphrase (leave empty if none):")
 
-        if args['key_is_password'] is None:
-            args['key_is_password'] = prompt_for_selection([
-                Choice(True, 'Password'),
-                Choice(False, 'Key')
-            ], "Type of SSH credentials:")
-
-        if args['key'] is None:
-            if args['key_is_password']:
-                args['key'] = prompt_for_password()
-
-            else:
-                args['key'] = prompt_for_string("Enter SSH key:")
+        # read key
+        if not os.path.isfile(args['key']):
+            raise CLIRuntimeError(f"SSH key not found at {args['key']}")
+        else:
+            with open(args['key'], 'r') as f:
+                key_content = f.read()
 
         # update the keystore
-        keystore.ssh_credentials.update(args['name'], SSHCredentials(host=args['host'], login=args['login'],
-                                                                     key_is_password=args['key_is_password'],
-                                                                     key=args['key']))
+        passphrase = args['passphrase'] if len(args['passphrase']) > 0 else None
+        credentials = SSHCredentials(host=args['host'], login=args['login'], key=key_content, passphrase=passphrase)
+        keystore.ssh_credentials.update(args['name'], credentials)
         keystore.sync()
         print("Credential successfully created.")
+
+        return {
+            'credentials': credentials
+        }
 
 
 class CredentialsAddGithubCredentials(CLICommand):
@@ -240,7 +279,7 @@ class CredentialsAddGithubCredentials(CLICommand):
                      help="personal access token for the login"),
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         prompt_if_missing(args, 'url', prompt_for_string, message="Enter repository URL:")
@@ -248,60 +287,104 @@ class CredentialsAddGithubCredentials(CLICommand):
         prompt_if_missing(args, 'personal_access_token', prompt_for_string, message="Enter personal access token:")
 
         # update the keystore
-        keystore.github_credentials.update(
-            args['url'], GithubCredentials(login=args['login'], personal_access_token=args['personal_access_token']))
+        credentials = GithubCredentials(login=args['login'], personal_access_token=args['personal_access_token'])
+        keystore.github_credentials.update(args['url'], credentials)
         keystore.sync()
         print("Credential successfully created.")
+
+        return {
+            'credentials': credentials
+        }
 
 
 class CredentialsRemove(CLICommand):
     def __init__(self):
-        super().__init__('remove', 'removes credentials from a keystore', arguments=[])
+        super().__init__('remove', 'removes credentials from a keystore', arguments=[
+            Argument('--credential', dest='type', action='store',
+                     help="id of the credential, following the pattern <type>:<name> where type must be "
+                          "either 'ssh' or 'github'"),
+            Argument('--confirm', dest="confirm", action='store_const', const=True,
+                     help="do not require user confirmation to delete credential")
+        ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         # collect all the removable credentials
+        found = {}
         removable = []
         for name in keystore.ssh_credentials.list():
             label = f"[SSH] {name}"
-            removable.append(Choice(value={
+            item = {
                 'asset': 'ssh',
                 'label': label,
                 'key': name
-            }, name=label))
+            }
+            found[f'ssh:{name}'] = item
+            removable.append(Choice(value=item, name=label))
 
         for name in keystore.github_credentials.list():
             label = f"[Github] {name}"
-            removable.append(Choice(value={
+            item = {
                 'asset': 'github',
                 'label': label,
                 'key': name
-            }, name=label))
+            }
+            found[f'github:{name}'] = item
+            removable.append(Choice(value=item, name=label))
 
-        # prompt for selection
-        if len(removable) == 0:
-            raise CLIRuntimeError("No credentials found. Aborting.")
+        removed = []
+        if 'credential' in args and args['credential'] is not None:
+            if args['credential'] not in found:
+                raise CLIRuntimeError(f"Credential {args['credential']} not found. Aborting.")
 
-        # any items selected for removal?
-        items = prompt_for_selection(removable, 'Select the credentials to be removed:', allow_multiple=True)
-        if len(items) == 0:
-            raise CLIRuntimeError("Nothing to remove. Aborting.")
-
-        # confirm and remove
-        if prompt_for_confirmation("Remove the selected credentials?", default=False):
-            for item in items:
+            # confirm removal (if applicable)
+            item = found[args['credential']]
+            if prompt_if_missing(args, 'confirm', prompt_for_confirmation,
+                                 message=f"Remove credential {args['credential']}?", default=False):
                 print(f"Removing {item['label']}...", end='')
                 if item['asset'] == 'ssh':
                     keystore.ssh_credentials.remove(item['key'])
+                    removed.append(f"ssh:{item['key']}")
                     print("Done")
                 elif item['asset'] == 'github':
                     keystore.github_credentials.remove(item['key'])
+                    removed.append(f"github:{item['key']}")
                     print("Done")
-            keystore.sync()
+                keystore.sync()
+            else:
+                print("Aborting.")
 
         else:
-            print("Aborting.")
+            # prompt for selection
+            if len(removable) == 0:
+                raise CLIRuntimeError("No credentials found. Aborting.")
+
+            # any items selected for removal?
+            items = prompt_for_selection(removable, 'Select the credentials to be removed:', allow_multiple=True)
+            if len(items) == 0:
+                raise CLIRuntimeError("Nothing to remove. Aborting.")
+
+            # confirm removal (if applicable)
+            if prompt_if_missing(args, 'confirm', prompt_for_confirmation,
+                                 message=f"Remove the selected credentials?", default=False):
+                for item in items:
+                    print(f"Removing {item['label']}...", end='')
+                    if item['asset'] == 'ssh':
+                        keystore.ssh_credentials.remove(item['key'])
+                        removed.append(f"ssh:{item['key']}")
+                        print("Done")
+                    elif item['asset'] == 'github':
+                        keystore.github_credentials.remove(item['key'])
+                        removed.append(f"github:{item['key']}")
+                        print("Done")
+                keystore.sync()
+            else:
+                print("Aborting.")
+
+        return {
+            'removed': removed
+        }
 
 
 class CredentialsTestSSHCredentials(CLICommand):
@@ -310,7 +393,7 @@ class CredentialsTestSSHCredentials(CLICommand):
             Argument('--name', dest='name', action='store', help="name used to identify this SSH credential")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         prompt_if_missing(args, 'name', prompt_for_selection,
@@ -325,28 +408,22 @@ class CredentialsTestSSHCredentials(CLICommand):
         # get the credentials
         ssh_credentials = keystore.ssh_credentials.get(args['name'])
 
-        # is the key not written to disk already?
-        delete_key_when_done = False
-        if ssh_credentials.key_path is None:
-            delete_key_when_done = True
-
-            # write the key to disk and change file permissions
-            ssh_credentials.key_path = os.path.join(args['temp-dir'], 'temp_ssh_key')
-            with open(ssh_credentials.key_path, 'w') as f:
-                # Make sure that key file ends with a `\n` character or ssh would return "invalid format"
-                f.write(f"{ssh_credentials.key}\n")
-            os.chmod(ssh_credentials.key_path, S_IREAD | S_IWRITE)
-
-        result = run_command('ls ~', ssh_credentials=ssh_credentials, check_exitcode=False)
-        if result.returncode == 0:
+        # test the ssh connection
+        try:
+            ssh_client = paramiko.SSHClient()
+            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            private_key = paramiko.RSAKey.from_private_key(StringIO(ssh_credentials.key), password=ssh_credentials.passphrase)
+            ssh_client.connect(hostname=ssh_credentials.host, username=ssh_credentials.login, pkey=private_key)
+            returncode = 0
             print("SSH credentials test successful.")
-        else:
-            print("SSH credentials test unsuccessful.\n"
-                  f"- stdout: {result.stdout.decode('utf-8')}\n"
-                  f"- stderr: {result.stdout.decode('utf-8')}")
 
-        if delete_key_when_done:
-            os.remove(ssh_credentials.key_path)
+        except Exception as e:
+            returncode = -1
+            print(f"SSH credentials test unsuccessful -> {e}")
+
+        return {
+            'returncode': returncode
+        }
 
 
 class CredentialsTestGithubCredentials(CLICommand):
@@ -356,7 +433,7 @@ class CredentialsTestGithubCredentials(CLICommand):
                                                                "for this Github credential)"),
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         prompt_if_missing(args, 'url', prompt_for_selection,
@@ -388,12 +465,16 @@ class CredentialsTestGithubCredentials(CLICommand):
                   f"- stdout: {result.stdout.decode('utf-8')}\n"
                   f"- stderr: {result.stdout.decode('utf-8')}")
 
+        return {
+            'returncode': result.returncode
+        }
+
 
 class CredentialsList(CLICommand):
     def __init__(self):
         super().__init__('list', 'lists credentials of the keystore', arguments=[])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         keystore = load_keystore(args, ensure_publication=False)
 
         # headers
@@ -402,16 +483,24 @@ class CredentialsList(CLICommand):
             ['----', '---------------', '-------']
         ]
 
+        credentials = []
         for name in keystore.ssh_credentials.list():
             c = keystore.ssh_credentials.get(name)
+            credentials.append(c)
             lines.append(['SSH', name, f"{c.login}@{c.host}"])
 
         for name in keystore.github_credentials.list():
             c = keystore.github_credentials.get(name)
+            credentials.append(c)
             lines.append(['Github', name, c.login])
 
-        if len(lines) == 2:
-            raise CLIRuntimeError("No credentials found.")
+        if len(credentials) == 0:
+            print("No credentials found.")
 
-        print(f"Found {len(lines)-2} credentials:")
-        print(tabulate(lines, tablefmt="plain"))
+        else:
+            print(f"Found {len(lines)-2} credentials:")
+            print(tabulate(lines, tablefmt="plain"))
+
+        return {
+            'credentials': credentials
+        }
