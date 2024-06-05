@@ -56,7 +56,10 @@ def test_rest_get_deployed(rti_proxy):
     assert (len(result) == 0)
 
 
-def test_rest_deploy_undeploy(non_strict_node, strict_node, known_user):
+def test_rest_deploy_undeploy(docker_available, non_strict_node, strict_node, known_user):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     node0 = non_strict_node
     db0 = NodeDBProxy(node0.rest.address())
     dor0 = DORProxy(node0.rest.address())
@@ -138,7 +141,11 @@ def test_rest_deploy_undeploy(non_strict_node, strict_node, known_user):
         assert ('Processor not deployed' in e.reason)
 
 
-def test_rest_submit_list_get_job(test_context, node, dor_proxy, rti_proxy, deployed_test_processor, known_user):
+def test_rest_submit_list_get_job(docker_available, test_context, node, dor_proxy, rti_proxy, deployed_test_processor,
+                                  known_user):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     proc_id = deployed_test_processor.obj_id
     wrong_user = known_user
     owner = node.keystore
@@ -214,7 +221,10 @@ def test_rest_submit_list_get_job(test_context, node, dor_proxy, rti_proxy, depl
         assert (content['v'] == 2)
 
 
-def test_rest_submit_cancel_job(node, rti_proxy, deployed_test_processor, known_user):
+def test_rest_submit_cancel_job(docker_available, node, rti_proxy, deployed_test_processor, known_user):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     proc_id = deployed_test_processor.obj_id
     wrong_user = known_user
     owner = node.keystore
@@ -296,7 +306,10 @@ def execute_job(proc_id: str, owner: Keystore, rti_proxy: RTIProxy, target_node:
         time.sleep(0.5)
 
 
-def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
+def test_provenance(docker_available, test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     owner = node.keystore
 
     def load_value(obj: DataObject) -> int:
@@ -341,7 +354,10 @@ def test_provenance(test_context, node, dor_proxy, rti_proxy, deployed_test_proc
     print(json.dumps(provenance.dict(), indent=2))
 
 
-def test_job_concurrency(test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
+def test_job_concurrency(docker_available, test_context, node, dor_proxy, rti_proxy, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     wd_path = test_context.testing_dir
     owner = node.keystore
     results = {}
