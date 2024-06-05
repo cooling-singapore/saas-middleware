@@ -38,14 +38,14 @@ def known_nodes(test_context, extra_keystores):
 
 @pytest.fixture()
 def storage_node(test_context, temp_directory):
-    keystore = Keystore.create(temp_directory, f"keystore-storage", "no-email-provided", "password")
+    keystore = Keystore.create(temp_directory, "keystore-storage", "no-email-provided", "password")
     node = test_context.get_node(keystore, use_dor=True, use_rti=False, enable_rest=True)
     yield node
 
 
 @pytest.fixture()
 def execution_node(test_context, temp_directory):
-    keystore = Keystore.create(temp_directory, f"keystore-execution", "no-email-provided", "password")
+    keystore = Keystore.create(temp_directory, "keystore-execution", "no-email-provided", "password")
     node = test_context.get_node(keystore, use_dor=False, use_rti=True, enable_rest=True)
     yield node
 
