@@ -10,15 +10,16 @@ from saas.cli.helpers import CLIParser, Argument, CLICommand, default_if_missing
     extract_address
 from saas.core.exceptions import SaaSRuntimeException
 from saas.core.keystore import Keystore
+from saas.helpers import determine_default_rest_address, determine_default_p2p_address
 from saas.node import Node
 
 
 class RunNode(CLICommand):
     # define the default values
     default_datastore = os.path.join(os.environ['HOME'], '.datastore')
-    default_rest_address = '127.0.0.1:5001'
-    default_p2p_address = '127.0.0.1:4001'
-    default_boot_node_address = '127.0.0.1:4001'
+    default_rest_address = determine_default_rest_address()
+    default_p2p_address = determine_default_p2p_address()
+    default_boot_node_address = determine_default_p2p_address()
     default_service = 'full'
     default_retain_job_history = False
     default_strict_deployment = True

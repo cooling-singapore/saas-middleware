@@ -14,6 +14,7 @@ from saas.core.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
 from saas.core.identity import Identity
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import UnsuccessfulRequestError
@@ -24,7 +25,7 @@ logger = Logging.get('cli.dor')
 def _require_dor(args: dict) -> DORProxy:
     prompt_if_missing(args, 'address', prompt_for_string,
                       message="Enter the node's REST address",
-                      default='127.0.0.1:5001')
+                      default=determine_default_rest_address())
 
     db = NodeDBProxy(extract_address(args['address']))
     if db.get_node().dor_service is False:
@@ -275,7 +276,7 @@ class DORSearch(CLICommand):
     def execute(self, args: dict) -> Optional[dict]:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
-                          default='127.0.0.1:5001')
+                          default=determine_default_rest_address())
 
         # determine the owner iid to limit the search (if applicable)
         owner_iid = None

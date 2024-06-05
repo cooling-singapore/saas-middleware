@@ -5,6 +5,7 @@ from tabulate import tabulate
 
 from saas.cli.helpers import CLICommand, prompt_for_string, prompt_if_missing, extract_address
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.network')
@@ -17,7 +18,7 @@ class NetworkList(CLICommand):
     def execute(self, args: dict) -> Optional[dict]:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
-                          default='127.0.0.1:5001')
+                          default=determine_default_rest_address())
 
         db = NodeDBProxy(extract_address(args['address']))
         network = db.get_network()

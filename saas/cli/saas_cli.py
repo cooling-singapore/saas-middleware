@@ -2,6 +2,7 @@ import os
 import sys
 import traceback
 
+from saas.helpers import determine_default_rest_address
 from saas.meta import __version__
 from saas.cli.cmd_dor import DORAdd, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
@@ -69,7 +70,7 @@ def main():
             ProcBuilder(),
             CLICommandGroup('dor', 'interact with a Data Object Repository (DOR)', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help=f"the REST address (host:port) of the node (e.g., '{determine_default_rest_address()}')")
             ], commands=[
                 DORSearch(),
                 DORAdd(),
@@ -86,7 +87,7 @@ def main():
             ]),
             CLICommandGroup('rti', 'interact with a Runtime Infrastructure (RTI)', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help=f"the REST address (host:port) of the node (e.g., '{determine_default_rest_address()}')")
             ], commands=[
                 CLICommandGroup('proc', 'manage processors', commands=[
                     RTIProcDeploy(),
@@ -103,7 +104,7 @@ def main():
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
                 Argument('--address', dest='address', action='store',
-                         help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')")
+                         help=f"the REST address (host:port) of the node (e.g., '{determine_default_rest_address()}')")
             ], commands=[
                 NetworkList()
             ])

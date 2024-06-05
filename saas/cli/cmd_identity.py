@@ -14,6 +14,7 @@ from saas.cli.helpers import CLICommand, Argument, prompt_for_string, get_availa
 from saas.core.schemas import GithubCredentials, SSHCredentials, KeystoreContent
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 
 logger = Logging.get('cli.identity')
@@ -147,7 +148,7 @@ class IdentityPublish(CLICommand):
         # prompt for the address (if missing)
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address",
-                          default='127.0.0.1:5001')
+                          default=determine_default_rest_address())
 
         proxy = NodeDBProxy(extract_address(args['address']))
         proxy.update_identity(keystore.identity)
@@ -166,7 +167,7 @@ class IdentityDiscover(CLICommand):
     def execute(self, args) -> Optional[dict]:
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter address of node for discovery:",
-                          default="127.0.0.1:5001")
+                          default=determine_default_rest_address())
 
         proxy = NodeDBProxy(extract_address(args['address']))
         identities = proxy.get_identities()

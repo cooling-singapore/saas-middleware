@@ -20,6 +20,7 @@ from saas.dor.proxy import DORProxy
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import DataObject
 from saas.nodedb.schemas import NodeInfo
@@ -144,7 +145,7 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
         # prompt for the address (if missing)
         prompt_if_missing(args, address_arg, prompt_for_string,
                           message="Enter the node's REST address",
-                          default='127.0.0.1:5001')
+                          default=determine_default_rest_address())
 
         # try to ensure check if the identity is known and prompt to publish (if otherwise)
         try:

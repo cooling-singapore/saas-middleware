@@ -11,7 +11,7 @@ from tabulate import tabulate
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object, shorten_id, \
-    label_identity
+    label_identity, default_if_missing
 from saas.dor.proxy import DORProxy
 from saas.core.logging import Logging
 from saas.nodedb.proxy import NodeDBProxy
@@ -26,7 +26,7 @@ logger = Logging.get('cli.rti')
 def _require_rti(args: dict) -> RTIProxy:
     prompt_if_missing(args, 'address', prompt_for_string,
                       message="Enter the node's REST address",
-                      default='127.0.0.1:5001')
+                      default=determine_default_rest_address())
 
     db = NodeDBProxy(extract_address(args['address']))
     if db.get_node().rti_service is False:
@@ -373,7 +373,7 @@ class RTIJobSubmit(CLICommand):
 
         prompt_if_missing(args, 'address', prompt_for_string,
                           message="Enter the target node's REST address:",
-                          default="127.0.0.1:5001")
+                          default=determine_default_rest_address())
 
         # do some preparation
         self._prepare(args)
