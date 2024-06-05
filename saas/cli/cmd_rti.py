@@ -14,6 +14,7 @@ from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for
     label_identity, default_if_missing
 from saas.dor.proxy import DORProxy
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.rti.proxy import RTIProxy
@@ -509,7 +510,10 @@ class RTIJobStatus(CLICommand):
 class RTIJobCancel(CLICommand):
     def __init__(self):
         super().__init__('cancel', 'attempts to cancel a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job")
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
+            Argument('--purge', dest="purge", action='store_const', const=True,
+                     help="Attempts to cancel the job and, regardless of the outcome, "
+                          "removes the job from the database.")
         ])
 
     def execute(self, args: dict) -> Optional[dict]:
@@ -537,9 +541,14 @@ class RTIJobCancel(CLICommand):
 
         result = {}
         try:
-            status = rti.cancel_job(args['job-id'], with_authorisation_by=keystore)
+            if args.get('purge'):
+                status = rti.purge_job(args['job-id'], with_authorisation_by=keystore)
+                print(f"Job {args['job-id']} purged. Last status:\n{json.dumps(status.dict(), indent=4)}")
+            else:
+                status = rti.cancel_job(args['job-id'], with_authorisation_by=keystore)
+                print(f"Job {args['job-id']} cancelled. Last status:\n{json.dumps(status.dict(), indent=4)}")
+
             result['status'] = status
-            print(f"Job {args['job-id']} cancelled. Last status:\n{json.dumps(status.dict(), indent=4)}")
 
         except UnsuccessfulRequestError:
             print(f"Job {args['job-id']} not found.")

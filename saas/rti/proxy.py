@@ -76,7 +76,11 @@ class RTIProxy(EndpointProxy):
         self.put(f"job/{job_id}/status", body=status.dict())
 
     def cancel_job(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
-        result = self.delete(f"job/{job_id}", with_authorisation_by=with_authorisation_by)
+        result = self.delete(f"job/{job_id}/cancel", with_authorisation_by=with_authorisation_by)
+        return JobStatus.parse_obj(result)
+
+    def purge_job(self, job_id: str, with_authorisation_by: Keystore) -> JobStatus:
+        result = self.delete(f"job/{job_id}/purge", with_authorisation_by=with_authorisation_by)
         return JobStatus.parse_obj(result)
 
 

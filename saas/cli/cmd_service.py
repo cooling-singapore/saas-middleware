@@ -69,7 +69,6 @@ class Service(CLICommand):
     default_retain_job_history = False
     default_strict_deployment = True
     default_concurrency = True
-    default_inactive_job_purge = False
     default_bind_all_address = False
 
     def __init__(self):
@@ -99,9 +98,6 @@ class Service(CLICommand):
             Argument('--disable-concurrency', dest="job-concurrency", action='store_const', const=False,
                      help="[for execution/full nodes only] instructs the RTI to disable concurrent job execution "
                           "(default: enabled, i.e., the node processes jobs concurrently.)"),
-            Argument('--purge-inactive-jobs', dest="purge-inactive-jobs", action='store_const', const=True,
-                     help="[for execution/full nodes only] instructs the RTI to purge any inactive jobs on startup "
-                          "(default: disabled, i.e., inactive jobs are not purged.)"),
             Argument('--bind-all-address', dest="bind-all-address", action='store_const', const=True,
                      help="allows REST and P2P service to bind and accept connections pointing to any address of the "
                           "machine i.e. 0.0.0.0 (useful for docker)")
@@ -117,7 +113,6 @@ class Service(CLICommand):
             default_if_missing(args, 'retain-job-history', self.default_retain_job_history)
             default_if_missing(args, 'strict-deployment', self.default_strict_deployment)
             default_if_missing(args, 'job-concurrency', self.default_concurrency)
-            default_if_missing(args, 'purge-inactive-jobs', self.default_inactive_job_purge)
             default_if_missing(args, 'bind-all-address', self.default_bind_all_address)
 
         else:
@@ -150,8 +145,6 @@ class Service(CLICommand):
                                   message='Strict processor deployment?', default=True)
                 prompt_if_missing(args, 'job-concurrency', prompt_for_confirmation,
                                   message='Concurrent job processing?', default=True)
-                prompt_if_missing(args, 'purge-inactive-jobs', prompt_for_confirmation,
-                                  message='Purge inactive jobs?', default=False)
 
         keystore = load_keystore(args, ensure_publication=False)
 
@@ -173,8 +166,7 @@ class Service(CLICommand):
                            retain_job_history=args['retain-job-history'],
                            strict_deployment=args['strict-deployment'],
                            job_concurrency=args['job-concurrency'],
-                           bind_all_address=args['bind-all-address'],
-                           purge_inactive_jobs=args['purge-inactive-jobs'])
+                           bind_all_address=args['bind-all-address'])
 
         # print info message
         if args['type'] == 'full' or args['type'] == 'execution':
