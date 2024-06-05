@@ -368,7 +368,7 @@ class CredentialsRemove(CLICommand):
 
             # confirm removal (if applicable)
             if prompt_if_missing(args, 'confirm', prompt_for_confirmation,
-                                 message=f"Remove the selected credentials?", default=False):
+                                 message="Remove the selected credentials?", default=False):
                 for item in items:
                     print(f"Removing {item['label']}...", end='')
                     if item['asset'] == 'ssh':

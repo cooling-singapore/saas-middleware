@@ -208,7 +208,7 @@ class RTIProcShow(CLICommand):
         jobs = rti.get_jobs_by_proc(proc.id)
 
         # print detailed information
-        print(f"Processor Information:")
+        print("Processor Information:")
         print(f"- Id: {proc.id}")
         print(f"- State: {proc.state}")
         if proc.gpp:
@@ -292,14 +292,14 @@ class RTIJobSubmit(CLICommand):
                   f"\033[1m'{item.name}'\033[0m with data type/format "
                   f"\033[1m{item.data_type}/{item.data_format}\033[0m")
             selection = prompt_for_selection([Choice('value', 'by-value'), Choice('reference', 'by-reference')],
-                                             f"How to specify?")
+                                             "How to specify?")
 
             if selection == 'value':
                 while True:
                     if item.data_schema:
                         print(f"JSON schema available: \033[1m yes\033[0m\n{json.dumps(item.data_schema, indent=2)}")
                     else:
-                        print(f"JSON schema available: \033[1m no\033[0m")
+                        print("JSON schema available: \033[1m no\033[0m")
                     content = prompt_for_string("Enter a valid JSON object:")
 
                     try:
@@ -452,7 +452,7 @@ class RTIJobList(CLICommand):
                 print(f"Invalid time period '{args['period']}. Listing currently active jobs only.")
                 period = None
         else:
-            print(f"No time period provided. Listing currently active jobs only.")
+            print("No time period provided. Listing currently active jobs only.")
             period = None
 
         # get all jobs in that time period
@@ -525,7 +525,7 @@ class RTIJobStatus(CLICommand):
 
             # interpret time period
             if args['period'] == '':
-                print(f"No time period provided. Listing currently active jobs only.")
+                print("No time period provided. Listing currently active jobs only.")
                 period = None
             else:
                 try:
