@@ -29,6 +29,28 @@ from saas.rest.exceptions import UnsuccessfulRequestError
 logger = Logging.get('cli.helpers')
 
 
+def shorten_id(long_id: str) -> str:
+    return f'{long_id[:4]}...{long_id[-4:]}'
+
+
+def label_data_object(meta: DataObject) -> str:
+    tags = []
+    for key, value in meta.tags.items():
+        if value:
+            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
+        else:
+            tags.append(key)
+
+    return f"{shorten_id(meta.obj_id)} [{meta.data_type}:{meta.data_format}] {' '.join(tags)}"
+
+
+def label_identity(identity: Identity, truncate: bool = False) -> str:
+    if truncate:
+        return f"{shorten_id(identity.id)} - {identity.name} <{identity.email}>"
+    else:
+        return f"{identity.id} - {identity.name} <{identity.email}>"
+
+
 def initialise_storage_folder(path: str, usage: str, is_verbose: bool = False) -> None:
     # check if the path is pointing at a file
     if os.path.isfile(path):
@@ -101,17 +123,6 @@ def prompt_for_identity_selection(address: (str, int), message: str,
         raise CLIRuntimeError(f"No identities found at '{address}'")
 
     return prompt_for_selection(choices, message, allow_multiple=allow_multiple)
-
-
-def label_data_object(meta: DataObject) -> str:
-    tags = []
-    for key, value in meta.tags.items():
-        if value:
-            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
-        else:
-            tags.append(key)
-
-    return f"{meta.obj_id} C[{meta.data_type}:{meta.data_format}] {tags}"
 
 
 def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
@@ -256,16 +267,14 @@ def prompt_for_data_objects(address: (str, int), message: str, filter_by_owner: 
         return [] if allow_multiple else None
 
     # determine choices
-    choices = []
-    for item in result:
-        choices.append(Choice(item.obj_id, label_data_object(item)))
+    choices = [Choice(item.obj_id, label_data_object(item)) for item in result]
 
     # prompt for selection
     return prompt_for_selection(choices, message, allow_multiple)
 
 
 def prompt_if_missing(args: dict, key: str, function, **func_args) -> Any:
-    if args[key] is None:
+    if args.get(key, None) is None:
         args[key] = function(**func_args)
     return args[key]
 

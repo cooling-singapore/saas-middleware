@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from InquirerPy.base import Choice
 from tabulate import tabulate
@@ -9,7 +9,7 @@ from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, \
     prompt_for_keystore_selection, prompt_for_confirmation, prompt_for_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service, extract_address, prompt_for_identity_selection, prompt_for_data_objects, \
-    deserialise_tag_value
+    deserialise_tag_value, label_data_object, shorten_id, label_identity
 from saas.core.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
 from saas.core.identity import Identity
@@ -149,11 +149,9 @@ class DORDownload(CLICommand):
         ])
 
     def execute(self, args: dict) -> Optional[dict]:
-        # do we have a valid destination directory?
-        if not args['destination']:
-            raise CLIRuntimeError("No download path provided")
-        elif not os.path.isdir(args['destination']):
-            raise CLIRuntimeError(f"Destination path {args['destination']} provided is not a directory")
+        prompt_if_missing(args, 'destination', prompt_for_string,
+                          message="Enter the destination folder",
+                          default=os.environ['HOME'])
 
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
@@ -175,12 +173,12 @@ class DORDownload(CLICommand):
             downloadable = []
             for obj_id in args['obj-ids']:
                 if obj_id not in result:
-                    print(f"Ignoring data object '{obj_id}': does not exist or is not owned by "
-                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+                    print(f"Ignoring data object '{shorten_id(obj_id)}': does not exist or is "
+                          f"not owned by '{label_identity(keystore.identity)}'")
 
                 elif result[obj_id].access_restricted and keystore.identity.id not in result[obj_id].access:
-                    print(f"Ignoring data object '{obj_id}': '{keystore.identity.name}/{keystore.identity.email}/"
-                          f"{keystore.identity.id}' does not have access.")
+                    print(f"Ignoring data object '{shorten_id(obj_id)}': '{label_identity(keystore.identity)}' "
+                          f"does not have access.")
 
                 else:
                     downloadable.append(result[obj_id])
@@ -194,7 +192,7 @@ class DORDownload(CLICommand):
         result: Dict[str, str] = {}
         for obj in downloadable:
             download_path = os.path.join(args['destination'], f"{obj.obj_id}.{obj.data_format}")
-            print(f"Downloading {obj.obj_id} to {download_path}...", end='')
+            print(f"Downloading {shorten_id(obj.obj_id)} to {download_path} ...", end='')
             try:
                 dor.get_content(obj.obj_id, keystore, download_path)
                 result[obj.obj_id] = download_path
@@ -295,8 +293,8 @@ class DORSearch(CLICommand):
             node_db = NodeDBProxy(node.rest_address)
 
             # perform the search
-            search_result = node_dor.search(patterns=args['pattern'], data_type=args['data-type'],
-                                     data_format=args['data-format'], owner_iid=owner_iid)
+            search_result = node_dor.search(patterns=args.get('pattern'), data_type=args.get('data-type'),
+                                            data_format=args.get('data-format'), owner_iid=owner_iid)
 
             # print search results
             if search_result:
@@ -312,16 +310,13 @@ class DORSearch(CLICommand):
                 for item in search_result:
                     owner: Identity = node_db.get_identity(item.owner_iid)
                     tags = [
-                        f"{key}: {value if isinstance(value, (str, bool, int, float)) else '...'}" if value else key
+                        f"{key}: {value if isinstance(value, (str, bool, int, float)) else '<...>'}" if value else key
                         for key, value in item.tags.items()
                     ]
 
                     lines.append([
-                        f"{item.obj_id[:4]}...{item.obj_id[-4:]}",
-                        f"{owner.name}/{owner.id[:4]}...{owner.id[-4:]}",
-                        item.data_type,
-                        item.data_format,
-                        tags
+                        shorten_id(item.obj_id), label_identity(owner, truncate=True),
+                        item.data_type, item.data_format, '\n'.join(tags)
                     ])
 
                     result[item.obj_id] = item
@@ -331,8 +326,8 @@ class DORSearch(CLICommand):
 
             else:
                 print(
-                    f"No data objects found at {node.identity.id}/{node.rest_address[0]}:{node.rest_address[1]} "
-                    f"that match the criteria.")
+                    f"No data objects found at {shorten_id(node.identity.id)}/"
+                    f"{node.rest_address[0]}:{node.rest_address[1]} that match the criteria.")
 
         return result
 
@@ -361,13 +356,13 @@ class DORTag(CLICommand):
             args['obj-id'] = [args['obj-id']]
 
         # check if the object ids exist/owned by this entity
-        result = dor.search(owner_iid=keystore.identity.id)
-        result = [item.obj_id for item in result]
+        result: List[DataObject] = dor.search(owner_iid=keystore.identity.id)
+        result: List[str] = [item.obj_id for item in result]
         found = []
         for obj_id in args['obj-id']:
             if obj_id not in result:
-                print(f"Data object '{obj_id}' does not exist or is not owned by "
-                      f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Skipping.")
+                print(f"Data object '{shorten_id(obj_id)}' does not exist or is not owned by "
+                      f"'{label_identity(keystore.identity)}'. Skipping.")
             else:
                 found.append(obj_id)
 
@@ -432,8 +427,7 @@ class DORUntag(CLICommand):
             result = {item.obj_id: item for item in result}
             if args['obj-id'] not in result:
                 raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by "
-                                      f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. "
-                                      f"Aborting.")
+                                      f"'{label_identity(keystore.identity)}'. Aborting.")
 
         # do we have tags?
         meta = dor.get_meta(args['obj-id'])
@@ -462,7 +456,7 @@ class DORUntag(CLICommand):
             raise CLIRuntimeError("No valid keys found. Aborting.")
 
         # update the tags
-        print(f"Removing tags for data object {args['obj-id']}...", end='')
+        print(f"Removing tags for data object {shorten_id(args['obj-id'])}...", end='')
         obj = dor.remove_tags(args['obj-id'], keystore, valid_keys)
         print("Done")
 
@@ -489,16 +483,7 @@ class DORAccessShow(CLICommand):
 
         # do we have object id?
         if not args['obj-id']:
-            choices = []
-            for item in result:
-                tags = []
-                for key, value in item.tags.items():
-                    if value:
-                        tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
-                    else:
-                        tags.append(key)
-                choices.append(Choice(item.obj_id, f"{item.obj_id} [{item.data_type}:{item.data_format}] {tags}"))
-
+            choices = [Choice(item.obj_id, label_data_object(item)) for item in result]
             args['obj-id'] = prompt_for_selection(choices, "Select data object:", allow_multiple=False)
 
         # check if the object id exists
@@ -566,10 +551,7 @@ class DORAccessGrant(CLICommand):
                 meta = dor.get_meta(obj_id)
                 if not meta or meta.owner_iid != keystore.identity.id:
                     raise CLIRuntimeError(f"Ignoring data object '{obj_id}': does not exist or is not owned by '"
-                                          f"{keystore.identity.name}/"
-                                          f"{keystore.identity.email}/"
-                                          f"{keystore.identity.id}"
-                                          f"'")
+                                          f"{label_identity(keystore.identity)}'")
                 else:
                     removable.append(obj_id)
             args['obj-ids'] = removable
@@ -585,17 +567,18 @@ class DORAccessGrant(CLICommand):
         # do we have an identity?
         if not args['iid']:
             args['iid'] = prompt_for_selection([
-                Choice(iid, f"{identity.name}/{identity.email}/{identity.id}") for iid, identity in identities.items()
+                Choice(iid, label_identity(identity)) for iid, identity in identities.items()
             ], message="Select the identity who should be granted access:", allow_multiple=False)
 
         # is the identity known to the node?
         if args['iid'] not in identities:
-            raise CLIRuntimeError(f"Target node does not know identity {args['iid']}. Aborting.")
+            raise CLIRuntimeError(f"Target node does not know identity {shorten_id(args['iid'])}. Aborting.")
 
         # grant access
         granted = []
         for obj_id in args['obj-ids']:
-            print(f"Granting access to data object {obj_id} for identity {args['iid']}...", end='')
+            print(f"Granting access to data object {shorten_id(obj_id)} "
+                  f"for identity {shorten_id(args['iid'])}...", end='')
             meta = dor.grant_access(obj_id, keystore, identities[args['iid']])
             if args['iid'] not in meta.access:
                 print("Failed")
@@ -637,10 +620,7 @@ class DORAccessRevoke(CLICommand):
             meta = dor.get_meta(args['obj-id'])
             if not meta or meta.owner_iid != keystore.identity.id:
                 raise CLIRuntimeError(f"Ignoring data object '{args['obj-id']}': does not exist or is not owned by '"
-                                      f"{keystore.identity.name}/"
-                                      f"{keystore.identity.email}/"
-                                      f"{keystore.identity.id}"
-                                      f"'")
+                                      f"{label_identity(keystore.identity)}'")
 
         # collect the identity information of all those that have access
         db = NodeDBProxy(extract_address(args['address']))
@@ -651,7 +631,7 @@ class DORAccessRevoke(CLICommand):
             identity = db.get_identity(iid)
             if identity:
                 identities[identity.id] = identity
-                choices.append(Choice(identity.id, f"{identity.name}/{identity.email}/{identity.id}"))
+                choices.append(Choice(identity.id, label_identity(identity)))
 
         # do we have removable identities?
         if args['iids'] is None:
@@ -666,7 +646,8 @@ class DORAccessRevoke(CLICommand):
         # revoke access
         revoked = []
         for iid in args['iids']:
-            print(f"Revoking access to data object {args['obj-id']} for identity {iid}...", end='')
+            print(f"Revoking access to data object {shorten_id(args['obj-id'])} "
+                  f"for identity {shorten_id(iid)}...", end='')
             meta = dor.revoke_access(args['obj-id'], keystore, identities[iid])
             if iid in meta.access:
                 print("Failed")

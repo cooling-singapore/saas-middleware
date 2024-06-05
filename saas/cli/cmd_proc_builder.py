@@ -128,6 +128,8 @@ class ProcBuilder(CLICommand):
 
     def __init__(self):
         super().__init__('build', 'build a processor', arguments=[
+            Argument('--address', dest='address', action='store',
+                     help="the REST address (host:port) of the node (e.g., '127.0.0.1:5001')"),
             Argument('--repository', dest='repository', action='store', help="URL of the repository"),
             Argument('--commit-id', dest='commit_id', action='store', help="the commit id"),
             Argument('--proc-path', dest='proc_path', action='store', help="path to the processor"),
@@ -146,6 +148,10 @@ class ProcBuilder(CLICommand):
         ])
 
     def execute(self, args: dict) -> Optional[dict]:
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default='127.0.0.1:5001')
+
         # load keystore
         keystore = load_keystore(args, ensure_publication=True)
 

@@ -2,7 +2,8 @@ import os
 import sys
 import traceback
 
-from saas.cli.cmd_dor import DORAdd, DORAddGPP, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
+from saas.meta import __version__
+from saas.cli.cmd_dor import DORAdd, DORRemove, DORSearch, DORTag, DORUntag, DORAccessGrant, \
     DORAccessRevoke, DORAccessShow, DORDownload, DORMeta
 from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, IdentityUpdate, IdentityList, \
     IdentityDiscover, IdentityPublish, CredentialsRemove, CredentialsList, CredentialsAddSSHCredentials, \
@@ -10,8 +11,8 @@ from saas.cli.cmd_identity import IdentityCreate, IdentityRemove, IdentityShow, 
 from saas.cli.cmd_job_runner import JobRunner
 from saas.cli.cmd_network import NetworkList
 from saas.cli.cmd_proc_builder import ProcBuilder
-from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, RTIProcStatus, \
-    RTIProcShow, RTIJobList, RTIJobLogs, RTIJobCancel
+from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJobStatus, RTIProcList, \
+    RTIProcShow, RTIJobList, RTIJobCancel
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
@@ -23,7 +24,7 @@ def main():
         default_temp_dir = os.path.join(os.environ['HOME'], '.temp')
         default_log_level = 'INFO'
 
-        cli = CLIParser('SaaS Middleware command line interface (CLI)', arguments=[
+        cli = CLIParser(f'SaaS Middleware v{__version__} command line interface (CLI)', arguments=[
             Argument('--keystore', dest='keystore', action='store', default=default_keystore,
                      help=f"path to the keystore (default: '{default_keystore}')"),
             Argument('--temp-dir', dest='temp-dir', action='store', default=default_temp_dir,
@@ -72,7 +73,6 @@ def main():
             ], commands=[
                 DORSearch(),
                 DORAdd(),
-                DORAddGPP(),
                 DORMeta(),
                 DORDownload(),
                 DORRemove(),
@@ -92,15 +92,13 @@ def main():
                     RTIProcDeploy(),
                     RTIProcUndeploy(),
                     RTIProcList(),
-                    RTIProcShow(),
-                    RTIProcStatus()
+                    RTIProcShow()
                 ]),
                 CLICommandGroup('job', 'manage job', commands=[
                     RTIJobList(),
                     RTIJobSubmit(),
                     RTIJobStatus(),
-                    RTIJobCancel(),
-                    RTIJobLogs()
+                    RTIJobCancel()
                 ])
             ]),
             CLICommandGroup('network', 'explore the network of nodes', arguments=[
