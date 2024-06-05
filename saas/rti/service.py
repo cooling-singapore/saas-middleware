@@ -486,15 +486,26 @@ class RTIService:
                 else:
                     records = session.query(DBJobInfo).filter_by(user_iid=user.id).all()
 
-        # parse the records
+        # any time period provided?
         result: List[Job] = []
-        for record in records:
-            status = JobStatus.parse_obj(record.status)
-            if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
-                                JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
-                                JobStatus.State.POSTPROCESSING]:
+        if 'period' in request.query_params:
+            # collect all jobs within the time period
+            cutoff = get_timestamp_now() - int(request.query_params['period']) * 3600
+            for record in records:
+                # within time period?
                 job = Job.parse_obj(record.job)
-                result.append(job)
+                if job.t_submitted > cutoff:
+                    result.append(job)
+
+        else:
+            # collect ony active jobs
+            for record in records:
+                status = JobStatus.parse_obj(record.status)
+                if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                    JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                    JobStatus.State.POSTPROCESSING]:
+                    job = Job.parse_obj(record.job)
+                    result.append(job)
 
         return result
 

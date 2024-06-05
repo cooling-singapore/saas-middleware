@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 from json import JSONDecodeError
@@ -11,7 +12,7 @@ from tabulate import tabulate
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, prompt_for_selection, \
     get_nodes_by_service, prompt_for_confirmation, load_keystore, extract_address, label_data_object, shorten_id, \
-    label_identity, default_if_missing
+    label_identity
 from saas.dor.proxy import DORProxy
 from saas.core.logging import Logging
 from saas.helpers import determine_default_rest_address
@@ -427,33 +428,61 @@ class RTIJobSubmit(CLICommand):
 class RTIJobList(CLICommand):
     def __init__(self):
         super().__init__('list', 'retrieve a list of all jobs by the user (or all jobs if the user is the node owner)',
-                         arguments=[])
+                         arguments=[
+                             Argument('--period', dest='period', action='store',
+                                      help="time period to consider using format <number><unit> where unit can be one "
+                                           "of these ('h': hours, 'd': days, 'w': weeks). Default is '1d', i.e., one "
+                                           "day.")
+                         ])
 
     def execute(self, args: dict) -> Optional[dict]:
         rti = _require_rti(args)
         keystore = load_keystore(args, ensure_publication=True)
 
-        try:
-            jobs = rti.get_jobs_by_user(keystore)
+        # determine time period
+        if 'period' in args and args['period'] is not None:
+            try:
+                unit = args['period'][-1:]
+                number = int(args['period'][:-1])
+                multiplier = {'h': 1, 'd': 24, 'w': 7*24}
+                period = number * multiplier[unit]
+                print(f"Listing all jobs submitted within time period of {number}{unit} -> {period} hours")
 
+            except Exception:
+                print(f"Invalid time period '{args['period']}. Listing currently active jobs only.")
+                period = None
+        else:
+            print(f"No time period provided. Listing currently active jobs only.")
+            period = None
+
+        # get all jobs in that time period
+        try:
+            jobs = rti.get_jobs_by_user(keystore, period=period)
             if jobs:
                 # get all deployed procs
                 deployed: dict[str, Processor] = {proc.id: proc for proc in rti.get_all_procs()}
 
                 # headers
                 lines = [
-                    ['JOB ID', 'OWNER', 'PROC NAME', 'STATE', 'DESCRIPTION'],
-                    ['------', '-----', '---------', '-----', '-----------']
+                    ['SUBMITTED', 'JOB ID', 'OWNER', 'PROC NAME', 'STATE', 'DESCRIPTION'],
+                    ['---------', '------', '-----', '---------', '-----', '-----------']
                 ]
 
+                # prepare lines unsorted
+                unsorted = []
                 for job in jobs:
                     proc_name = deployed[job.task.proc_id].gpp.proc_descriptor.name \
                         if job.task.proc_id in deployed else 'unknown'
 
                     status = rti.get_job_status(job.id, with_authorisation_by=keystore)
 
-                    lines.append([job.id, shorten_id(job.task.user_iid), proc_name, status.state,
-                                  job.task.description if job.task.description else 'none'])
+                    unsorted.append([job.t_submitted, job.id, shorten_id(job.task.user_iid), proc_name, status.state,
+                                     job.task.description if job.task.description else 'none'])
+
+                # sort and add to lines
+                for line in sorted(unsorted, key=lambda x: x[0]):
+                    line[0] = datetime.datetime.fromtimestamp(line[0]/1000.0).strftime('%Y-%m-%d %H:%M:%S')
+                    lines.append(line)
 
                 print(tabulate(lines, tablefmt="plain"))
                 print()
@@ -472,7 +501,12 @@ class RTIJobList(CLICommand):
 class RTIJobStatus(CLICommand):
     def __init__(self):
         super().__init__('status', 'retrieve the status of a job', arguments=[
-            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job")
+            Argument('job-id', metavar='job-id', type=str, nargs='?', help="the id of the job"),
+            Argument('--period', dest='period', action='store',
+                     help="time period to consider using format <number><unit> where unit can be one "
+                          "of these ('h': hours, 'd': days, 'w': weeks). Default is '1d', i.e., one "
+                          "day.")
+
         ])
 
     def execute(self, args: dict) -> Optional[dict]:
@@ -484,9 +518,30 @@ class RTIJobStatus(CLICommand):
             # get all deployed procs
             deployed: Dict[str, Processor] = {proc.id: proc for proc in rti.get_all_procs()}
 
+            # ask for time period
+            if 'period' not in args or args['period'] is None:
+                args['period'] = prompt_for_string("Enter a valid time period (or leave blank for active jobs only):",
+                                                   default='1d', allow_empty=True)
+
+            # interpret time period
+            if args['period'] == '':
+                print(f"No time period provided. Listing currently active jobs only.")
+                period = None
+            else:
+                try:
+                    unit = args['period'][-1:]
+                    number = int(args['period'][:-1])
+                    multiplier = {'h': 1, 'd': 24, 'w': 7 * 24}
+                    period = number * multiplier[unit]
+                    print(f"Listing all jobs submitted within time period of {number}{unit} -> {period} hours")
+
+                except Exception:
+                    print(f"Invalid time period '{args['period']}. Listing currently active jobs only.")
+                    period = None
+
             # get all jobs by this user and select
             choices = []
-            for job in rti.get_jobs_by_user(keystore):
+            for job in rti.get_jobs_by_user(keystore, period=period):
                 status = rti.get_job_status(job.id, with_authorisation_by=keystore)
                 choices.append(Choice(job.id, job_label(job, status, deployed)))
 
