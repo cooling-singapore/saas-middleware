@@ -7,11 +7,6 @@ class NodeDBException(SaaSRuntimeException):
     """
 
 
-class DataObjectNotFoundError(NodeDBException):
-    def __init__(self, details: dict) -> None:
-        super().__init__('Data object not found', details=details)
-
-
 class InvalidIdentityError(NodeDBException):
     def __init__(self, details: dict) -> None:
         super().__init__('Identity is not valid', details=details)

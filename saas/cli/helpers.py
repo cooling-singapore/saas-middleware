@@ -20,6 +20,7 @@ from saas.dor.proxy import DORProxy
 from saas.core.identity import Identity
 from saas.core.keystore import Keystore
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import DataObject
 from saas.nodedb.schemas import NodeInfo
@@ -27,6 +28,28 @@ from saas.core.schemas import KeystoreContent
 from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = Logging.get('cli.helpers')
+
+
+def shorten_id(long_id: str) -> str:
+    return f'{long_id[:4]}...{long_id[-4:]}'
+
+
+def label_data_object(meta: DataObject) -> str:
+    tags = []
+    for key, value in meta.tags.items():
+        if value:
+            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
+        else:
+            tags.append(key)
+
+    return f"{shorten_id(meta.obj_id)} [{meta.data_type}:{meta.data_format}] {' '.join(tags)}"
+
+
+def label_identity(identity: Identity, truncate: bool = False) -> str:
+    if truncate:
+        return f"{shorten_id(identity.id)} - {identity.name} <{identity.email}>"
+    else:
+        return f"{identity.id} - {identity.name} <{identity.email}>"
 
 
 def initialise_storage_folder(path: str, usage: str, is_verbose: bool = False) -> None:
@@ -103,17 +126,6 @@ def prompt_for_identity_selection(address: (str, int), message: str,
     return prompt_for_selection(choices, message, allow_multiple=allow_multiple)
 
 
-def label_data_object(meta: DataObject) -> str:
-    tags = []
-    for key, value in meta.tags.items():
-        if value:
-            tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
-        else:
-            tags.append(key)
-
-    return f"{meta.obj_id} C[{meta.data_type}:{meta.data_format}] {tags}"
-
-
 def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'address') -> Keystore:
     # prompt for the keystore and id (if missing)
     prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection,
@@ -133,22 +145,15 @@ def load_keystore(args: dict, ensure_publication: bool, address_arg: str = 'addr
         # prompt for the address (if missing)
         prompt_if_missing(args, address_arg, prompt_for_string,
                           message="Enter the node's REST address",
-                          default='127.0.0.1:5001')
+                          default=determine_default_rest_address())
 
         # try to ensure check if the identity is known and prompt to publish (if otherwise)
         try:
             # check if node knows about identity
             db = NodeDBProxy(args[address_arg].split(":"))
             if db.get_identity(keystore.identity.id) is None:
-                if prompt_for_confirmation(
-                        message=f"Identity {keystore.identity.id} is not known to the node at {args[address_arg]}. "
-                                f"Publish identity?",
-                        default=True
-                ):
-                    db.update_identity(keystore.identity)
-                    print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
-                else:
-                    raise CLIRuntimeError("Cannot proceed without node ")
+                db.update_identity(keystore.identity)
+                print(f"Identity {keystore.identity.id} published to node at {args[address_arg]}.")
 
         except UnsuccessfulRequestError as e:
             raise CLIRuntimeError(f"Could not ensure identity is known to node at {args[address_arg]}. Aborting. "
@@ -263,16 +268,14 @@ def prompt_for_data_objects(address: (str, int), message: str, filter_by_owner: 
         return [] if allow_multiple else None
 
     # determine choices
-    choices = []
-    for item in result:
-        choices.append(Choice(item.obj_id, label_data_object(item)))
+    choices = [Choice(item.obj_id, label_data_object(item)) for item in result]
 
     # prompt for selection
     return prompt_for_selection(choices, message, allow_multiple)
 
 
 def prompt_if_missing(args: dict, key: str, function, **func_args) -> Any:
-    if args[key] is None:
+    if args.get(key, None) is None:
         args[key] = function(**func_args)
     return args[key]
 
@@ -317,7 +320,7 @@ class CLIExecutable(ABC):
         pass
 
     @abstractmethod
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         pass
 
 

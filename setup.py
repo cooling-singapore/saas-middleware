@@ -42,9 +42,7 @@ setup(
     entry_points={
         'console_scripts': [
             'saas-cli = saas.cli.saas_cli:main',
-            'saas-node = saas.service:main',
-            'saas-dashboard = dashboard.cli:main',
-            'saas-relay = relay.cli:main',
+            'saas-node = saas.service:main'
         ]
     },
     classifiers=[

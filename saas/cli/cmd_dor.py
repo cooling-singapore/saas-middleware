@@ -1,24 +1,22 @@
 import json
 import os
-import shutil
-import subprocess
+from typing import Optional, Dict, List
 
 from InquirerPy.base import Choice
-from pydantic import ValidationError
 from tabulate import tabulate
 
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_if_missing, prompt_for_string, \
     prompt_for_keystore_selection, prompt_for_confirmation, prompt_for_selection, prompt_for_tags, load_keystore, \
     get_nodes_by_service, extract_address, prompt_for_identity_selection, prompt_for_data_objects, \
-    deserialise_tag_value
+    deserialise_tag_value, label_data_object, shorten_id, label_identity
 from saas.core.helpers import encrypt_file
 from saas.dor.proxy import DORProxy
 from saas.core.identity import Identity
 from saas.core.logging import Logging
+from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
-from saas.dor.schemas import ProcessorDescriptor, DataObject
-from saas.core.schemas import GithubCredentials
+from saas.dor.schemas import DataObject
 from saas.rest.exceptions import UnsuccessfulRequestError
 
 logger = Logging.get('cli.dor')
@@ -27,7 +25,7 @@ logger = Logging.get('cli.dor')
 def _require_dor(args: dict) -> DORProxy:
     prompt_if_missing(args, 'address', prompt_for_string,
                       message="Enter the node's REST address",
-                      default='127.0.0.1:5001')
+                      default=determine_default_rest_address())
 
     db = NodeDBProxy(extract_address(args['address']))
     if db.get_node().dor_service is False:
@@ -54,7 +52,7 @@ class DORAdd(CLICommand):
                      help="file containing the content of the data object")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -95,7 +93,7 @@ class DORAdd(CLICommand):
         obj_id = meta.obj_id
 
         # do some simple tagging
-        dor.update_tags(obj_id, keystore, [
+        meta = dor.update_tags(obj_id, keystore, [
             DataObject.Tag(key='name', value=os.path.basename(args['file'][0]))
         ])
 
@@ -108,169 +106,9 @@ class DORAdd(CLICommand):
 
         print(f"Data object added: {json.dumps(meta.dict(), indent=4)}")
 
-
-class DORAddGPP(CLICommand):
-    def __init__(self) -> None:
-        super().__init__('add-gpp', 'adds a Git Processor Pointer (GPP) data object', arguments=[
-            Argument('--url', dest='url', action='store',
-                     help="the URL where to find the git repository that contains the processor"),
-
-            Argument('--commit-id', dest='commit-id', action='store',
-                     help="the commit id to be used (default: most recent commit of the repository)"),
-
-            Argument('--path', dest='path', action='store',
-                     help="the relative path inside the repository where to find the processor"),
-
-            Argument('--config', dest='config', action='store',
-                     help="the configuration to be used for installing and executing the processor"),
-        ])
-
-    def execute(self, args: dict) -> None:
-        _require_dor(args)
-        keystore = load_keystore(args, ensure_publication=True)
-
-        # get the URL of the repo (if missing)
-        prompt_if_missing(args, 'url', prompt_for_string, message="Enter the URL of the Github repository:")
-
-        # is any of the other arguments missing?
-        if not args['commit-id'] or not args['path'] or not args['config']:
-            if prompt_for_confirmation(f"Analyse repository at {args['url']} to help with missing arguments?",
-                                       default=True):
-                # delete existing directory (if it exists)
-                repo_name = args['url'].split('/')[-1]
-                repo_path = os.path.join(args['temp-dir'], repo_name)
-                if os.path.exists(repo_path):
-                    print(f"Deleting already existing path '{repo_path}'...", end='')
-                    shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
-                    print("Done")
-
-                # get the URL
-                url = args['url']
-                credentials: GithubCredentials = keystore.github_credentials.get(url)
-                if credentials is not None:
-                    insert = f"{credentials.login}:{credentials.personal_access_token}@"
-                    index = url.find('github.com')
-                    url = url[:index] + insert + url[index:]
-
-                # clone the repository
-                print(f"Cloning repository '{repo_name}' to '{repo_path}'...", end='')
-                result = subprocess.run(['git', 'clone', url], capture_output=True, cwd=args['temp-dir'])
-                if result.returncode != 0:
-                    raise CLIRuntimeError(f"Cannot clone repository {url}.")
-                print("Done")
-
-                # do we have a commit it?
-                if not args['commit-id']:
-                    # obtain current commit id
-                    print("Determining default commit id...", end='')
-                    result = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, cwd=repo_path)
-                    if result.returncode != 0:
-                        raise CLIRuntimeError("Cannot determine default commit id.")
-                    default_commit_id = result.stdout.decode('utf-8').strip()
-                    print(f"Done: {default_commit_id}")
-
-                    # which commit id to use?
-                    prompt_if_missing(args, 'commit-id', prompt_for_string, message="Enter commit id:",
-                                      default=default_commit_id)
-
-                # checkout commit-id
-                print(f"Checkout commit id {args['commit-id']}...", end='')
-                result = subprocess.run(['git', 'checkout', args['commit-id']], capture_output=True, cwd=repo_path)
-                if result.returncode != 0:
-                    raise CLIRuntimeError(f"Invalid commit id {args['commit-id']}. Aborting.")
-                print("Done")
-
-                # do we have a processor path?
-                if not args['path']:
-                    # analyse all subdirectories to find 'descriptor.json' files
-                    print("Searching for processor descriptors...", end='')
-                    pending = [repo_path]
-                    found = []
-                    while len(pending) > 0:
-                        current = pending.pop(0)
-                        descriptor_path = os.path.join(current, 'descriptor.json')
-                        if os.path.isfile(descriptor_path):
-                            found.append({
-                                'file-path': descriptor_path,
-                                'proc-path': current[len(repo_path) + len(os.sep):]
-                            })
-
-                        for item in os.listdir(current):
-                            if item.startswith('.'):
-                                continue
-
-                            path = os.path.join(current, item)
-                            if os.path.isdir(path):
-                                pending.append(path)
-
-                    if len(found) == 0:
-                        raise CLIRuntimeError("No descriptors found. Aborting.")
-
-                    print(f"Done: found {len(found)} descriptors.")
-
-                    # verify processor descriptors
-                    choices = []
-                    for item in found:
-                        print(f"Analysing descriptor file '{item['file-path']}'...", end='')
-                        try:
-                            descriptor = ProcessorDescriptor.parse_file(item['file-path'])
-                            choices.append(Choice(item['proc-path'], f"{descriptor.name} in {item['proc-path']}"))
-                            print("Done")
-
-                        except ValidationError:
-                            print("Done: invalid processor descriptor -> ignoring")
-
-                    # any valid processors found?
-                    if len(choices) == 0:
-                        raise CLIRuntimeError("No valid processor descriptors. Aborting.")
-
-                    # select the processor path
-                    args['path'] = prompt_for_selection(choices, "Select a processor:", allow_multiple=False)
-
-                # does the descriptor file exist?
-                descriptor_path = os.path.join(repo_path, args['path'], 'descriptor.json')
-                if not os.path.isfile(descriptor_path):
-                    raise CLIRuntimeError("No processor descriptor found. Aborting.")
-
-                # try to load the processor descriptor
-                print(f"Load processor descriptor at '{args['path']}'...", end='')
-                try:
-                    descriptor = ProcessorDescriptor.parse_file(descriptor_path)
-                    print("Done")
-
-                except ValidationError:
-                    raise CLIRuntimeError("Invalid processor descriptor. Aborting.")
-
-                # do we have a configuration?
-                if not args['config']:
-                    choices = [Choice(c, c) for c in descriptor.configurations]
-                    args['config'] = prompt_for_selection(choices, "Select the configuration profile:")
-
-                # clean up
-                shutil.rmtree(os.path.join(args['temp-dir'], repo_name))
-
-            else:
-                prompt_if_missing(args, 'commit-id', prompt_for_string,
-                                  message="Enter the commit id:")
-                prompt_if_missing(args, 'path', prompt_for_string,
-                                  message="Enter the relative path of the processor in the repository:")
-                prompt_if_missing(args, 'config', prompt_for_string,
-                                  message="Enter the name of the configuration profile to be used:")
-
-        # get GitHub credentials (if any)
-        url = args['url']
-        github_credentials: GithubCredentials = keystore.github_credentials.get(url)
-        if github_credentials is not None:
-            print(f"Using Github credentials for {url}: {github_credentials.login}")
-
-        # connect to the DOR and add the data object
-        dor = DORProxy(extract_address(args['address']))
-        meta = dor.add_gpp_data_object(
-            args['url'], args['commit-id'], args['path'], args['config'], keystore.identity,
-            github_credentials=github_credentials
-        )
-
-        print(f"GPP Data object added: {json.dumps(meta.dict(), indent=4)}")
+        return {
+            'obj': meta
+        }
 
 
 class DORMeta(CLICommand):
@@ -279,7 +117,7 @@ class DORMeta(CLICommand):
             Argument('--obj-id', dest='obj-id', action='store', help="the id of the data object")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
 
         # do we have an object id?
@@ -296,23 +134,25 @@ class DORMeta(CLICommand):
 
         print(json.dumps(meta.dict(), indent=4))
 
+        return {
+            'obj': meta
+        }
+
 
 class DORDownload(CLICommand):
     def __init__(self):
         super().__init__('download', 'retrieves the contents of a data object', arguments=[
+            Argument('--destination', dest='destination', action='store',
+                     help="directory where to store the data object content(s)"),
             Argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
                      help="the ids of the data object that are to be downloaded"),
-            Argument('destination', metavar='destination', type=str, nargs=1,
-                     help="directory where to store the data object content")
 
         ])
 
-    def execute(self, args: dict) -> None:
-        # do we have a valid destination directory?
-        if not args['destination']:
-            raise CLIRuntimeError("No download path provided")
-        elif not os.path.isdir(args['destination'][0]):
-            raise CLIRuntimeError("Destination path provided is not a directory")
+    def execute(self, args: dict) -> Optional[dict]:
+        prompt_if_missing(args, 'destination', prompt_for_string,
+                          message="Enter the destination folder",
+                          default=os.environ['HOME'])
 
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
@@ -334,12 +174,12 @@ class DORDownload(CLICommand):
             downloadable = []
             for obj_id in args['obj-ids']:
                 if obj_id not in result:
-                    print(f"Ignoring data object '{obj_id}': does not exist or is not owned by "
-                          f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'")
+                    print(f"Ignoring data object '{shorten_id(obj_id)}': does not exist or is "
+                          f"not owned by '{label_identity(keystore.identity)}'")
 
                 elif result[obj_id].access_restricted and keystore.identity.id not in result[obj_id].access:
-                    print(f"Ignoring data object '{obj_id}': '{keystore.identity.name}/{keystore.identity.email}/"
-                          f"{keystore.identity.id}' does not have access.")
+                    print(f"Ignoring data object '{shorten_id(obj_id)}': '{label_identity(keystore.identity)}' "
+                          f"does not have access.")
 
                 else:
                     downloadable.append(result[obj_id])
@@ -350,25 +190,31 @@ class DORDownload(CLICommand):
 
         # download the data objects
         dor = DORProxy(extract_address(args['address']))
+        result: Dict[str, str] = {}
         for obj in downloadable:
-            download_path = os.path.join(args['destination'][0], f"{obj.obj_id}.{obj.data_format}")
-            print(f"Downloading {obj.obj_id} to {download_path}...", end='')
+            download_path = os.path.join(args['destination'], f"{obj.obj_id}.{obj.data_format}")
+            print(f"Downloading {shorten_id(obj.obj_id)} to {download_path} ...", end='')
             try:
                 dor.get_content(obj.obj_id, keystore, download_path)
+                result[obj.obj_id] = download_path
                 print("Done")
 
             except UnsuccessfulRequestError as e:
                 print(f"{e.reason} details: {e.details}")
 
+        return result
+
 
 class DORRemove(CLICommand):
     def __init__(self) -> None:
         super().__init__('remove', 'removes a data object', arguments=[
+            Argument('--confirm', dest="confirm", action='store_const', const=True,
+                     help="do not require user confirmation to delete data object"),
             Argument('obj-ids', metavar='obj-ids', type=str, nargs='*',
                      help="the ids of the data object that are to be deleted")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -398,10 +244,93 @@ class DORRemove(CLICommand):
 
         # remove data objects
         dor = DORProxy(extract_address(args['address']))
+        removed = []
         for obj_id in args['obj-ids']:
-            print(f"Deleting {obj_id}...", end='')
-            dor.delete_data_object(obj_id, keystore)
-            print("Done")
+            if prompt_if_missing(args, 'confirm', prompt_for_confirmation,
+                                 message=f"Delete data object {obj_id}?", default=False):
+                dor.delete_data_object(obj_id, keystore)
+                removed.append(obj_id)
+                print(f"Deleted {obj_id}.")
+
+        return {
+            'removed': removed
+        }
+
+
+class DORSearch(CLICommand):
+    def __init__(self) -> None:
+        super().__init__('search', 'searches for data objects', arguments=[
+            Argument('--own', dest="own", action='store_const', const=True,
+                     help="limits the search to data objects owned by the identity used (refer to --keystore-id)"),
+
+            Argument('--data-type', dest='data-type', action='store',
+                     help="only search for data objects with this data type"),
+
+            Argument('--data-format', dest='data-format', action='store',
+                     help="only search for data objects with this data format"),
+
+            Argument('pattern', metavar='pattern', type=str, nargs="*",
+                     help="limits the search to data objects whose tag (key or value) contains the pattern(s)")
+        ])
+
+    def execute(self, args: dict) -> Optional[dict]:
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default=determine_default_rest_address())
+
+        # determine the owner iid to limit the search (if applicable)
+        owner_iid = None
+        if args['own'] is not None:
+            prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'],
+                              message="Select the owner:")
+            owner_iid = args['keystore-id']
+
+        # get a list of nodes in the network
+        result = {}
+        dor_nodes, _ = get_nodes_by_service(extract_address(args['address']))
+        for node in dor_nodes:
+            # create proxies
+            node_dor = DORProxy(node.rest_address)
+            node_db = NodeDBProxy(node.rest_address)
+
+            # perform the search
+            search_result = node_dor.search(patterns=args.get('pattern'), data_type=args.get('data-type'),
+                                            data_format=args.get('data-format'), owner_iid=owner_iid)
+
+            # print search results
+            if search_result:
+                print(f"Found {len(search_result)} data objects at {node.identity.id}/"
+                      f"{node.rest_address[0]}:{node.rest_address[1]} that match the criteria:")
+
+                # headers
+                lines = [
+                    ['OBJECT ID', 'OWNER', 'DATA TYPE', 'DATA FORMAT', 'TAGS'],
+                    ['---------', '-----', '---------', '-----------', '----']
+                ]
+
+                for item in search_result:
+                    owner: Identity = node_db.get_identity(item.owner_iid)
+                    tags = [
+                        f"{key}: {value if isinstance(value, (str, bool, int, float)) else '<...>'}" if value else key
+                        for key, value in item.tags.items()
+                    ]
+
+                    lines.append([
+                        shorten_id(item.obj_id), label_identity(owner, truncate=True),
+                        item.data_type, item.data_format, '\n'.join(tags)
+                    ])
+
+                    result[item.obj_id] = item
+
+                print(tabulate(lines, tablefmt="plain"))
+                print()
+
+            else:
+                print(
+                    f"No data objects found at {shorten_id(node.identity.id)}/"
+                    f"{node.rest_address[0]}:{node.rest_address[1]} that match the criteria.")
+
+        return result
 
 
 class DORTag(CLICommand):
@@ -414,7 +343,7 @@ class DORTag(CLICommand):
                      help="the tags (given as \'key=value\' pairs) to be used for the data object")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -428,13 +357,13 @@ class DORTag(CLICommand):
             args['obj-id'] = [args['obj-id']]
 
         # check if the object ids exist/owned by this entity
-        result = dor.search(owner_iid=keystore.identity.id)
-        result = [item.obj_id for item in result]
+        result: List[DataObject] = dor.search(owner_iid=keystore.identity.id)
+        result: List[str] = [item.obj_id for item in result]
         found = []
         for obj_id in args['obj-id']:
             if obj_id not in result:
-                print(f"Data object '{obj_id}' does not exist or is not owned by "
-                      f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. Skipping.")
+                print(f"Data object '{shorten_id(obj_id)}' does not exist or is not owned by "
+                      f"'{label_identity(keystore.identity)}'. Skipping.")
             else:
                 found.append(obj_id)
 
@@ -463,10 +392,13 @@ class DORTag(CLICommand):
             raise CLIRuntimeError("No valid tags found. Aborting.")
 
         # update the tags
+        result: Dict[str, DataObject] = {}
         for obj_id in found:
             print(f"Updating tags for data object {obj_id}...", end='')
-            dor.update_tags(obj_id, keystore, valid_tags)
+            result[obj_id] = dor.update_tags(obj_id, keystore, valid_tags)
             print("Done")
+
+        return result
 
 
 class DORUntag(CLICommand):
@@ -479,7 +411,7 @@ class DORUntag(CLICommand):
                      help="the tags (identified by their key) to be removed from the data object")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -496,8 +428,7 @@ class DORUntag(CLICommand):
             result = {item.obj_id: item for item in result}
             if args['obj-id'] not in result:
                 raise CLIRuntimeError(f"Data object '{args['obj-id']}' does not exist or is not owned by "
-                                      f"'{keystore.identity.name}/{keystore.identity.email}/{keystore.identity.id}'. "
-                                      f"Aborting.")
+                                      f"'{label_identity(keystore.identity)}'. Aborting.")
 
         # do we have tags?
         meta = dor.get_meta(args['obj-id'])
@@ -526,83 +457,13 @@ class DORUntag(CLICommand):
             raise CLIRuntimeError("No valid keys found. Aborting.")
 
         # update the tags
-        print(f"Removing tags for data object {args['obj-id']}...", end='')
-        dor.remove_tags(args['obj-id'], keystore, valid_keys)
+        print(f"Removing tags for data object {shorten_id(args['obj-id'])}...", end='')
+        obj = dor.remove_tags(args['obj-id'], keystore, valid_keys)
         print("Done")
 
-
-class DORSearch(CLICommand):
-    def __init__(self) -> None:
-        super().__init__('search', 'searches for data objects', arguments=[
-            Argument('--own', dest="own", action='store_const', const=True,
-                     help="limits the search to data objects owned by the identity used (refer to --keystore-id)"),
-
-            Argument('--data-type', dest='data-type', action='store',
-                     help="only search for data objects with this data type"),
-
-            Argument('--data-format', dest='data-format', action='store',
-                     help="only search for data objects with this data format"),
-
-            Argument('pattern', metavar='pattern', type=str, nargs="*",
-                     help="limits the search to data objects whose tag (key or value) contains the pattern(s)")
-        ])
-
-    def execute(self, args: dict) -> None:
-        prompt_if_missing(args, 'address', prompt_for_string,
-                          message="Enter the target node's REST address",
-                          default='127.0.0.1:5001')
-
-        # determine the owner iid to limit the search (if applicable)
-        owner_iid = None
-        if args['own'] is not None:
-            prompt_if_missing(args, 'keystore-id', prompt_for_keystore_selection, path=args['keystore'],
-                              message="Select the owner:")
-            owner_iid = args['keystore-id']
-
-        # get a list of nodes in the network
-        dor_nodes, _ = get_nodes_by_service(extract_address(args['address']))
-        for node in dor_nodes:
-            # create proxies
-            node_dor = DORProxy(node.rest_address)
-            node_db = NodeDBProxy(node.rest_address)
-
-            # perform the search
-            result = node_dor.search(patterns=args['pattern'], data_type=args['data-type'],
-                                     data_format=args['data-format'], owner_iid=owner_iid)
-
-            # print search results
-            if result:
-                print(f"Found {len(result)} data objects at {node.identity.id}/"
-                      f"{node.rest_address[0]}:{node.rest_address[1]} that match the criteria:")
-
-                # headers
-                lines = [
-                    ['OBJECT ID', 'OWNER', 'DATA TYPE', 'DATA FORMAT', 'TAGS'],
-                    ['---------', '-----', '---------', '-----------', '----']
-                ]
-
-                for item in result:
-                    owner: Identity = node_db.get_identity(item.owner_iid)
-                    tags = [
-                        f"{key}: {value if isinstance(value, (str, bool, int, float)) else '...'}" if value else key
-                        for key, value in item.tags.items()
-                    ]
-
-                    lines.append([
-                        f"{item.obj_id[:4]}...{item.obj_id[-4:]}",
-                        f"{owner.name}/{owner.id[:4]}...{owner.id[-4:]}",
-                        item.data_type,
-                        item.data_format,
-                        tags
-                    ])
-
-                print(tabulate(lines, tablefmt="plain"))
-                print()
-
-            else:
-                print(
-                    f"No data objects found at {node.identity.id}/{node.rest_address[0]}:{node.rest_address[1]} "
-                    f"that match the criteria.")
+        return {
+            'obj': obj
+        }
 
 
 class DORAccessShow(CLICommand):
@@ -612,7 +473,7 @@ class DORAccessShow(CLICommand):
                      help="the id of the data object"),
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -623,16 +484,7 @@ class DORAccessShow(CLICommand):
 
         # do we have object id?
         if not args['obj-id']:
-            choices = []
-            for item in result:
-                tags = []
-                for key, value in item.tags.items():
-                    if value:
-                        tags.append(f"{key}={value if isinstance(value, (str, bool, int, float)) else '...'}")
-                    else:
-                        tags.append(key)
-                choices.append(Choice(item.obj_id, f"{item.obj_id} [{item.data_type}:{item.data_format}] {tags}"))
-
+            choices = [Choice(item.obj_id, label_data_object(item)) for item in result]
             args['obj-id'] = prompt_for_selection(choices, "Select data object:", allow_multiple=False)
 
         # check if the object id exists
@@ -667,6 +519,10 @@ class DORAccessShow(CLICommand):
 
             print(tabulate(lines, tablefmt="plain"))
 
+        return {
+            'access': meta.access
+        }
+
 
 class DORAccessGrant(CLICommand):
     def __init__(self) -> None:
@@ -678,7 +534,7 @@ class DORAccessGrant(CLICommand):
                      help="the ids of the data objects to which access will be granted")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -696,10 +552,7 @@ class DORAccessGrant(CLICommand):
                 meta = dor.get_meta(obj_id)
                 if not meta or meta.owner_iid != keystore.identity.id:
                     raise CLIRuntimeError(f"Ignoring data object '{obj_id}': does not exist or is not owned by '"
-                                          f"{keystore.identity.name}/"
-                                          f"{keystore.identity.email}/"
-                                          f"{keystore.identity.id}"
-                                          f"'")
+                                          f"{label_identity(keystore.identity)}'")
                 else:
                     removable.append(obj_id)
             args['obj-ids'] = removable
@@ -715,21 +568,28 @@ class DORAccessGrant(CLICommand):
         # do we have an identity?
         if not args['iid']:
             args['iid'] = prompt_for_selection([
-                Choice(iid, f"{identity.name}/{identity.email}/{identity.id}") for iid, identity in identities.items()
+                Choice(iid, label_identity(identity)) for iid, identity in identities.items()
             ], message="Select the identity who should be granted access:", allow_multiple=False)
 
         # is the identity known to the node?
         if args['iid'] not in identities:
-            raise CLIRuntimeError(f"Target node does not know identity {args['iid']}. Aborting.")
+            raise CLIRuntimeError(f"Target node does not know identity {shorten_id(args['iid'])}. Aborting.")
 
         # grant access
+        granted = []
         for obj_id in args['obj-ids']:
-            print(f"Granting access to data object {obj_id} for identity {args['iid']}...", end='')
+            print(f"Granting access to data object {shorten_id(obj_id)} "
+                  f"for identity {shorten_id(args['iid'])}...", end='')
             meta = dor.grant_access(obj_id, keystore, identities[args['iid']])
             if args['iid'] not in meta.access:
                 print("Failed")
             else:
+                granted.append(obj_id)
                 print("Done")
+
+        return {
+            'granted': granted
+        }
 
 
 class DORAccessRevoke(CLICommand):
@@ -742,7 +602,7 @@ class DORAccessRevoke(CLICommand):
                      help="the ids of the identities whose access will be revoked")
         ])
 
-    def execute(self, args: dict) -> None:
+    def execute(self, args: dict) -> Optional[dict]:
         dor = _require_dor(args)
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -761,39 +621,41 @@ class DORAccessRevoke(CLICommand):
             meta = dor.get_meta(args['obj-id'])
             if not meta or meta.owner_iid != keystore.identity.id:
                 raise CLIRuntimeError(f"Ignoring data object '{args['obj-id']}': does not exist or is not owned by '"
-                                      f"{keystore.identity.name}/"
-                                      f"{keystore.identity.email}/"
-                                      f"{keystore.identity.id}"
-                                      f"'")
-
-        # do we have removable identities?
-        db = NodeDBProxy(extract_address(args['address']))
-        removable = args['iids'] if args['iids'] else dor.get_meta(args['obj-id']).access
+                                      f"{label_identity(keystore.identity)}'")
 
         # collect the identity information of all those that have access
-        choices = []
+        db = NodeDBProxy(extract_address(args['address']))
+        removable = dor.get_meta(args['obj-id']).access
         identities = {}
+        choices = []
         for iid in removable:
             identity = db.get_identity(iid)
             if identity:
                 identities[identity.id] = identity
-                choices.append(Choice(identity.id, f"{identity.name}/{identity.email}/{identity.id}"))
-            else:
-                print(f"No identity with id={iid}. Ignoring.")
+                choices.append(Choice(identity.id, label_identity(identity)))
 
-        # do we have any choices?
-        if not choices:
-            raise CLIRuntimeError("No identities whose access could be revoked.")
+        # do we have removable identities?
+        if args['iids'] is None:
+            # do we have any choices?
+            if not choices:
+                raise CLIRuntimeError("No identities whose access could be revoked.")
 
-        # select the identities to be removed
-        args['iids'] = prompt_for_selection(
-            choices, message="Select the identities whose access should be removed:", allow_multiple=True)
+            # select the identities to be removed
+            args['iids'] = prompt_for_selection(
+                choices, message="Select the identities whose access should be removed:", allow_multiple=True)
 
         # revoke access
+        revoked = []
         for iid in args['iids']:
-            print(f"Revoking access to data object {args['obj-id']} for identity {iid}...", end='')
+            print(f"Revoking access to data object {shorten_id(args['obj-id'])} "
+                  f"for identity {shorten_id(iid)}...", end='')
             meta = dor.revoke_access(args['obj-id'], keystore, identities[iid])
             if iid in meta.access:
                 print("Failed")
             else:
+                revoked.append(iid)
                 print("Done")
+
+        return {
+            'revoked': revoked
+        }

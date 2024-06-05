@@ -146,8 +146,11 @@ class RTIService:
             EndpointDefinition('PUT', RTI_ENDPOINT_PREFIX, 'job/{job_id}/status',
                                self.update_job_status, None, None),
 
-            EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'job/{job_id}',
+            EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'job/{job_id}/cancel',
                                self.job_cancel, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),
+
+            EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'job/{job_id}/purge',
+                               self.job_purge, JobStatus, [VerifyUserIsJobOwnerOrNodeOwner]),
         ]
 
     def _perform_deployment(self, proc: Processor) -> None:
@@ -483,15 +486,26 @@ class RTIService:
                 else:
                     records = session.query(DBJobInfo).filter_by(user_iid=user.id).all()
 
-        # parse the records
+        # any time period provided?
         result: List[Job] = []
-        for record in records:
-            status = JobStatus.parse_obj(record.status)
-            if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
-                                JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
-                                JobStatus.State.POSTPROCESSING]:
+        if 'period' in request.query_params:
+            # collect all jobs within the time period
+            cutoff = get_timestamp_now() - int(request.query_params['period']) * 3600 * 1000
+            for record in records:
+                # within time period?
                 job = Job.parse_obj(record.job)
-                result.append(job)
+                if job.t_submitted > cutoff:
+                    result.append(job)
+
+        else:
+            # collect ony active jobs
+            for record in records:
+                status = JobStatus.parse_obj(record.status)
+                if status.state in [JobStatus.State.UNINITIALISED, JobStatus.State.INITIALISED,
+                                    JobStatus.State.PREPROCESSING, JobStatus.State.RUNNING,
+                                    JobStatus.State.POSTPROCESSING]:
+                    job = Job.parse_obj(record.job)
+                    result.append(job)
 
         return result
 
@@ -568,5 +582,41 @@ class RTIService:
         except Exception as e:
             trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
             raise RTIException(f"Attempt to cancel job {job_id} failed -> {trace}")
+
+        return status
+
+    def job_purge(self, job_id: str) -> JobStatus:
+        """
+        Purges a running job. It will be removed regardless of its state.
+        """
+        # get the record
+        with self._mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobInfo).get(job_id)
+                if record is None:
+                    raise RTIException(f"Job {job_id} does not exist.")
+
+        # check the status
+        status = JobStatus.parse_obj(record.status)
+
+        # attempt to cancel the job
+        try:
+            rest_address = record.rest_address.split(':')
+            rest_address = (rest_address[0], int(rest_address[1]))
+            job_proxy = JobRESTProxy(rest_address)
+            job_proxy.job_cancel()
+        except Exception as e:
+            trace = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logger.warning(f"[job:{job_id}] attempt to cancel failed -> {trace}")
+
+        # remove it from database
+        with self._mutex:
+            with self._session_maker() as session:
+                record = session.query(DBJobInfo).get(job_id)
+                if record:
+                    session.delete(record)
+                    session.commit()
+                else:
+                    logger.warning(f"[job:{job_id}] db record not found for purging.")
 
         return status

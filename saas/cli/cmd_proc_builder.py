@@ -11,7 +11,7 @@ from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing, load_keystore, \
     default_if_missing
 from saas.dor.schemas import ProcessorDescriptor, DataObject, GitProcessorPointer
-from saas.helpers import docker_export_image
+from saas.helpers import docker_export_image, determine_default_rest_address
 from saas.sdk.base import connect
 
 
@@ -52,7 +52,7 @@ def clone_repository(repository_url: str, repository_path: str, commit_id: str =
 
 
 def build_processor_image(repository_path: str, processor_path: str,
-                          use_cache: bool = True) -> Tuple[str, ProcessorDescriptor, bool]:
+                          force_build: bool = False, use_cache: bool = True) -> Tuple[str, ProcessorDescriptor, bool]:
     # does the path exist?
     processor_path = os.path.join(repository_path, processor_path)
     if not os.path.isdir(processor_path):
@@ -88,15 +88,19 @@ def build_processor_image(repository_path: str, processor_path: str,
     commit_id = repo.head.commit.hexsha
     image_name = f"{username}/{repo_name}/{descriptor.name}:{commit_id}"
 
-    # if the image already exists, delete it
+    # check if the image already exists
     client = docker.from_env()
     image_existed = False
     try:
-        # get a list of all images and check if it has the name. if so, delete it.
+        # get a list of all images and check if it has the name.
         for image in client.images.list():
             if image_name in image.tags:
+                # if we are forced to build a new image, delete the existing one first
+                if force_build:
+                    client.images.remove(image.id, force=True)
+
                 image_existed = True
-                client.images.remove(image.id, force=True)
+                break
 
     except Exception as e:
         raise CLIRuntimeError("Deleting existing docker image failed.", details={
@@ -104,24 +108,28 @@ def build_processor_image(repository_path: str, processor_path: str,
         })
 
     # build the processor docker image
-    try:
-        image, _ = client.images.build(path=processor_path, tag=image_name, nocache=not use_cache, rm=True)
+    if force_build or not image_existed:
+        try:
+            image, _ = client.images.build(path=processor_path, tag=image_name, nocache=not use_cache, rm=True)
 
-    except Exception as e:
-        raise CLIRuntimeError("Creating docker image failed.", details={
-            'exception': e
-        })
+        except Exception as e:
+            raise CLIRuntimeError("Creating docker image failed.", details={
+                'exception': e
+            })
 
     return image_name, descriptor, image_existed
 
 
 class ProcBuilder(CLICommand):
     default_store_image = False
+    default_force_build = False
     default_use_cache = True
     default_keep_image = True
 
     def __init__(self):
         super().__init__('build', 'build a processor', arguments=[
+            Argument('--address', dest='address', action='store',
+                     help=f"the REST address (host:port) of the node (e.g., '{determine_default_rest_address()}')"),
             Argument('--repository', dest='repository', action='store', help="URL of the repository"),
             Argument('--commit-id', dest='commit_id', action='store', help="the commit id"),
             Argument('--proc-path', dest='proc_path', action='store', help="path to the processor"),
@@ -129,15 +137,21 @@ class ProcBuilder(CLICommand):
             Argument('--git-token', dest='git_token', action='store', help="GitHub personal access token"),
             Argument('--store-image', dest="store_image", action='store_const', const=True,
                      help="Store the image in the DOR not just a reference."),
-            Argument('--no-cache', dest="use_cache", action='store_const', const=False,
-                     help="Don't use cache when building the processor docker image"),
+            Argument('--force-build', dest="force_build", action='store_const', const=True,
+                     help="Force building a processor docker image even if one already exists."),
+            Argument('--no-build-cache', dest="use_build_cache", action='store_const', const=False,
+                     help="Don't use cache when building the processor docker image."),
             Argument('--delete-image', dest="keep_image", action='store_const', const=False,
                      help="Deletes the newly created image after exporting it - note: if an image with the same "
                           "name already existed, this flag will be ignored, effectively resulting in the existing "
                           "image being replaced with the newly created one.")
         ])
 
-    def execute(self, args: dict) -> str:
+    def execute(self, args: dict) -> Optional[dict]:
+        prompt_if_missing(args, 'address', prompt_for_string,
+                          message="Enter the target node's REST address",
+                          default=determine_default_rest_address())
+
         # load keystore
         keystore = load_keystore(args, ensure_publication=True)
 
@@ -150,6 +164,7 @@ class ProcBuilder(CLICommand):
         prompt_if_missing(args, 'commit_id', prompt_for_string, message="Enter the commit id:")
         prompt_if_missing(args, 'proc_path', prompt_for_string, message="Enter path to the processor:")
         default_if_missing(args, 'store_image', self.default_store_image)
+        default_if_missing(args, 'force_build', self.default_force_build)
         default_if_missing(args, 'use_cache', self.default_use_cache)
         default_if_missing(args, 'keep_image', self.default_keep_image)
 
@@ -173,8 +188,12 @@ class ProcBuilder(CLICommand):
 
             # build the image
             image_name, descriptor, image_existed = \
-                build_processor_image(repo_path, args['proc_path'], use_cache=args['use_cache'])
-            print(f"Done building image '{image_name}'.")
+                build_processor_image(repo_path, args['proc_path'], force_build=args['force_build'],
+                                      use_cache=args['use_cache'])
+            if args['force_build'] or not image_existed:
+                print(f"Done building image '{image_name}'.")
+            else:
+                print(f"Using existing building image '{image_name}'.")
 
             if args['store_image']:
                 # export the image
@@ -194,7 +213,9 @@ class ProcBuilder(CLICommand):
                 ])
                 print(f"Done uploading image to DOR -> object id: {obj.meta.obj_id}")
                 os.remove(export_path)
-                return obj.meta.obj_id
+                return {
+                    'pdi': obj.meta
+                }
 
             else:
                 # store the GPP information in a file
@@ -205,8 +226,8 @@ class ProcBuilder(CLICommand):
                     json.dump(gpp.dict(), f)
 
                 # upload the image to the DOR and set GPP tags
-                obj = context.upload_content(gpp_path, 'ProcessorDockerImage', 'json', False)
-                obj.update_tags([
+                pdi = context.upload_content(gpp_path, 'ProcessorDockerImage', 'json', False)
+                pdi.update_tags([
                     DataObject.Tag(key='repository', value=args['repository']),
                     DataObject.Tag(key='commit_id', value=args['commit_id']),
                     DataObject.Tag(key='commit_timestamp', value=commit_timestamp),
@@ -214,6 +235,8 @@ class ProcBuilder(CLICommand):
                     DataObject.Tag(key='proc_descriptor', value=descriptor.dict()),
                     DataObject.Tag(key='image_name', value=image_name)
                 ])
-                print(f"Done uploading GPP to DOR -> object id: {obj.meta.obj_id}")
+                print(f"Done uploading PDI to DOR -> object id: {pdi.meta.obj_id}")
                 os.remove(gpp_path)
-                return obj.meta.obj_id
+                return {
+                    'pdi': pdi.meta
+                }

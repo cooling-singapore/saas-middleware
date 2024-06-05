@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing
 from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import validate_json, encrypt_file, hash_json_object
+from saas.core.helpers import validate_json, hash_json_object
 from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
