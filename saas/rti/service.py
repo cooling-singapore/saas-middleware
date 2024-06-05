@@ -490,7 +490,7 @@ class RTIService:
         result: List[Job] = []
         if 'period' in request.query_params:
             # collect all jobs within the time period
-            cutoff = get_timestamp_now() - int(request.query_params['period']) * 3600
+            cutoff = get_timestamp_now() - int(request.query_params['period']) * 3600 * 1000
             for record in records:
                 # within time period?
                 job = Job.parse_obj(record.job)
