@@ -15,7 +15,9 @@ jobs:
           python-version: "3.10"
 
       - name: Install application
-        run: pip install ".[dev]"
+        run: |
+          pip install ".[dev]"
+          pip install pytest-timeout
 
       - name: Create credentials.json
         run: >
