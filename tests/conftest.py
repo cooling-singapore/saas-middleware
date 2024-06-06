@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import time
 
@@ -18,6 +19,7 @@ from tests.base_testcase import TestContext, update_keystore_from_credentials, P
 
 commit_id = '6dd06dc2298bc786468a8aab9d60a12aecc21663'
 
+
 @pytest.fixture(scope='session')
 def test_context():
     context = TestContext()
@@ -27,17 +29,18 @@ def test_context():
 
 
 @pytest.fixture(scope="session")
-def keystore():
-    with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, "keystore1", "no-email-provided", "password")
-        update_keystore_from_credentials(_keystore)
-        yield _keystore
+def docker_available():
+    try:
+        subprocess.run(['docker', 'info'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 @pytest.fixture(scope="session")
-def another_keystore():
+def keystore():
     with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, "keystore2", "no-email-provided", "password")
+        _keystore = Keystore.create(tempdir, "keystore1", "no-email-provided", "password")
         update_keystore_from_credentials(_keystore)
         yield _keystore
 
@@ -160,29 +163,33 @@ def add_test_processor(dor: DORProxy, keystore: Keystore) -> DataObject:
 
 
 @pytest.fixture(scope="session")
-def deployed_test_processor(rti_proxy, dor_proxy, node) -> DataObject:
+def deployed_test_processor(docker_available, rti_proxy, dor_proxy, node) -> DataObject:
     # add test processor
     meta = add_test_processor(dor_proxy, node.keystore)
     proc_id = meta.obj_id
 
-    # deploy it
-    rti_proxy.deploy(proc_id, node.keystore)
-    while (proc := rti_proxy.get_proc(proc_id)).state == Processor.State.BUSY_DEPLOY:
-        logger.info(f"Waiting for processor to be ready: {proc}")
-        time.sleep(1)
+    if not docker_available:
+        yield meta
 
-    assert(rti_proxy.get_proc(proc_id).state == Processor.State.READY)
-    logger.info(f"Processor to deployed: {proc}")
-
-    yield meta
-
-    # undeploy it
-    rti_proxy.undeploy(proc_id, node.keystore)
-    try:
-        while (proc := rti_proxy.get_proc(proc_id)).state == Processor.State.BUSY_UNDEPLOY:
+    else:
+        # deploy it
+        rti_proxy.deploy(proc_id, node.keystore)
+        while (proc := rti_proxy.get_proc(proc_id)).state == Processor.State.BUSY_DEPLOY:
             logger.info(f"Waiting for processor to be ready: {proc}")
             time.sleep(1)
-    except Exception as e:
-        print(e)
 
-    logger.info(f"Processor to undeployed: {proc}")
+        assert(rti_proxy.get_proc(proc_id).state == Processor.State.READY)
+        logger.info(f"Processor to deployed: {proc}")
+
+        yield meta
+
+        # undeploy it
+        rti_proxy.undeploy(proc_id, node.keystore)
+        try:
+            while (proc := rti_proxy.get_proc(proc_id)).state == Processor.State.BUSY_UNDEPLOY:
+                logger.info(f"Waiting for processor to be ready: {proc}")
+                time.sleep(1)
+        except Exception as e:
+            print(e)
+
+        logger.info(f"Processor to undeployed: {proc}")

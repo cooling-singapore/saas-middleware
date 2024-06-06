@@ -39,6 +39,7 @@ from tests.conftest import commit_id
 
 logger = Logging.get(__name__)
 
+
 @pytest.fixture(scope="function")
 def temp_dir():
     with tempfile.TemporaryDirectory() as tempdir:
@@ -834,7 +835,10 @@ def test_cli_dor_grant_show_revoke(node, temp_dir):
         assert False
 
 
-def test_cli_rti_proc_deploy_list_show_undeploy(node, temp_dir):
+def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
 
@@ -986,7 +990,10 @@ def test_cli_rti_proc_deploy_list_show_undeploy(node, temp_dir):
         assert False
 
 
-def test_cli_rti_job_submit_list_status_cancel(node, temp_dir):
+def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
 
@@ -1442,7 +1449,10 @@ def test_job_worker_error(temp_dir):
     assert "ValueError: invalid literal for int() with base 10: 'sdf'" in result.trace
 
 
-def test_cli_runner_success_by_value(temp_dir, node, deployed_test_processor):
+def test_cli_runner_success_by_value(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare the job folder
     job_id = '398h36g3'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
@@ -1460,7 +1470,10 @@ def test_cli_runner_success_by_value(temp_dir, node, deployed_test_processor):
     assert job_result.exitcode == ExitCode.DONE
 
 
-def test_cli_runner_failing_validation(temp_dir, node, deployed_test_processor):
+def test_cli_runner_failing_validation(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare the job folder
     job_id = '398h36g3'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
@@ -1480,7 +1493,10 @@ def test_cli_runner_failing_validation(temp_dir, node, deployed_test_processor):
     assert 'InvalidJSONDataObjectError' in job_result.trace
 
 
-def test_cli_runner_success_by_reference(temp_dir, node, deployed_test_processor):
+def test_cli_runner_success_by_reference(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1)
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
@@ -1502,7 +1518,10 @@ def test_cli_runner_success_by_reference(temp_dir, node, deployed_test_processor
     assert job_result.exitcode == ExitCode.DONE
 
 
-def test_cli_runner_failing_no_access(temp_dir, node, deployed_test_processor, extra_keystores):
+def test_cli_runner_failing_no_access(docker_available, temp_dir, node, deployed_test_processor, extra_keystores):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     user = extra_keystores[0]
     node.db.update_identity(user.identity)
 
@@ -1528,7 +1547,10 @@ def test_cli_runner_failing_no_access(temp_dir, node, deployed_test_processor, e
     assert 'AccessNotPermittedError' in job_result.trace
 
 
-def test_cli_runner_failing_no_signature(temp_dir, node, deployed_test_processor):
+def test_cli_runner_failing_no_signature(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1, access=[node.identity])
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1, access=[node.identity])
@@ -1551,7 +1573,10 @@ def test_cli_runner_failing_no_signature(temp_dir, node, deployed_test_processor
     assert 'MissingUserSignatureError' in job_result.trace
 
 
-def test_cli_runner_failing_no_data_object(temp_dir, node, deployed_test_processor):
+def test_cli_runner_failing_no_data_object(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1)
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
@@ -1578,7 +1603,10 @@ def test_cli_runner_failing_no_data_object(temp_dir, node, deployed_test_process
     assert 'UnresolvedInputDataObjectsError' in job_result.trace
 
 
-def test_cli_runner_failing_wrong_data_type(temp_dir, node, deployed_test_processor):
+def test_cli_runner_failing_wrong_data_type(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1, data_type='wrong')
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
@@ -1601,7 +1629,10 @@ def test_cli_runner_failing_wrong_data_type(temp_dir, node, deployed_test_proces
     assert 'MismatchingDataTypeOrFormatError' in job_result.trace
 
 
-def test_cli_runner_failing_wrong_data_format(temp_dir, node, deployed_test_processor):
+def test_cli_runner_failing_wrong_data_format(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1, data_format='wrong')
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
@@ -1624,7 +1655,10 @@ def test_cli_runner_failing_wrong_data_format(temp_dir, node, deployed_test_proc
     assert 'MismatchingDataTypeOrFormatError' in job_result.trace
 
 
-def test_cli_runner_success_no_name(temp_dir, node, deployed_test_processor):
+def test_cli_runner_success_no_name(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare the job folder
     job_id = '398h36g3'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
@@ -1642,7 +1676,10 @@ def test_cli_runner_success_no_name(temp_dir, node, deployed_test_processor):
     assert job_result.exitcode == ExitCode.DONE
 
 
-def test_cli_runner_cancelled(temp_dir, node, deployed_test_processor):
+def test_cli_runner_cancelled(docker_available, temp_dir, node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare the job folder
     job_id = '398h36g3'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=5, b=6)
@@ -1664,7 +1701,10 @@ def test_cli_runner_cancelled(temp_dir, node, deployed_test_processor):
     assert job_result.exitcode == ExitCode.INTERRUPTED
 
 
-def test_cli_runner_success_non_dor_target(temp_dir, node, exec_only_node, deployed_test_processor):
+def test_cli_runner_success_non_dor_target(docker_available, temp_dir, node, exec_only_node, deployed_test_processor):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # prepare input data objects
     a = prepare_data_object(os.path.join(temp_dir, 'a'), node, 1)
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
@@ -1728,7 +1768,10 @@ def test_cli_builder_clone_repo(temp_dir, github_credentials):
         assert False
 
 
-def test_cli_builder_build_image(temp_dir, github_credentials):
+def test_cli_builder_build_image(docker_available, temp_dir, github_credentials):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     # clone the repository
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
     credentials = github_credentials.get(repo_url)
@@ -1756,7 +1799,10 @@ def test_cli_builder_build_image(temp_dir, github_credentials):
         assert False
 
 
-def test_cli_builder_export_image(temp_dir, github_credentials):
+def test_cli_builder_export_image(docker_available, temp_dir, github_credentials):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     image_path = os.path.join(temp_dir, 'image.tar')
 
     try:
@@ -1783,7 +1829,10 @@ def test_cli_builder_export_image(temp_dir, github_credentials):
         assert False
 
 
-def test_cli_builder_cmd(node, temp_dir):
+def test_cli_builder_cmd(docker_available, node, temp_dir):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
 
@@ -1822,7 +1871,10 @@ def test_cli_builder_cmd(node, temp_dir):
         assert False
 
 
-def test_cli_builder_cmd_store_image(node, temp_dir):
+def test_cli_builder_cmd_store_image(docker_available, node, temp_dir):
+    if not docker_available:
+        pytest.skip("Docker is not available")
+
     address = node.rest.address()
     repo_url = 'https://github.com/cooling-singapore/saas-middleware'
 
