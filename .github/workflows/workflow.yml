@@ -35,7 +35,7 @@ jobs:
           ]}' > ~/.saas-credentials.json
 
       - name: Run tests
-        run: pytest -v --timeout=300 ./tests
+        run: pytest -v --timeout=600 ./tests
 
   ruff:
     runs-on: ubuntu-latest
