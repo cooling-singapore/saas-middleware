@@ -35,7 +35,7 @@ from saas.rti.proxy import JobRESTProxy
 from saas.rti.schemas import Task, Job, JobStatus, Severity, ExitCode, JobResult, Processor
 from saas.core.processor import ProgressListener, ProcessorBase, ProcessorRuntimeError, find_processors
 from tests.base_testcase import PortMaster
-from tests.conftest import commit_id
+from tests.conftest import commit_id, ssh_key_path
 
 logger = Logging.get(__name__)
 
@@ -399,6 +399,9 @@ def test_cli_identity_credentials_list_add_remove(temp_dir):
 
 
 def test_cli_identity_credentials_ssh_test(temp_dir):
+    if not os.path.isfile(ssh_key_path):
+        pytest.skip("SSH key not found")
+
     # create an identity
     try:
         args = {
@@ -433,9 +436,8 @@ def test_cli_identity_credentials_ssh_test(temp_dir):
             'name': 'onprem',
             'host': '10.8.0.10',
             'login': 'heikoaydt',
-            'key': os.path.join(os.environ['HOME'], 'Desktop', 'OneDrive', 'operations', 'ssh', 'id_heikoaydt'),
-            # 'passphrase': passphrase
-            'passphrase': 'wrong_password'
+            'key': ssh_key_path,
+            'passphrase': ''
         }
 
         cmd = CredentialsAddSSHCredentials()
