@@ -38,6 +38,8 @@ from tests.base_testcase import PortMaster
 from tests.conftest import commit_id, ssh_key_path
 
 logger = Logging.get(__name__)
+repo_root_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+examples_path = os.path.join(repo_root_path, 'examples')
 
 
 @pytest.fixture(scope="function")
@@ -1247,7 +1249,7 @@ def run_job_cmd(job_path: str, host: str, port: int) -> None:
     cmd = JobRunner()
     args = {
         'job_path': job_path,
-        'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples'),
+        'proc_path': examples_path,
         'proc_name': 'example-processor',
         'rest_address': f"{host}:{port}"
     }
@@ -1258,7 +1260,7 @@ def run_job_cmd_noname(job_path: str, host: str, port: int) -> None:
     cmd = JobRunner()
     args = {
         'job_path': job_path,
-        'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples', 'adapters', 'proc_example'),
+        'proc_path': os.path.join(examples_path, 'adapters', 'proc_example'),
         'rest_address': f"{host}:{port}"
     }
     cmd.execute(args)
@@ -1374,8 +1376,7 @@ def test_job_worker_done(temp_dir):
     prepare_plain_job_folder(temp_dir, job_id, 1, 1)
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
@@ -1401,8 +1402,7 @@ def test_job_worker_interrupted(temp_dir):
     prepare_plain_job_folder(temp_dir, job_id, 5, 5)
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
@@ -1429,8 +1429,7 @@ def test_job_worker_error(temp_dir):
     prepare_plain_job_folder(temp_dir, job_id, 1, 'sdf')
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
