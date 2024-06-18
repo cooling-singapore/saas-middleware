@@ -33,7 +33,7 @@ from saas.helpers import find_available_port, docker_export_image
 from saas.node import Node
 from saas.rti.proxy import JobRESTProxy
 from saas.rti.schemas import Task, Job, JobStatus, Severity, ExitCode, JobResult, Processor
-from saas.sdk.processor import ProgressListener, ProcessorBase, ProcessorRuntimeError, find_processors
+from saas.core.processor import ProgressListener, ProcessorBase, ProcessorRuntimeError, find_processors
 from tests.base_testcase import PortMaster
 from tests.conftest import commit_id
 

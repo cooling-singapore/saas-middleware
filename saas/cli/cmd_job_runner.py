@@ -26,7 +26,7 @@ from saas.rti.exceptions import UnresolvedInputDataObjectsError, AccessNotPermit
     DataObjectOwnerNotFoundError, DataObjectContentNotFoundError
 from saas.rti.proxy import JOB_ENDPOINT_PREFIX, RTIProxy
 from saas.rti.schemas import JobStatus, Severity, JobResult, ExitCode, Task, Job
-from saas.sdk.processor import find_processors, ProcessorBase, ProgressListener
+from saas.core.processor import find_processors, ProcessorBase, ProgressListener
 
 
 class OutputObjectHandler(threading.Thread):
