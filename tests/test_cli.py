@@ -1474,6 +1474,9 @@ def test_cli_runner_success_by_value(docker_available, temp_dir, node, deployed_
     assert status.progress == 100
     assert job_result.exitcode == ExitCode.DONE
 
+    logger.info(f"test_cli_runner_success_by_value:last")
+    time.sleep(5)
+
 
 def test_cli_runner_failing_validation(docker_available, temp_dir, node, deployed_test_processor):
     if not docker_available:
