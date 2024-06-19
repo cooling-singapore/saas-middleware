@@ -1455,27 +1455,20 @@ def test_cli_runner_success_by_value(docker_available, temp_dir, node, deployed_
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    logger.info("test_cli_runner_success_by_value:1")
     job_id = '398h36g3_00'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
 
     # determine REST address
-    logger.info(f"test_cli_runner_success_by_value:{job_path}")
     rest_address = PortMaster.generate_rest_address()
 
     # execute the job runner command
-    logger.info(f"test_cli_runner_success_by_value:{rest_address}")
     job_process = multiprocessing.Process(target=run_job_cmd, args=(job_path, rest_address[0], rest_address[1]))
     job_process.start()
 
     # wait for the job to be finished
-    logger.info(f"test_cli_runner_success_by_value:pre_wait")
     job_result, status = wait_for_job_runner(job_path, rest_address)
     assert status.progress == 100
     assert job_result.exitcode == ExitCode.DONE
-
-    logger.info(f"test_cli_runner_success_by_value:last")
-    time.sleep(5)
 
 
 def test_cli_runner_failing_validation(docker_available, temp_dir, node, deployed_test_processor):
