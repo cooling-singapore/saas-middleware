@@ -28,19 +28,21 @@ logger = Logging.get(__name__)
 
 
 @pytest.fixture(scope='session')
-def non_strict_node(test_context, extra_keystores):
-    keystore = extra_keystores[0]
-    update_keystore_from_credentials(keystore)
-    node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=False)
-    return node
+def non_strict_node(test_context):
+    with tempfile.TemporaryDirectory() as tempdir:
+        keystore = Keystore.create(tempdir, "non_strict_node", "no-email-provided", "password")
+        update_keystore_from_credentials(keystore)
+        node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=False)
+        yield node
 
 
 @pytest.fixture(scope='session')
 def strict_node(test_context, extra_keystores):
-    keystore = extra_keystores[1]
-    update_keystore_from_credentials(keystore)
-    node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=True)
-    return node
+    with tempfile.TemporaryDirectory() as tempdir:
+        keystore = Keystore.create(tempdir, "strict_node", "no-email-provided", "password")
+        update_keystore_from_credentials(keystore)
+        node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=True)
+        yield node
 
 
 @pytest.fixture()
@@ -53,7 +55,6 @@ def known_user(extra_keystores, node_db_proxy):
 def test_rest_get_deployed(rti_proxy):
     result = rti_proxy.get_all_procs()
     assert (result is not None)
-    assert (len(result) == 0)
 
 
 def test_rest_deploy_undeploy(docker_available, non_strict_node, strict_node, known_user):

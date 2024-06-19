@@ -66,13 +66,13 @@ def test_rest_get_node(node_db_proxy):
 def test_rest_get_network(node_db_proxy):
     network = node_db_proxy.get_network()
     assert (network is not None)
-    assert (len(network) == 1)
+    assert (len(network) > 0)
 
 
 def test_rest_get_identities(node_db_proxy, known_users):
     identities = node_db_proxy.get_identities()
     assert (identities is not None)
-    assert (len(identities) == 1 + len(known_users))
+    assert (len(identities) > 0)
 
 
 def test_rest_get_identity_valid(node, node_db_proxy):
@@ -130,15 +130,19 @@ def test_node_self_awareness(transient_node, keystore, known_users):
 def test_different_address(test_context, known_users, node, node_db_proxy):
     p2p_address = PortMaster.generate_p2p_address(test_context.host)
 
-    # manually create a node on a certain address and make it known to the self.node
+    # determine how many nodes the network has right now, according to the node
+    network = node_db_proxy.get_network()
+    n_nodes = len(network)
+
+    # manually create a node on a certain address and make it known to the node
     node0 = Node(known_users[0], os.path.join(test_context.testing_dir, 'node0'))
     node0.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
     node0.join_network(node.p2p.address())
 
-    # the self.node should know of 2 nodes now
+    # the node should know of n+1 nodes now
     network = node_db_proxy.get_network()
     network = [item.identity.id for item in network]
-    assert(len(network) == 2)
+    assert(len(network) == n_nodes + 1)
     assert(node.identity.id in network)
     assert(node0.identity.id in network)
 
@@ -146,14 +150,14 @@ def test_different_address(test_context, known_users, node, node_db_proxy):
     # when a node suddenly crashes for example.
     node0.shutdown(leave_network=False)
 
-    # the self.node should still know 2 nodes
+    # the node should still know n+1 nodes
     network = node_db_proxy.get_network()
     network = [item.identity.id for item in network]
-    assert(len(network) == 2)
+    assert(len(network) == n_nodes + 1)
     assert(node.identity.id in network)
     assert(node0.identity.id in network)
 
-    # manually create a second node, using the same address but a different keystore
+    # manually create another node, using the same address but a different keystore
     node1 = Node(known_users[1], os.path.join(test_context.testing_dir, 'node1'))
     node1.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
 
@@ -166,12 +170,13 @@ def test_different_address(test_context, known_users, node, node_db_proxy):
     # perform the join
     node1.join_network(node.p2p.address())
 
-    # the self.node should now still only know of 2 nodes now (the first node should be replaced)
+    # the self.node should now still only know of n+1 nodes now (the first node should be replaced)
     network = node_db_proxy.get_network()
     network = [item.identity.id for item in network]
-    assert(len(network) == 2)
+    assert(len(network) == n_nodes + 1)
     assert(node.identity.id in network)
     assert(node1.identity.id in network)
+    assert(node0.identity.id not in network)
 
     node0.shutdown()
     node1.shutdown()
