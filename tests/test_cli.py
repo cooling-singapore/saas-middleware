@@ -42,7 +42,7 @@ repo_root_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__
 examples_path = os.path.join(repo_root_path, 'examples')
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def temp_dir():
     with tempfile.TemporaryDirectory() as tempdir:
         yield tempdir
@@ -1371,7 +1371,7 @@ def wait_for_job_runner(job_path: str, rest_address: (str, int)) -> Tuple[Option
 
 
 def test_job_worker_done(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_00'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 1, 1)
 
@@ -1397,7 +1397,7 @@ def test_job_worker_done(temp_dir):
 
 
 def test_job_worker_interrupted(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_01'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 5, 5)
 
@@ -1424,7 +1424,7 @@ def test_job_worker_interrupted(temp_dir):
 
 
 def test_job_worker_error(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_02'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 1, 'sdf')
 
@@ -1456,7 +1456,7 @@ def test_cli_runner_success_by_value(docker_available, temp_dir, node, deployed_
 
     # prepare the job folder
     logger.info("test_cli_runner_success_by_value:1")
-    job_id = '398h36g3'
+    job_id = '398h36g3_00'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
 
     # determine REST address
@@ -1483,7 +1483,7 @@ def test_cli_runner_failing_validation(docker_available, temp_dir, node, deploye
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_01'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
                                        a={'wrong': 55}, b=1)
 
@@ -1510,7 +1510,7 @@ def test_cli_runner_success_by_reference(docker_available, temp_dir, node, deplo
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_02'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1538,7 +1538,7 @@ def test_cli_runner_failing_no_access(docker_available, temp_dir, node, deployed
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1, access=[node.identity])
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_03'
     job_path = prepare_full_job_folder(temp_dir, node, user.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1564,7 +1564,7 @@ def test_cli_runner_failing_no_signature(docker_available, temp_dir, node, deplo
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1, access=[node.identity])
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_04'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1594,7 +1594,7 @@ def test_cli_runner_failing_no_data_object(docker_available, temp_dir, node, dep
     proxy.delete_data_object(b.obj_id, node.keystore)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_05'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1620,7 +1620,7 @@ def test_cli_runner_failing_wrong_data_type(docker_available, temp_dir, node, de
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_06'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1646,7 +1646,7 @@ def test_cli_runner_failing_wrong_data_format(docker_available, temp_dir, node, 
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_07'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1668,7 +1668,7 @@ def test_cli_runner_success_no_name(docker_available, temp_dir, node, deployed_t
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_08'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
 
     # determine REST address
@@ -1689,7 +1689,7 @@ def test_cli_runner_cancelled(docker_available, temp_dir, node, deployed_test_pr
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_09'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=5, b=6)
 
     # determine REST address
@@ -1718,7 +1718,7 @@ def test_cli_runner_success_non_dor_target(docker_available, temp_dir, node, exe
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_10'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
                                        a=a, b=b, target_node=exec_only_node)
 
