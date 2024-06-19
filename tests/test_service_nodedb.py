@@ -1,5 +1,6 @@
 import os
 import logging
+import tempfile
 import time
 
 import pytest
@@ -126,58 +127,71 @@ def test_node_self_awareness(transient_node, keystore, known_users):
     assert (network[0].identity.id == transient_node.identity.id)
 
 
-def test_different_address(test_context, known_users, node, node_db_proxy):
+def test_different_address(test_context, node, node_db_proxy):
     p2p_address = PortMaster.generate_p2p_address(test_context.host)
 
-    # determine how many nodes the network has right now, according to the node
-    network = node_db_proxy.get_network()
-    n_nodes = len(network)
+    with tempfile.TemporaryDirectory() as tempdir:
+        # create two keystores
+        keystores = [Keystore.create(tempdir, f"keystore-{i}", "no-email-provided", "password") for i in range(2)]
 
-    # manually create a node on a certain address and make it known to the node
-    node0 = Node(known_users[0], os.path.join(test_context.testing_dir, 'node0'))
-    node0.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
-    node0.join_network(node.p2p.address())
+        # determine how many nodes the network has right now, according to the node
+        network = node_db_proxy.get_network()
+        network = [item.identity.id for item in network]
+        n_nodes = len(network)
 
-    # the node should know of n+1 nodes now
-    network = node_db_proxy.get_network()
-    network = [item.identity.id for item in network]
-    assert (len(network) == n_nodes + 1)
-    assert (node.identity.id in network)
-    assert (node0.identity.id in network)
+        # manually create a node on a certain address and make it known to the node
+        node0 = Node(keystores[0], os.path.join(test_context.testing_dir, 'node0'))
+        node0.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
 
-    # shutdown the first node silently (i.e., not leaving the network) - this emulates what happens
-    # when a node suddenly crashes for example.
-    node0.shutdown(leave_network=False)
+        # at this point node0 should only know about itself
+        network = node0.db.get_network()
+        network = [item.identity.id for item in network]
+        assert (len(network) == 1)
+        assert (node0.identity.id in network)
 
-    # the node should still know n+1 nodes
-    network = node_db_proxy.get_network()
-    network = [item.identity.id for item in network]
-    assert (len(network) == n_nodes + 1)
-    assert (node.identity.id in network)
-    assert (node0.identity.id in network)
+        # perform the join
+        node0.join_network(node.p2p.address())
 
-    # manually create another node, using the same address but a different keystore
-    node1 = Node(known_users[1], os.path.join(test_context.testing_dir, 'node1'))
-    node1.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
+        # the node should know of n+1 nodes now
+        network = node_db_proxy.get_network()
+        network = [item.identity.id for item in network]
+        assert (len(network) == n_nodes + 1)
+        assert (node.identity.id in network)
+        assert (node0.identity.id in network)
 
-    # at this point node1 should only know about itself
-    network = node1.db.get_network()
-    network = [item.identity.id for item in network]
-    assert (len(network) == 1)
-    assert (node1.identity.id in network)
+        # shutdown the first node silently (i.e., not leaving the network) - this emulates what happens
+        # when a node suddenly crashes for example.
+        node0.shutdown(leave_network=False)
 
-    # perform the join
-    node1.join_network(node.p2p.address())
+        # the node should still know n+1 nodes
+        network = node_db_proxy.get_network()
+        network = [item.identity.id for item in network]
+        assert (len(network) == n_nodes + 1)
+        assert (node.identity.id in network)
+        assert (node0.identity.id in network)
 
-    # the node should now still only know of n+1 nodes now (the first node should be replaced)
-    network = node_db_proxy.get_network()
-    network = [item.identity.id for item in network]
-    assert (len(network) == n_nodes + 1)
-    assert (node.identity.id in network)
-    assert (node1.identity.id in network)
-    assert (node0.identity.id not in network)
+        # manually create another node, using the same address but a different keystore
+        node1 = Node(keystores[1], os.path.join(test_context.testing_dir, 'node1'))
+        node1.startup(p2p_address, enable_dor=False, enable_rti=False, rest_address=None)
 
-    node1.shutdown()
+        # at this point node1 should only know about itself
+        network = node1.db.get_network()
+        network = [item.identity.id for item in network]
+        assert (len(network) == 1)
+        assert (node1.identity.id in network)
+
+        # perform the join
+        node1.join_network(node.p2p.address())
+
+        # the node should now still only know of n+1 nodes now (the first node should be replaced)
+        network = node_db_proxy.get_network()
+        network = [item.identity.id for item in network]
+        assert (len(network) == n_nodes + 1)
+        assert (node.identity.id in network)
+        assert (node1.identity.id in network)
+        assert (node0.identity.id not in network)
+
+        node1.shutdown()
 
 
 def test_join_leave_protocol(unknown_nodes):
