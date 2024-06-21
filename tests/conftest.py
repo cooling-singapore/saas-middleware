@@ -17,7 +17,7 @@ from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Processor
 from tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
 
-commit_id = 'f1839919832b487a5b9a574a39606f867498d452'
+commit_id = '23fb7c11ed76a3cbd08cbd14fce95e9551bdcb61'
 ssh_key_path = os.path.join(os.environ['HOME'], 'Desktop', 'OneDrive', 'operations', 'ssh', 'id_testing')
 
 
