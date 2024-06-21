@@ -341,7 +341,8 @@ class RTIJobSubmit(CLICommand):
                                               message=f"Select the data object to be used for input '{item.name}':",
                                               allow_multiple=False)
 
-                job_input.append(Task.InputReference(name=item.name, type='reference', obj_id=obj_id))
+                job_input.append(Task.InputReference(name=item.name, type='reference', obj_id=obj_id,
+                                                     user_signature=None, c_hash=None))
 
         return job_input
 

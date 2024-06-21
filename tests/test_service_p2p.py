@@ -254,10 +254,11 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
             logger.debug(f"request received: {request}")
 
             server_messenger.send_response(P2PMessage.parse_obj({
-                'sequence_id': request.sequence_id,
                 'protocol': request.protocol,
                 'type': 'A',
-                'content': {'answer': '42'}
+                'content': {'answer': '42'},
+                'attachment': None,
+                'sequence_id': request.sequence_id
             }))
             server_messenger.close()
 
@@ -273,7 +274,9 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
     response = client_messenger.send_message(P2PMessage.parse_obj({
         'protocol': 'Hitchhiker',
         'type': 'Q',
-        'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'}
+        'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'},
+        'attachment': None,
+        'sequence_id': None
     }))
 
     logger.debug(f"response received: {response}")

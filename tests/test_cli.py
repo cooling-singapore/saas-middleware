@@ -1210,10 +1210,10 @@ def prepare_full_job_folder(jobs_root_path: str, node: Node, user: Identity, pro
     elif isinstance(b, (int, str)):
         b = {'v': b}
 
-    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id, user_signature=sig_a) \
+    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id, user_signature=sig_a, c_hash=None) \
         if isinstance(a, DataObject) else Task.InputValue(name='a', type='value', value=a)
 
-    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id, user_signature=sig_b) \
+    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id, user_signature=sig_b, c_hash=None) \
         if isinstance(b, DataObject) else Task.InputValue(name='b', type='value', value=b)
 
     c = Task.Output(name='c', owner_iid=user.id, restricted_access=False, content_encrypted=False,

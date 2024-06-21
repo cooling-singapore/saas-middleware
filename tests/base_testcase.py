@@ -110,7 +110,7 @@ def update_keystore_from_credentials(keystore: Keystore, credentials_path: str =
 
                 keystore.ssh_credentials.update(item['name'],
                                                 SSHCredentials(host=item['host'], login=item['login'],
-                                                               key=ssh_key, key_path=item['key_path']))
+                                                               key=ssh_key, passphrase=''))
 
             else:
                 raise RuntimeError(f"Unexpected SSH credentials format: {item}")

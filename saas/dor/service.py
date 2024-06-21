@@ -51,7 +51,8 @@ def _generate_missing_provenance(c_hash: str, data_type: str, data_format: str) 
             c_hash: CObjectNode.parse_obj({
                 'c_hash': c_hash,
                 'data_type': data_type,
-                'data_format': data_format
+                'data_format': data_format,
+                'content': None
             })
         },
         'proc_nodes': {},
@@ -186,7 +187,8 @@ class DORService:
         product_node = CObjectNode(
             c_hash=c_hash,
             data_type=recipe.product.data_type,
-            data_format=recipe.product.data_format
+            data_format=recipe.product.data_format,
+            content=None
         )
         data_nodes[product_node.c_hash] = product_node
 
@@ -357,7 +359,8 @@ class DORService:
         size of the content.
         """
         # create parameters object
-        p = AddDataObjectParameters.parse_obj(json.loads(body))
+        body = json.loads(body)
+        p = AddDataObjectParameters.parse_obj(body)
 
         # get the owner identity
         owner = self._node.db.get_identity(p.owner_iid, raise_if_unknown=True)

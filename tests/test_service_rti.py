@@ -158,7 +158,8 @@ def test_rest_submit_list_get_job(docker_available, test_context, node, dor_prox
 
     task_output = [
         Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
-                               'restricted_access': False, 'content_encrypted': False})
+                               'restricted_access': False, 'content_encrypted': False,
+                               'target_node_iid': None})
     ]
 
     # submit the job
@@ -237,7 +238,8 @@ def test_rest_submit_cancel_job(docker_available, node, rti_proxy, deployed_test
 
     task_output = [
         Task.Output.parse_obj({'name': 'c', 'owner_iid': owner.identity.id,
-                               'restricted_access': False, 'content_encrypted': False})
+                               'restricted_access': False, 'content_encrypted': False,
+                               'target_node_iid': None})
     ]
 
     # submit the job
@@ -277,10 +279,10 @@ def execute_job(proc_id: str, owner: Keystore, rti_proxy: RTIProxy, target_node:
     if b is None:
         b = 1
 
-    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id) \
+    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id, user_signature=None, c_hash=None) \
         if isinstance(a, DataObject) else Task.InputValue(name='a', type='value', value={'v': a})
 
-    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id) \
+    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id, user_signature=None, c_hash=None) \
         if isinstance(b, DataObject) else Task.InputValue(name='b', type='value', value={'v': b})
 
     task_input = [a, b]

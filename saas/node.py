@@ -111,7 +111,8 @@ class Node:
             p2p_address=self.p2p.address(),
             rest_address=self.rest.address() if self.rest else None,
             retain_job_history=retain_job_history if enable_rti else None,
-            strict_deployment=strict_deployment if enable_rti else None
+            strict_deployment=strict_deployment if enable_rti else None,
+            job_concurrency=job_concurrency
         ))
 
         # join an existing network of nodes?

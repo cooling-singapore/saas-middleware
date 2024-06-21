@@ -23,22 +23,13 @@ class DORProxy(EndpointProxy):
     def search(self, patterns: list[str] = None, owner_iid: str = None,
                data_type: str = None, data_format: str = None,
                c_hashes: list[str] = None) -> List[DataObject]:
-        body = {}
-
-        if patterns is not None and len(patterns) > 0:
-            body['patterns'] = patterns
-
-        if owner_iid is not None:
-            body['owner_iid'] = owner_iid
-
-        if data_type is not None:
-            body['data_type'] = data_type
-
-        if data_format is not None:
-            body['data_format'] = data_format
-
-        if c_hashes is not None:
-            body['c_hashes'] = c_hashes
+        body = {
+            'patterns': patterns if patterns is not None and len(patterns) > 0 else None,
+            'owner_iid': owner_iid,
+            'data_type': data_type,
+            'data_format': data_format,
+            'c_hashes': c_hashes
+        }
 
         results = self.get('', body=body)
         return [DataObject.parse_obj(result) for result in results]
