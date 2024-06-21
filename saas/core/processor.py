@@ -83,6 +83,7 @@ class ProcessorBase(abc.ABC):
 def find_processors(search_path: str) -> Dict[str, ProcessorBase]:
     result = {}
 
+    print(f"search path: {search_path}")
     for root, dirs, files in os.walk(search_path):
         print(root)
         print(files)
