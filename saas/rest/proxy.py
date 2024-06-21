@@ -1,14 +1,13 @@
 import json
 import traceback
 from datetime import datetime, timezone
-from typing import Union, Optional, BinaryIO, Tuple
+from typing import Union, Optional, Tuple
 
 import canonicaljson
 import pydantic
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from snappy import snappy
 
 from saas.core.exceptions import ExceptionContent
 from saas.core.keystore import Keystore
@@ -98,24 +97,6 @@ def _make_headers(url: str, body: Union[dict, list] = None, authority: Keystore 
         headers['Authorization'] = f"Bearer {token.access_token}"
 
     return headers
-
-
-class Snapper:
-    def __init__(self, source: BinaryIO, chunk_size: int = 1024*1024) -> None:
-        self._source = source
-        self._chunk_size = chunk_size
-
-    def read(self) -> bytes:
-        buffer = bytearray()
-        while True:
-            chunk = self._source.read(self._chunk_size)
-            if not chunk:
-                return bytes(buffer)
-            chunk = snappy.compress(chunk)
-
-            chunk_length = len(chunk)
-            buffer.extend(chunk_length.to_bytes(4, byteorder='big'))
-            buffer.extend(chunk)
 
 
 class Session:
@@ -223,7 +204,7 @@ class EndpointProxy:
             raise UnsuccessfulConnectionError(url)
 
     def put(self, endpoint: str, body: Union[dict, list] = None, parameters: dict = None, attachment_path: str = None,
-            with_authorisation_by: Keystore = None, use_snappy: bool = True) -> Union[dict, list]:
+            with_authorisation_by: Keystore = None) -> Union[dict, list]:
 
         url = self._make_url(endpoint, parameters)
         headers = _make_headers(f"PUT:{url}", body=body, authority=with_authorisation_by,
@@ -235,7 +216,7 @@ class EndpointProxy:
                     response = requests.put(url,
                                             headers=headers,
                                             data={'body': json.dumps(body)} if body else None,
-                                            files={'attachment': Snapper(f) if use_snappy else f}
+                                            files={'attachment': f}
                                             )
 
                     return extract_response(response)
@@ -248,8 +229,7 @@ class EndpointProxy:
             raise UnsuccessfulConnectionError(url)
 
     def post(self, endpoint: str, body: Union[dict, list, str] = None, data=None, parameters: dict = None,
-             attachment_path: str = None, with_authorisation_by: Keystore = None,
-             use_snappy: bool = True) -> Union[dict, list]:
+             attachment_path: str = None, with_authorisation_by: Keystore = None) -> Union[dict, list]:
 
         url = self._make_url(endpoint, parameters)
         headers = _make_headers(f"POST:{url}", body=body, authority=with_authorisation_by,
@@ -261,7 +241,7 @@ class EndpointProxy:
                     response = requests.post(url,
                                              headers=headers,
                                              data={'body': json.dumps(body)} if body else None,
-                                             files={'attachment': Snapper(f) if use_snappy else f}
+                                             files={'attachment': f}
                                              )
 
                     return extract_response(response)

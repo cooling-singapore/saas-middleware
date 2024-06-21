@@ -6,7 +6,6 @@ from stat import S_IREAD, S_IRGRP
 from threading import Lock
 from typing import Optional, List
 
-import snappy
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from fastapi import UploadFile, File, Form
@@ -376,13 +375,11 @@ class DORService:
             with open(attachment_path, 'wb') as f:
                 buffer = bytearray()
                 while True:
-                    chunk = attachment.file.read(4)
+                    # we read 1MB chunks
+                    chunk = attachment.file.read(1024*1024)
                     if not chunk:
                         break
 
-                    chunk_length = int.from_bytes(chunk, 'big')
-                    chunk = attachment.file.read(chunk_length)
-                    chunk = snappy.decompress(chunk)
                     buffer.extend(chunk)
                     digest.update(chunk)
                     f.write(chunk)
