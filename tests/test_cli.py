@@ -427,10 +427,6 @@ def test_cli_identity_credentials_ssh_test(temp_dir):
 
     # add credentials
     try:
-        # with open(os.path.join(os.environ['HOME'], '.password'), 'r') as f:
-        #     passphrase = f.read()
-        #     passphrase = passphrase.strip()
-
         args = {
             'keystore': temp_dir,
             'keystore-id': keystore.identity.id,
@@ -1051,7 +1047,32 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
         assert result is not None
         assert 'proc' in result
         assert result['proc'] is not None
-        proc: Processor = result['proc']
+        # proc: Processor = result['proc']
+
+    except CLIRuntimeError:
+        assert False
+
+    # wait for processor to be deployed
+    try:
+        args = {
+            'keystore': temp_dir,
+            'keystore-id': keystore.identity.id,
+            'password': 'password',
+            'address': f"{address[0]}:{address[1]}",
+            'proc-id': obj.obj_id,
+        }
+
+        while True:
+            cmd = RTIProcShow()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'processor' in result
+            assert result['processor'] is not None
+            proc: Processor = result['processor']
+            if proc.state in [Processor.State.READY, Processor.State.FAILED]:
+                break
+
+            time.sleep(1)
 
     except CLIRuntimeError:
         assert False
@@ -1109,24 +1130,7 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
     except CLIRuntimeError:
         assert False
 
-    # get the status of the job
-    try:
-        args = {
-            'keystore': temp_dir,
-            'keystore-id': keystore.identity.id,
-            'password': 'password',
-            'address': f"{address[0]}:{address[1]}",
-            'job-id': job.id
-        }
-
-        cmd = RTIJobStatus()
-        result = cmd.execute(args)
-        assert result is not None
-        assert 'status' in result
-        assert result['status'] is not None
-
-    except CLIRuntimeError:
-        assert False
+    time.sleep(2)
 
     # cancel the job
     try:
@@ -1147,6 +1151,33 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
     except CLIRuntimeError:
         assert False
 
+    while True:
+        # get the status of the job
+        try:
+            args = {
+                'keystore': temp_dir,
+                'keystore-id': keystore.identity.id,
+                'password': 'password',
+                'address': f"{address[0]}:{address[1]}",
+                'job-id': job.id
+            }
+
+            cmd = RTIJobStatus()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'status' in result
+            assert result['status'] is not None
+
+            status: JobStatus = result['status']
+            if status.state == JobStatus.State.CANCELLED:
+                break
+
+            elif status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
+                assert False
+
+        except CLIRuntimeError:
+            assert False
+
     # undeploy the processor
     try:
         args = {
@@ -1164,6 +1195,9 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
 
     except CLIRuntimeError:
         assert False
+
+    # instead of checking if the processor has been undeployed, we wait for a second which should be enough.
+    time.sleep(1)
 
 
 def prepare_data_object(content_path: str, node: Node, v: int = 1, data_type: str = 'JSONObject',

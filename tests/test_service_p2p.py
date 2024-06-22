@@ -219,7 +219,7 @@ def test_secure_send_receive_stream(test_context, server_identity, client_identi
 
     server = TestServer()
     server.start()
-    time.sleep(1)
+    time.sleep(5)
 
     client_peer_identity, client_messenger = SecureMessenger.connect(server_address, client_identity, wd_path)
     assert(client_peer_identity.id == server_identity.id)

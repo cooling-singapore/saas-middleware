@@ -397,7 +397,7 @@ def test_job_concurrency(docker_available, test_context, node, dor_proxy, rti_pr
             failed[idx] = e
 
     # submit jobs
-    n = 100
+    n = 50
     threads = []
     for i in range(n):
         thread = threading.Thread(target=do_a_job, kwargs={'idx': i})

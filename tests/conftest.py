@@ -17,7 +17,7 @@ from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Processor
 from tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
 
-commit_id = '1ae0d74325412146efba71bc38b9b54bbc1650e6'
+commit_id = '330cf97c00ee0c66007cf2f0e0ebb38e7460d697'
 ssh_key_path = os.path.join(os.environ['HOME'], 'Desktop', 'OneDrive', 'operations', 'ssh', 'id_testing')
 
 
@@ -180,7 +180,7 @@ def deployed_test_processor(docker_available, rti_proxy, dor_proxy, node) -> Dat
             time.sleep(1)
 
         assert(rti_proxy.get_proc(proc_id).state == Processor.State.READY)
-        logger.info(f"Processor to deployed: {proc}")
+        logger.info(f"Processor deployed: {proc}")
 
         yield meta
 
@@ -193,4 +193,4 @@ def deployed_test_processor(docker_available, rti_proxy, dor_proxy, node) -> Dat
         except Exception as e:
             print(e)
 
-        logger.info(f"Processor to undeployed: {proc}")
+        logger.info(f"Processor undeployed: {proc}")
