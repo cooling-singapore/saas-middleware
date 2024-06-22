@@ -522,7 +522,8 @@ class JobRunner(CLICommand, ProgressListener):
             'product': {
                 'c_hash': '',  # valid content hash will be set by the DOR
                 'data_type': output_spec.data_type,
-                'data_format': output_spec.data_format
+                'data_format': output_spec.data_format,
+                'content': None
             }
         }
 
@@ -541,6 +542,7 @@ class JobRunner(CLICommand, ProgressListener):
                     'c_hash': item0.c_hash,
                     'data_type': spec.data_type,
                     'data_format': spec.data_format,
+                    'content': None
                 }
 
         # upload the data object to the DOR
