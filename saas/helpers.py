@@ -1,13 +1,10 @@
-import json
 import socket
 import netifaces
 import ipaddress
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple
 
 import docker
 from docker.models.images import Image
-
-from saas.nodedb.schemas import NodeInfo
 
 
 def determine_local_ip() -> Optional[str]:
@@ -55,31 +52,6 @@ def find_available_port(host: str = 'localhost', port_range: (int, int) = (6000,
             sock.close()
 
     return None
-
-
-def generate_address_port_mapping(network: List[NodeInfo], ports: Dict[str, Tuple[str, int]] = None,
-                                  output_path: str = None) -> Dict[str, int]:
-    # generate the mapping
-    mapping: Dict[str, int] = {}
-    for idx, node in enumerate(network):
-        if node.rest_address:
-            rest_port = 6000 + idx
-            mapping[f"{node.rest_address[0]}:{node.rest_address[1]}"] = rest_port
-            if ports:
-                ports[f"{rest_port}/tcp"] = node.rest_address
-
-        if node.p2p_address:
-            p2p_port = 7000 + idx
-            mapping[f"{node.p2p_address[0]}:{node.p2p_address[1]}"] = p2p_port
-            if ports:
-                ports[f"{p2p_port}/tcp"] = node.p2p_address
-
-    # write to disk (if applicable)
-    if output_path:
-        with open(output_path, 'w') as f:
-            json.dump(mapping, f, indent=2)
-
-    return mapping
 
 
 def docker_find_image(image_name: str) -> List[Image]:

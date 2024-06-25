@@ -23,7 +23,7 @@ from saas.core.logging import Logging
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.helpers import docker_find_image, docker_load_image, docker_delete_image, docker_run_job_container
 from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyUserIsNodeOwner, \
-    VerifyUserIsJobOwnerOrNodeOwner, VerifyProcessorNotBusy, VerifyProcessorNotDeployed
+    VerifyUserIsJobOwnerOrNodeOwner, VerifyProcessorNotBusy
 from saas.rti.exceptions import RTIException, ProcessorNotDeployedError
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX, JobRESTProxy
 from saas.rti.schemas import Processor, Job, Task, JobStatus
@@ -122,8 +122,7 @@ class RTIService:
 
             EndpointDefinition('POST', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
                                self.deploy, Processor,
-                               [VerifyProcessorNotDeployed, VerifyUserIsNodeOwner] if self._strict_deployment else
-                               [VerifyProcessorNotDeployed]),
+                               [VerifyUserIsNodeOwner] if self._strict_deployment else []),
 
             EndpointDefinition('DELETE', RTI_ENDPOINT_PREFIX, 'proc/{proc_id}',
                                self.undeploy, Processor,
@@ -320,6 +319,13 @@ class RTIService:
         """
         Deploys a processor.
         """
+
+        # is the processor already deployed?
+        proc = self.get_proc(proc_id)
+        if proc is not None:
+            return proc
+
+        # begin deployment
         with self._mutex:
             # create a placeholder processor object
             proc = Processor(id=proc_id, state=Processor.State.BUSY_DEPLOY, image_name=None, gpp=None, error=None)

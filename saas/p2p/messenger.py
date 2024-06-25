@@ -7,8 +7,6 @@ import base64
 import socket
 from typing import Optional
 
-import snappy
-
 from pydantic import BaseModel
 
 from cryptography.hazmat.primitives import hashes
@@ -275,7 +273,6 @@ class SecureMessenger:
         return total_written
 
     def _send_chunk(self, chunk: bytes) -> int:
-        chunk = snappy.compress(chunk)
         chunk = self._cipher.encrypt(chunk) if self._cipher else chunk
         chunk_length = len(chunk)
         total_sent = self._send_data(chunk_length.to_bytes(4, byteorder='big'))
@@ -286,7 +283,6 @@ class SecureMessenger:
         chunk_length = int.from_bytes(self._receive_data(4), 'big')
         chunk = self._receive_data(chunk_length)
         chunk = self._cipher.decrypt(chunk) if self._cipher else chunk
-        chunk = snappy.decompress(chunk)
         return chunk
 
     def _send_data(self, data: bytes) -> int:

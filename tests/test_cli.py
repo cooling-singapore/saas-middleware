@@ -33,14 +33,16 @@ from saas.helpers import find_available_port, docker_export_image
 from saas.node import Node
 from saas.rti.proxy import JobRESTProxy
 from saas.rti.schemas import Task, Job, JobStatus, Severity, ExitCode, JobResult, Processor
-from saas.sdk.processor import ProgressListener, ProcessorBase, ProcessorRuntimeError, find_processors
+from saas.core.processor import ProgressListener, ProcessorBase, ProcessorRuntimeError, find_processors
 from tests.base_testcase import PortMaster
-from tests.conftest import commit_id
+from tests.conftest import commit_id, ssh_key_path
 
 logger = Logging.get(__name__)
+repo_root_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+examples_path = os.path.join(repo_root_path, 'examples')
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def temp_dir():
     with tempfile.TemporaryDirectory() as tempdir:
         yield tempdir
@@ -399,6 +401,9 @@ def test_cli_identity_credentials_list_add_remove(temp_dir):
 
 
 def test_cli_identity_credentials_ssh_test(temp_dir):
+    if not os.path.isfile(ssh_key_path):
+        pytest.skip("SSH key not found")
+
     # create an identity
     try:
         args = {
@@ -422,10 +427,6 @@ def test_cli_identity_credentials_ssh_test(temp_dir):
 
     # add credentials
     try:
-        # with open(os.path.join(os.environ['HOME'], '.password'), 'r') as f:
-        #     passphrase = f.read()
-        #     passphrase = passphrase.strip()
-
         args = {
             'keystore': temp_dir,
             'keystore-id': keystore.identity.id,
@@ -433,9 +434,8 @@ def test_cli_identity_credentials_ssh_test(temp_dir):
             'name': 'onprem',
             'host': '10.8.0.10',
             'login': 'heikoaydt',
-            'key': os.path.join(os.environ['HOME'], 'Desktop', 'OneDrive', 'operations', 'ssh', 'id_heikoaydt'),
-            # 'passphrase': passphrase
-            'passphrase': 'wrong_password'
+            'key': ssh_key_path,
+            'passphrase': ''
         }
 
         cmd = CredentialsAddSSHCredentials()
@@ -932,26 +932,34 @@ def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir
     except CLIRuntimeError:
         assert False
 
-    # show the details of the deployed processor
-    try:
-        args = {
-            'keystore': temp_dir,
-            'keystore-id': keystore.identity.id,
-            'password': 'password',
-            'address': f"{address[0]}:{address[1]}",
-            'proc-id': obj.obj_id
-        }
+    while True:
+        # show the details of the deployed processor
+        try:
+            args = {
+                'keystore': temp_dir,
+                'keystore-id': keystore.identity.id,
+                'password': 'password',
+                'address': f"{address[0]}:{address[1]}",
+                'proc-id': obj.obj_id
+            }
 
-        cmd = RTIProcShow()
-        result = cmd.execute(args)
-        assert result is not None
-        assert 'processor' in result
-        assert 'jobs' in result
-        assert result['processor'] is not None
-        assert len(result['jobs']) == 0
+            cmd = RTIProcShow()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'processor' in result
+            assert 'jobs' in result
+            assert result['processor'] is not None
+            assert len(result['jobs']) == 0
 
-    except CLIRuntimeError:
-        assert False
+        except CLIRuntimeError:
+            assert False
+
+        proc: Processor = result['processor']
+        if proc.state in [Processor.State.READY, Processor.State.FAILED]:
+            break
+
+        else:
+            time.sleep(1)
 
     # undeploy the processor
     try:
@@ -970,6 +978,8 @@ def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir
 
     except CLIRuntimeError:
         assert False
+
+    time.sleep(1)
 
     # get list of deployed processors
     try:
@@ -1047,7 +1057,32 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
         assert result is not None
         assert 'proc' in result
         assert result['proc'] is not None
-        proc: Processor = result['proc']
+        # proc: Processor = result['proc']
+
+    except CLIRuntimeError:
+        assert False
+
+    # wait for processor to be deployed
+    try:
+        args = {
+            'keystore': temp_dir,
+            'keystore-id': keystore.identity.id,
+            'password': 'password',
+            'address': f"{address[0]}:{address[1]}",
+            'proc-id': obj.obj_id,
+        }
+
+        while True:
+            cmd = RTIProcShow()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'processor' in result
+            assert result['processor'] is not None
+            proc: Processor = result['processor']
+            if proc.state in [Processor.State.READY, Processor.State.FAILED]:
+                break
+
+            time.sleep(1)
 
     except CLIRuntimeError:
         assert False
@@ -1105,24 +1140,7 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
     except CLIRuntimeError:
         assert False
 
-    # get the status of the job
-    try:
-        args = {
-            'keystore': temp_dir,
-            'keystore-id': keystore.identity.id,
-            'password': 'password',
-            'address': f"{address[0]}:{address[1]}",
-            'job-id': job.id
-        }
-
-        cmd = RTIJobStatus()
-        result = cmd.execute(args)
-        assert result is not None
-        assert 'status' in result
-        assert result['status'] is not None
-
-    except CLIRuntimeError:
-        assert False
+    time.sleep(2)
 
     # cancel the job
     try:
@@ -1143,6 +1161,35 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
     except CLIRuntimeError:
         assert False
 
+    while True:
+        # get the status of the job
+        try:
+            args = {
+                'keystore': temp_dir,
+                'keystore-id': keystore.identity.id,
+                'password': 'password',
+                'address': f"{address[0]}:{address[1]}",
+                'job-id': job.id
+            }
+
+            cmd = RTIJobStatus()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'status' in result
+            assert result['status'] is not None
+
+            status: JobStatus = result['status']
+            if status.state == JobStatus.State.CANCELLED:
+                break
+
+            elif status.state in [JobStatus.State.SUCCESSFUL, JobStatus.State.FAILED]:
+                assert False
+
+        except CLIRuntimeError:
+            assert False
+
+    time.sleep(1)
+
     # undeploy the processor
     try:
         args = {
@@ -1150,13 +1197,34 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
             'keystore-id': keystore.identity.id,
             'password': 'password',
             'address': f"{address[0]}:{address[1]}",
-            'proc-id': [obj.obj_id]
+            'proc-id': [obj.obj_id],
+            'force': True
         }
 
         cmd = RTIProcUndeploy()
         result = cmd.execute(args)
         assert result is not None
         assert obj.obj_id in result
+
+    except CLIRuntimeError:
+        assert False
+
+    time.sleep(1)
+
+    # get list of deployed processors
+    try:
+        args = {
+            'keystore': temp_dir,
+            'keystore-id': keystore.identity.id,
+            'password': 'password',
+            'address': f"{address[0]}:{address[1]}"
+        }
+
+        cmd = RTIProcList()
+        result = cmd.execute(args)
+        assert result is not None
+        assert 'deployed' in result
+        assert len(result['deployed']) == 0
 
     except CLIRuntimeError:
         assert False
@@ -1206,10 +1274,10 @@ def prepare_full_job_folder(jobs_root_path: str, node: Node, user: Identity, pro
     elif isinstance(b, (int, str)):
         b = {'v': b}
 
-    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id, user_signature=sig_a) \
+    a = Task.InputReference(name='a', type='reference', obj_id=a.obj_id, user_signature=sig_a, c_hash=None) \
         if isinstance(a, DataObject) else Task.InputValue(name='a', type='value', value=a)
 
-    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id, user_signature=sig_b) \
+    b = Task.InputReference(name='b', type='reference', obj_id=b.obj_id, user_signature=sig_b, c_hash=None) \
         if isinstance(b, DataObject) else Task.InputValue(name='b', type='value', value=b)
 
     c = Task.Output(name='c', owner_iid=user.id, restricted_access=False, content_encrypted=False,
@@ -1245,7 +1313,7 @@ def run_job_cmd(job_path: str, host: str, port: int) -> None:
     cmd = JobRunner()
     args = {
         'job_path': job_path,
-        'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples'),
+        'proc_path': examples_path,
         'proc_name': 'example-processor',
         'rest_address': f"{host}:{port}"
     }
@@ -1256,7 +1324,7 @@ def run_job_cmd_noname(job_path: str, host: str, port: int) -> None:
     cmd = JobRunner()
     args = {
         'job_path': job_path,
-        'proc_path': os.path.join(os.path.abspath(os.getcwd()), '..', 'examples', 'adapters', 'proc_example'),
+        'proc_path': os.path.join(examples_path, 'adapters', 'proc_example'),
         'rest_address': f"{host}:{port}"
     }
     cmd.execute(args)
@@ -1367,13 +1435,12 @@ def wait_for_job_runner(job_path: str, rest_address: (str, int)) -> Tuple[Option
 
 
 def test_job_worker_done(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_00'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 1, 1)
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
@@ -1394,13 +1461,12 @@ def test_job_worker_done(temp_dir):
 
 
 def test_job_worker_interrupted(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_01'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 5, 5)
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
@@ -1422,13 +1488,12 @@ def test_job_worker_interrupted(temp_dir):
 
 
 def test_job_worker_error(temp_dir):
-    job_id = 'abcd1234'
+    job_id = 'abcd1234_02'
     job_path = os.path.join(temp_dir, job_id)
     prepare_plain_job_folder(temp_dir, job_id, 1, 'sdf')
 
     # find the Example processor
-    search_path = os.path.join(os.path.abspath(os.getcwd()), '..', 'examples')
-    result = find_processors(search_path)
+    result = find_processors(examples_path)
     proc = result.get('example-processor')
     assert(proc is not None)
 
@@ -1454,7 +1519,7 @@ def test_cli_runner_success_by_value(docker_available, temp_dir, node, deployed_
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_00'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
 
     # determine REST address
@@ -1475,7 +1540,7 @@ def test_cli_runner_failing_validation(docker_available, temp_dir, node, deploye
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_01'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
                                        a={'wrong': 55}, b=1)
 
@@ -1502,7 +1567,7 @@ def test_cli_runner_success_by_reference(docker_available, temp_dir, node, deplo
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_02'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1530,7 +1595,7 @@ def test_cli_runner_failing_no_access(docker_available, temp_dir, node, deployed
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1, access=[node.identity])
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_03'
     job_path = prepare_full_job_folder(temp_dir, node, user.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1556,7 +1621,7 @@ def test_cli_runner_failing_no_signature(docker_available, temp_dir, node, deplo
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1, access=[node.identity])
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_04'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1586,7 +1651,7 @@ def test_cli_runner_failing_no_data_object(docker_available, temp_dir, node, dep
     proxy.delete_data_object(b.obj_id, node.keystore)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_05'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1612,7 +1677,7 @@ def test_cli_runner_failing_wrong_data_type(docker_available, temp_dir, node, de
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_06'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1638,7 +1703,7 @@ def test_cli_runner_failing_wrong_data_format(docker_available, temp_dir, node, 
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_07'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=a, b=b)
 
     # determine REST address
@@ -1660,7 +1725,7 @@ def test_cli_runner_success_no_name(docker_available, temp_dir, node, deployed_t
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_08'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=1, b=1)
 
     # determine REST address
@@ -1681,7 +1746,7 @@ def test_cli_runner_cancelled(docker_available, temp_dir, node, deployed_test_pr
         pytest.skip("Docker is not available")
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_09'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id, a=5, b=6)
 
     # determine REST address
@@ -1710,7 +1775,7 @@ def test_cli_runner_success_non_dor_target(docker_available, temp_dir, node, exe
     b = prepare_data_object(os.path.join(temp_dir, 'b'), node, 1)
 
     # prepare the job folder
-    job_id = '398h36g3'
+    job_id = '398h36g3_10'
     job_path = prepare_full_job_folder(temp_dir, node, node.identity, deployed_test_processor, job_id,
                                        a=a, b=b, target_node=exec_only_node)
 

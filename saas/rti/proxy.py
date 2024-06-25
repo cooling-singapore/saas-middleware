@@ -46,14 +46,10 @@ class RTIProxy(EndpointProxy):
             'proc_id': proc_id,
             'input': [i.dict() for i in job_input],
             'output': [o.dict() for o in job_output],
-            'user_iid': with_authorisation_by.identity.id
+            'user_iid': with_authorisation_by.identity.id,
+            'name': name,
+            'description': description
         }
-
-        if name is not None:
-            body['name'] = name
-
-        if description is not None:
-            body['description'] = description
 
         # post the request
         result = self.post(f"proc/{proc_id}/jobs", body=body, with_authorisation_by=with_authorisation_by)

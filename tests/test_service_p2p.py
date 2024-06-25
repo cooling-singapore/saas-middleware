@@ -219,7 +219,7 @@ def test_secure_send_receive_stream(test_context, server_identity, client_identi
 
     server = TestServer()
     server.start()
-    time.sleep(1)
+    time.sleep(5)
 
     client_peer_identity, client_messenger = SecureMessenger.connect(server_address, client_identity, wd_path)
     assert(client_peer_identity.id == server_identity.id)
@@ -254,10 +254,11 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
             logger.debug(f"request received: {request}")
 
             server_messenger.send_response(P2PMessage.parse_obj({
-                'sequence_id': request.sequence_id,
                 'protocol': request.protocol,
                 'type': 'A',
-                'content': {'answer': '42'}
+                'content': {'answer': '42'},
+                'attachment': None,
+                'sequence_id': request.sequence_id
             }))
             server_messenger.close()
 
@@ -273,7 +274,9 @@ def test_secure_send_receive_request(test_context, server_identity, client_ident
     response = client_messenger.send_message(P2PMessage.parse_obj({
         'protocol': 'Hitchhiker',
         'type': 'Q',
-        'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'}
+        'content': {'question': 'What is the answer to the ultimate question of life, the universe and everything?'},
+        'attachment': None,
+        'sequence_id': None
     }))
 
     logger.debug(f"response received: {response}")

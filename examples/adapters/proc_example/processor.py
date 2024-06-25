@@ -5,7 +5,7 @@ import time
 from typing import Any
 
 from saas.core.helpers import get_timestamp_now
-from saas.sdk.processor import ProcessorBase, ProgressListener, Severity
+from saas.core.processor import ProcessorBase, ProgressListener, Severity
 
 
 def read_value(data_object_path: str) -> int:

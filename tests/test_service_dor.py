@@ -121,11 +121,12 @@ def test_add_c_large(test_context, keystore, dor_proxy):
     def upload_cycle(size: int) -> (int, float, float, float):
         t0 = get_timestamp_now()
         generate_random_file(content_path, size)
+        file_hash = hash_file_content(content_path).hex()
         t1 = get_timestamp_now()
         obj = dor_proxy.add_data_object(content_path, owner.identity, False, False, 'JSON', 'json')
         t2 = get_timestamp_now()
         assert (obj is not None)
-        assert (obj.c_hash == hash_file_content(content_path).hex())
+        assert (obj.c_hash == file_hash)
         t3 = get_timestamp_now()
 
         dor_proxy.delete_data_object(obj.obj_id, with_authorisation_by=owner)
@@ -231,15 +232,18 @@ def test_get_provenance(test_context, keystore, dor_proxy):
                 'name': 'a',
                 'data_type': 'JSON',
                 'data_format': 'json',
+                'data_schema': None
             }, {
                 'name': 'b',
                 'data_type': 'JSON',
                 'data_format': 'json',
+                'data_schema': None
             }],
             'output': [{
                 'name': 'c',
                 'data_type': 'JSON',
                 'data_format': 'json',
+                'data_schema': None
             }]
         }
     }
@@ -265,7 +269,8 @@ def test_get_provenance(test_context, keystore, dor_proxy):
             'a': {
                 'c_hash': meta_a.c_hash,
                 'data_type': 'JSON',
-                'data_format': 'json'
+                'data_format': 'json',
+                'content': None
             },
             'b': {
                 'c_hash': b_c_hash,
@@ -277,7 +282,8 @@ def test_get_provenance(test_context, keystore, dor_proxy):
         'product': {
             'c_hash': 'unknown',
             'data_type': 'JSON',
-            'data_format': 'json'
+            'data_format': 'json',
+            'content': None
         },
         'name': 'c'
     })

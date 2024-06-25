@@ -1,6 +1,7 @@
 import random
 import string
 import logging
+import time
 
 import pytest
 from pydantic import BaseModel
@@ -140,16 +141,18 @@ class TestProxy(EndpointProxy):
         return TestResponse.parse_obj(result)
 
 
-@pytest.fixture()
+@pytest.fixture(scope='session')
 def rest_node(test_context, keystore):
     _node = test_context.get_node(keystore, enable_rest=True)
     rest_service = TestRESTService()
 
     _node.rest.add(rest_service.endpoints())
+    time.sleep(5)
+
     return _node
 
 
-@pytest.fixture()
+@pytest.fixture(scope='session')
 def rest_test_proxy(rest_node):
     proxy = TestProxy(rest_node.rest.address())
     return proxy

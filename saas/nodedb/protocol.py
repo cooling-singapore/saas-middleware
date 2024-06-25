@@ -126,6 +126,6 @@ class NodeDBP2PProtocol(P2PProtocol):
         self.broadcast(self._node.db.get_network(), UpdateMessage(
             origin_who=self._node.identity,
             origin_node=self._node.db.get_node(),
-            snapshot=NodeDBSnapshot(update_identity=[identity]),
+            snapshot=NodeDBSnapshot(update_identity=[identity], update_network=None),
             reciprocate=False
         ))

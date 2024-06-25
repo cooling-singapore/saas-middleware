@@ -19,7 +19,7 @@ class LookupRequest(BaseModel):
 
 
 class LookupResponse(BaseModel):
-    records: Dict[str, dict]
+    records: Dict[str, DataObject]
 
 
 class FetchRequest(BaseModel):
@@ -30,7 +30,7 @@ class FetchRequest(BaseModel):
 
 class FetchResponse(BaseModel):
     successful: bool
-    meta: Optional[Dict]
+    meta: Optional[DataObject]
     details: Optional[Dict]
 
 
@@ -55,9 +55,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
 
     def lookup(self, peer_address: (str, int), obj_ids: List[str]) -> Dict[str, DataObject]:
         response, _, _ = self.request(peer_address, LookupRequest(obj_ids=obj_ids))
-        result: Dict[str, dict] = response.records
-        result: Dict[str, DataObject] = {key: DataObject.parse_obj(value) for key, value in result.items()}
-        return result
+        return response.records
 
     def _handle_lookup(self, request: LookupRequest, _) -> LookupResponse:
         records = {obj_id: self._node.dor.get_meta(obj_id) for obj_id in request.obj_ids}
@@ -85,7 +83,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             })
 
         # write the data object descriptor to the destination path
-        write_json_to_file(response.meta, destination_meta_path)
+        write_json_to_file(response.meta.dict(), destination_meta_path)
 
         # move the data object content to the destination path
         os.rename(attachment, destination_content_path)
@@ -96,7 +94,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # check if we have that data object
         meta = self._node.dor.get_meta(request.obj_id)
         if not meta:
-            return FetchResponse(successful=False, details={
+            return FetchResponse(successful=False, meta=None, details={
                 'reason': 'object not found',
                 'obj_id': request.obj_id
             })
@@ -106,14 +104,14 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             # get the identity of the user
             user = self._node.db.get_identity(request.user_iid)
             if user is None:
-                return FetchResponse(successful=False, details={
+                return FetchResponse(successful=False, meta=None, details={
                     'reason': 'identity of user not found',
                     'user_iid': request.user_iid
                 })
 
             # check if the user has permission to access this data object
             if user.id not in meta.access:
-                return FetchResponse(successful=False, details={
+                return FetchResponse(successful=False, meta=None, details={
                     'reason': 'user does not have access',
                     'user_iid': request.user_iid,
                     'obj_id': request.obj_id
@@ -122,7 +120,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
             # verify the access request
             token = f"{peer.id}:{request.obj_id}".encode('utf-8')
             if not user.verify(token, request.user_signature):
-                return FetchResponse(successful=False, details={
+                return FetchResponse(successful=False, meta=None, details={
                     'reason': 'authorisation failed',
                     'user_iid': request.user_iid,
                     'obj_id': request.obj_id,
@@ -133,7 +131,7 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         # we should have the data object content in our local DOR
         content_path = self._node.dor.obj_content_path(meta.c_hash)
         if not os.path.isfile(content_path):
-            return FetchResponse(successful=False, details={
+            return FetchResponse(successful=False, meta=None, details={
                 'reason': 'data object content not found',
                 'user_iid': request.user_iid,
                 'obj_id': request.obj_id,
@@ -144,4 +142,4 @@ class DataObjectRepositoryP2PProtocol(P2PProtocol):
         self._node.dor.touch_data_object(meta.obj_id)
 
         # if all is good, send a reply with the meta information followed by the data object content as attachment
-        return FetchResponse(successful=True, meta=meta), content_path
+        return FetchResponse(successful=True, meta=meta, details=None), content_path

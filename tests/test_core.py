@@ -241,7 +241,7 @@ def test_add_credentials(temp_directory):
                                                               personal_access_token=personal_access_token))
 
     keystore.ssh_credentials.update('my-remote-machine', SSHCredentials(host=host, login=login, key=key,
-                                                                        key_is_password=True))
+                                                                        passphrase='password'))
     keystore.sync()
 
     keystore = Keystore.load(os.path.join(temp_directory, f"{keystore.identity.id}.json"), 'password')

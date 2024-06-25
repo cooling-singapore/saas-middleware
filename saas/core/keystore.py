@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from saas.core.eckeypair import ECKeyPair
 from saas.core.exceptions import SaaSRuntimeException
-from saas.core.helpers import hash_json_object
+from saas.core.helpers import hash_json_object, get_timestamp_now
 from saas.core.keypair import KeyPair
 from saas.core.logging import Logging
 from saas.core.rsakeypair import RSAKeyPair
@@ -218,7 +218,8 @@ class Keystore:
                                   s_public_key=self._s_key.public_as_string(),
                                   e_public_key=self._e_key.public_as_string(),
                                   nonce=self._content.nonce,
-                                  signature=signature)
+                                  signature=signature,
+                                  last_seen=get_timestamp_now())
 
         # verify the identity's integrity
         if not self._identity.verify_integrity():

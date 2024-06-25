@@ -27,7 +27,7 @@ from saas.nodedb.schemas import NodeInfo
 from saas.core.schemas import KeystoreContent
 from saas.rest.exceptions import UnsuccessfulRequestError
 
-logger = Logging.get('cli.helpers')
+logger = Logging.get('cli')
 
 
 def shorten_id(long_id: str) -> str:
