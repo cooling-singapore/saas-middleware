@@ -971,6 +971,8 @@ def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir
     except CLIRuntimeError:
         assert False
 
+    time.sleep(1)
+
     # get list of deployed processors
     try:
         args = {
@@ -1178,6 +1180,8 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
         except CLIRuntimeError:
             assert False
 
+    time.sleep(1)
+
     # undeploy the processor
     try:
         args = {
@@ -1196,6 +1200,8 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
 
     except CLIRuntimeError:
         assert False
+
+    time.sleep(1)
 
     # get list of deployed processors
     try:
