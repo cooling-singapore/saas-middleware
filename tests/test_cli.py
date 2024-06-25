@@ -932,26 +932,34 @@ def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir
     except CLIRuntimeError:
         assert False
 
-    # show the details of the deployed processor
-    try:
-        args = {
-            'keystore': temp_dir,
-            'keystore-id': keystore.identity.id,
-            'password': 'password',
-            'address': f"{address[0]}:{address[1]}",
-            'proc-id': obj.obj_id
-        }
+    while True:
+        # show the details of the deployed processor
+        try:
+            args = {
+                'keystore': temp_dir,
+                'keystore-id': keystore.identity.id,
+                'password': 'password',
+                'address': f"{address[0]}:{address[1]}",
+                'proc-id': obj.obj_id
+            }
 
-        cmd = RTIProcShow()
-        result = cmd.execute(args)
-        assert result is not None
-        assert 'processor' in result
-        assert 'jobs' in result
-        assert result['processor'] is not None
-        assert len(result['jobs']) == 0
+            cmd = RTIProcShow()
+            result = cmd.execute(args)
+            assert result is not None
+            assert 'processor' in result
+            assert 'jobs' in result
+            assert result['processor'] is not None
+            assert len(result['jobs']) == 0
 
-    except CLIRuntimeError:
-        assert False
+        except CLIRuntimeError:
+            assert False
+
+        proc: Processor = result['processor']
+        if proc.state in [Processor.State.READY, Processor.State.FAILED]:
+            break
+
+        else:
+            time.sleep(1)
 
     # undeploy the processor
     try:
