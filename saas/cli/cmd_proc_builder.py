@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from typing import Optional, Tuple
 
 import docker
@@ -10,14 +11,17 @@ from git import Repo, NoSuchPathError, GitCommandError
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLICommand, Argument, prompt_for_string, prompt_if_missing, load_keystore, \
     default_if_missing
+from saas.core.logging import Logging
 from saas.dor.proxy import DORProxy
 from saas.dor.schemas import ProcessorDescriptor, DataObject, GitProcessorPointer
 from saas.helpers import docker_export_image, determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 
+logger = Logging.get('cli')
+
 
 def clone_repository(repository_url: str, repository_path: str, commit_id: str = None,
-                     credentials: Optional[Tuple[str, str]] = None) -> int:
+                     credentials: Optional[Tuple[str, str]] = None, max_attempts: int = 3) -> int:
     # do we have credentials? inject it into the repo URL
     if credentials:
         idx = repository_url.index('github.com')
@@ -28,28 +32,43 @@ def clone_repository(repository_url: str, repository_path: str, commit_id: str =
     # does the destination already exist?
     shutil.rmtree(repository_path, ignore_errors=True)
 
-    try:
-        # clone the repo
-        Repo.clone_from(repository_url, repository_path)
-        repo = Repo(repository_path)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            # clone the repo
+            Repo.clone_from(repository_url, repository_path)
+            repo = Repo(repository_path)
 
-        # checkout a specific commit
-        repo.git.checkout(commit_id)
+            # checkout a specific commit
+            repo.git.checkout(commit_id)
 
-        # determine the commit timestamp
-        commit = repo.commit(commit_id)
-        commit_timestamp = commit.authored_datetime.timestamp()
+            # determine the commit timestamp
+            commit = repo.commit(commit_id)
+            commit_timestamp = commit.authored_datetime.timestamp()
 
-        return int(commit_timestamp)
+            return int(commit_timestamp)
 
-    except NoSuchPathError as e:
-        raise CLIRuntimeError(reason=str(e))
+        except NoSuchPathError as e:
+            if attempt <= max_attempts:
+                logger.error(f"Cloning repository '{repository_url}' failed: {e} -> Trying again in 30 seconds...")
+                time.sleep(30)
+            else:
+                raise CLIRuntimeError(reason=str(e))
 
-    except GitCommandError as e:
-        raise CLIRuntimeError(reason=str(e))
+        except GitCommandError as e:
+            if attempt <= max_attempts:
+                logger.error(f"Cloning repository '{repository_url}' failed: {e} -> Trying again in 30 seconds...")
+                time.sleep(30)
+            else:
+                raise CLIRuntimeError(reason=str(e))
 
-    except Exception as e:
-        raise CLIRuntimeError(reason=f"Unexpected: {e}")
+        except Exception as e:
+            if attempt <= max_attempts:
+                logger.error(f"Cloning repository '{repository_url}' failed: {e} -> Trying again in 30 seconds...")
+                time.sleep(30)
+            else:
+                raise CLIRuntimeError(reason=f"Unexpected: {e}")
 
 
 def build_processor_image(repository_path: str, processor_path: str,

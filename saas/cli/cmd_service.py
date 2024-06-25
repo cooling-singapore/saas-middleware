@@ -12,7 +12,7 @@ from saas.core.logging import Logging
 from saas.helpers import determine_default_rest_address, determine_default_p2p_address
 from saas.node import Node
 
-logger = Logging.get('cli.service')
+logger = Logging.get('cli')
 
 
 class WaitForTermination:

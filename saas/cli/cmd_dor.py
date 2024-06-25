@@ -19,7 +19,7 @@ from saas.nodedb.proxy import NodeDBProxy
 from saas.dor.schemas import DataObject
 from saas.rest.exceptions import UnsuccessfulRequestError
 
-logger = Logging.get('cli.dor')
+logger = Logging.get('cli')
 
 
 def _require_dor(args: dict) -> DORProxy:

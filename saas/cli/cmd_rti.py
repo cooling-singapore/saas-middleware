@@ -22,7 +22,7 @@ from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Processor, Task, JobStatus, Job
 from saas.dor.schemas import ProcessorDescriptor, DataObject
 
-logger = Logging.get('cli.rti')
+logger = Logging.get('cli')
 
 
 def _require_rti(args: dict) -> RTIProxy:

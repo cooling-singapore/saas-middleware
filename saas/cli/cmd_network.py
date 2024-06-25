@@ -8,7 +8,7 @@ from saas.core.logging import Logging
 from saas.helpers import determine_default_rest_address
 from saas.nodedb.proxy import NodeDBProxy
 
-logger = Logging.get('cli.network')
+logger = Logging.get('cli')
 
 
 class NetworkList(CLICommand):
