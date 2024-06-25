@@ -23,7 +23,7 @@ from saas.core.logging import Logging
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
 from saas.helpers import docker_find_image, docker_load_image, docker_delete_image, docker_run_job_container
 from saas.rest.auth import VerifyAuthorisation, VerifyProcessorDeployed, VerifyUserIsNodeOwner, \
-    VerifyUserIsJobOwnerOrNodeOwner, VerifyProcessorNotBusy, VerifyProcessorNotDeployed
+    VerifyUserIsJobOwnerOrNodeOwner, VerifyProcessorNotBusy
 from saas.rti.exceptions import RTIException, ProcessorNotDeployedError
 from saas.rti.proxy import RTI_ENDPOINT_PREFIX, JobRESTProxy
 from saas.rti.schemas import Processor, Job, Task, JobStatus
