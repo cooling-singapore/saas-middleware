@@ -1185,7 +1185,8 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
             'keystore-id': keystore.identity.id,
             'password': 'password',
             'address': f"{address[0]}:{address[1]}",
-            'proc-id': [obj.obj_id]
+            'proc-id': [obj.obj_id],
+            'force': True
         }
 
         cmd = RTIProcUndeploy()
@@ -1196,8 +1197,23 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
     except CLIRuntimeError:
         assert False
 
-    # instead of checking if the processor has been undeployed, we wait for a second which should be enough.
-    time.sleep(1)
+    # get list of deployed processors
+    try:
+        args = {
+            'keystore': temp_dir,
+            'keystore-id': keystore.identity.id,
+            'password': 'password',
+            'address': f"{address[0]}:{address[1]}"
+        }
+
+        cmd = RTIProcList()
+        result = cmd.execute(args)
+        assert result is not None
+        assert 'deployed' in result
+        assert len(result['deployed']) == 0
+
+    except CLIRuntimeError:
+        assert False
 
 
 def prepare_data_object(content_path: str, node: Node, v: int = 1, data_type: str = 'JSONObject',

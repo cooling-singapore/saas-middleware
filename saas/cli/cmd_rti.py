@@ -116,7 +116,9 @@ class RTIProcUndeploy(CLICommand):
     def __init__(self):
         super().__init__('undeploy', 'undeploys a processor', arguments=[
             Argument('proc-id', metavar='proc-id', type=str, nargs='*',
-                     help="the ids of the processors to be undeployed")
+                     help="the ids of the processors to be undeployed"),
+            Argument('--force', dest="force", action='store_const', const=True,
+                     help="Force undeployment even if there are still active jobs."),
         ])
 
     def execute(self, args: dict) -> Optional[dict]:
@@ -149,7 +151,7 @@ class RTIProcUndeploy(CLICommand):
 
             # are there any jobs pending for this processor?
             jobs = rti.get_jobs_by_proc(proc_id)
-            if len(jobs) > 0:
+            if len(jobs) > 0 and not args['force']:
                 if not prompt_for_confirmation(f"Processor {proc_id} has pending/active jobs. Proceed to undeploy "
                                                f"processor? If yes, all pending/active jobs will be purged.",
                                                default=False):
