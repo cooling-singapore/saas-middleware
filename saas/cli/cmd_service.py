@@ -1,3 +1,4 @@
+import logging
 import os
 import signal
 import time
@@ -13,6 +14,9 @@ from saas.helpers import determine_default_rest_address, determine_default_p2p_a
 from saas.node import Node
 
 logger = Logging.get('cli')
+
+# deactivate annoying DEBUG messages by multipart
+logging.getLogger('multipart.multipart').setLevel(logging.WARNING)
 
 
 class WaitForTermination:

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import traceback
@@ -17,6 +18,9 @@ from saas.cli.cmd_rti import RTIProcDeploy, RTIProcUndeploy, RTIJobSubmit, RTIJo
 from saas.cli.cmd_service import Service
 from saas.cli.exceptions import CLIRuntimeError
 from saas.cli.helpers import CLIParser, Argument, CLICommandGroup
+
+# deactivate annoying DEBUG messages by multipart
+logging.getLogger('multipart.multipart').setLevel(logging.WARNING)
 
 
 def main():

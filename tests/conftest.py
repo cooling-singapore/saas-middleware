@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -19,6 +20,9 @@ from tests.base_testcase import TestContext, update_keystore_from_credentials, P
 
 commit_id = '330cf97c00ee0c66007cf2f0e0ebb38e7460d697'
 ssh_key_path = os.path.join(os.environ['HOME'], 'Desktop', 'OneDrive', 'operations', 'ssh', 'id_testing')
+
+# deactivate annoying DEBUG messages by multipart
+logging.getLogger('multipart.multipart').setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope='session')
