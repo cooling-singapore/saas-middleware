@@ -82,7 +82,7 @@ def docker_export_image(image_name: str, output_path: str, keep_image: bool = Tr
 def docker_load_image(image_path: str, image_name: str, undo_if_no_match: bool = True) -> Optional[Image]:
     client = docker.from_env()
     with open(image_path, 'rb') as f:
-        loaded_images = client.images.load(f.read())
+        loaded_images = client.images.from_file(f.read())
 
         # does the image name match?
         found = None

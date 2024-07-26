@@ -74,7 +74,7 @@ class RunNode(CLICommand):
 
         # try to unlock the keystore
         try:
-            keystore = Keystore.load(os.path.join(args['keystore'], f"{args['keystore-id']}.json"), args['password'])
+            keystore = Keystore.from_file(os.path.join(args['keystore'], f"{args['keystore-id']}.json"), args['password'])
 
         except SaaSRuntimeException as e:
             raise CLIRuntimeError(f"Could not open keystore {args['keystore-id']} because '{e.reason}'. Aborting.")

@@ -32,7 +32,7 @@ class IdentityCreate(CLICommand):
         prompt_if_missing(args, 'email', prompt_for_string, message="Enter email:")
         prompt_if_missing(args, 'password', prompt_for_password)
 
-        keystore = Keystore.create(args['keystore'], args['name'], args['email'], args['password'])
+        keystore = Keystore.new(args['name'], args['email'], path=args['keystore'], password=args['password'])
         identity = keystore.identity
 
         print("New keystore created!")

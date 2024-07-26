@@ -182,7 +182,7 @@ class TestContext:
     def create_keystores(self, n: int, use_credentials: bool = False) -> List[Keystore]:
         keystores = []
         for i in range(n):
-            keystore = Keystore.create(self.testing_dir, f"keystore_{i}", "no-email-provided", f"password_{i}")
+            keystore = Keystore.new(f"keystore_{i}", "no-email-provided", path=self.testing_dir, password=f"password_{i}")
             keystores.append(keystore)
 
             # update keystore credentials (if applicable)
@@ -262,7 +262,7 @@ class TestContext:
             keystore = None
             for filename in os.listdir(storage_path):
                 if filename.endswith('.json') and len(filename) == 69:
-                    keystore = Keystore.load(os.path.join(storage_path, filename), 'password')
+                    keystore = Keystore.from_file(os.path.join(storage_path, filename), 'password')
                     break
 
             # create node and startup services

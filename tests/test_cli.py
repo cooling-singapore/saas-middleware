@@ -853,7 +853,7 @@ def test_cli_rti_proc_deploy_list_show_undeploy(docker_available, node, temp_dir
 
     # create keystore
     password = 'password'
-    keystore = Keystore.create(temp_dir, 'name', 'email', password)
+    keystore = Keystore.new('name', 'email', path=temp_dir, password=password)
     args['keystore-id'] = keystore.identity.id
     args['keystore'] = temp_dir
     args['password'] = password
@@ -1018,7 +1018,7 @@ def test_cli_rti_job_submit_list_status_cancel(docker_available, node, temp_dir)
 
     # create keystore
     password = 'password'
-    keystore = Keystore.create(temp_dir, 'name', 'email', password)
+    keystore = Keystore.new('name', 'email', path=temp_dir, password=password)
     args['keystore-id'] = keystore.identity.id
     args['keystore'] = temp_dir
     args['password'] = password
@@ -1911,7 +1911,7 @@ def test_cli_builder_cmd(docker_available, node, temp_dir):
 
     # create keystore
     password = 'password'
-    keystore = Keystore.create(temp_dir, 'name', 'email', password)
+    keystore = Keystore.new('name', 'email', path=temp_dir, password=password)
     args['keystore-id'] = keystore.identity.id
     args['keystore'] = temp_dir
     args['password'] = password
@@ -1954,7 +1954,7 @@ def test_cli_builder_cmd_store_image(docker_available, node, temp_dir):
 
     # create keystore
     password = 'password'
-    keystore = Keystore.create(temp_dir, 'name', 'email', password)
+    keystore = Keystore.new('name', 'email', path=temp_dir, password=password)
     args['keystore-id'] = keystore.identity.id
     args['keystore'] = temp_dir
     args['password'] = password

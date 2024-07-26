@@ -38,14 +38,14 @@ def known_nodes(test_context, extra_keystores):
 
 @pytest.fixture()
 def storage_node(test_context, temp_directory):
-    keystore = Keystore.create(temp_directory, "keystore-storage", "no-email-provided", "password")
+    keystore = Keystore.new("keystore-storage", "no-email-provided", path=temp_directory, password="password")
     node = test_context.get_node(keystore, use_dor=True, use_rti=False, enable_rest=True)
     yield node
 
 
 @pytest.fixture()
 def execution_node(test_context, temp_directory):
-    keystore = Keystore.create(temp_directory, "keystore-execution", "no-email-provided", "password")
+    keystore = Keystore.new("keystore-execution", "no-email-provided", path=temp_directory, password="password")
     node = test_context.get_node(keystore, use_dor=False, use_rti=True, enable_rest=True)
     yield node
 
@@ -132,7 +132,7 @@ def test_different_address(test_context, node, node_db_proxy):
 
     with tempfile.TemporaryDirectory() as tempdir:
         # create two keystores
-        keystores = [Keystore.create(tempdir, f"keystore-{i}", "no-email-provided", "password") for i in range(2)]
+        keystores = [Keystore.new(f"keystore-{i}", "no-email-provided", path=tempdir, password="password") for i in range(2)]
 
         # determine how many nodes the network has right now, according to the node
         network = node_db_proxy.get_network()
@@ -288,7 +288,7 @@ def test_update_identity(known_nodes):
 def test_proxy(test_context, temp_directory):
     keystores = []
     for i in range(3):
-        keystore = Keystore.create(temp_directory, f"keystore-test_proxy-{i}", "no-email-provided", "password")
+        keystore = Keystore.new(f"keystore-test_proxy-{i}", "no-email-provided", path=temp_directory, password="password")
         keystores.append(keystore)
 
     nodes = test_context.create_nodes(keystores, perform_join=True, enable_rest=True)
