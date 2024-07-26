@@ -45,7 +45,7 @@ def docker_available():
 @pytest.fixture(scope="session")
 def keystore():
     with tempfile.TemporaryDirectory() as tempdir:
-        _keystore = Keystore.create(tempdir, "keystore1", "no-email-provided", "password")
+        _keystore = Keystore.new("keystore1", "no-email-provided", path=tempdir, password="password")
         update_keystore_from_credentials(_keystore)
         yield _keystore
 
@@ -79,7 +79,7 @@ def extra_keystores():
     keystores = []
     with tempfile.TemporaryDirectory() as tempdir:
         for i in range(3):
-            keystore = Keystore.create(tempdir, f"keystore-{i}", "no-email-provided", "password")
+            keystore = Keystore.new(f"keystore-{i}", "no-email-provided", path=tempdir, password="password")
             keystores.append(keystore)
         yield keystores
 

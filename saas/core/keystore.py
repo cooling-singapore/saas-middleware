@@ -4,6 +4,8 @@ import os
 import string
 
 from threading import Lock
+from typing import Optional
+
 from pydantic import ValidationError
 
 from saas.core.eckeypair import ECKeyPair
@@ -22,11 +24,11 @@ logger = Logging.get('saas.core')
 
 
 class Keystore:
-    def __init__(self, path: str, password: str, content: KeystoreContent) -> None:
+    def __init__(self, content: KeystoreContent, path: str = None, password: str = None) -> None:
         self._mutex = Lock()
+        self._content = content
         self._path = path
         self._password = password
-        self._content = content
 
         self._loaded = {
             'master-key': MasterKeyPairAsset.load(content.assets['master-key'], password)
@@ -63,12 +65,9 @@ class Keystore:
         self._update_identity()
 
     @classmethod
-    def create(cls, path: str, name: str, email: str = 'no-password', password: str = None) -> Keystore:
+    def new(cls, name: str, email: str, path: str = None, password: str = None) -> Keystore:
         # create random keystore id
         iid = generate_random_string(64, characters=string.ascii_lowercase+string.digits)
-
-        # create random password if required (for ephemeral keys)
-        password = password if password else generate_random_string(64)
 
         # create required assets
         master_key = MasterKeyPairAsset(RSAKeyPair.create_new())
@@ -100,9 +99,11 @@ class Keystore:
         content_hash = hash_json_object(content)
         content['signature'] = signing_key.get().sign(content_hash)
 
-        # create keystore
-        keystore_path = os.path.join(path, f"{iid}.json")
-        keystore = Keystore(keystore_path, password, KeystoreContent.parse_obj(content))
+        # update path with fully qualified name
+        if path is not None:
+            path = os.path.join(path, f"{iid}.json")
+
+        keystore = Keystore(KeystoreContent.parse_obj(content), path=path, password=password)
         keystore.sync()
 
         logger.info(f"keystore created: id={keystore.identity.id} "
@@ -112,7 +113,23 @@ class Keystore:
         return keystore
 
     @classmethod
-    def load(cls, keystore_path: str, password: str) -> Keystore:
+    def from_content(cls, content: KeystoreContent) -> Keystore:
+        # check if we have required assets
+        for required in ['master-key', 'signing-key', 'encryption-key', 'content-keys', 'ssh-credentials',
+                         'github-credentials']:
+            if required not in content.assets:
+                raise SaaSRuntimeException(f"Keystore invalid: {required} found.")
+
+        # create keystore
+        keystore = Keystore(content)
+        logger.info(f"keystore loaded: iid={keystore.identity.id} "
+                    f"s_key={keystore._s_key.public_as_string()} "
+                    f"e_key={keystore._e_key.public_as_string()}")
+
+        return keystore
+
+    @classmethod
+    def from_file(cls, keystore_path: str, password: str) -> Keystore:
         # check if keystore file exists
         if not os.path.isfile(keystore_path):
             raise SaaSRuntimeException(f"Keystore content not found at {keystore_path}")
@@ -130,7 +147,7 @@ class Keystore:
                 raise SaaSRuntimeException(f"Keystore invalid: {required} found.")
 
         # create keystore
-        keystore = Keystore(keystore_path, password, content)
+        keystore = Keystore(content, path=keystore_path, password=password)
         logger.info(f"keystore loaded: iid={keystore.identity.id} "
                     f"s_key={keystore._s_key.public_as_string()} "
                     f"e_key={keystore._e_key.public_as_string()}")
@@ -138,7 +155,11 @@ class Keystore:
         return keystore
 
     @property
-    def path(self) -> str:
+    def content(self) -> KeystoreContent:
+        return self._content
+
+    @property
+    def path(self) -> Optional[str]:
         with self._mutex:
             return self._path
 
@@ -243,11 +264,13 @@ class Keystore:
             self._content.signature = self._s_key.sign(content_hash)
 
             # write contents to disk
-            write_json_to_file(self._content.dict(), self._path)
+            if self._path is not None:
+                write_json_to_file(self._content.dict(), self._path)
 
             # update identity
             self._update_identity()
 
     def delete(self) -> None:
         with self._mutex:
-            os.remove(self._path)
+            if self._path is not None:
+                os.remove(self._path)

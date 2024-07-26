@@ -161,7 +161,7 @@ def test_rsa_encryption(rsa_keypair):
 
 
 def test_create_and_load(temp_directory):
-    keystore = Keystore.create(temp_directory, 'name', 'email', 'password')
+    keystore = Keystore.new('name', 'email', path=temp_directory, password='password')
     assert(keystore is not None)
     assert(keystore.identity.name == 'name')
     assert(keystore.identity.email == 'email')
@@ -171,7 +171,7 @@ def test_create_and_load(temp_directory):
     keystore_path = os.path.join(temp_directory, f"{keystore_id}.json")
     assert(os.path.isfile(keystore_path))
 
-    keystore = Keystore.load(keystore_path, 'password')
+    keystore = Keystore.from_file(keystore_path, 'password')
     assert(keystore is not None)
     assert(keystore.identity.id == keystore_id)
     assert(keystore.identity.name == 'name')
@@ -180,7 +180,7 @@ def test_create_and_load(temp_directory):
 
 
 def test_update(temp_directory):
-    keystore = Keystore.create(temp_directory, 'name', 'email', 'password')
+    keystore = Keystore.new('name', 'email', path=temp_directory, password='password')
     keystore_id = keystore.identity.id
     assert(keystore.identity.name == 'name')
     assert(keystore.identity.email == 'email')
@@ -198,7 +198,7 @@ def test_update(temp_directory):
     # verify authenticity
     assert(identity.verify_integrity())
 
-    keystore = Keystore.load(os.path.join(temp_directory, f"{keystore_id}.json"), 'password')
+    keystore = Keystore.from_file(os.path.join(temp_directory, f"{keystore_id}.json"), 'password')
     assert(keystore is not None)
     assert(keystore.identity.id == keystore_id)
     assert(keystore.identity.name == name)
@@ -207,7 +207,7 @@ def test_update(temp_directory):
 
 
 def test_add_get_object_key(temp_directory):
-    keystore = Keystore.create(temp_directory, 'name', 'email', 'password')
+    keystore = Keystore.new('name', 'email', path=temp_directory, password='password')
     assert(keystore.identity.name == 'name')
     assert(keystore.identity.email == 'email')
 
@@ -219,7 +219,7 @@ def test_add_get_object_key(temp_directory):
 
     keystore.sync()
 
-    keystore = Keystore.load(os.path.join(temp_directory, f"{keystore.identity.id}.json"), 'password')
+    keystore = Keystore.from_file(os.path.join(temp_directory, f"{keystore.identity.id}.json"), 'password')
     assert(keystore.identity.name == 'name')
     assert(keystore.identity.email == 'email')
 
@@ -233,7 +233,7 @@ def test_add_credentials(temp_directory):
     host = '192.168.0.1'
     key = '<<<key here>>>'
 
-    keystore = Keystore.create(temp_directory, 'name', 'email', 'password')
+    keystore = Keystore.new('name', 'email', path=temp_directory, password='password')
     assert(keystore.identity.name == 'name')
     assert(keystore.identity.email == 'email')
 
@@ -244,7 +244,7 @@ def test_add_credentials(temp_directory):
                                                                         passphrase='password'))
     keystore.sync()
 
-    keystore = Keystore.load(os.path.join(temp_directory, f"{keystore.identity.id}.json"), 'password')
+    keystore = Keystore.from_file(os.path.join(temp_directory, f"{keystore.identity.id}.json"), 'password')
     c = keystore.github_credentials.get(url)
     print(c)
     assert(c is not None)

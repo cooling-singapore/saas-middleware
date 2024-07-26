@@ -30,7 +30,7 @@ logger = Logging.get(__name__)
 @pytest.fixture(scope='session')
 def non_strict_node(test_context):
     with tempfile.TemporaryDirectory() as tempdir:
-        keystore = Keystore.create(tempdir, "non_strict_node", "no-email-provided", "password")
+        keystore = Keystore.new("non_strict_node", "no-email-provided", path=tempdir, password="password")
         update_keystore_from_credentials(keystore)
         node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=False)
         yield node
@@ -39,7 +39,7 @@ def non_strict_node(test_context):
 @pytest.fixture(scope='session')
 def strict_node(test_context, extra_keystores):
     with tempfile.TemporaryDirectory() as tempdir:
-        keystore = Keystore.create(tempdir, "strict_node", "no-email-provided", "password")
+        keystore = Keystore.new("strict_node", "no-email-provided", path=tempdir, password="password")
         update_keystore_from_credentials(keystore)
         node = test_context.get_node(keystore, use_rti=True, enable_rest=True, strict_deployment=True)
         yield node
