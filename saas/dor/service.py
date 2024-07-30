@@ -9,7 +9,7 @@ from typing import Optional, List
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from fastapi import UploadFile, File, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy import Column, String, Boolean, BigInteger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -517,7 +517,13 @@ class DORService:
         # touch data object
         self.touch_data_object(obj_id)
 
-        return FileResponse(content_path, media_type='application/octet-stream')
+        async def file_iterator(file_path, chunk_size: int):
+            with open(file_path, "rb") as file:
+                while chunk := file.read(chunk_size):
+                    yield chunk
+
+        return StreamingResponse(file_iterator(content_path, chunk_size=1024*1204),
+                                 media_type="application/octet-stream")
 
     def get_provenance(self, c_hash: str) -> Optional[DataObjectProvenance]:
         """
