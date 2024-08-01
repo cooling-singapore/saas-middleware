@@ -175,9 +175,6 @@ class ProcessorBase(abc.ABC):
         """
         pass
 
-    def inect_dependency(self, dep_id: str, lkdjfslkdfj)::
-
-
 
 def find_processors(search_path: str) -> Dict[str, ProcessorBase]:
     """

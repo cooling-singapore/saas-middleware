@@ -27,12 +27,16 @@ def determine_local_ip() -> Optional[str]:
 LOCAL_IP = determine_local_ip()
 
 
+def determine_default_p2p_address() -> str:
+    return f"{LOCAL_IP}:4001" if LOCAL_IP else "127.0.0.1:4001"
+
+
 def determine_default_rest_address() -> str:
     return f"{LOCAL_IP}:5001" if LOCAL_IP else "127.0.0.1:5001"
 
 
-def determine_default_p2p_address() -> str:
-    return f"{LOCAL_IP}:4001" if LOCAL_IP else "127.0.0.1:4001"
+def determine_default_ws_address() -> str:
+    return f"{LOCAL_IP}:6001" if LOCAL_IP else "127.0.0.1:6001"
 
 
 def find_available_port(host: str = 'localhost', port_range: (int, int) = (6000, 7000)) -> Optional[int]:

@@ -149,6 +149,16 @@ class PortMaster:
             cls._next_rest[host] += 1
             return address
 
+    @classmethod
+    def generate_ws_address(cls, host: str = '127.0.0.1') -> (str, int):
+        with cls._mutex:
+            if host not in cls._next_rest:
+                cls._next_rest[host] = 6100
+
+            address = (host, cls._next_rest[host])
+            cls._next_rest[host] += 1
+            return address
+
 
 class TestContext:
     def __init__(self):
