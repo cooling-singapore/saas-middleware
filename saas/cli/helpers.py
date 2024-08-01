@@ -61,7 +61,7 @@ def initialise_storage_folder(path: str, usage: str, is_verbose: bool = False) -
     # check if it already exists as directory
     if not os.path.isdir(path):
         logger.info(f"creating storage ({usage}) directory '{path}'")
-        os.mkdir(path)
+        os.makedirs(path)
         if is_verbose:
             print(f"Storage directory ({usage}) created at '{path}'.")
 
@@ -391,9 +391,11 @@ class CLIParser(CLICommandGroup):
 
             args = vars(parser.parse_args(args))
 
-            initialise_storage_folder(args['temp-dir'], 'temp-dir')
+            if 'temp-dir' in args:
+                initialise_storage_folder(args['temp-dir'], 'temp-dir')
 
-            initialise_storage_folder(args['keystore'], 'keystore')
+            if 'keystore' in args:
+                initialise_storage_folder(args['keystore'], 'keystore')
 
             if args['log-level'] == 'DEBUG':
                 level = logging.DEBUG
@@ -404,7 +406,6 @@ class CLIParser(CLICommandGroup):
 
             console_enabled = args['log-console'] is not None
             log_path = args['log-path']
-            # print(f"Logging parameters: level={level} log_path={log_path} console_enabled={console_enabled}")
             Logging.initialise(level=level, log_path=log_path, console_log_enabled=console_enabled)
             super().execute(args)
 
