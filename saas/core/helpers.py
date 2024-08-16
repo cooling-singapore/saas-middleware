@@ -10,7 +10,7 @@ import canonicaljson
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from typing import Union
+from typing import Union, List
 
 from saas.core.logging import Logging
 
@@ -157,7 +157,7 @@ def hash_file_content(path: str) -> bytes:
     return digest.finalize()
 
 
-def hash_json_object(obj: Union[dict, list], exclusions: list[str] = None) -> bytes:
+def hash_json_object(obj: Union[dict, list], exclusions: List[str] = None) -> bytes:
     """
     Hash a given JSON object. Before hashing the JSON input is encoded as canonical RFC 7159 JSON.
     :param exclusions:
