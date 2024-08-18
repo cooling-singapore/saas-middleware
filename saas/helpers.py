@@ -49,7 +49,7 @@ def find_available_port(host: str = 'localhost', port_range: (int, int) = (6000,
         try:
             sock.connect((host, port))
         except socket.error as e:
-            if isinstance(e, ConnectionRefusedError):
+            if isinstance(e, (TimeoutError, ConnectionRefusedError)):
                 return port
 
         finally:
