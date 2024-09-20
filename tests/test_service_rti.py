@@ -24,6 +24,7 @@ from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.core.schemas import GithubCredentials
 from tests.base_testcase import update_keystore_from_credentials
+from tests.conftest import COMMIT_ID
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -31,8 +32,8 @@ logger = Logging.get(__name__)
 
 def add_test_processor(dor: DORProxy, owner: Keystore, config: str) -> (str, GithubCredentials):
     source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
-    proc_path = 'examples/adapters/proc_example'
+    commit_id = COMMIT_ID
+    proc_path = 'examples/processors/proc_example'
 
     github_credentials = owner.github_credentials.get(source)
 
