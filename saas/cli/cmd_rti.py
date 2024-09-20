@@ -44,8 +44,6 @@ def shorten_id(long_id: str) -> str:
 class RTIProcDeploy(CLICommand):
     def __init__(self) -> None:
         super().__init__('deploy', 'deploys a processor', arguments=[
-            Argument('--type', dest='type', action='store', choices=['native', 'docker'],
-                     help="indicate the type of deployment: 'native' or 'docker'."),
             Argument('--ssh-profile', dest='ssh-profile', action='store',
                      help="indicate the SSH profile to be used (if any)."),
             Argument('proc-id', metavar='proc-id', type=str, nargs='?',
@@ -88,12 +86,8 @@ class RTIProcDeploy(CLICommand):
         if args['proc-id'] not in custodian:
             raise CLIRuntimeError(f"Custodian of processor {args['proc-id']} not found. Aborting.")
 
-        # do we have a type?
-        if not args['type']:
-            args['type'] = prompt_for_selection([
-                Choice('native', 'Native Deployment'),
-                Choice('docker', 'Docker Deployment')
-            ], message="Select the deployment type:", allow_multiple=False)
+        # only allow 'native' as deployment type
+        args['type'] = 'native'
 
         # should we use an SSH profile?
         ssh_credentials = None
