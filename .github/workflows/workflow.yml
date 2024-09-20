@@ -12,19 +12,10 @@ jobs:
       - name: Set up Python 3.x
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       - name: Install application
         run: pip install ".[dev]"
-
-      - name: Create credentials.json
-        run: >
-          echo
-          '{"github-credentials":[
-          {"repository":"https://github.com/cooling-singapore/duct-fom",
-          "login":"oauth",
-          "personal_access_token":"${{ secrets.TEST_PROCESSOR_KEY }}"}
-          ]}' > ~/.saas-credentials.json
 
       - name: Run tests
         run: pytest ./tests
