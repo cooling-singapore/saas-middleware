@@ -14,7 +14,7 @@ from saas.core.logging import Logging
 from saas.p2p.exceptions import PeerUnavailableError
 from saas.p2p.messenger import SecureMessenger, P2PMessage
 from saas.p2p.protocol import P2PProtocol, BroadcastResponse
-from tests.base_testcase import PortMaster
+from saas.tests.base_testcase import PortMaster
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)

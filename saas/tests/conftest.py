@@ -7,7 +7,7 @@ from saas.dor.proxy import DORProxy
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
 from saas.rti.proxy import RTIProxy
-from tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
+from saas.tests.base_testcase import TestContext, update_keystore_from_credentials, PortMaster
 
 
 COMMIT_ID = "ccd0a3281c9590b760c0800bfa999bd693c7345c"

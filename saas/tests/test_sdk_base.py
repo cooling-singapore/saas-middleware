@@ -4,7 +4,7 @@ import os
 from saas.core.exceptions import SaaSRuntimeException
 from saas.dor.schemas import DataObject
 from saas.sdk.base import connect, SDKGPPDataObject
-from tests.base_testcase import generate_random_file
+from saas.tests.base_testcase import generate_random_file
 
 
 def test_context(keystore, node):

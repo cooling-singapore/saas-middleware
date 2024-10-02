@@ -23,8 +23,8 @@ from saas.rti.adapters.base import ProcessorState
 from saas.rti.proxy import RTIProxy
 from saas.rti.schemas import Task, JobStatus
 from saas.core.schemas import GithubCredentials
-from tests.base_testcase import update_keystore_from_credentials
-from tests.conftest import COMMIT_ID
+from saas.tests.base_testcase import update_keystore_from_credentials
+from saas.tests.conftest import COMMIT_ID
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
