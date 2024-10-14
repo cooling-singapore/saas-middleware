@@ -8,7 +8,7 @@ from saas.core.identity import Identity
 from saas.core.logging import Logging
 from saas.node import Node
 from saas.nodedb.proxy import NodeDBProxy
-from tests.base_testcase import PortMaster
+from saas.tests.base_testcase import PortMaster
 
 
 Logging.initialise(level=logging.DEBUG)

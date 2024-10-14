@@ -15,7 +15,7 @@ from saas.core.helpers import get_timestamp_now, generate_random_string
 from saas.core.logging import Logging
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
-from tests.conftest import COMMIT_ID
+from saas.tests.conftest import COMMIT_ID
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
