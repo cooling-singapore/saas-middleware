@@ -15,6 +15,7 @@ from saas.core.helpers import get_timestamp_now, generate_random_string
 from saas.core.logging import Logging
 from saas.rest.exceptions import UnsuccessfulRequestError
 from saas.dor.protocol import DataObjectRepositoryP2PProtocol
+from saas.tests.conftest import COMMIT_ID
 
 Logging.initialise(level=logging.DEBUG)
 logger = Logging.get(__name__)
@@ -155,8 +156,8 @@ def test_add_gpp_with_schema(keystore, dor_proxy):
     owner = keystore.identity
 
     source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
-    proc_path = 'examples/adapters/proc_example'
+    commit_id = COMMIT_ID
+    proc_path = 'examples/processors/proc_example'
     proc_config = 'default'
 
     github_credentials: GithubCredentials = keystore.github_credentials.get(source)
@@ -170,8 +171,8 @@ def test_add_gpp_duplicate(keystore, dor_proxy):
     owner = keystore.identity
 
     source = 'https://github.com/cooling-singapore/saas-middleware'
-    commit_id = 'e107901'
-    proc_path = 'examples/adapters/proc_example'
+    commit_id = COMMIT_ID
+    proc_path = 'examples/processors/proc_example'
     proc_config = 'default'
 
     github_credentials: GithubCredentials = keystore.github_credentials.get(source)
