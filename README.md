@@ -202,13 +202,7 @@ assign this new identity as a co-creator of the object (more information below).
 
 Example:
 ```shell
-saas-cli dor --address 127.0.0.1:5001 add --data-type 'JSONObject' --data-format 'json' data_object_a.json
-
-? Select the keystore: foo bar/foo.bar@email.com/i6vmw1hffcsf5pg6dlc4ofxl1s95czqs6uuqg8mf9hz32qdei4b8gmwu4eivtm3t
-? Enter password: ****
-? Select data objects to be removed: ["a8db42a189d354da4d15b2bee36b9e2474dc79154155f291191b02a2550aafe7 C[JSONObject:json] ['name=data_object_a.json']"]
-Deleting a8db42a189d354da4d15b2bee36b9e2474dc79154155f291191b02a2550aafe7...Done
-(venv-saas) foo_bar@SEC-M10052 Desktop % saas-cli dor --address 127.0.0.1:5001 add --data-type 'JSONObject' --data-format 'json' data_object_a.json 
+saas-cli dor --address 127.0.0.1:5001 add --data-type 'JSONObject' --data-format 'json' data_object_a.json 
 ? Select the keystore: foo bar/foo.bar@email.com/i6vmw1hffcsf5pg6dlc4ofxl1s95czqs6uuqg8mf9hz32qdei4b8gmwu4eivtm3t
 ? Enter password: ****
 ? Select all identities that are co-creators of this data object: ['foo bar/foo.bar@email.com/i6vmw1hffcsf5pg6dlc4ofxl1s95czqs6uuqg8mf9hz32qdei4b8gmwu4eivtm3t']
